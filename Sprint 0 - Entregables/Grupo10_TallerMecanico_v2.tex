@@ -1,0 +1,398 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noquoting]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{parskip}
+
+\setlist[itemize]{leftmargin=1.4em, itemsep=2pt, topsep=3pt}
+\setlist[enumerate]{leftmargin=1.6em, itemsep=2pt, topsep=3pt}
+\titleformat{\section}{\normalfont\large\bfseries}{\thesection.}{0.6em}{}
+\titleformat{\subsection}{\normalfont\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\titlespacing{\section}{0pt}{12pt}{5pt}
+\titlespacing{\subsection}{0pt}{9pt}{3pt}
+
+\title{\vspace{-1.2cm}\textbf{Sistema de Gestión de Talleres Mecánicos}\\[4pt]
+\large Propuesta de Idea — Grupo 10}
+\author{Taller de Integración II \ $\cdot$ \ Taller de Integración IV}
+\date{Universidad Católica de Temuco — Ingeniería Civil en Informática\\
+Profesor: Ignacio Lincolao Venegas — Semestre II, 2026 — Metodología: Scrum}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\bigskip
+
+\section{Resumen ejecutivo}
+
+Plataforma web y móvil para digitalizar y optimizar la gestión operativa de talleres mecánicos, desde la recepción del vehículo hasta su entrega al cliente.
+
+Integra II desarrolla la aplicación web (frontend, backend y base de datos); Integra IV desarrolla la aplicación móvil. Ambos clientes comparten la misma API y base de datos, conformando un único sistema distribuido.
+
+\section{El problema a resolver}
+
+El sector de los talleres mecánicos opera desde hace años bajo dinámicas manuales, lo que genera una necesidad de modernización. Esta gestión tradicional produce:
+
+\begin{itemize}
+  \item Dificultad para reconstruir qué se le hace a cada vehículo, cuándo, con qué repuestos y por qué mecánico.
+  \item Pérdida de información de diagnósticos, presupuestos y repuestos, al no existir un sistema centralizado.
+  \item Mala comunicación con el cliente, quien al no saber el estado de su auto llama o escribe de forma constante.
+  \item Interrupciones al mecánico, que muchas veces trabaja con las manos ocupadas y no puede contestar el teléfono.
+  \item Escasa visibilidad operativa para el dueño del taller, que no puede ver de un vistazo el estado global del negocio.
+\end{itemize}
+
+\section{La solución}
+
+Desarrollar una plataforma web y móvil que digitalice y optimice la gestión operativa del taller, desde que se recibe el vehículo hasta su entrega final.
+
+Los trabajadores registran el ingreso de los autos, gestionan las horas agendadas y actualizan los avances de cada reparación. El cliente, por su parte, puede consultar el estado del servicio de su vehículo sin necesidad de contactar directamente al taller.
+
+\section{Objetivos}
+
+\subsection{Objetivo general}
+
+Gestionar digitalmente el ciclo de reparación y mantención del vehículo, mediante una plataforma web y móvil que mejore el registro de la información, la comunicación con el cliente y la eficiencia operativa del taller.
+
+\subsection{Objetivos específicos}
+
+Comprometidos dentro del plazo del curso:
+
+\begin{enumerate}
+  \item Registrar vehículos asociados a un cliente, con marca, modelo, año, kilometraje y patente única.
+  \item Gestionar el historial de mantenciones, reparaciones, repuestos utilizados y mecánico responsable.
+  \item Implementar el flujo de estados de la orden, incluyendo los estados de reparación y los estados «Esperando aprobación de presupuesto» y «Esperando aprobación de documento».
+  \item Permitir al cliente consultar el estado del servicio de su vehículo, con notificaciones y evidencia multimedia (fotografía o video).
+  \item Registrar el distribuidor o proveedor asociado a cada repuesto, para que el cliente pueda verificar la procedencia y ver qué proveedor quedó asociado al repuesto que solicitó.
+  \item Incorporar un módulo de control de inventario y stock que valide la disponibilidad de repuestos.
+  \item Permitir configurar la cantidad de órdenes activas por mecánico y el número máximo de vehículos revisados por día.
+  \item Diseñar una API REST centralizada compatible con la aplicación móvil de Integra IV.
+  \item Implementar un panel de control con el estado global de los vehículos para el administrador.
+  \item Ejecutar pruebas funcionales y de integración (unitarias, de API y de las actions) y desplegar la plataforma en un hosting con acceso público.
+\end{enumerate}
+
+\subsection{Fuera de plazo}
+
+Quedan fuera del plazo comprometido: facturación electrónica, cotización automática a proveedores, pasarela de pagos, chat integrado, reserva de horas en línea y recordatorios avanzados de mantención.
+
+\section{Actores del sistema}
+
+\begin{itemize}
+  \item \textbf{Cliente:} consultar el estado del servicio de su vehículo, revisar historial y ficha técnica por patente, aprobar presupuestos con evidencia y recibir notificaciones.
+  \item \textbf{Mecánico:} actualizar el estado del vehículo, registrar diagnóstico y repuestos utilizados, adjuntar evidencia fotográfica o en video y consultar la ficha técnica del auto.
+  \item \textbf{Administrador:} acceder al panel de control global, gestionar usuarios, consultar reportes, gestionar el inventario y configurar los límites operativos del taller.
+\end{itemize}
+
+\section{Flujo de estados del vehículo}
+
+El flujo es secuencial y no puede saltarse etapas:
+
+\begin{enumerate}
+  \item Recibido
+  \item Esperando Diagnóstico
+  \item Esperando aprobación de presupuesto
+  \item En Reparación
+  \item Esperando Repuestos
+  \item Esperando aprobación de documento
+  \item Listo
+  \item Entregado
+\end{enumerate}
+
+Cada transición queda registrada con fecha, hora y usuario responsable. En «Esperando aprobación de presupuesto» la orden no avanza hasta que el cliente aprueba; si lo rechaza, la orden queda en estado Rechazado. En «Esperando Repuestos» el sistema registra el repuesto solicitado y el distribuidor asociado, de modo que el cliente pueda conocer la procedencia de la pieza. En «Esperando aprobación de documento» se deja constancia del documento asociado a la entrega antes de marcar la orden como Listo.
+
+\section{Propuesta de valor}
+
+\subsection{Para el cliente}
+
+\begin{itemize}
+  \item Transparencia sobre el repuesto cambiado, su valor y el distribuidor del que proviene.
+  \item Historial consultable por patente mediante ficha técnica.
+  \item Posibilidad de consultar el estado del servicio, con notificaciones y presupuestos con evidencia fotográfica o en video.
+\end{itemize}
+
+\subsection{Para el taller y los mecánicos}
+
+\begin{itemize}
+  \item Menos interrupciones: al mantener informado al cliente mediante la app, el mecánico se concentra en su trabajo.
+  \item Panel de control con el estado global de los vehículos para el administrador.
+  \item Control de inventario y stock integrado a las órdenes de trabajo.
+  \item Estandarización del trabajo mediante el flujo de estados definido para cada vehículo.
+\end{itemize}
+
+\section{Producto mínimo viable (MVP)}
+
+\begin{enumerate}
+  \item Registro e inicio de sesión con roles diferenciados.
+  \item Registro de vehículos asociados a un cliente (marca, modelo, año, km, patente).
+  \item Creación y gestión de órdenes de trabajo.
+  \item Flujo completo de estados con historial de transiciones.
+  \item Registro de repuestos, mecánico y distribuidor por intervención.
+  \item Control de inventario y stock de repuestos.
+  \item Notificaciones al cliente y soporte multimedia como evidencia.
+  \item Historial de reparaciones consultable por patente.
+  \item Panel de control del taller con estado global de vehículos.
+  \item Parámetros configurables: órdenes activas por mecánico y máximo de vehículos revisados por día.
+  \item API REST funcional para integración con la app móvil de Integra IV.
+  \item Base de datos relacional implementada y desplegada en hosting con acceso público.
+\end{enumerate}
+
+\section{Arquitectura y stack tecnológico}
+
+La arquitectura sigue un modelo cliente–servidor con API centralizada compartida entre la aplicación web y la móvil:
+
+\begin{itemize}
+  \item Web (Integra II): React.
+  \item Móvil (Integra IV): Flutter o React Native.
+  \item Backend: Python (API REST).
+  \item Base de datos: PostgreSQL / MySQL.
+  \item Autenticación: JWT.
+  \item Versionamiento: Git / GitHub.
+  \item Documentación API: OpenAPI / Swagger.
+  \item Hosting: con acceso público, por definir con Integra IV.
+\end{itemize}
+
+\section{Modelo de datos preliminar}
+
+Entidades principales y sus atributos:
+
+\begin{itemize}
+  \item \textbf{Usuario:} id, nombre, email, password\_hash, rol.
+  \item \textbf{Cliente:} id, usuario\_id, teléfono.
+  \item \textbf{Vehículo:} id, cliente\_id, patente, marca, modelo, año, km.
+  \item \textbf{Mecánico:} id, usuario\_id, especialidad.
+  \item \textbf{Orden de Trabajo:} id, vehículo\_id, mecánico\_id, estado, fechas.
+  \item \textbf{Distribuidor:} id, nombre, RUT, contacto, es\_oficial.
+  \item \textbf{Repuesto:} id, nombre, precio, stock.
+  \item \textbf{Detalle Reparación:} id, orden\_id, repuesto\_id, distribuidor\_id, cantidad.
+  \item \textbf{Historial de Estado:} id, orden\_id, estado\_anterior, estado\_nuevo, fecha.
+  \item \textbf{Presupuesto:} id, orden\_id, monto, estado, url\_evidencia.
+\end{itemize}
+
+\section{Metodología — Scrum}
+
+El proyecto se desarrolla con la metodología ágil Scrum. Roles:
+
+\begin{itemize}
+  \item \textbf{Scrum Master:} facilitar eventos y eliminar impedimentos.
+  \item \textbf{Product Owner:} gestionar el backlog y priorizar historias de usuario.
+  \item \textbf{Dev Team:} desarrollar los módulos del sistema.
+\end{itemize}
+
+Eventos: Sprint Planning, Daily Stand-up (10–15 min), Sprint Review y Retrospectiva.
+
+\subsection{Evaluaciones del curso}
+
+\begin{itemize}
+  \item Sistematización del proyecto: 20\%.
+  \item Presentación 1.\textsuperscript{er} Sprint: 20\%.
+  \item Presentación 2.\textsuperscript{do} Sprint: 20\%.
+  \item Sprint Final: 40\%.
+\end{itemize}
+
+\section{Riesgos identificados}
+
+\begin{itemize}
+  \item \textbf{Alcance excesivo} (impacto alto): MVP bien definido y backlog priorizado.
+  \item \textbf{Desalineación con Integra IV} (alto): contrato de API acordado antes de desarrollar.
+  \item \textbf{Modelo de datos incompleto} (alto): validar el ERD en las primeras semanas.
+  \item \textbf{Integración web–móvil} (medio): lógica centralizada en el backend.
+  \item \textbf{Autenticación y roles} (medio): definir roles y permisos desde el diseño.
+\end{itemize}
+
+\section{Reglas de negocio}
+
+\subsection{Vehículos y clientes}
+\begin{itemize}
+  \item Un vehículo debe estar asociado a un cliente registrado. La patente es única e irrepetible.
+  \item Un cliente puede tener múltiples vehículos, pero solo consulta los suyos.
+\end{itemize}
+
+\subsection{Órdenes de trabajo}
+\begin{itemize}
+  \item Un vehículo solo puede tener una orden activa a la vez.
+  \item No se puede crear una orden sin mecánico asignado.
+  \item La fecha de ingreso se registra automáticamente y no se puede modificar.
+  \item Solo el administrador puede eliminar una orden.
+  \item La cantidad máxima de órdenes activas por mecánico es configurable por el administrador.
+\end{itemize}
+
+\subsection{Flujo de estados}
+\begin{itemize}
+  \item El flujo es secuencial y no puede saltarse etapas.
+  \item Cada cambio de estado queda registrado con fecha, hora y usuario.
+  \item Solo mecánico o administrador puede cambiar el estado.
+  \item El estado Entregado es irreversible.
+  \item «En Reparación» requiere que el presupuesto haya sido aprobado por el cliente.
+  \item «Esperando Repuestos» requiere al menos un repuesto y distribuidor asociado.
+\end{itemize}
+
+\subsection{Repuestos, distribuidores e inventario}
+\begin{itemize}
+  \item Todo repuesto debe tener un distribuidor asociado, marcado como oficial o genérico.
+  \item El precio del repuesto no puede modificarse una vez aprobado el presupuesto.
+  \item No se puede registrar un repuesto como utilizado si no hay stock disponible.
+  \item El stock se descuenta al registrar el consumo de un repuesto en una orden.
+\end{itemize}
+
+\subsection{Presupuestos}
+\begin{itemize}
+  \item No se puede avanzar a «En Reparación» sin presupuesto aprobado por el cliente.
+  \item Todo presupuesto debe incluir al menos una foto o video como evidencia.
+  \item Si el cliente rechaza el presupuesto, la orden queda bloqueada en estado Rechazado.
+\end{itemize}
+
+\subsection{Configuración operativa}
+\begin{itemize}
+  \item El administrador puede configurar la cantidad de órdenes activas permitidas por mecánico.
+  \item El administrador puede establecer el número máximo de vehículos revisados por día.
+\end{itemize}
+
+\subsection{Historial}
+\begin{itemize}
+  \item Se mantiene un historial con cada cambio, reparación, cliente o taller involucrado.
+  \item El historial es de solo lectura: nadie puede modificarlo una vez registrado.
+  \item El historial de un vehículo se conserva aunque el cliente elimine su cuenta.
+\end{itemize}
+
+\section{Requisitos funcionales}
+
+\subsection{Gestión de usuarios y acceso}
+\begin{itemize}
+  \item RF01: registrar usuarios con nombre, email y contraseña.
+  \item RF02: autenticar usuarios mediante email y contraseña.
+  \item RF03: diferenciar tres roles: Cliente, Mecánico y Administrador.
+  \item RF04: el administrador puede crear, editar y desactivar cuentas de mecánicos.
+  \item RF05: cada usuario ve únicamente la información correspondiente a su rol.
+\end{itemize}
+
+\subsection{Gestión de vehículos}
+\begin{itemize}
+  \item RF06: registrar vehículos asociados a un cliente, con patente, marca, modelo, año y kilometraje.
+  \item RF07: validar que no existan dos vehículos con la misma patente.
+  \item RF08: el cliente puede consultar la ficha técnica de su vehículo por patente.
+  \item RF09: un cliente puede registrar múltiples vehículos.
+\end{itemize}
+
+\subsection{Órdenes de trabajo}
+\begin{itemize}
+  \item RF10: crear órdenes asociadas a un vehículo y un mecánico.
+  \item RF11: registrar automáticamente la fecha de ingreso al crear la orden.
+  \item RF12: un vehículo solo puede tener una orden activa a la vez.
+  \item RF13: solo el administrador puede eliminar una orden.
+\end{itemize}
+
+\subsection{Flujo de estados}
+\begin{itemize}
+  \item RF14: gestionar el flujo Recibido → Esperando Diagnóstico → Esperando aprobación de presupuesto → En Reparación → Esperando Repuestos → Esperando aprobación de documento → Listo → Entregado.
+  \item RF15: registrar cada cambio de estado con fecha, hora y usuario responsable.
+  \item RF16: solo mecánicos y administradores pueden cambiar el estado.
+  \item RF17: el estado Entregado es irreversible.
+\end{itemize}
+
+\subsection{Presupuestos y evidencia}
+\begin{itemize}
+  \item RF18: crear presupuestos con monto y evidencia fotográfica o en video.
+  \item RF19: el cliente puede aprobar o rechazar el presupuesto desde su vista.
+  \item RF20: no se puede avanzar a «En Reparación» sin presupuesto aprobado.
+  \item RF21: si el cliente rechaza el presupuesto, la orden queda en estado Rechazado.
+\end{itemize}
+
+\subsection{Repuestos, distribuidores e inventario}
+\begin{itemize}
+  \item RF22: registrar repuestos con nombre, precio y stock.
+  \item RF23: todo repuesto utilizado en una orden debe tener un distribuidor asociado.
+  \item RF24: el distribuidor se marca como oficial o genérico.
+  \item RF25: validar el stock disponible antes de registrar un repuesto como utilizado.
+  \item RF26: descontar el stock al registrar el consumo de un repuesto.
+  \item RF27: el cliente puede ver qué distribuidor o proveedor quedó asociado al repuesto de su orden.
+\end{itemize}
+
+\subsection{Notificaciones y multimedia}
+\begin{itemize}
+  \item RF28: notificar al cliente en cada cambio de estado de su orden.
+  \item RF29: permitir adjuntar archivos multimedia (fotografías o video) como evidencia en presupuestos y reparaciones.
+\end{itemize}
+
+\subsection{Configuración operativa}
+\begin{itemize}
+  \item RF30: permitir configurar la cantidad de órdenes activas por mecánico.
+  \item RF31: permitir establecer el número máximo de vehículos revisados por día.
+\end{itemize}
+
+\subsection{Panel de control}
+\begin{itemize}
+  \item RF32: el administrador dispone de un panel con el estado global de todos los vehículos en el taller.
+  \item RF33: el mecánico ve únicamente las órdenes que le fueron asignadas.
+\end{itemize}
+
+\subsection{Historial}
+\begin{itemize}
+  \item RF34: mantener un historial con cada cambio, reparación, cliente o taller.
+  \item RF35: el historial es de solo lectura, sin posibilidad de edición.
+  \item RF36: el historial permite reconstruir la trayectoria de un vehículo de forma prácticamente inmediata, en cuestión de segundos.
+  \item RF37: el historial se conserva aunque el cliente elimine su cuenta.
+\end{itemize}
+
+\subsection{Integración con la app móvil}
+\begin{itemize}
+  \item RF38: exponer una API REST documentada para la integración con la app móvil de Integra IV.
+  \item RF39: los cambios realizados desde la app móvil se reflejan en la web.
+\end{itemize}
+
+\section{Pruebas y despliegue}
+
+\subsection{Pruebas}
+\begin{itemize}
+  \item Pruebas funcionales de cada módulo del sistema.
+  \item Pruebas de integración entre el backend y la aplicación móvil.
+  \item Pruebas unitarias sobre la lógica de negocio.
+  \item Pruebas sobre los endpoints de la API.
+  \item Pruebas de las actions (flujos de trabajo automatizados) del proyecto.
+\end{itemize}
+
+\subsection{Despliegue}
+\begin{itemize}
+  \item Despliegue de la aplicación y de la base de datos en un hosting con acceso público.
+\end{itemize}
+
+\section{Requisitos no funcionales}
+
+\subsection{Seguridad}
+\begin{itemize}
+  \item RNF01: todas las comunicaciones se realizan bajo HTTPS.
+  \item RNF02: protección de datos personales de clientes y trabajadores; las contraseñas se almacenan con hash seguro, nunca en texto plano.
+  \item RNF03: la autenticación se implementa mediante JWT con expiración de sesión.
+  \item RNF04: el backend valida la autorización en cada endpoint.
+  \item RNF05: un usuario no puede acceder a recursos de otro usuario.
+\end{itemize}
+
+\subsection{Rendimiento}
+\begin{itemize}
+  \item RNF06: el sistema responde a las solicitudes en un tiempo acotado bajo condiciones normales de uso.
+  \item RNF07: la API soporta múltiples usuarios concurrentes sin degradación relevante del servicio.
+\end{itemize}
+
+\subsection{Usabilidad y compatibilidad}
+\begin{itemize}
+  \item RNF08: la interfaz es intuitiva y responsiva, y funciona en dispositivos móviles y de escritorio.
+  \item RNF09: los mensajes de error son claros y orientan al usuario.
+  \item RNF10: la aplicación web funciona en las versiones actuales de los navegadores más usados.
+\end{itemize}
+
+\subsection{Mantenibilidad y escalabilidad}
+\begin{itemize}
+  \item RNF11: el código se versiona en GitHub con commits descriptivos.
+  \item RNF12: la API se documenta con OpenAPI/Swagger.
+  \item RNF13: la arquitectura permite agregar módulos sin reescribir el sistema base.
+\end{itemize}
+
+\section{Conclusión}
+
+El Sistema de Gestión de Talleres Mecánicos aborda un problema concreto y frecuente en talleres de pequeño y mediano tamaño, cubriendo tanto las necesidades operativas del taller como la experiencia del cliente.
+
+La propuesta se apoya en un MVP acotado, una lógica de backend clara y una arquitectura escalable, integrada con la aplicación móvil de Integra IV y verificada mediante pruebas funcionales y de integración.
+
+\end{document}

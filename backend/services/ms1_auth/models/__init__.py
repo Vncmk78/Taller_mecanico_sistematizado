@@ -1,13 +1,16 @@
-"""Modelos ORM del microservicio MS1.
+"""Modelos ORM del microservicio MS1: Autenticación y Usuarios.
 
-Vacío por ahora. Los modelos se agregan en la tarea de Semana 1/2
-"Crear modelos ORM iniciales" y deben importarse aquí para que Alembic los vea
-al generar las migraciones.
+Se importan aquí TODOS los modelos del servicio para que `Base.metadata` (y por
+lo tanto Alembic) los vea al generar y ejecutar las migraciones. Si un modelo no
+aparece en este archivo, su tabla no entra en las migraciones.
 
-Referencia: lámina 04-mer-erd, recuadro "BD MS1".
+Modelos iniciales (INT-13, Semana 1): Usuario, Rol, UsuarioRol.
+Referencia: lámina 04-mer-erd, recuadro "BD MS1 | Identidad, acceso y notificaciones".
 """
 from __future__ import annotations
 
 from services.ms1_auth.db import Base
+from services.ms1_auth.models.rol import Rol, UsuarioRol
+from services.ms1_auth.models.usuario import Usuario
 
-__all__ = ["Base"]
+__all__ = ["Base", "Usuario", "Rol", "UsuarioRol"]

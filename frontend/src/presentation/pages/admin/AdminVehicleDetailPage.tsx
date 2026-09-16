@@ -1,15 +1,24 @@
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardList } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
+import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { mockOwners } from '@/infrastructure/mocks/vehicles.mock';
 
 export function AdminVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const vehicles = useVehicleStore((s) => s.vehicles);
-    const vehicle = vehicles.find((v) => v.id === id);
+    const { vehicle, loading, notFound, refetch } = useVehicleDetail(id, (vid) =>
+    vehicleService.getVehicleById(vid)
+    );
+    const { isOffline, error } = useVehicleStore();
 
-    if (!vehicle) {
+    if (loading) {
+    return <div className="p-10 text-text-muted">Cargando ficha del vehículo...</div>;
+    }
+
+    if (!vehicle || notFound) {
     return (
         <div className="p-10 text-text-muted">
         Vehículo no encontrado.{' '}
@@ -26,6 +35,8 @@ export function AdminVehicleDetailPage() {
         >
         <ArrowLeft className="w-4 h-4" /> Volver al catálogo
         </Link>
+
+        {isOffline && <OfflineBanner message={error} onRetry={refetch} className="mb-6" />}
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6">
         <VehicleInfoPanel vehicle={vehicle} owner={mockOwners[vehicle.clientId]} />

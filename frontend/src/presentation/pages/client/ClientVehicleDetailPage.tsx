@@ -1,19 +1,28 @@
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarPlus, ClipboardList } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
+import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
 
 export function ClientVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
     const user = useAuthStore((s) => s.user);
-    const vehicles = useVehicleStore((s) => s.vehicles);
     const clientId = user?.id ?? CURRENT_CLIENT_ID;
+    const { vehicle, loading, notFound, refetch } = useVehicleDetail(id, (vid) =>
+    vehicleService.getVehicleById(vid)
+    );
+    const { isOffline, error } = useVehicleStore();
 
-    const vehicle = vehicles.find((v) => v.id === id && v.clientId === clientId);
+    if (loading) {
+    return <div className="text-text-muted">Cargando ficha del vehículo...</div>;
+    }
 
-    if (!vehicle) {
+  // Ownership check: aunque el vehículo exista en caché, no es tuyo si el clientId no calza.
+    if (!vehicle || notFound || vehicle.clientId !== clientId) {
     return (
         <div className="text-text-muted">
         Vehículo no encontrado o no pertenece a su cuenta.{' '}
@@ -30,6 +39,8 @@ export function ClientVehicleDetailPage() {
         >
         <ArrowLeft className="w-4 h-4" /> Volver a mis vehículos
         </Link>
+
+        {isOffline && <OfflineBanner message={error} onRetry={refetch} className="mb-6" />}
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6">
         <div className="flex flex-col gap-4">

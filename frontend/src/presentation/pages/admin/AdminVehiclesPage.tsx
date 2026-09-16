@@ -1,12 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { VehicleCard } from '@/presentation/components/vehicles/VehicleCard';
+import { VehicleListSkeleton } from '@/presentation/components/vehicles/VehicleListSkeleton';
+import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { mockOwners } from '@/infrastructure/mocks/vehicles.mock';
 
 export function AdminVehiclesPage() {
     const [search, setSearch] = useState('');
-    const vehicles = useVehicleStore((s) => s.vehicles);
+    const { vehicles, status, error, isOffline, fetchVehicles } = useVehicleStore();
+
+    const loadVehicles = () => fetchVehicles(() => vehicleService.getAllVehicles());
+
+    useEffect(() => {
+    loadVehicles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -35,21 +45,27 @@ export function AdminVehiclesPage() {
         </div>
         </div>
 
+        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} className="mx-10 mb-6" />}
+
+        {status === 'loading' ? (
+        <VehicleListSkeleton className="px-10 pb-10" />
+        ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-10 pb-10">
-        {filtered.map((vehicle) => (
+            {filtered.map((vehicle) => (
             <VehicleCard
-            key={vehicle.id}
-            vehicle={vehicle}
-            ownerName={mockOwners[vehicle.clientId]?.fullName}
-            detailPath={`/admin/vehiculos/${vehicle.id}`}
+                key={vehicle.id}
+                vehicle={vehicle}
+                ownerName={mockOwners[vehicle.clientId]?.fullName}
+                detailPath={`/admin/vehiculos/${vehicle.id}`}
             />
-        ))}
-        {filtered.length === 0 && (
+            ))}
+            {filtered.length === 0 && (
             <p className="text-text-muted col-span-full text-center py-10">
-            No se encontraron vehículos para "{search}".
+                No se encontraron vehículos para "{search}".
             </p>
-        )}
+            )}
         </div>
+        )}
     </div>
     );
 }

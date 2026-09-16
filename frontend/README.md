@@ -22,9 +22,12 @@ y arquitectura hexagonal.
 
 ### Tarea 2 — Interfaz de inicio de sesión
 - Vista de login con formulario validado con **React Hook Form + Zod**.
-- Manejo de estados de carga y errores.
-- Integrado con el store de autenticación (**Zustand**) y el cliente HTTP
-  (**Axios**): envía `POST /auth/login`, guarda el token JWT y redirige según rol.
+- Manejo de estados de carga y errores (mensajes de error desde la API).
+- Directamente conectado a la **API Gateway**:
+  - Adaptador `AuthService` (`infrastructure/api`) que implementa el puerto `AuthPort`.
+  - Envía `POST /auth/login` a la Gateway (por defecto `http://localhost:8000/api`),
+    guarda el JWT y redirige según el rol del usuario: admin → `/admin`,
+    cliente → `/client`, mecánico → `/mechanic`.
 - Cierre de sesión desde el panel de administrador.
 
 ### Extras
@@ -43,9 +46,8 @@ y arquitectura hexagonal.
 | `/admin/ordenes`, `/clientes`, `/vehiculos`, `/inventario`, `/distribuidores` | Secciones | Placeholder "Próximamente" |
 | `/client`, `/mechanic` | Portales | Placeholder "Próximamente" |
 
-Nota: el login realiza la llamada real a `POST /auth/login` del backend
-(pendiente de desplegar los microservicios). Si el backend no está disponible,
-se muestra el error de credenciales.
+Nota: el login consume la **API Gateway** (`POST /auth/login`). Si ni la Gateway ni
+el `auth-service` están desplegados, se muestra el error de credenciales.
 
 ## Cómo ejecutar el proyecto localmente
 

@@ -3,21 +3,30 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Mail, Lock, Eye, EyeOff, Settings, Wrench } from 'lucide-react';
+import axios from 'axios';
+import { Mail, Lock, Eye, EyeOff, Settings, Wrench, AlertCircle } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import type { UserRole } from '@/domain/entities/User';
 
 const loginSchema = z.object({
   email: z.string().email('Ingrese un correo válido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
 });
 
+const homeByRole: Record<UserRole, string> = {
+  administrador: '/admin',
+  cliente: '/client',
+  mecanico: '/mechanic',
+};
+
 type LoginForm = z.infer<typeof loginSchema>;
 
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
   const { login, isLoading } = useAuthStore();
 
@@ -29,12 +38,21 @@ export function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  const getErrorMessage = (error: unknown) => {
+    if (axios.isAxiosError(error)) {
+      const detail = error.response?.data?.detail;
+      if (typeof detail === 'string') return detail;
+    }
+    return 'Credenciales incorrectas';
+  };
+
   const onSubmit = async (data: LoginForm) => {
+    setErrorMessage(null);
     try {
-      await login(data.email, data.password);
-      navigate('/client');
-    } catch {
-      alert('Credenciales incorrectas');
+      const user = await login(data.email, data.password);
+      navigate(homeByRole[user.role]);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
     }
   };
 
@@ -115,6 +133,13 @@ export function LoginPage() {
               >
                 Ingresar a mi cuenta
               </Button>
+
+              {errorMessage && (
+                <div className="flex items-center justify-center gap-2 mt-4 text-status-red text-sm bg-status-red/10 border border-status-red/40 rounded-lg px-4 py-3">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {errorMessage}
+                </div>
+              )}
             </form>
           </div>
         </GlassCard>

@@ -1,13 +1,11 @@
+export type UserRole = 'cliente' | 'mecanico' | 'administrador';
+
 export interface User {
   id: string;
   email: string;
-  name: string;
-  roles: Role[];
-}
-
-export interface Role {
-  id: string;
-  name: 'cliente' | 'mecanico' | 'administrador';
+  full_name: string;
+  role: UserRole;
+  is_active: boolean;
 }
 
 export interface LoginRequest {

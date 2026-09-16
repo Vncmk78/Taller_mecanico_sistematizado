@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  presupuestos-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: presupuestos_user
+      POSTGRES_PASSWORD: presupuestos_pass
+      POSTGRES_DB: presupuestos_service_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - presupuestos_db_data:/var/lib/postgresql/data
+
+  presupuestos-service:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://presupuestos_user:presupuestos_pass@presupuestos-db:5432/presupuestos_service_db
+    ports:
+      - "8003:8003"
+    depends_on:
+      - presupuestos-db
+
+volumes:
+  presupuestos_db_data:

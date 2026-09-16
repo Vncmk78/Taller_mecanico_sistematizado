@@ -1,11 +1,13 @@
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardList } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
-import { mockOwners, mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
+import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { mockOwners } from '@/infrastructure/mocks/vehicles.mock';
 
 export function AdminVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const vehicle = mockVehicles.find((v) => v.id === id);
+    const vehicles = useVehicleStore((s) => s.vehicles);
+    const vehicle = vehicles.find((v) => v.id === id);
 
     if (!vehicle) {
     return (

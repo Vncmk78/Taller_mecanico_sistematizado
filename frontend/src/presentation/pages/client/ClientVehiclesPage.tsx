@@ -1,10 +1,18 @@
-import { Link } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { CheckCircle2, Plus } from 'lucide-react';
 import { VehicleCard } from '@/presentation/components/vehicles/VehicleCard';
-import { CURRENT_CLIENT_ID, mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
 
 export function ClientVehiclesPage() {
-    const myVehicles = mockVehicles.filter((v) => v.clientId === CURRENT_CLIENT_ID);
+    const location = useLocation();
+    const user = useAuthStore((s) => s.user);
+    const vehicles = useVehicleStore((s) => s.vehicles);
+
+    const clientId = user?.id ?? CURRENT_CLIENT_ID;
+    const myVehicles = vehicles.filter((v) => v.clientId === clientId);
+    const justRegistered = Boolean((location.state as { justRegistered?: boolean } | null)?.justRegistered);
 
     return (
     <div className="animate-fade-in">
@@ -20,6 +28,13 @@ export function ClientVehiclesPage() {
             <Plus className="w-4 h-4" /> Añadir vehículo
         </Link>
         </div>
+
+        {justRegistered && (
+        <div className="flex items-center gap-2 mb-6 text-status-green text-sm bg-status-green/10 border border-status-green/40 rounded-lg px-4 py-3">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            Vehículo registrado con éxito.
+        </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {myVehicles.map((vehicle) => (

@@ -1,18 +1,20 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { VehicleCard } from '@/presentation/components/vehicles/VehicleCard';
-import { mockOwners, mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
+import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { mockOwners } from '@/infrastructure/mocks/vehicles.mock';
 
 export function AdminVehiclesPage() {
     const [search, setSearch] = useState('');
+    const vehicles = useVehicleStore((s) => s.vehicles);
 
     const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return mockVehicles;
-    return mockVehicles.filter((v) =>
+    if (!term) return vehicles;
+    return vehicles.filter((v) =>
         [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term))
     );
-    }, [search]);
+    }, [vehicles, search]);
 
     return (
     <div className="animate-fade-in">

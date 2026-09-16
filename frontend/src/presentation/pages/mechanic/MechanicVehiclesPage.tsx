@@ -1,8 +1,10 @@
+import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { VehicleCard } from '@/presentation/components/vehicles/VehicleCard';
-import { mockAssignedVehicleIds, mockOwners, mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
+import { mockAssignedVehicleIds, mockOwners } from '@/infrastructure/mocks/vehicles.mock';
 
 export function MechanicVehiclesPage() {
-    const assignedVehicles = mockVehicles.filter((v) => mockAssignedVehicleIds.includes(v.id));
+    const vehicles = useVehicleStore((s) => s.vehicles);
+    const assignedVehicles = vehicles.filter((v) => mockAssignedVehicleIds.includes(v.id));
 
     return (
     <div className="animate-fade-in p-10">

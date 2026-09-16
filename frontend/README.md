@@ -36,15 +36,27 @@ y arquitectura hexagonal.
 - Skills de desarrollo (`src/skills/`) para el flujo de trabajo asistido
   (excluidas del control de versiones).
 
+### Tarea 3 — Implementar gestión de sesión, token y rutas protegidas
+- **Restauración de sesión**: al abrir la app se valida el token guardado con
+  `GET /auth/me` y se carga el usuario (`restoreSession`). Token inválido → se
+  limpia la sesión.
+- **Rutas protegidas**: componente `ProtectedRoute` que redirige a `/login`
+  si no hay sesión válida y valida el rol (admin → `/admin/*`, cliente →
+  `/client`, mecánico → `/mechanic`).
+- **Redirección de retorno**: tras iniciar sesión vuelve a la ruta que se
+  intentaba abrir (mantiene el `state.from`).
+- Pantalla de carga mientras se verifica la sesión.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 | Ruta | Vista | Estado |
 | --- | --- | --- |
 | `/` | Landing (prototipo v1) | Funcional |
 | `/login` | Inicio de sesión | Funcional |
-| `/admin` | Dashboard del administrador | Funcional (datos de ejemplo) |
+| `/admin` | Dashboard del administrador | Funcional (datos de ejemplo, solo rol administrador) |
 | `/admin/ordenes`, `/clientes`, `/vehiculos`, `/inventario`, `/distribuidores` | Secciones | Placeholder "Próximamente" |
-| `/client`, `/mechanic` | Portales | Placeholder "Próximamente" |
+| `/client` | Portal Cliente | Placeholder (solo rol cliente) |
+| `/mechanic` | Portal Mecánico | Placeholder (solo rol mecánico) |
 
 Nota: el login consume la **API Gateway** (`POST /auth/login`). Si ni la Gateway ni
 el `auth-service` están desplegados, se muestra el error de credenciales.

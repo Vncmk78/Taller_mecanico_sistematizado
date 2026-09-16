@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,18 +9,12 @@ import { Button } from '@/presentation/components/ui/Button';
 import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
-import type { UserRole } from '@/domain/entities/User';
+import { getHomePath } from '@/presentation/routes/rolePaths';
 
 const loginSchema = z.object({
   email: z.string().email('Ingrese un correo válido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
 });
-
-const homeByRole: Record<UserRole, string> = {
-  administrador: '/admin',
-  cliente: '/client',
-  mecanico: '/mechanic',
-};
 
 type LoginForm = z.infer<typeof loginSchema>;
 
@@ -28,7 +22,10 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, isLoading } = useAuthStore();
+
+  const from = (location.state as { from?: string } | null)?.from;
 
   const {
     register,
@@ -50,7 +47,7 @@ export function LoginPage() {
     setErrorMessage(null);
     try {
       const user = await login(data.email, data.password);
-      navigate(homeByRole[user.role]);
+      navigate(from ?? getHomePath(user.role), { replace: true });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }

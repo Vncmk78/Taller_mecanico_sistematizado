@@ -3,6 +3,7 @@ import { LoginPage } from '@/presentation/pages/auth/LoginPage';
 import { HomePage } from '@/presentation/pages/HomePage';
 import { AdminLayout } from '@/presentation/components/layout/AdminLayout';
 import { AdminDashboardPage } from '@/presentation/pages/admin/AdminDashboardPage';
+import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
 
 export function AppRoutes() {
   return (
@@ -10,7 +11,14 @@ export function AppRoutes() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
 
-      <Route path="/admin" element={<AdminLayout />}>
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute allowedRoles={['administrador']}>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<AdminDashboardPage />} />
         <Route path="ordenes" element={<div className="p-10 text-text-muted">Órdenes - Próximamente</div>} />
         <Route path="clientes" element={<div className="p-10 text-text-muted">Clientes - Próximamente</div>} />
@@ -19,8 +27,22 @@ export function AppRoutes() {
         <Route path="distribuidores" element={<div className="p-10 text-text-muted">Distribuidores - Próximamente</div>} />
       </Route>
 
-      <Route path="/client" element={<div className="p-10 text-text-muted">Portal Cliente - Próximamente</div>} />
-      <Route path="/mechanic" element={<div className="p-10 text-text-muted">Portal Mecánico - Próximamente</div>} />
+      <Route
+        path="/client"
+        element={
+          <ProtectedRoute allowedRoles={['cliente']}>
+            <div className="p-10 text-text-muted">Portal Cliente - Próximamente</div>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mechanic"
+        element={
+          <ProtectedRoute allowedRoles={['mecanico']}>
+            <div className="p-10 text-text-muted">Portal Mecánico - Próximamente</div>
+          </ProtectedRoute>
+        }
+      />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -1,4 +1,4 @@
-"""Pruebas HTTP de INT-29: registro y consulta de vehículos propios."""
+"""Pruebas HTTP de registro, ownership y actualización de vehículos."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 from sqlalchemy import create_engine, func, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -541,6 +541,131 @@ def test_patch_multirol_con_cliente_es_permitido(
 
     assert respuesta.status_code == 200
     assert respuesta.json()["kilometraje"] == 65000
+
+
+def test_modelo_garantiza_asociacion_y_patente_unica():
+    columnas = Vehiculo.__table__.c
+    destinos_fk = {
+        llave.target_fullname for llave in columnas.cliente_id.foreign_keys
+    }
+
+    assert columnas.cliente_id.nullable is False
+    assert destinos_fk == {"cliente.cliente_id"}
+    assert columnas.patente.nullable is False
+    assert columnas.patente.unique is True
+    assert columnas.marca.nullable is False
+    assert columnas.modelo.nullable is False
+    assert columnas.anio.nullable is True
+    assert columnas.kilometraje.nullable is True
+
+
+def test_cliente_no_puede_crear_vehiculo_para_otro_cliente(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+    cliente_b = _crear_cliente(db_ms2, usuario_id=2)
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json={**DATOS_VEHICULO, "cliente_id": cliente_b.cliente_id},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 422
+    assert db_ms2.scalar(select(func.count()).select_from(Vehiculo)) == 0
+
+
+@pytest.mark.parametrize("campo", ["patente", "marca", "modelo"])
+def test_post_rechaza_campo_obligatorio_ausente(
+    api_ms2: TestClient,
+    db_ms2: Session,
+    campo: str,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+    body = DATOS_VEHICULO.copy()
+    body.pop(campo)
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json=body,
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "campo,valor",
+    [
+        ("patente", ""),
+        ("marca", "   "),
+        ("modelo", ""),
+    ],
+)
+def test_post_rechaza_campo_obligatorio_vacio(
+    api_ms2: TestClient,
+    db_ms2: Session,
+    campo: str,
+    valor: str,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json={**DATOS_VEHICULO, campo: valor},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 422
+
+
+def test_post_rechaza_patente_que_supera_longitud_bd(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json={**DATOS_VEHICULO, "patente": "A" * 11},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 422
+
+
+def test_post_permite_omitir_anio_y_kilometraje(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+    body = {
+        "patente": DATOS_VEHICULO["patente"],
+        "marca": DATOS_VEHICULO["marca"],
+        "modelo": DATOS_VEHICULO["modelo"],
+    }
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json=body,
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 201
+    assert respuesta.json()["anio"] is None
+    assert respuesta.json()["kilometraje"] is None
+
+
+def test_base_de_datos_rechaza_patente_duplicada_entre_clientes(db_ms2: Session):
+    cliente_a = _crear_cliente(db_ms2, usuario_id=1)
+    cliente_b = _crear_cliente(db_ms2, usuario_id=2)
+    _crear_vehiculo(db_ms2, cliente_a)
+    db_ms2.add(Vehiculo(cliente_id=cliente_b.cliente_id, **DATOS_VEHICULO))
+
+    with pytest.raises(IntegrityError):
+        db_ms2.commit()
+    db_ms2.rollback()
 
 
 def _crear_cliente(db: Session, usuario_id: int) -> Cliente:

@@ -10,8 +10,11 @@ from services.ms2_taller.services.clientes import (
 from services.ms2_taller.services.vehiculos import (
     PatenteDuplicadaError,
     PersistenciaVehiculoError,
+    VehiculoNoEncontradoError,
+    actualizar_vehiculo_propio,
     crear_vehiculo,
     listar_vehiculos,
+    obtener_vehiculo_propio,
 )
 
 __all__ = [
@@ -19,9 +22,12 @@ __all__ = [
     "PatenteDuplicadaError",
     "PersistenciaClienteError",
     "PersistenciaVehiculoError",
+    "VehiculoNoEncontradoError",
+    "actualizar_vehiculo_propio",
     "asegurar_cliente",
     "buscar_cliente_por_usuario_id",
     "crear_cliente",
     "crear_vehiculo",
     "listar_vehiculos",
+    "obtener_vehiculo_propio",
 ]

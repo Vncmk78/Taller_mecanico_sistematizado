@@ -1,4 +1,4 @@
-"""Lógica inicial de registro y consulta de vehículos (INT-29).
+"""Lógica de registro, consulta y actualización de vehículos.
 
 Este módulo no conoce JWT, headers ni FastAPI. Recibe un ``Cliente`` que ya
 fue resuelto internamente y concentra las operaciones de persistencia para que
@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from services.ms2_taller.models.cliente import Cliente
 from services.ms2_taller.models.vehiculo import Vehiculo
-from services.ms2_taller.schemas.vehiculo import VehiculoCrear
+from services.ms2_taller.schemas.vehiculo import VehiculoActualizar, VehiculoCrear
 
 _RESTRICCION_PATENTE_UNICA = "uq_vehiculo_patente"
 
@@ -24,6 +24,10 @@ class PatenteDuplicadaError(Exception):
 
 class PersistenciaVehiculoError(Exception):
     """La operación de persistencia no pudo completarse de forma segura."""
+
+
+class VehiculoNoEncontradoError(Exception):
+    """No existe un vehículo propio que coincida con el identificador."""
 
 
 def crear_vehiculo(
@@ -86,6 +90,55 @@ def listar_vehiculos(db: Session, cliente: Cliente) -> list[Vehiculo]:
         db.rollback()
         raise PersistenciaVehiculoError(
             "No fue posible consultar los vehículos"
+        ) from exc
+
+
+def obtener_vehiculo_propio(
+    db: Session,
+    cliente: Cliente,
+    vehiculo_id: int,
+) -> Vehiculo:
+    """Obtiene un vehículo solo si pertenece al Cliente recibido."""
+
+    try:
+        vehiculo = db.scalar(
+            select(Vehiculo).where(
+                Vehiculo.vehiculo_id == vehiculo_id,
+                Vehiculo.cliente_id == cliente.cliente_id,
+            )
+        )
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaVehiculoError(
+            "No fue posible consultar el vehículo"
+        ) from exc
+
+    if vehiculo is None:
+        raise VehiculoNoEncontradoError("Vehículo no encontrado")
+    return vehiculo
+
+
+def actualizar_vehiculo_propio(
+    db: Session,
+    cliente: Cliente,
+    vehiculo_id: int,
+    datos: VehiculoActualizar,
+) -> Vehiculo:
+    """Actualiza únicamente los campos enviados de un vehículo propio."""
+
+    vehiculo = obtener_vehiculo_propio(db, cliente, vehiculo_id)
+    try:
+        for campo, valor in datos.model_dump(exclude_unset=True).items():
+            setattr(vehiculo, campo, valor)
+
+        db.flush()
+        db.refresh(vehiculo)
+        db.commit()
+        return vehiculo
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaVehiculoError(
+            "No fue posible actualizar el vehículo"
         ) from exc
 
 

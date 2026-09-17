@@ -277,12 +277,287 @@ def test_openapi_declara_seguridad_bearer(api_ms2: TestClient):
     assert {"HTTPBearer": []} in esquema["paths"]["/vehiculos"]["get"]["security"]
 
 
+def test_get_individual_devuelve_vehiculo_propio(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+
+    respuesta = api_ms2.get(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["vehiculo_id"] == vehiculo.vehiculo_id
+
+
+def test_get_individual_inexistente_devuelve_404(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+
+    respuesta = api_ms2.get(
+        "/vehiculos/999",
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Vehículo no encontrado"}
+
+
+def test_get_individual_ajeno_devuelve_el_mismo_404(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+    cliente_b = _crear_cliente(db_ms2, usuario_id=2)
+    vehiculo_b = _crear_vehiculo(db_ms2, cliente_b)
+
+    respuesta = api_ms2.get(
+        f"/vehiculos/{vehiculo_b.vehiculo_id}",
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Vehículo no encontrado"}
+
+
+def test_get_individual_sin_token_devuelve_401(api_ms2: TestClient):
+    respuesta = api_ms2.get("/vehiculos/1")
+
+    assert respuesta.status_code == 401
+
+
+def test_get_individual_sin_rol_cliente_devuelve_403(api_ms2: TestClient):
+    respuesta = api_ms2.get(
+        "/vehiculos/1",
+        headers=_headers_para(1, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 403
+
+
+def test_patch_actualiza_un_solo_campo(api_ms2: TestClient, db_ms2: Session):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        json={"kilometraje": 65000},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["kilometraje"] == 65000
+    assert db_ms2.get(Vehiculo, vehiculo.vehiculo_id).kilometraje == 65000
+
+
+def test_patch_actualiza_varios_campos(api_ms2: TestClient, db_ms2: Session):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        json={
+            "marca": "  Honda  ",
+            "modelo": "Civic",
+            "anio": 2023,
+            "kilometraje": 12000,
+        },
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == {
+        "vehiculo_id": vehiculo.vehiculo_id,
+        "patente": DATOS_VEHICULO["patente"],
+        "marca": "Honda",
+        "modelo": "Civic",
+        "anio": 2023,
+        "kilometraje": 12000,
+    }
+
+
+def test_patch_conserva_campos_omitidos(api_ms2: TestClient, db_ms2: Session):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        json={"kilometraje": 65000},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["marca"] == DATOS_VEHICULO["marca"]
+    assert respuesta.json()["modelo"] == DATOS_VEHICULO["modelo"]
+    assert respuesta.json()["anio"] == DATOS_VEHICULO["anio"]
+    assert respuesta.json()["patente"] == DATOS_VEHICULO["patente"]
+
+
+def test_patch_body_vacio_devuelve_422(api_ms2: TestClient, db_ms2: Session):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        json={},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "campo,valor",
+    [
+        ("patente", "OTRA99"),
+        ("cliente_id", 2),
+        ("vehiculo_id", 999),
+        ("usuario_id", 2),
+    ],
+)
+def test_patch_rechaza_campos_no_modificables(
+    api_ms2: TestClient,
+    db_ms2: Session,
+    campo: str,
+    valor: object,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        json={campo: valor},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 422
+
+
+def test_patch_inexistente_devuelve_404(api_ms2: TestClient, db_ms2: Session):
+    _crear_cliente(db_ms2, usuario_id=1)
+
+    respuesta = api_ms2.patch(
+        "/vehiculos/999",
+        json={"kilometraje": 65000},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Vehículo no encontrado"}
+
+
+def test_patch_ajeno_devuelve_el_mismo_404(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+    cliente_b = _crear_cliente(db_ms2, usuario_id=2)
+    vehiculo_b = _crear_vehiculo(db_ms2, cliente_b)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo_b.vehiculo_id}",
+        json={"kilometraje": 65000},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Vehículo no encontrado"}
+
+
+def test_otro_cliente_no_puede_alterar_el_vehiculo(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+    cliente_b = _crear_cliente(db_ms2, usuario_id=2)
+    vehiculo_b = _crear_vehiculo(db_ms2, cliente_b)
+    kilometraje_original = vehiculo_b.kilometraje
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo_b.vehiculo_id}",
+        json={"kilometraje": 65000},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 404
+    db_ms2.refresh(vehiculo_b)
+    assert vehiculo_b.kilometraje == kilometraje_original
+
+
+def test_patch_error_de_persistencia_hace_rollback(
+    api_ms2: TestClient,
+    db_ms2: Session,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+    marca_original = vehiculo.marca
+    rollback_real = db_ms2.rollback
+    commit_real = db_ms2.commit
+    rollbacks = 0
+
+    def rollback_controlado() -> None:
+        nonlocal rollbacks
+        rollbacks += 1
+        rollback_real()
+
+    def fallar_commit() -> None:
+        raise SQLAlchemyError("fallo simulado")
+
+    monkeypatch.setattr(db_ms2, "rollback", rollback_controlado)
+    monkeypatch.setattr(db_ms2, "commit", fallar_commit)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        json={"marca": "Honda"},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 500
+    assert respuesta.json() == {"detail": "No fue posible actualizar el vehículo"}
+    assert rollbacks == 1
+    monkeypatch.setattr(db_ms2, "commit", commit_real)
+    db_ms2.expire_all()
+    assert db_ms2.get(Vehiculo, vehiculo.vehiculo_id).marca == marca_original
+
+
+def test_patch_multirol_con_cliente_es_permitido(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        json={"kilometraje": 65000},
+        headers=_headers_para(1, NombreRol.ADMINISTRADOR, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["kilometraje"] == 65000
+
+
 def _crear_cliente(db: Session, usuario_id: int) -> Cliente:
     cliente = Cliente(usuario_id=usuario_id)
     db.add(cliente)
     db.commit()
     db.refresh(cliente)
     return cliente
+
+
+def _crear_vehiculo(db: Session, cliente: Cliente, **cambios: object) -> Vehiculo:
+    datos = {**DATOS_VEHICULO, **cambios}
+    vehiculo = Vehiculo(cliente_id=cliente.cliente_id, **datos)
+    db.add(vehiculo)
+    db.commit()
+    db.refresh(vehiculo)
+    return vehiculo
 
 
 def _headers_para(usuario_id: int, *roles: NombreRol) -> dict[str, str]:

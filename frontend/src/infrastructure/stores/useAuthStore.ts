@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '@/domain/entities/User';
+import { getToken, removeToken, setToken } from '../config/tokenStorage';
 import { authService } from '../api/AuthService';
 
 interface AuthState {
@@ -18,8 +19,8 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  token: localStorage.getItem('token'),
-  isAuthenticated: !!localStorage.getItem('token'),
+  token: getToken(),
+  isAuthenticated: getToken() !== null,
   isLoading: false,
   isInitializing: false,
 
@@ -27,7 +28,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const auth = await authService.login({ email, password });
-      localStorage.setItem('token', auth.access_token);
+      setToken(auth.access_token);
       set({
         user: auth.user,
         token: auth.access_token,
@@ -42,7 +43,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    localStorage.removeItem('token');
+    removeToken();
     set({ user: null, token: null, isAuthenticated: false });
   },
 
@@ -68,7 +69,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = await authService.getProfile();
       set({ user, isAuthenticated: true, isInitializing: false });
     } catch {
-      localStorage.removeItem('token');
+      removeToken();
       set({
         user: null,
         token: null,
@@ -79,7 +80,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   clearSession: () => {
-    localStorage.removeItem('token');
+    removeToken();
     set({ user: null, token: null, isAuthenticated: false });
   },
 }));

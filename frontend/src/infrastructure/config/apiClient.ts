@@ -1,4 +1,5 @@
 import axios, { type AxiosError } from 'axios';
+import { getToken } from '@/infrastructure/config/tokenStorage';
 
 type NetworkHandler = (error: AxiosError) => void;
 
@@ -21,7 +22,7 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

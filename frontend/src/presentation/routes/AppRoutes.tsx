@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { LoginPage } from '@/presentation/pages/auth/LoginPage';
 import { HomePage } from '@/presentation/pages/HomePage';
+import { AccessDeniedPage } from '@/presentation/pages/errors/AccessDeniedPage';
 import { AdminLayout } from '@/presentation/components/layout/AdminLayout';
 import { AdminDashboardPage } from '@/presentation/pages/admin/AdminDashboardPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
@@ -10,6 +11,7 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/acceso-denegado" element={<AccessDeniedPage />} />
 
       <Route
         path="/admin"

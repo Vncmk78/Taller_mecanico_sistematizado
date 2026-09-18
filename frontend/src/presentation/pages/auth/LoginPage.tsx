@@ -8,7 +8,7 @@ import { Mail, Lock, Eye, EyeOff, Settings, Wrench, AlertCircle } from 'lucide-r
 import { Button } from '@/presentation/components/ui/Button';
 import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
-import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useAuth } from '@/presentation/components/auth/authContext';
 import { getHomePath } from '@/presentation/routes/rolePaths';
 
 const loginSchema = z.object({
@@ -23,7 +23,7 @@ export function LoginPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, isLoading } = useAuthStore();
+  const { login, isLoading } = useAuth();
 
   const from = (location.state as { from?: string } | null)?.from;
 

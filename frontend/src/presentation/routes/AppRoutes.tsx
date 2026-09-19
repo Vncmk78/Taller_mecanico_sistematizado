@@ -3,6 +3,8 @@ import { LoginPage } from '@/presentation/pages/auth/LoginPage';
 import { HomePage } from '@/presentation/pages/HomePage';
 import { AccessDeniedPage } from '@/presentation/pages/errors/AccessDeniedPage';
 import { AdminLayout } from '@/presentation/components/layout/AdminLayout';
+import { ClientLayout } from '@/presentation/components/layout/ClientLayout';
+import { MechanicLayout } from '@/presentation/components/layout/MechanicLayout';
 import { AdminDashboardPage } from '@/presentation/pages/admin/AdminDashboardPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
 
@@ -33,18 +35,44 @@ export function AppRoutes() {
         path="/client"
         element={
           <ProtectedRoute allowedRoles={['cliente']}>
-            <div className="p-10 text-text-muted">Portal Cliente - Próximamente</div>
+            <ClientLayout />
           </ProtectedRoute>
         }
-      />
+      >
+        <Route
+          index
+          element={
+            <div className="p-10 text-text-muted animate-fade-in">
+              <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Mi Portal</h2>
+              <p>Bienvenido a tu espacio. Pronto podrás consultar el estado de tus servicios.</p>
+            </div>
+          }
+        />
+        <Route path="vehiculos" element={<div className="p-10 text-text-muted">Mis Vehículos - Próximamente</div>} />
+        <Route path="servicios" element={<div className="p-10 text-text-muted">Estado del Servicio - Próximamente</div>} />
+        <Route path="presupuestos" element={<div className="p-10 text-text-muted">Presupuestos - Próximamente</div>} />
+      </Route>
       <Route
         path="/mechanic"
         element={
           <ProtectedRoute allowedRoles={['mecanico']}>
-            <div className="p-10 text-text-muted">Portal Mecánico - Próximamente</div>
+            <MechanicLayout />
           </ProtectedRoute>
         }
-      />
+      >
+        <Route
+          index
+          element={
+            <div className="p-10 text-text-muted animate-fade-in">
+              <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Mi Panel</h2>
+              <p>Bienvenido. Aquí gestionarás tus órdenes asignadas y su estado.</p>
+            </div>
+          }
+        />
+        <Route path="ordenes" element={<div className="p-10 text-text-muted">Mis Órdenes - Próximamente</div>} />
+        <Route path="estados" element={<div className="p-10 text-text-muted">Actualizar Estados - Próximamente</div>} />
+        <Route path="historial" element={<div className="p-10 text-text-muted">Actividades - Próximamente</div>} />
+      </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

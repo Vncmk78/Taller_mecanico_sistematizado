@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Integer, String
+from sqlalchemy import CheckConstraint, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from services.ms2_taller.db import Base
@@ -29,6 +29,12 @@ if TYPE_CHECKING:
 
 class Cliente(Base):
     __tablename__ = "cliente"
+
+    # usuario_id es una referencia lógica a MS1: debe ser un id positivo válido
+    # (INT-15, Semana 2). La unicidad ya la da unique=True en la columna.
+    __table_args__ = (
+        CheckConstraint("usuario_id > 0", name="usuario_id_positivo"),
+    )
 
     cliente_id: Mapped[int] = mapped_column(primary_key=True)
     # REF lógica a Usuario (MS1). Único: 1 usuario ↔ 1 perfil de cliente.

@@ -20,12 +20,20 @@ import { MechanicOrdersPage } from '@/presentation/pages/mechanic/MechanicOrders
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
 import { MechanicHistoryPage } from '@/presentation/pages/mechanic/MechanicHistoryPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
+import { PublicOnlyRoute } from '@/presentation/components/auth/PublicOnlyRoute';
 
 export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/login"
+        element={
+          <PublicOnlyRoute>
+            <LoginPage />
+          </PublicOnlyRoute>
+        }
+      />
       <Route path="/acceso-denegado" element={<AccessDeniedPage />} />
 
       <Route

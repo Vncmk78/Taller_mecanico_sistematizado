@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from gateway.config import settings
+from gateway.routers import health
 
 app = FastAPI(title="SGTM — API Gateway", version="0.1.0")
 
@@ -29,6 +30,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Endpoints propios de la Gateway (índice y healthcheck).
+app.include_router(health.router)
 
 # Primer segmento de la ruta -> URL base del microservicio destino.
 RUTAS: dict[str, str] = {
@@ -61,33 +65,6 @@ _CABECERAS_PROHIBIDAS = {
     "trailers",
     "upgrade",
 }
-
-
-@app.get("/", tags=["info"])
-async def indice() -> dict[str, object]:
-    """Descripción de la Gateway y sus rutas."""
-    return {
-        "servicio": "SGTM — API Gateway",
-        "estado": "operativo",
-        "microservicios": {
-            "ms1_auth": settings.MS1_URL,
-            "ms2_taller": settings.MS2_URL,
-            "ms3_presupuestos": settings.MS3_URL,
-            "ms4_evidencias": settings.MS4_URL,
-        },
-        "ejemplos": [
-            "/api/health",
-            "/api/auth/login",
-            "/api/auth/me",
-            "/api/vehiculos",
-        ],
-    }
-
-
-@app.get("/api/health", tags=["health"])
-async def health() -> dict[str, str]:
-    """El proceso de la Gateway está vivo."""
-    return {"status": "ok", "servicio": settings.SERVICE_NAME}
 
 
 @app.api_route(

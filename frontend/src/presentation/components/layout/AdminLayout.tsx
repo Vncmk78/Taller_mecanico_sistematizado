@@ -12,7 +12,7 @@ import {
   Search,
   Bell,
 } from 'lucide-react';
-import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useAuth } from '@/presentation/components/auth/authContext';
 
 const navItems = [
   { to: '/admin', icon: <LayoutDashboard className="w-5 h-5" />, label: 'Panel de Control', end: true },
@@ -28,7 +28,7 @@ const catalogItems = [
 
 export function AdminLayout() {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, logout } = useAuth();
 
   const handleLogout = () => {
     logout();

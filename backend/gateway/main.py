@@ -12,11 +12,23 @@ from __future__ import annotations
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from gateway.config import settings
 
 app = FastAPI(title="SGTM — API Gateway", version="0.1.0")
+
+# CORS se resuelve en la Gateway (punto único de entrada), no en los
+# microservicios: los navegadores exigen estas cabeceras para consumir la API
+# desde otro origen (frontend web, Expo Web, herramientas de prueba).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Primer segmento de la ruta -> URL base del microservicio destino.
 RUTAS: dict[str, str] = {

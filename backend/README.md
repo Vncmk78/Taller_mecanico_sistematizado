@@ -11,6 +11,9 @@ de API (Sistematización final §1.2 y §8).
 
 ```
 backend/
+├── gateway/                 API Gateway: único punto de entrada del backend
+│   ├── config.py            URLs de los microservicios (prefijo GATEWAY_)
+│   └── main.py              FastAPI proxy montado en /api
 ├── shared/                  Código común: configuración y fábrica de persistencia
 │   ├── config.py            ServiceSettings (DATABASE_URL, DB_ECHO, pool)
 │   └── db.py                crear_base / crear_engine / crear_session_factory
@@ -78,6 +81,30 @@ Cada servicio publica `GET /health` (el proceso responde) y `GET /health/db`
 
 Los comandos se ejecutan **desde `backend/`**, porque los imports son
 `services.<paquete>...` y `shared...`.
+
+## API Gateway
+
+El frontend (React) y la app móvil no llaman directo a los microservicios: lo
+hacen a la **Gateway**, que expone el mismo camino `/api/*` y reenvía a cada
+microservicio según el primer segmento de la ruta (sin conocer reglas de
+negocio, preservando el aislamiento entre bases).
+
+```bash
+uvicorn gateway.main:app --reload --port 8000
+```
+
+Tabla de enrutamiento (primer segmento → microservicio):
+
+| Segmento                  | Microservicio |
+| ------------------------- | ------------- |
+| `/api/auth/*`             | MS1 (auth)    |
+| `/api/vehiculos/*`, `/api/ordenes/*`, `/api/clientes/*`, `/api/mecanicos/*` | MS2 (taller) |
+| `/api/presupuestos/*`, `/api/repuestos/*`, `/api/proveedores/*`, `/api/inventario/*` | MS3 (presupuestos) |
+| `/api/evidencias/*`       | MS4 (multimedia) |
+
+Las URLs de los servicios se configuran en `.env` con el prefijo `GATEWAY_`
+(`GATEWAY_MS1_URL=...`, etc.); por defecto apuntan a `localhost:8001-8004`.
+Salud: `GET /api/health` responde sin depender de las bases.
 
 ## Cómo usar la persistencia en un endpoint
 

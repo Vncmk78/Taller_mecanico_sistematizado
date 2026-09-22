@@ -3,7 +3,11 @@
   "buildCommand": "cd frontend && npm install && npm run build",
   "installCommand": "echo skip-root-install",
   "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/index.py": { "includeFiles": "backend/**" }
+  },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

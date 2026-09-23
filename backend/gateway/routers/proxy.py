@@ -9,9 +9,15 @@ from __future__ import annotations
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 
 from gateway.config import settings
+from gateway.errores import (
+    MENSAJE_SERVICIO_CAIDO,
+    MICROSERVICIO_INALCANZABLE,
+    RUTA_NO_ENCONTRADA,
+    respuesta_error,
+)
 from gateway.rutas import resolver_microservicio
 
 router = APIRouter()
@@ -40,9 +46,11 @@ async def proxy(ruta: str, request: Request) -> Response:
     primer_segmento = ruta.split("/", 1)[0].lower()
     base = resolver_microservicio(ruta)
     if base is None:
-        return JSONResponse(
-            status_code=404,
-            content={"detail": f"No hay microservicio para '/{primer_segmento}'"},
+        return respuesta_error(
+            request,
+            estado=404,
+            codigo=RUTA_NO_ENCONTRADA,
+            detalle=f"No hay microservicio para '/{primer_segmento}'",
         )
 
     destino = f"{base.rstrip('/')}/{ruta}"
@@ -54,6 +62,9 @@ async def proxy(ruta: str, request: Request) -> Response:
         for clave, valor in request.headers.items()
         if clave.lower() not in _CABECERAS_PROHIBIDAS
     }
+    request_id = getattr(request.state, "request_id", None)
+    if request_id:
+        cabeceras["x-request-id"] = request_id
     cuerpo = await request.body()
 
     try:
@@ -64,15 +75,12 @@ async def proxy(ruta: str, request: Request) -> Response:
                 headers=cabeceras,
                 content=cuerpo,
             )
-    except httpx.HTTPError as exc:
-        return JSONResponse(
-            status_code=502,
-            content={
-                "detail": (
-                    f"Microservicio inalcanzable en '{base}' "
-                    f"(error {type(exc).__name__})"
-                )
-            },
+    except httpx.HTTPError:
+        return respuesta_error(
+            request,
+            estado=502,
+            codigo=MICROSERVICIO_INALCANZABLE,
+            detalle=MENSAJE_SERVICIO_CAIDO,
         )
 
     tipo_contenido = respuesta.headers.get("content-type")

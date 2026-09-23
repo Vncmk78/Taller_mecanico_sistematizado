@@ -14,20 +14,29 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from gateway.config import settings
+from gateway.errores import ManejoErroresMiddleware, registrar_manejadores
+from gateway.middleware import RequestIdMiddleware
 from gateway.routers import health, proxy
 
 app = FastAPI(title="SGTM — API Gateway", version="0.1.0")
 
-# CORS se resuelve en la Gateway (punto único de entrada), no en los
-# microservicios: los navegadores exigen estas cabeceras para consumir la API
-# desde otro origen (frontend web, Expo Web, herramientas de prueba).
+# Orden de los middlewares (el último agregado es el más externo):
+# RequestId (más afuera) -> CORS -> ManejoErrores (más adentro).
+# El middleware de errores va por dentro de CORS para que el 500 también salga
+# con Access-Control-Allow-Origin (un handler de Exception correría afuera).
+app.add_middleware(ManejoErroresMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
 )
+app.add_middleware(RequestIdMiddleware)
+
+# Formato común de errores: 404, 405 y errores no controlados (500).
+registrar_manejadores(app)
 
 # Endpoints propios de la Gateway (índice y healthcheck).
 app.include_router(health.router)

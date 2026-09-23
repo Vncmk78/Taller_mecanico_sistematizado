@@ -37,6 +37,7 @@ from services.ms2_taller.models.estado_orden import RECIBIDO
 
 if TYPE_CHECKING:
     from services.ms2_taller.models.estado_orden import EstadoOrden
+    from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
     from services.ms2_taller.models.historial_estado import HistorialEstado
     from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
     from services.ms2_taller.models.vehiculo import Vehiculo
@@ -65,6 +66,13 @@ class OrdenTrabajo(Base):
         CheckConstraint(
             "(devuelto_en is null) = (devuelto_por_id is null)",
             name="devolucion_completa",
+        ),
+        # Auditoría de fechas: ningún hito puede ser anterior a la creación.
+        CheckConstraint(
+            "(fecha_diagnostico is null or fecha_diagnostico >= creado_en) "
+            "and (entregado_en is null or entregado_en >= creado_en) "
+            "and (devuelto_en is null or devuelto_en >= creado_en)",
+            name="fechas_coherentes",
         ),
     )
 
@@ -102,6 +110,14 @@ class OrdenTrabajo(Base):
         nullable=False,
         server_default=func.now(),
     )
+    # Auditoría (Semana 3): última modificación de la fila. El ORM lo renueva
+    # en cada UPDATE (onupdate); la historia detallada está en los historiales.
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
     # --- Diagnóstico ---
     diagnostico_texto: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -134,6 +150,16 @@ class OrdenTrabajo(Base):
         cascade="save-update, merge",
         passive_deletes="all",
         order_by="HistorialEstado.fecha_hora",
+        lazy="selectin",
+    )
+
+    # 1:N con HistorialAsignacion (auditoría de responsables), misma política
+    # que el historial de estados: no se borra.
+    asignaciones: Mapped[list["HistorialAsignacion"]] = relationship(
+        back_populates="orden",
+        cascade="save-update, merge",
+        passive_deletes="all",
+        order_by="HistorialAsignacion.fecha_hora",
         lazy="selectin",
     )
 

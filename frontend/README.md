@@ -49,17 +49,27 @@ y arquitectura hexagonal.
 
 ## ¿Qué puede hacer el sistema en estos momentos?
 
+El mapa completo de rutas está documentado en
+[`docs/mapa-de-rutas.md`](docs/mapa-de-rutas.md).
+
 | Ruta | Vista | Estado |
 | --- | --- | --- |
-| `/` | Landing (prototipo v1) | Funcional |
+| `/` | Landing | Funcional |
 | `/login` | Inicio de sesión | Funcional |
-| `/admin` | Dashboard del administrador | Funcional (datos de ejemplo, solo rol administrador) |
-| `/admin/ordenes`, `/clientes`, `/vehiculos`, `/inventario`, `/distribuidores` | Secciones | Placeholder "Próximamente" |
-| `/client` | Portal Cliente | Placeholder (solo rol cliente) |
-| `/mechanic` | Portal Mecánico | Placeholder (solo rol mecánico) |
+| `/admin` | Dashboard del administrador | Funcional (solo rol administrador) |
+| `/admin/vehiculos` y `/admin/vehiculos/:id` | Catálogo y ficha del vehículo | Funcional |
+| `/admin/ordenes`, `/clientes`, `/inventario`, `/distribuidores` | Secciones admin | Placeholder "Estructura en construcción" |
+| `/client` | Portal Cliente (dashboard) | Funcional (solo rol cliente) |
+| `/client/vehiculos` (+ `/nuevo`, `/:id`) | Mis vehículos y registro | Funcional |
+| `/client/agendar` | Agendar mantención | Provisional "Próximamente" |
+| `/client/servicios`, `/presupuestos` | Secciones cliente | Placeholder |
+| `/mechanic` | Portal Mecánico (dashboard) | Funcional (solo rol mecánico) |
+| `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
+| `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |
 
 Nota: el login consume la **API Gateway** (`POST /auth/login`). Si ni la Gateway ni
-el `auth-service` están desplegados, se muestra el error de credenciales.
+el `auth-service` están desplegados, se muestra el error de credenciales. Las vistas
+de vehículos usan datos mock mientras MS2 no esté disponible.
 
 ## Cómo ejecutar el proyecto localmente
 

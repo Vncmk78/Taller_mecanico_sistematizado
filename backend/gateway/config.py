@@ -32,5 +32,15 @@ class GatewaySettings(BaseSettings):
     # Tiempo máximo de espera a un microservicio antes de responder 504.
     REQUEST_TIMEOUT_SECONDS: float = 30.0
 
+    # Orígenes permitidos por CORS (env: GATEWAY_CORS_ORIGINS, lista separada
+    # por comas). El frontend desplegado y el Vite de desarrollo siempre deben
+    # figurar; sin esto el navegador bloquea el preflight por "CORS policy".
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "https://taller-mecanico-nine-wine.vercel.app",
+        "https://taller-mecanico-nvzw6vplz-integra-2.vercel.app",
+    ]
+
 
 settings = GatewaySettings()

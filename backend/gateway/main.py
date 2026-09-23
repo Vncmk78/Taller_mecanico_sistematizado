@@ -12,11 +12,26 @@ from __future__ import annotations
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from gateway.config import settings
 
 app = FastAPI(title="SGTM — API Gateway", version="0.1.0")
+
+# CORS: el navegador exige `Access-Control-Allow-Origin` cuando el frontend
+# (React en Vercel, app móvil) y la Gateway están en orígenes distintos; sin
+# esta cabecera el preflight falla y F12 muestra "CORS policy ... no
+# Access-Control-Allow-Origin". Se permiten los orígenes del `settings` (que
+# incluyen el preview de integración) y cualquier preview de Vercel.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"https://[a-z0-9-]+\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Primer segmento de la ruta -> URL base del microservicio destino.
 RUTAS: dict[str, str] = {

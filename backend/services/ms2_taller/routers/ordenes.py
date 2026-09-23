@@ -8,11 +8,16 @@ from sqlalchemy.orm import Session
 from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import obtener_principal_actual
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
-from services.ms2_taller.schemas.orden import OrdenCrear, OrdenRespuesta
+from services.ms2_taller.schemas.orden import (
+    AsignacionMecanicoActualizar,
+    OrdenCrear,
+    OrdenRespuesta,
+)
 from services.ms2_taller.services.ordenes import (
     OrdenNoEncontradaError,
     PersistenciaOrdenError,
     VehiculoNoEncontradoError,
+    asignar_mecanico,
     crear_orden,
     listar_ordenes,
     obtener_orden_visible,
@@ -113,4 +118,60 @@ def consultar_orden(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible consultar la orden",
+        ) from exc
+
+
+@router_ordenes.put(
+    "/{orden_id}/mecanico",
+    response_model=OrdenRespuesta,
+    summary="Asignar o reasignar el mecánico responsable",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_409_CONFLICT: {
+            "description": "Un administrador-mecánico no puede autoasignarse"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def actualizar_mecanico_responsable(
+    orden_id: int,
+    body: AsignacionMecanicoActualizar,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> OrdenTrabajo:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para realizar esta operación",
+        )
+    if (
+        NombreRol.MECANICO in principal.roles
+        and body.mecanico_id == principal.usuario_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Un mecánico no puede autoasignarse una orden",
+        )
+
+    try:
+        return asignar_mecanico(
+            db,
+            orden_id=orden_id,
+            mecanico_id=body.mecanico_id,
+            administrador_id=principal.usuario_id,
+            observacion=body.observacion,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible asignar el mecánico",
         ) from exc

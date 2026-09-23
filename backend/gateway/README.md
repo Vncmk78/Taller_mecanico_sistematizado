@@ -18,9 +18,31 @@ Web / Móvil ──► API Gateway (:8000) ──► MS1 Auth           (:8001)
 gateway/
 ├── main.py          Crea la app, configura CORS y monta los routers
 ├── config.py        Variables de entorno (prefijo GATEWAY_)
+├── rutas.py         Tabla de enrutamiento: prefijo -> microservicio
 └── routers/
-    └── health.py    GET /  y  GET /api/health (endpoints propios de la Gateway)
+    ├── health.py    GET /  y  GET /api/health (endpoints propios de la Gateway)
+    └── proxy.py     Reenvío de /api/* hacia los microservicios
 ```
+
+## Cómo se enruta
+
+La Gateway separa el primer segmento de `/api/*` y lo busca en la tabla
+`RUTAS` (archivo `rutas.py`): `/api/auth/login` se reenvía a
+`GATEWAY_MS1_URL` + `/auth/login`, y `/api/vehiculos?patente=AB1234` a
+`GATEWAY_MS2_URL` + `/vehiculos?patente=AB1234`. El método, el body, el query
+string y la cabecera `Authorization` (el JWT) llegan tal cual al
+microservicio. Un prefijo sin microservicio responde `404`; si el servicio
+destino está caído, `502`.
+
+| Prefijo | Microservicio | Ejemplo |
+|---|---|---|
+| `auth` | MS1 (Autenticación y Usuarios) | `/api/auth/login` -> MS1 `/auth/login` |
+| `vehiculos`, `vehiculo`, `ordenes`, `orden`, `clientes`, `mecanicos` | MS2 (Vehículos y Órdenes) | `/api/vehiculos` -> MS2 `/vehiculos` |
+| `presupuestos`, `presupuesto`, `repuestos`, `proveedores`, `inventario` | MS3 (Presupuestos) | `/api/presupuestos` -> MS3 `/presupuestos` |
+| `evidencias`, `evidencia` | MS4 (Evidencia Multimedia) | `/api/evidencias` -> MS4 `/evidencias` |
+
+Los prefijos de MS3 y MS4 se conservan desde el inicio, pero su verificación
+corresponde a la Semana 4.
 
 ## Levantar la Gateway
 
@@ -49,5 +71,5 @@ uvicorn gateway.main:app --reload --port 8000
 ## Pruebas
 
 ```bash
-pytest tests/test_gateway_estructura.py -v
+pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py -v
 ```

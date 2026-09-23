@@ -12,6 +12,14 @@ historial no se modifica ni se borra (trazabilidad).
 - `estado_anterior` / `estado_nuevo`: FK al catálogo estado_orden.
 - `actor_usuario_id`: referencia LÓGICA a MS1 (sin FK, §8). Vacío cuando el
   cambio lo hace el sistema.
+
+Campos de auditoría (Semana 3) — responden quién, cuándo, qué y por qué:
+- QUÉ:    estado_anterior → estado_nuevo.
+- QUIÉN:  actor_usuario_id + origen. Si origen = 'usuario' el actor es
+          obligatorio; si origen = 'sistema' el actor va vacío. Así nunca queda
+          un cambio "hecho por un usuario" sin saber cuál.
+- CUÁNDO: fecha_hora con zona horaria (timestamptz), la pone la base (now()).
+- POR QUÉ: observacion opcional, pero si viene no puede ser solo espacios.
 """
 from __future__ import annotations
 
@@ -52,6 +60,16 @@ class HistorialEstado(Base):
         CheckConstraint(
             "actor_usuario_id is null or actor_usuario_id > 0",
             name="actor_positivo",
+        ),
+        # Coherencia origen ↔ actor (auditoría de responsables).
+        CheckConstraint(
+            "(origen = 'usuario' and actor_usuario_id is not null) "
+            "or (origen = 'sistema' and actor_usuario_id is null)",
+            name="actor_segun_origen",
+        ),
+        CheckConstraint(
+            "observacion is null or btrim(observacion) <> ''",
+            name="observacion_no_vacia",
         ),
     )
 

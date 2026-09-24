@@ -4,7 +4,7 @@ Se importan aquí TODOS los modelos del servicio para que `Base.metadata` (y por
 lo tanto Alembic) los vea al generar y ejecutar las migraciones. Si un modelo no
 aparece en este archivo, su tabla no entra en las migraciones.
 
-Semana 3: Presupuesto, VersionPresupuesto, ItemPresupuesto, Proveedor, Repuesto,
+Semana 3: Presupuesto, VersionPresupuesto, ItemPresupuesto, DecisionPresupuesto, Proveedor, Repuesto,
 MovimientoInventario, ParametroInventario y HistorialUmbral (auditoría).
 Referencia: lámina 04-mer-erd, recuadro "BD MS3".
 """
@@ -18,6 +18,7 @@ from services.ms3_presupuestos.models.inventario import (
 )
 from services.ms3_presupuestos.models.historial_umbral import HistorialUmbral
 from services.ms3_presupuestos.models.presupuesto import (
+    DecisionPresupuesto,
     ItemPresupuesto,
     Presupuesto,
     VersionPresupuesto,
@@ -33,4 +34,5 @@ __all__ = [
     "Presupuesto",
     "VersionPresupuesto",
     "ItemPresupuesto",
+    "DecisionPresupuesto",
 ]

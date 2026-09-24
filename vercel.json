@@ -10,13 +10,13 @@
       "framework": "fastapi",
       "entrypoint": "gateway/main:app",
       "bindings": [
-        { "type": "service", "service": "ms1", "format": "url", "env": "GATEWAY_MS1_URL" },
-        { "type": "service", "service": "ms2", "format": "url", "env": "GATEWAY_MS2_URL" },
-        { "type": "service", "service": "ms3", "format": "url", "env": "GATEWAY_MS3_URL" },
-        { "type": "service", "service": "ms4", "format": "url", "env": "GATEWAY_MS4_URL" }
+        { "type": "service", "service": "ms-auth", "format": "url", "env": "GATEWAY_MS1_URL" },
+        { "type": "service", "service": "ms-taller", "format": "url", "env": "GATEWAY_MS2_URL" },
+        { "type": "service", "service": "ms-presupuestos", "format": "url", "env": "GATEWAY_MS3_URL" },
+        { "type": "service", "service": "ms-evidencias", "format": "url", "env": "GATEWAY_MS4_URL" }
       ]
     },
-    "ms1": {
+    "ms-auth": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services/ms1_auth/main:app",
@@ -24,7 +24,7 @@
         { "src": "/ms1/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
       ]
     },
-    "ms2": {
+    "ms-taller": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services/ms2_taller/main:app",
@@ -32,7 +32,7 @@
         { "src": "/ms2/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
       ]
     },
-    "ms3": {
+    "ms-presupuestos": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services/ms3_presupuestos/main:app",
@@ -40,7 +40,7 @@
         { "src": "/ms3/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
       ]
     },
-    "ms4": {
+    "ms-evidencias": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services/ms4_evidencias/main:app",
@@ -54,10 +54,10 @@
     { "source": "/docs", "destination": { "service": "backend" } },
     { "source": "/openapi.json", "destination": { "service": "backend" } },
     { "source": "/redoc", "destination": { "service": "backend" } },
-    { "source": "/ms1(/.*)?", "destination": { "service": "ms1" } },
-    { "source": "/ms2(/.*)?", "destination": { "service": "ms2" } },
-    { "source": "/ms3(/.*)?", "destination": { "service": "ms3" } },
-    { "source": "/ms4(/.*)?", "destination": { "service": "ms4" } },
+    { "source": "/ms1(/.*)?", "destination": { "service": "ms-auth" } },
+    { "source": "/ms2(/.*)?", "destination": { "service": "ms-taller" } },
+    { "source": "/ms3(/.*)?", "destination": { "service": "ms-presupuestos" } },
+    { "source": "/ms4(/.*)?", "destination": { "service": "ms-evidencias" } },
     { "source": "/(.*)", "destination": { "service": "frontend" } }
   ]
 }

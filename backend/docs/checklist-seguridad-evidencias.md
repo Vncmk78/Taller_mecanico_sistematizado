@@ -74,12 +74,14 @@ verifica** · **cuándo** se implementa (tarea del plan).
 
 ## 2. Almacenamiento (MinIO / S3)
 
-- [ ] **2.1 Bucket privado.** Ninguna política pública (`anonymous`/`public`)
+- [x] **2.1 Bucket privado.** Ninguna política pública (`anonymous`/`public`)
   sobre el bucket de evidencias.
   - Por qué: un bucket público expone todas las fotos de todos los clientes
     a quien adivine la URL.
   - Verificación: `GET` anónimo a un objeto debe responder `403`.
   - Cuándo: Semana 3 — *Configurar MinIO local y credenciales de desarrollo*.
+  - ✅ Verificado: `tests/test_ms4_minio_integracion.py` (paso 7: GET anónimo
+    al objeto responde `403`) y `scripts/prueba_minio.py`.
 
 - [ ] **2.2 Credenciales fuera del repositorio.** Access key y secret key
   van en `.env` (variables `MS4_*`); en el repo solo existe `.env.example`
@@ -97,6 +99,10 @@ verifica** · **cuándo** se implementa (tarea del plan).
   al subirlo.
   - Por qué: permite detectar archivos alterados y duplicados.
   - Cuándo: Semana 3 — modelo de metadatos.
+  - Nota: el cálculo y la comparación de SHA-256 quedaron verificados
+    (`scripts/prueba_minio.py` y `tests/test_ms4_minio_integracion.py`
+    descargan y comprueban que el hash coincide); falta **guardarlo** en los
+    metadatos, que es la tarea del modelo de la Semana 3.
 
 - [ ] **2.5 Convención de claves.** `ordenes/{orden_id}/{uuid}.{ext}`, sin
   datos personales en la ruta (ni patente, ni nombre, ni email).

@@ -94,6 +94,40 @@ recién copiado funciona sin cambios.
    git grep -n "cambia-esta-clave" backend 2>$null; git status --short backend/.env
    ```
 
+## Prueba mínima
+
+Comprueba con boto3 (SDK S3 estándar) que MS4 puede guardar un archivo en
+MinIO y recuperarlo intacto, usando el usuario de mínimo privilegio
+(`ms4-evidencias`), sin crear endpoints ni modelos.
+
+```bash
+cd backend
+docker compose up -d minio minio_init
+python scripts/prueba_minio.py
+python scripts/prueba_minio.py --conservar    # la segunda vez deja el archivo para verlo en :9001
+pytest tests/test_ms4_minio_integracion.py -v
+```
+
+Salida esperada de `python scripts/prueba_minio.py`:
+
+```text
+✔ Conexión con usuario ms4-evidencias
+✔ Subida: pruebas/3f2c76ef901a42e6a5f8c9d0e1b2a3c4.bin (262144 bytes)
+✔ Metadatos: 262144 bytes, application/octet-stream
+✔ Descarga: SHA-256 coincide
+✔ URL prefirmada (5 min): descarga OK
+✔ Acceso anónimo bloqueado (403)
+✔ Limpieza: objeto eliminado
+Prueba mínima OK
+```
+
+- El script termina con `exit 0` solo si pasaron todos los pasos; si algo
+  falla marca `✘` y termina con `exit 1`.
+- Con `--conservar` el archivo queda en `evidencias/pruebas/` para verlo en la
+  consola; el resto del flujo es igual.
+- El test repite el mismo flujo y se omite (skip) si MinIO no está levantado,
+  así la suite no se rompe sin Docker.
+
 ## Apagar
 
 ```bash

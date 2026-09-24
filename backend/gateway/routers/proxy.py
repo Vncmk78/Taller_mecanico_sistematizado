@@ -40,6 +40,7 @@ _CABECERAS_PROHIBIDAS = {
 @router.api_route(
     "/api/{ruta:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    include_in_schema=False,
 )
 async def proxy(ruta: str, request: Request) -> Response:
     """Reenvía la petición `/api/*` al microservicio que corresponda."""

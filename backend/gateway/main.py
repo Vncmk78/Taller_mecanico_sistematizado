@@ -16,9 +16,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from gateway.config import settings
 from gateway.errores import ManejoErroresMiddleware, registrar_manejadores
 from gateway.middleware import RequestIdMiddleware
+from gateway.openapi import construir_openapi
 from gateway.routers import health, proxy
 
 app = FastAPI(title="SGTM — API Gateway", version="0.1.0")
+
+# El Swagger por defecto solo mostraría /api/{ruta}; se reescribe para
+# documentar los contratos reales de MS1 y MS2 (ver gateway/openapi.py).
+app.openapi = lambda: construir_openapi(app)
 
 # Orden de los middlewares (el último agregado es el más externo):
 # RequestId (más afuera) -> CORS -> ManejoErrores (más adentro).

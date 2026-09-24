@@ -20,33 +20,25 @@
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services.ms1_auth.main:app",
-      "routes": [
-        { "src": "/ms1/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
-      ]
+      "rewrites": [{ "source": "/ms1/(.*)", "destination": "/$1" }]
     },
     "ms-taller": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services.ms2_taller.main:app",
-      "routes": [
-        { "src": "/ms2/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
-      ]
+      "rewrites": [{ "source": "/ms2/(.*)", "destination": "/$1" }]
     },
     "ms-presupuestos": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services.ms3_presupuestos.main:app",
-      "routes": [
-        { "src": "/ms3/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
-      ]
+      "rewrites": [{ "source": "/ms3/(.*)", "destination": "/$1" }]
     },
     "ms-evidencias": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services.ms4_evidencias.main:app",
-      "routes": [
-        { "src": "/ms4/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
-      ]
+      "rewrites": [{ "source": "/ms4/(.*)", "destination": "/$1" }]
     }
   },
   "rewrites": [

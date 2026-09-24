@@ -23,7 +23,8 @@ app = FastAPI(title="SGTM — API Gateway", version="0.1.0")
 # (React en Vercel, app móvil) y la Gateway están en orígenes distintos; sin
 # esta cabecera el preflight falla y F12 muestra "CORS policy ... no
 # Access-Control-Allow-Origin". Se permiten los orígenes del `settings` (que
-# incluyen el preview de integración) y cualquier preview de Vercel.
+# incluyen el Vite de desarrollo y el dominio de producción) y cualquier
+# preview de Vercel.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,

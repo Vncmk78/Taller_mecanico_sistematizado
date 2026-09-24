@@ -8,7 +8,7 @@
     "backend": {
       "root": "backend",
       "framework": "fastapi",
-      "entrypoint": "gateway/main:app",
+      "entrypoint": "gateway.main:app",
       "bindings": [
         { "type": "service", "service": "ms-auth", "format": "url", "env": "GATEWAY_MS1_URL" },
         { "type": "service", "service": "ms-taller", "format": "url", "env": "GATEWAY_MS2_URL" },
@@ -19,7 +19,7 @@
     "ms-auth": {
       "root": "backend",
       "framework": "fastapi",
-      "entrypoint": "services/ms1_auth/main:app",
+      "entrypoint": "services.ms1_auth.main:app",
       "routes": [
         { "src": "/ms1/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
       ]
@@ -27,7 +27,7 @@
     "ms-taller": {
       "root": "backend",
       "framework": "fastapi",
-      "entrypoint": "services/ms2_taller/main:app",
+      "entrypoint": "services.ms2_taller.main:app",
       "routes": [
         { "src": "/ms2/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
       ]
@@ -35,7 +35,7 @@
     "ms-presupuestos": {
       "root": "backend",
       "framework": "fastapi",
-      "entrypoint": "services/ms3_presupuestos/main:app",
+      "entrypoint": "services.ms3_presupuestos.main:app",
       "routes": [
         { "src": "/ms3/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
       ]
@@ -43,7 +43,7 @@
     "ms-evidencias": {
       "root": "backend",
       "framework": "fastapi",
-      "entrypoint": "services/ms4_evidencias/main:app",
+      "entrypoint": "services.ms4_evidencias.main:app",
       "routes": [
         { "src": "/ms4/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
       ]

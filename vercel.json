@@ -1,13 +1,63 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "installCommand": "echo skip-root-install",
-  "outputDirectory": "frontend/dist",
-  "functions": {
-    "api/index.py": { "includeFiles": "backend/**" }
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite",
+      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+    },
+    "backend": {
+      "root": "backend",
+      "framework": "fastapi",
+      "entrypoint": "gateway/main:app",
+      "bindings": [
+        { "type": "service", "service": "ms1", "format": "url", "env": "GATEWAY_MS1_URL" },
+        { "type": "service", "service": "ms2", "format": "url", "env": "GATEWAY_MS2_URL" },
+        { "type": "service", "service": "ms3", "format": "url", "env": "GATEWAY_MS3_URL" },
+        { "type": "service", "service": "ms4", "format": "url", "env": "GATEWAY_MS4_URL" }
+      ]
+    },
+    "ms1": {
+      "root": "backend",
+      "framework": "fastapi",
+      "entrypoint": "services/ms1_auth/main:app",
+      "routes": [
+        { "src": "/ms1/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
+      ]
+    },
+    "ms2": {
+      "root": "backend",
+      "framework": "fastapi",
+      "entrypoint": "services/ms2_taller/main:app",
+      "routes": [
+        { "src": "/ms2/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
+      ]
+    },
+    "ms3": {
+      "root": "backend",
+      "framework": "fastapi",
+      "entrypoint": "services/ms3_presupuestos/main:app",
+      "routes": [
+        { "src": "/ms3/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
+      ]
+    },
+    "ms4": {
+      "root": "backend",
+      "framework": "fastapi",
+      "entrypoint": "services/ms4_evidencias/main:app",
+      "routes": [
+        { "src": "/ms4/(.*)", "transforms": [{ "type": "request.path", "op": "set", "args": "/$1" }] }
+      ]
+    }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api(/.*)?", "destination": { "service": "backend" } },
+    { "source": "/docs", "destination": { "service": "backend" } },
+    { "source": "/openapi.json", "destination": { "service": "backend" } },
+    { "source": "/redoc", "destination": { "service": "backend" } },
+    { "source": "/ms1(/.*)?", "destination": { "service": "ms1" } },
+    { "source": "/ms2(/.*)?", "destination": { "service": "ms2" } },
+    { "source": "/ms3(/.*)?", "destination": { "service": "ms3" } },
+    { "source": "/ms4(/.*)?", "destination": { "service": "ms4" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
   ]
 }

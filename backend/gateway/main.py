@@ -27,7 +27,7 @@ app = FastAPI(title="SGTM — API Gateway", version="0.1.0")
 # preview de Vercel.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.cors_origins_list,
     allow_origin_regex=r"https://[a-z0-9-]+\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],

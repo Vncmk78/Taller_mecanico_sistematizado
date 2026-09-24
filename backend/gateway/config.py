@@ -7,6 +7,8 @@ se usan los valores por defecto del desarrollo local (puertos 8001-8004).
 """
 from __future__ import annotations
 
+import json
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,13 +35,29 @@ class GatewaySettings(BaseSettings):
     REQUEST_TIMEOUT_SECONDS: float = 30.0
 
     # Orígenes permitidos por CORS (env: GATEWAY_CORS_ORIGINS, lista separada
-    # por comas). El frontend desplegado en Vercel y el Vite de desarrollo
+    # por comas o JSON). El frontend desplegado en Vercel y el Vite de desarrollo
     # siempre deben figurar; sin esto el navegador bloquea el preflight por
     # "CORS policy". Además se permite por regex cualquier dominio *.vercel.app.
-    CORS_ORIGINS: list[str] = [
-        "http://localhost:5173",
-        "http://localhost:8000",
-    ]
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:8000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Lista de orígenes CORS, tolerando CSV y JSON de entorno.
+
+        pydantic-settings no convierte aut na list[str] desde un valor CSV
+        (espera JSON), por lo que se recibe como str y se normaliza aquí.
+        """
+        valor = self.CORS_ORIGINS.strip()
+        if not valor:
+            return []
+        if valor.startswith("[") and valor.endswith("]"):
+            try:
+                items = json.loads(valor)
+                if isinstance(items, list):
+                    return [str(x) for x in items]
+            except ValueError:
+                pass
+        return [o.strip() for o in valor.split(",") if o.strip()]
 
 
 settings = GatewaySettings()

@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 from services.ms2_taller.config import settings
 from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import resolver_cliente_actual
-from services.ms2_taller.routers import crear_router_vehiculos
+from services.ms2_taller.routers import crear_router_vehiculos, router_ordenes
 
 app = FastAPI(title="SGTM — MS2: Vehículos y Órdenes de Trabajo", version="0.1.0")
 app.include_router(crear_router_vehiculos(resolver_cliente_actual))
+app.include_router(router_ordenes)
 
 
 @app.get("/health", tags=["health"])

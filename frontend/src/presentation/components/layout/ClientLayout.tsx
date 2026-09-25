@@ -10,6 +10,7 @@ const sections = [
       { to: '/client/vehiculos', icon: <Car className="w-5 h-5" />, label: 'Mis Vehículos' },
       { to: '/client/agendar', icon: <CalendarPlus className="w-5 h-5" />, label: 'Agendar Mantención' },
       { to: '/client/servicios', icon: <ClipboardList className="w-5 h-5" />, label: 'Estado del Servicio' },
+      { to: '/client/ordenes', icon: <ClipboardList className="w-5 h-5" />, label: 'Mis Órdenes' },
       { to: '/client/presupuestos', icon: <FileText className="w-5 h-5" />, label: 'Presupuestos' },
     ],
   },

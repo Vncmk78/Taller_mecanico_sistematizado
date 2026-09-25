@@ -24,3 +24,7 @@ export function getApiErrorMessage(
 export function isNotFoundError(error: unknown): boolean {
     return axios.isAxiosError(error) && error.response?.status === 404;
 }
+
+export function isConflictError(error: unknown): boolean {
+    return axios.isAxiosError(error) && error.response?.status === 409;
+}

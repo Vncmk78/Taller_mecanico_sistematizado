@@ -16,7 +16,7 @@ export function ClientVehiclesPage() {
     const { vehicles, status, error, isOffline, fetchVehicles } = useVehicleStore();
 
     const clientId = user?.id ?? CURRENT_CLIENT_ID;
-    const loadVehicles = () => fetchVehicles(() => vehicleService.getMyVehicles());
+    const loadVehicles = () => fetchVehicles(() => vehicleService.getMyVehicles(clientId));
 
     useEffect(() => {
     loadVehicles();

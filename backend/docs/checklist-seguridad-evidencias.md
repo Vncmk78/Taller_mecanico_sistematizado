@@ -158,6 +158,9 @@ verifica** · **cuándo** se implementa (tarea del plan).
     que entrega MS4 (el archivo no pasa por la Gateway).
   - Cuándo: decidir en Semana 3 (*Estudiar MinIO/S3, multipart y SDK*),
     implementar en Semana 5.
+  - ✅ Decidido en `estudio-almacenamiento-objetos.md` (sección 6): fotos
+    vía Gateway y MS4; videos con POST prefirmado directo a MinIO y
+    confirmación, sin pasar por la Gateway.
 
 - [ ] **4.4 Límite de frecuencia.** Máximo de subidas por usuario y minuto
   (por ejemplo 20), para evitar abuso.

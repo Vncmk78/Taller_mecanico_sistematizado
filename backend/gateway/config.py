@@ -39,8 +39,14 @@ class GatewaySettings(BaseSettings):
     # CORS: orígenes desde los que se permite consumir la Gateway (web, móvil,
     # herramientas de prueba). En desarrollo el frontend corre en localhost:5173.
     # En el entorno se acepta JSON (["http://a","http://b"]) o comas separadas.
-    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = [
+        "http://localhost:5173",
+        "http://localhost:8000",
+    ]
     CORS_ALLOW_CREDENTIALS: bool = True
+    # Además de la lista, se aceptan los previews de Vercel (*.vercel.app).
+    # Vacío desactiva la regex (env: GATEWAY_CORS_ORIGIN_REGEX).
+    CORS_ORIGIN_REGEX: str | None = r"https://[a-z0-9-]+\.vercel\.app"
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

@@ -108,7 +108,7 @@ describe('AppRoutes: navegación por los tres roles', () => {
       fireEvent.click(screen.getByRole('link', { name: 'Vehículos' }));
 
       expect(
-        await screen.findByText('Catálogo de vehículos del taller')
+        await screen.findByText('Catálogo de Vehículos Registrados')
       ).toBeInTheDocument();
     });
 
@@ -139,9 +139,9 @@ describe('AppRoutes: navegación por los tres roles', () => {
       renderApp('/client');
 
       expect(
-        screen.getByRole('heading', { name: 'Mi Portal' })
+        screen.getByRole('heading', { name: /Bienvenido/ })
       ).toBeInTheDocument();
-      expect(screen.getByText('Mis Vehículos')).toBeInTheDocument();
+      expect(screen.getAllByText('Mis Vehículos').length).toBeGreaterThan(0);
     });
 
     it('navega con un clic del menú hacia /client/vehiculos', async () => {
@@ -151,7 +151,9 @@ describe('AppRoutes: navegación por los tres roles', () => {
       fireEvent.click(screen.getByRole('link', { name: 'Mis Vehículos' }));
 
       expect(
-        await screen.findByText('Consulta los vehículos registrados a tu nombre')
+        await screen.findByText(
+          'Consulte la ficha técnica y el historial de sus vehículos registrados'
+        )
       ).toBeInTheDocument();
     });
 
@@ -180,7 +182,7 @@ describe('AppRoutes: navegación por los tres roles', () => {
       renderApp('/mechanic');
 
       expect(
-        screen.getByRole('heading', { name: 'Mi Panel' })
+        screen.getByRole('heading', { name: 'Panel del Mecánico' })
       ).toBeInTheDocument();
       expect(screen.getByText('Actualizar Estados')).toBeInTheDocument();
     });

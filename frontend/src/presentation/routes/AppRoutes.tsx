@@ -9,6 +9,7 @@ import { AdminDashboardPage } from '@/presentation/pages/admin/AdminDashboardPag
 import { AdminVehiclesPage } from '@/presentation/pages/admin/AdminVehiclesPage';
 import { AdminVehicleDetailPage } from '@/presentation/pages/admin/AdminVehicleDetailPage';
 import { AdminOrdersPage } from '@/presentation/pages/admin/AdminOrdersPage';
+import { AdminOrderDetailPage } from '@/presentation/pages/admin/AdminOrderDetailPage';
 import { AdminClientsPage } from '@/presentation/pages/admin/AdminClientsPage';
 import { AdminInventoryPage } from '@/presentation/pages/admin/AdminInventoryPage';
 import { AdminDistributorsPage } from '@/presentation/pages/admin/AdminDistributorsPage';
@@ -18,10 +19,13 @@ import { ClientVehicleFormPage } from '@/presentation/pages/client/ClientVehicle
 import { ClientVehicleDetailPage } from '@/presentation/pages/client/ClientVehicleDetailPage';
 import { ClientServicesPage } from '@/presentation/pages/client/ClientServicesPage';
 import { ClientBudgetsPage } from '@/presentation/pages/client/ClientBudgetsPage';
+import { ClientOrdersPage } from '@/presentation/pages/client/ClientOrdersPage';
+import { ClientOrderDetailPage } from '@/presentation/pages/client/ClientOrderDetailPage';
 import { MechanicDashboardPage } from '@/presentation/pages/mechanic/MechanicDashboardPage';
 import { MechanicVehiclesPage } from '@/presentation/pages/mechanic/MechanicVehiclesPage';
 import { MechanicVehicleDetailPage } from '@/presentation/pages/mechanic/MechanicVehicleDetailPage';
 import { MechanicOrdersPage } from '@/presentation/pages/mechanic/MechanicOrdersPage';
+import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicOrderDetailPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
 import { MechanicHistoryPage } from '@/presentation/pages/mechanic/MechanicHistoryPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
@@ -51,6 +55,7 @@ export function AppRoutes() {
       >
         <Route index element={<AdminDashboardPage />} />
         <Route path="ordenes" element={<AdminOrdersPage />} />
+        <Route path="ordenes/:id" element={<AdminOrderDetailPage />} />
         <Route path="clientes" element={<AdminClientsPage />} />
         <Route path="vehiculos" element={<AdminVehiclesPage />} />
         <Route path="vehiculos/:id" element={<AdminVehicleDetailPage />} />
@@ -72,6 +77,8 @@ export function AppRoutes() {
         <Route path="vehiculos/:id" element={<ClientVehicleDetailPage />} />
         <Route path="agendar" element={<div className="text-text-muted">Agendar Mantención - Próximamente</div>} />
         <Route path="servicios" element={<ClientServicesPage />} />
+        <Route path="ordenes" element={<ClientOrdersPage />} />
+        <Route path="ordenes/:id" element={<ClientOrderDetailPage />} />
         <Route path="presupuestos" element={<ClientBudgetsPage />} />
       </Route>
 
@@ -87,6 +94,7 @@ export function AppRoutes() {
         <Route path="vehiculos" element={<MechanicVehiclesPage />} />
         <Route path="vehiculos/:id" element={<MechanicVehicleDetailPage />} />
         <Route path="ordenes" element={<MechanicOrdersPage />} />
+        <Route path="ordenes/:id" element={<MechanicOrderDetailPage />} />
         <Route path="estados" element={<MechanicStatusPage />} />
         <Route path="historial" element={<MechanicHistoryPage />} />
       </Route>

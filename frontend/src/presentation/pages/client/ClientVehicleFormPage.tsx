@@ -9,6 +9,7 @@ import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isConflictError } from '@/infrastructure/api/errors';
 import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
 
 const PATENT_REGEX = /^[A-Za-z]{4}-\d{2}$/;
@@ -62,8 +63,12 @@ export function ClientVehicleFormPage() {
     try {
         await addVehicle({ ...data, patent }, clientId);
         navigate('/client/vehiculos', { state: { justRegistered: true } });
-    } catch {
+    } catch (error) {
+        if (isConflictError(error)) {
+        setError('patent', { message: 'Ya existe un vehículo registrado con esa patente.' });
+        } else {
         setSubmitError('No pudimos registrar el vehículo. Intente nuevamente.');
+        }
     }
     };
 

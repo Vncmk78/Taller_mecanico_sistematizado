@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import type { CreateVehicleInput } from '@/domain/ports/VehiclePort';
 import { getApiErrorMessage, isNotFoundError } from '@/infrastructure/api/errors';
+import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
 
 export type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -27,10 +28,10 @@ interface VehicleState {
 }
 
 // Caché en memoria compartida entre portales. Se inicializa con datos de
-// demostración para que la UI nunca quede vacía mientras MS2 + API Gateway
-// no estén desplegados (misión "Conectar registro con la API Gateway", en
-// pausa). Cada fetch* intenta la API real primero; si falla, se conserva la
-// caché local y se marca isOffline para avisar al usuario.
+// demostración para que la UI nunca quede vacía ante fallos de red o mientras
+// algún endpoint de MS2 aún no está disponible. Cada fetch* intenta la API
+// real primero; si falla, se conserva la caché local y se marca isOffline
+// para avisar al usuario.
 export const useVehicleStore = create<VehicleState>((set, get) => ({
     vehicles: mockVehicles,
     status: 'idle',
@@ -89,23 +90,18 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
     get().vehicles.some((v) => v.patent.toLowerCase() === patent.toLowerCase()),
 
     addVehicle: async (input, clientId) => {
-    // TODO: reemplazar por vehicleService.createVehicle(input) cuando MS2 +
-    // API Gateway estén disponibles (misión en pausa). El backend deberá
-    // validar la unicidad de patente de forma autoritativa (UNIQUE en el MER);
-    // patentExists aquí es solo una verificación optimista en el cliente.
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const newVehicle: Vehicle = {
-        id: crypto.randomUUID(),
-        patent: input.patent.toUpperCase(),
-        brand: input.brand,
-        model: input.model,
-        year: input.year,
-        mileage: input.mileage,
-        clientId,
-    };
-
-    set((state) => ({ vehicles: [...state.vehicles, newVehicle] }));
-    return newVehicle;
+    // Registro real contra MS2 vía la API Gateway. El backend valida la
+    // unicidad de patente de forma autoritativa (409) y asigna el cliente
+    // desde el JWT; patentExists del cliente es solo una verificación
+    // optimista antes de llamar a la API.
+    const creado = await vehicleService.createVehicle(input);
+    const vehiculo: Vehicle = { ...creado, clientId };
+    set((state) => ({
+        vehicles: [
+        vehiculo,
+        ...state.vehicles.filter((v) => v.id !== vehiculo.id),
+        ],
+    }));
+    return vehiculo;
     },
 }));

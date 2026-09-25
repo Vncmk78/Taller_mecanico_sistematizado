@@ -16,7 +16,7 @@ export interface CreateVehicleInput {
 
 export interface VehiclePort {
   /** Vehículos del cliente autenticado (portal Cliente). */
-    getMyVehicles(): Promise<Vehicle[]>;
+    getMyVehicles(clientId: string): Promise<Vehicle[]>;
   /** Catálogo completo de vehículos (portal Administrador). */
     getAllVehicles(): Promise<Vehicle[]>;
   /** Vehículos de las órdenes actualmente asignadas al mecánico autenticado. */

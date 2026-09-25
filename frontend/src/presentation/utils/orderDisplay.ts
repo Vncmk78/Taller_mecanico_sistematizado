@@ -34,3 +34,15 @@ export function formatDate(iso: string): string {
         year: 'numeric',
     });
 }
+
+/** Color de relleno del punto de línea de tiempo del historial, alineado con el badge de estado. */
+export const estadoDotClasses: Record<number, string> = {
+    1: 'bg-status-blue',
+    2: 'bg-status-yellow',
+    3: 'bg-status-purple',
+    4: 'bg-status-orange',
+    5: 'bg-status-yellow',
+    6: 'bg-status-green',
+    7: 'bg-status-green',
+    8: 'bg-status-red',
+};

@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
+import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { useOrderDetail } from '@/presentation/hooks/useOrderDetail';
@@ -47,6 +48,8 @@ export function ClientOrderDetailPage() {
                 patente={orderPatente(order, vehicles)}
                 vehicleLabel={orderVehicleLabel(order, vehicles)}
             />
+
+            <OrderStatusAndHistory order={order} />
         </div>
     );
 }

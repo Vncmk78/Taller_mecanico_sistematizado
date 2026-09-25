@@ -1,4 +1,5 @@
 import type { Order } from '@/domain/entities/Order';
+import type { OrderHistoryEntry } from '@/domain/entities/OrderHistory';
 import type { OrderPort } from '@/domain/ports/OrderPort';
 import apiClient from '../config/apiClient';
 
@@ -29,6 +30,31 @@ function mapOrdenApi(o: OrdenRespuesta): Order {
     };
 }
 
+function mapHistorialApi(h: HistorialEstadoApi): OrderHistoryEntry {
+    return {
+        id: String(h.historial_id),
+        ordenId: String(h.orden_id),
+        estadoAnteriorCodigo: h.estado_anterior,
+        estadoNuevoCodigo: h.estado_nuevo,
+        actorUsuarioId: h.actor_usuario_id,
+        origen: h.origen,
+        fecha: h.fecha_hora,
+        observacion: h.observacion ?? undefined,
+    };
+}
+
+// Contrato de HistorialEstado (MS2) para el endpoint futuro /ordenes/{id}/historial.
+interface HistorialEstadoApi {
+    historial_id: number;
+    orden_id: number;
+    estado_anterior: number | null;
+    estado_nuevo: number;
+    actor_usuario_id: number | null;
+    origen: 'usuario' | 'sistema';
+    fecha_hora: string;
+    observacion?: string | null;
+}
+
 class OrderService implements OrderPort {
     async getOrders(): Promise<Order[]> {
         const { data } = await apiClient.get<OrdenRespuesta[]>('/ordenes');
@@ -38,6 +64,11 @@ class OrderService implements OrderPort {
     async getOrderById(id: string): Promise<Order> {
         const { data } = await apiClient.get<OrdenRespuesta>(`/ordenes/${id}`);
         return mapOrdenApi(data);
+    }
+
+    async getOrderHistory(ordenId: string): Promise<OrderHistoryEntry[]> {
+        const { data } = await apiClient.get<HistorialEstadoApi[]>(`/ordenes/${ordenId}/historial`);
+        return data.map(mapHistorialApi);
     }
 }
 

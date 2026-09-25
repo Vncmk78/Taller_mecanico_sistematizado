@@ -12,8 +12,12 @@ de API (Sistematización final §1.2 y §8).
 ```
 backend/
 ├── gateway/                 API Gateway: único punto de entrada del backend
-│   ├── config.py            URLs de los microservicios (prefijo GATEWAY_)
-│   └── main.py              FastAPI proxy montado en /api
+│   ├── config.py            Variables de entorno (prefijo GATEWAY_)
+│   ├── rutas.py             Tabla de enrutamiento (prefijo -> microservicio)
+│   ├── main.py              Crea la app, CORS y monta los routers
+│   └── routers/
+│       ├── health.py        GET /  y  GET /api/health (endpoints propios)
+│       └── proxy.py         Reenvío de /api/* hacia los microservicios
 ├── shared/                  Código común: configuración y fábrica de persistencia
 │   ├── config.py            ServiceSettings (DATABASE_URL, DB_ECHO, pool)
 │   └── db.py                crear_base / crear_engine / crear_session_factory

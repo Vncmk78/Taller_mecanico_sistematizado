@@ -1,4 +1,4 @@
-# Cuatro instancias de PostgreSQL, una por microservicio.
+# Cuatro instancias de PostgreSQL (una por microservicio) + MinIO para MS4.
 # Levantar todo:   docker compose up -d
 # Ver el estado:   docker compose ps
 # Apagar:          docker compose down          (agregar -v para borrar los datos)
@@ -63,8 +63,75 @@ services:
       timeout: 3s
       retries: 10
 
+  # MinIO: almacenamiento de objetos S3-compatible para MS4 (evidencias).
+  # Imagen de Chainguard (parcheada y sin CVEs) en lugar de minio/minio,
+  # que fue retirada de Docker Hub. Consola web en http://localhost:9001.
+  # Pin: digest exacto de la imagen descargada (reproducible).
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:999718c09ef5d2ac888aa97ffd628a67ba8be2d64d6eea9e719d1f58cd59e204
+    container_name: sgtm_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin-local}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-cambia-esta-clave-local}
+    ports:
+      - "9000:9000" # API S3
+      - "9001:9001" # Consola web
+    volumes:
+      - minio_data:/data
+    # La imagen de Chainguard no trae curl ni wget; healthcheck con el mc
+    # incluido en la imagen (alias local + 'mc ready').
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - '/usr/bin/mc --config-dir /tmp/mc-live alias set local http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 && /usr/bin/mc --config-dir /tmp/mc-live ready local >/dev/null 2>&1'
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Configuración inicial de MinIO (se ejecuta una vez y sale):
+  # crea el bucket 'evidencias' privado, el usuario de MS4 y su política.
+  # Es idempotente: se puede volver a correr sin romperse.
+  # minio/mc de Docker Hub también fue retirado; usamos el cliente oficial
+  # en quay.io (registro de MinIO), con versión exacta (RELEASE...).
+  minio_init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: sgtm_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        /usr/bin/mc alias set sgtm http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        /usr/bin/mc mb --ignore-existing sgtm/evidencias
+        /usr/bin/mc anonymous set none sgtm/evidencias
+        # Los tres pasos siguientes pueden repetirse en re-ejecuciones; se
+        # toleran, pero SIN ocultar el error (queda visible en los logs).
+        /usr/bin/mc admin user add sgtm "$${MS4_S3_ACCESS_KEY}" "$${MS4_S3_SECRET_KEY}" || true
+        /usr/bin/mc admin policy create sgtm politica-ms4 /config/politica-ms4.json || true
+        /usr/bin/mc admin policy attach sgtm politica-ms4 --user "$${MS4_S3_ACCESS_KEY}" || true
+        # Verificación real: el usuario debe tener la política asignada.
+        # Sin grep (la imagen del cliente no lo trae).
+        INFO_USUARIO=$(/usr/bin/mc admin user info sgtm "$${MS4_S3_ACCESS_KEY}")
+        case "$$INFO_USUARIO" in
+          *politica-ms4*) ;;
+          *) echo "Política no asignada al usuario MS4"; exit 1 ;;
+        esac
+    volumes:
+      - ./minio:/config:ro
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin-local}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-cambia-esta-clave-local}
+      MS4_S3_ACCESS_KEY: ${MS4_S3_ACCESS_KEY:-ms4-evidencias}
+      MS4_S3_SECRET_KEY: ${MS4_S3_SECRET_KEY:-cambia-esta-clave-ms4}
+    restart: "no"
+
 volumes:
   pg_ms1:
   pg_ms2:
   pg_ms3:
   pg_ms4:
+  minio_data:

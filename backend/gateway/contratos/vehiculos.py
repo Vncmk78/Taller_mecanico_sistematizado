@@ -41,9 +41,11 @@ class VehiculoCrear(BaseModel):
     )
 
     patente: str = Field(
-        description="Patente del vehículo.",
+        description=(
+            "Patente obligatoria y única. No se prescribe formato ni largo; "
+            "solo se eliminan espacios exteriores."
+        ),
         min_length=1,
-        max_length=10,
         examples=["AB1234"],
     )
     marca: str = Field(

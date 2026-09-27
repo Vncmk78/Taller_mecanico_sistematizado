@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import UniqueConstraint, create_engine, event, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -35,6 +35,17 @@ def db_ms2() -> Generator[Session, None, None]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # Base contiene todo MS2. Los historiales usan btrim() en CHECKs válidos
+    # para PostgreSQL; se registra su equivalente solo en esta SQLite de prueba.
+    @event.listens_for(engine, "connect")
+    def registrar_funciones_sqlite(conexion, _registro) -> None:
+        conexion.create_function(
+            "btrim",
+            1,
+            lambda valor: valor.strip() if valor is not None else None,
+        )
+
     Base.metadata.create_all(engine)
     fabrica = sessionmaker(bind=engine, expire_on_commit=False)
     sesion = fabrica()
@@ -185,6 +196,26 @@ def test_patente_duplicada_devuelve_409(api_ms2: TestClient, db_ms2: Session):
     assert db_ms2.scalar(select(func.count()).select_from(Vehiculo)) == 1
 
 
+def test_patente_duplicada_se_evalua_despues_de_trim(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+    headers = _headers_para(1, NombreRol.CLIENTE)
+    assert api_ms2.post(
+        "/vehiculos", json=DATOS_VEHICULO, headers=headers
+    ).status_code == 201
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json={**DATOS_VEHICULO, "patente": "  ABCD12  "},
+        headers=headers,
+    )
+
+    assert respuesta.status_code == 409
+    assert db_ms2.scalar(select(func.count()).select_from(Vehiculo)) == 1
+
+
 def test_cliente_no_ve_vehiculos_de_otro_cliente(
     api_ms2: TestClient,
     db_ms2: Session,
@@ -275,6 +306,13 @@ def test_openapi_declara_seguridad_bearer(api_ms2: TestClient):
     }
     assert {"HTTPBearer": []} in esquema["paths"]["/vehiculos"]["post"]["security"]
     assert {"HTTPBearer": []} in esquema["paths"]["/vehiculos"]["get"]["security"]
+
+    patente = esquema["components"]["schemas"]["VehiculoCrear"]["properties"][
+        "patente"
+    ]
+    assert patente["minLength"] == 1
+    assert "maxLength" not in patente
+    assert "pattern" not in patente
 
 
 def test_get_individual_devuelve_vehiculo_propio(
@@ -545,6 +583,11 @@ def test_patch_multirol_con_cliente_es_permitido(
 
 def test_modelo_garantiza_asociacion_y_patente_unica():
     columnas = Vehiculo.__table__.c
+    restricciones_unicas = {
+        tuple(columna.name for columna in restriccion.columns)
+        for restriccion in Vehiculo.__table__.constraints
+        if isinstance(restriccion, UniqueConstraint)
+    }
     destinos_fk = {
         llave.target_fullname for llave in columnas.cliente_id.foreign_keys
     }
@@ -552,7 +595,7 @@ def test_modelo_garantiza_asociacion_y_patente_unica():
     assert columnas.cliente_id.nullable is False
     assert destinos_fk == {"cliente.cliente_id"}
     assert columnas.patente.nullable is False
-    assert columnas.patente.unique is True
+    assert ("patente",) in restricciones_unicas
     assert columnas.marca.nullable is False
     assert columnas.modelo.nullable is False
     assert columnas.anio.nullable is True
@@ -620,7 +663,24 @@ def test_post_rechaza_campo_obligatorio_vacio(
     assert respuesta.status_code == 422
 
 
-def test_post_rechaza_patente_que_supera_longitud_bd(
+def test_post_no_impone_largo_ni_formato_no_documentado_a_patente(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+    patente_sin_formato_prescrito = "identificador-de-patente-sin-regex"
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json={**DATOS_VEHICULO, "patente": patente_sin_formato_prescrito},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 201
+    assert respuesta.json()["patente"] == patente_sin_formato_prescrito
+
+
+def test_post_normaliza_solo_espacios_exteriores_de_patente(
     api_ms2: TestClient,
     db_ms2: Session,
 ):
@@ -628,11 +688,29 @@ def test_post_rechaza_patente_que_supera_longitud_bd(
 
     respuesta = api_ms2.post(
         "/vehiculos",
-        json={**DATOS_VEHICULO, "patente": "A" * 11},
+        json={**DATOS_VEHICULO, "patente": "  abc-12  "},
         headers=_headers_para(1, NombreRol.CLIENTE),
     )
 
-    assert respuesta.status_code == 422
+    assert respuesta.status_code == 201
+    assert respuesta.json()["patente"] == "abc-12"
+
+
+def test_post_no_impone_rangos_no_documentados_a_anio_y_kilometraje(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    _crear_cliente(db_ms2, usuario_id=1)
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json={**DATOS_VEHICULO, "anio": 1200, "kilometraje": -5},
+        headers=_headers_para(1, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 201
+    assert respuesta.json()["anio"] == 1200
+    assert respuesta.json()["kilometraje"] == -5
 
 
 def test_post_permite_omitir_anio_y_kilometraje(

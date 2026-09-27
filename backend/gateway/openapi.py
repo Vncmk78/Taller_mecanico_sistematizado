@@ -218,7 +218,11 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
             "post": _operacion(
                 tag="Vehículos",
                 resumen="Registrar un vehículo",
-                descripcion="Registra un vehículo para el cliente autenticado.",
+                descripcion=(
+                    "Registra un vehículo para el cliente autenticado. La patente "
+                    "es obligatoria, no vacía y única; no se impone un formato ni "
+                    "un largo funcional específico."
+                ),
                 operation_id="registrar_vehiculo",
                 cuerpo="VehiculoCrear",
                 respuestas_ok={
@@ -278,7 +282,8 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 resumen="Actualizar parcialmente un vehículo",
                 descripcion=(
                     "Modifica uno o más campos de un vehículo del cliente "
-                    "autenticado (enviar al menos uno)."
+                    "autenticado (enviar al menos uno). La patente y el "
+                    "propietario son inmutables."
                 ),
                 operation_id="actualizar_vehiculo",
                 cuerpo="VehiculoActualizar",

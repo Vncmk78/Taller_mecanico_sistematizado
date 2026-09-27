@@ -224,3 +224,18 @@ def test_contrato_detalla_email_y_roles(esquema: dict) -> None:
     assert email_login["format"] == "email"
     roles = schemas["UsuarioRespuesta"]["properties"]["roles"]
     assert roles["items"]["enum"] == ["cliente", "mecanico", "administrador"]
+
+
+def test_contrato_vehiculo_no_inventa_formato_o_rangos(esquema: dict) -> None:
+    propiedades_crear = esquema["components"]["schemas"]["VehiculoCrear"][
+        "properties"
+    ]
+    patente = propiedades_crear["patente"]
+    assert patente["minLength"] == 1
+    assert "maxLength" not in patente
+    assert "pattern" not in patente
+
+    for campo in ("anio", "kilometraje"):
+        contrato = propiedades_crear[campo]
+        assert "minimum" not in contrato
+        assert "maximum" not in contrato

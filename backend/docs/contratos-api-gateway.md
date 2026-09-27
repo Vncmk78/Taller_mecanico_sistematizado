@@ -91,6 +91,11 @@ Todas requieren `Authorization: Bearer <token>` con rol Cliente.
 
 Registra un vehículo del cliente autenticado.
 
+La patente es obligatoria, no puede quedar vacía y debe ser única. Se eliminan
+espacios exteriores como normalización técnica, pero no se prescribe una regex,
+un largo funcional ni una combinación de letras y números. `anio` y
+`kilometraje` son enteros opcionales sin rangos funcionales adicionales definidos.
+
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` |
@@ -137,6 +142,7 @@ Consulta un vehículo del cliente autenticado.
 ### PATCH `/api/vehiculos/{vehiculo_id}`
 
 Actualiza parcialmente un vehículo (enviar al menos un campo).
+La patente y el propietario no son modificables después del registro.
 
 | Atributo | Descripción |
 |---|---|

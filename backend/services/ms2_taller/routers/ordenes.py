@@ -15,6 +15,7 @@ from services.ms2_taller.schemas.orden import (
 )
 from services.ms2_taller.services.ordenes import (
     OrdenNoEncontradaError,
+    OrdenTerminalError,
     PersistenciaOrdenError,
     VehiculoNoEncontradoError,
     asignar_mecanico,
@@ -130,7 +131,10 @@ def consultar_orden(
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_409_CONFLICT: {
-            "description": "Un administrador-mecánico no puede autoasignarse"
+            "description": (
+                "Un administrador-mecánico no puede autoasignarse o la orden "
+                "se encuentra en un estado terminal"
+            )
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
@@ -169,6 +173,11 @@ def actualizar_mecanico_responsable(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Orden no encontrada",
+        ) from exc
+    except OrdenTerminalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
         ) from exc
     except PersistenciaOrdenError as exc:
         raise HTTPException(

@@ -1,9 +1,11 @@
 """Creación, consulta y asociación inicial de órdenes de trabajo.
 
 INT-32 aporta el alta en estado ``Recibido`` y la visibilidad por recurso.
-INT-33 agrega la asignación y reasignación auditada del mecánico, sin cambiar
-el estado. La validación remota del rol del destino y la capacidad configurable
-siguen pendientes porque su infraestructura todavía no está disponible.
+INT-33 agrega la asignación y reasignación auditada del mecánico. La primera
+asignación de una orden recibida la deja esperando diagnóstico; las posteriores
+no cambian automáticamente el estado. La validación remota del rol del destino
+y la capacidad configurable siguen pendientes porque su infraestructura todavía
+no está disponible.
 """
 
 from __future__ import annotations
@@ -15,7 +17,11 @@ from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
 from services.ms2_taller.models.cliente import Cliente
-from services.ms2_taller.models.estado_orden import RECIBIDO
+from services.ms2_taller.models.estado_orden import (
+    ESPERANDO_DIAGNOSTICO,
+    ESTADOS_TERMINALES,
+    RECIBIDO,
+)
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
@@ -30,6 +36,10 @@ class VehiculoNoEncontradoError(Exception):
 
 class OrdenNoEncontradaError(Exception):
     """La orden no existe o no es visible para la identidad autenticada."""
+
+
+class OrdenTerminalError(Exception):
+    """Una orden entregada o cancelada ya no admite cambios de responsable."""
 
 
 class PersistenciaOrdenError(Exception):
@@ -145,14 +155,20 @@ def asignar_mecanico(
 
     El bloqueo de la orden se mantiene hasta el commit o rollback. De este modo,
     una operación concurrente sobre la misma orden observa el responsable que
-    haya confirmado la operación anterior. La comprobación remota del rol del
-    destino y la capacidad configurable quedan deliberadamente fuera de INT-33.
+    haya confirmado la operación anterior. En la primera asignación, una orden
+    ``Recibida`` pasa a ``Esperando diagnóstico`` y se auditan ambos cambios.
+    La comprobación remota del rol del destino y la capacidad configurable quedan
+    deliberadamente fuera de INT-33.
     """
 
     try:
         orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
         if orden is None:
             raise OrdenNoEncontradaError("Orden no encontrada")
+        if orden.estado_codigo in ESTADOS_TERMINALES:
+            raise OrdenTerminalError(
+                "No se puede cambiar el mecánico de una orden terminal"
+            )
 
         mecanico_anterior_id = orden.mecanico_actual_id
         if mecanico_anterior_id == mecanico_id:
@@ -171,11 +187,27 @@ def asignar_mecanico(
                 observacion=observacion,
             )
         )
+
+        if mecanico_anterior_id is None and orden.estado_codigo == RECIBIDO:
+            orden.estado_codigo = ESPERANDO_DIAGNOSTICO
+            db.add(
+                HistorialEstado(
+                    orden_id=orden.orden_id,
+                    estado_anterior=RECIBIDO,
+                    estado_nuevo=ESPERANDO_DIAGNOSTICO,
+                    actor_usuario_id=administrador_id,
+                    origen="usuario",
+                )
+            )
+
         db.flush()
         db.refresh(orden)
         db.commit()
         return orden
     except OrdenNoEncontradaError:
+        db.rollback()
+        raise
+    except OrdenTerminalError:
         db.rollback()
         raise
     except SQLAlchemyError as exc:

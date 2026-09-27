@@ -1,0 +1,298 @@
+# Máquina de estados y tabla de transiciones de órdenes de trabajo
+
+Grupo 10 · Taller de Integración II · SCRUM-313 y SCRUM-314
+
+Este documento define el criterio técnico para validar el ciclo de vida de una
+`OrdenTrabajo` en MS2. La conclusión es usar una máquina de estados finita y
+explícita, implementable mediante un mapa de eventos y validadores simples. El
+dominio tiene ocho estados estables y pocas transiciones respaldadas por la
+Sistematización final, por lo que una librería externa de máquinas de estados no
+aportaría una ventaja proporcional.
+
+Este estudio no implementa el flujo general ni crea endpoints de cambio de
+estado. La única transición productiva ya disponible es la primera asignación de
+INT-33: `Recibido → Esperando diagnóstico`.
+
+## 1. Fuentes y alcance
+
+La fuente funcional principal es `T_integra_II/sistematizacion_final.docx`, en
+especial las secciones 4.1, 4.2, 4.3, 4.6, 4.7 y 4.8. También se contrastaron:
+
+- `T_integra_II/Diagramas_Integra_II_finales/LEEME.md`;
+- el MER de MS2 en `04-mer-erd-corregido.drawio`;
+- `Requerimientos.md`, requisito RF-10;
+- los modelos, migraciones, servicios y pruebas actuales de MS2;
+- los commits que incorporaron el catálogo, los historiales, la creación de
+  órdenes y la asignación de mecánicos.
+
+### 1.1 Discrepancia del backlog
+
+El Excel/Jira del backlog menciona "nueve estados oficiales", pero esa cantidad
+está desactualizada. La Sistematización final define expresamente **ocho estados**
+y separa el estado de la orden de:
+
+- la situación de cada versión de presupuesto;
+- la revisión de una solicitud de nueva atención.
+
+El LEEME, el MER, RF-10, los modelos y las migraciones vigentes también utilizan
+los mismos ocho estados. En consecuencia, la implementación se rige por esos
+ocho estados y no incorpora un noveno. La situación de una versión de presupuesto
+pertenece a MS3 y no es un estado de `OrdenTrabajo`.
+
+## 2. Infraestructura existente
+
+El proyecto ya dispone del siguiente groundwork y debe reutilizarse:
+
+- `models/estado_orden.py` declara los códigos constantes del 1 al 8, el mapa
+  `ESTADOS_ORDEN` y `ESTADOS_TERMINALES = {ENTREGADO, CANCELADO}`.
+- La migración `0003_ms2` crea y carga el catálogo `estado_orden` con exactamente
+  ocho filas. La base restringe los códigos al intervalo 1–8 y hace único el
+  nombre.
+- `OrdenTrabajo.estado_codigo` tiene una FK local a `estado_orden`, parte en
+  `RECIBIDO` y está indexado.
+- `HistorialEstado` conserva orden, estado anterior, estado nuevo, actor lógico
+  de MS1, origen (`usuario` o `sistema`), fecha/hora y observación. Sus estados
+  tienen FK locales al catálogo y cada fila debe representar un cambio real.
+- La migración `0004_ms2` refuerza la coherencia entre actor y origen: una
+  transición de usuario exige `actor_usuario_id`; una de sistema no lo admite.
+- `crear_orden()` crea la orden y su entrada inicial de historial
+  `(sin estado anterior) → Recibido` en una sola transacción.
+- `asignar_mecanico()` bloquea la orden, impide cambios sobre estados terminales
+  y, en la primera asignación de una orden recibida, actualiza el responsable,
+  registra `HistorialAsignacion`, cambia a `Esperando diagnóstico` y registra
+  `HistorialEstado` antes del mismo `commit`.
+
+Las FK anteriores son internas a MS2. Los identificadores de usuarios de MS1 se
+mantienen como referencias lógicas, sin FK física entre bases de microservicios.
+
+## 3. Patrón elegido para SCRUM-313
+
+### 3.1 Por qué es una máquina de estados
+
+Una orden no puede cambiar libremente entre valores del catálogo. Su estado
+actual representa una etapa del ciclo de atención y solo ciertos hechos del
+negocio permiten avanzar a otra etapa. Por ejemplo, una orden no puede entrar en
+reparación sin una primera aprobación de presupuesto, y una orden terminal no
+puede reabrirse.
+
+Modelar estas reglas como máquina de estados hace explícitas tres preguntas:
+
+1. ¿Cuál es el estado actual persistido?
+2. ¿Qué evento de negocio ocurrió y se comprobaron sus precondiciones?
+3. ¿Qué único estado de destino admite esa combinación?
+
+Una lista de valores válidos protege el catálogo, pero no basta para proteger el
+flujo. La tabla de transiciones de la sección 5 es la regla que limita los pares
+permitidos.
+
+### 3.2 Estado y evento no son lo mismo
+
+Un **estado** es una condición persistente de la orden, consultable durante un
+periodo: `Recibido`, `En reparación` o `Listo`.
+
+Un **evento** es el hecho puntual que intenta producir una transición: primera
+asignación, envío del primer presupuesto, aprobación, disponibilidad de
+repuestos, finalización del trabajo o entrega física. El evento debe incluir o
+permitir comprobar su contexto, actor y precondiciones. Registrar un diagnóstico,
+por ejemplo, no cambia por sí solo la orden; el evento documentado que la lleva a
+esperar la decisión del cliente es el envío del primer presupuesto.
+
+La situación `aprobada`, `rechazada` o `pendiente` de una versión de presupuesto
+es dato de MS3. Aunque una decisión pueda originar un evento para MS2, esa
+situación no debe añadirse al catálogo de estados de la orden.
+
+### 3.3 Mapa explícito y validadores simples
+
+Cuando se implemente el flujo general, la tabla puede representarse mediante un
+mapa explícito indexado por `(estado_actual, evento)`, cuyo resultado sea el
+`estado_nuevo`. Esta forma es preferible a validar solo el destino, porque dos
+eventos distintos pueden conducir a `Cancelado` y cada uno exige condiciones y
+actores diferentes.
+
+El validador debe rechazar por defecto toda combinación ausente del mapa. Además,
+cada evento debe aplicar por separado:
+
+- autorización del actor;
+- precondiciones propiedad de MS2;
+- hechos informados mediante contratos de otros microservicios;
+- reglas contextuales, como que todavía no exista una primera aprobación para
+  cancelar por el flujo normal.
+
+No se necesita una dependencia externa: el conjunto es pequeño, estable y
+auditable; un mapa y funciones con nombres del dominio permiten comparar el
+código directamente con la tabla. Una librería agregaría abstracciones y estado
+interno sin eliminar la necesidad de validar permisos, presupuesto, stock,
+historial y transacciones entre límites de servicio.
+
+### 3.4 Reglas de transición y efectos externos
+
+La validación del cambio de estado debe estar separada de sus efectos externos.
+MS2 es responsable de decidir si la transición recibida está permitida para la
+orden, actualizar `OrdenTrabajo.estado_codigo` y escribir `HistorialEstado`.
+
+Notificaciones, decisiones de presupuesto, reservas o movimientos de inventario
+y otras acciones de servicios externos no deben ocultarse dentro del validador.
+Esos efectos se producen mediante los contratos del servicio propietario y no
+deben provocar que MS2 confirme un estado si falla su persistencia local.
+
+Los contratos, eventos, reintentos e idempotencia para coordinar cambios entre
+MS2 y MS3 están **PENDIENTES DE DEFINICIÓN**. Esta tarea no inventa endpoints ni
+una transacción distribuida.
+
+### 3.5 Historial, actor y atomicidad
+
+Toda transición confirmada debe producir exactamente una nueva fila de
+`HistorialEstado` con:
+
+- `orden_id`;
+- `estado_anterior` y `estado_nuevo`;
+- `actor_usuario_id` cuando el origen sea `usuario`;
+- `origen` (`usuario` o `sistema`);
+- `fecha_hora` asignada por la base;
+- `observacion` cuando corresponda.
+
+El cambio de `OrdenTrabajo.estado_codigo` y el alta del historial pertenecen a la
+misma transacción local de MS2. Antes de validar se debe bloquear la orden para
+actualización, siguiendo el patrón `SELECT ... FOR UPDATE` ya usado por la
+asignación. Un error en la actualización o en el historial exige rollback total:
+no puede quedar el estado sin trazabilidad ni una historia que no corresponda al
+estado vigente.
+
+Los datos de presupuesto o inventario pertenecen a otra base y no forman parte de
+la transacción local de MS2. El contrato futuro debe entregar evidencia suficiente
+del evento sin crear FK físicas ni acceso directo a tablas de MS3.
+
+### 3.6 Estados terminales
+
+`Entregado` y `Cancelado` no tienen transiciones salientes. El validador debe
+rechazar cualquier intento de cambio desde ellos antes de ejecutar efectos. Una
+devolución física posterior a una cancelación no cambia la orden a `Entregado`.
+Si el cliente solicita otra atención, el administrador crea una orden distinta,
+con su propio estado inicial e historial.
+
+## 4. Catálogo oficial de estados
+
+La columna "actor principal" identifica al actor que caracteriza la etapa o su
+siguiente acción normal; no sustituye la autorización concreta de cada evento.
+
+| Código | Estado | Significado funcional | Actor principal |
+|---:|---|---|---|
+| 1 | Recibido | El administrador confirmó el ingreso físico y creó la orden. Puede permanecer sin mecánico mientras espera capacidad. | Administrador |
+| 2 | Esperando diagnóstico | La orden ya tiene mecánico asignado y espera el diagnóstico y la propuesta inicial. | Mecánico |
+| 3 | Esperando aprobación de presupuesto | Se envió el primer presupuesto y todavía no existe una aprobación que autorice la reparación. | Cliente para decidir; Administrador para el envío revisado |
+| 4 | Esperando repuestos | Existe un presupuesto aprobado, pero faltan repuestos necesarios para continuar el trabajo autorizado. | MS3 informa disponibilidad; la operación humana exacta está **PENDIENTE DE DEFINICIÓN** |
+| 5 | En reparación | Existe un presupuesto aprobado y están disponibles los repuestos necesarios para ejecutar el alcance autorizado. | Mecánico |
+| 6 | Listo | El mecánico terminó el trabajo autorizado y el vehículo está disponible para retiro. | Administrador para registrar la entrega |
+| 7 | Entregado | El administrador registró la entrega física tras finalizar el servicio. Es el término normal y es terminal. | Administrador |
+| 8 | Cancelado | El proceso terminó antes de la primera aprobación por rechazo confirmado o por solicitud de cancelación confirmada según el flujo. Es terminal. | Cliente origina la decisión o solicitud; Administrador confirma solo la solicitud independiente |
+
+No existe reapertura de `Entregado` o `Cancelado`. Una nueva atención después de
+cancelar inicia otra orden en `Recibido` y conserva la anterior como antecedente.
+
+## 5. Tabla de transiciones para SCRUM-314
+
+Esta tabla es cerrada: una transición no incluida no debe considerarse permitida.
+
+| Estado actual | Evento y precondición documentada | Actor u origen | Estado nuevo | Servicio responsable |
+|---|---|---|---|---|
+| No existe orden | El administrador confirma el ingreso físico y crea la orden. | Administrador | Recibido | MS2 crea orden e historial inicial. |
+| Recibido | Primera asignación válida de mecánico. | Administrador | Esperando diagnóstico | MS2; ya implementado por INT-33. |
+| Esperando diagnóstico | Se envía el primer presupuesto al cliente. | Administrador envía la versión revisada | Esperando aprobación de presupuesto | MS3 gestiona presupuesto y envío; MS2 valida y persiste el estado mediante un contrato futuro. |
+| Esperando aprobación de presupuesto | El cliente aprueba por primera vez y existen los repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | En reparación | MS3 aporta los hechos; MS2 valida y persiste el estado mediante un contrato futuro. |
+| Esperando aprobación de presupuesto | El cliente aprueba por primera vez y faltan repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | Esperando repuestos | MS3 aporta los hechos; MS2 valida y persiste el estado mediante un contrato futuro. |
+| Esperando repuestos | Se registra la disponibilidad necesaria para el trabajo autorizado. | Evento originado en MS3; actor exacto **PENDIENTE DE DEFINICIÓN** | En reparación | MS3 aporta el hecho; MS2 valida y persiste el estado mediante un contrato futuro. |
+| En reparación | El mecánico finaliza el trabajo autorizado. | Mecánico asignado | Listo | MS2 valida responsable, actualiza orden e historial. |
+| Listo | Se registra la entrega física del vehículo. | Administrador | Entregado | MS2 actualiza orden, datos de entrega e historial. |
+| Esperando aprobación de presupuesto | El cliente rechaza el presupuesto cuando nunca ha existido una aprobación y confirma la consecuencia de cancelar. No requiere una segunda confirmación administrativa. | Cliente | Cancelado | MS3 registra la decisión; MS2 vuelve a validar la condición y persiste la cancelación mediante un contrato futuro. |
+| Recibido | El cliente solicita cancelar y el administrador confirma la solicitud después de comprobar que no existe una primera aprobación. | Cliente solicita; Administrador confirma | Cancelado | MS2 persiste cancelación e historial; consulta del hecho de aprobación por contrato con MS3 **PENDIENTE DE DEFINICIÓN**. |
+| Esperando diagnóstico | El cliente solicita cancelar y el administrador confirma la solicitud después de comprobar que no existe una primera aprobación. | Cliente solicita; Administrador confirma | Cancelado | MS2 persiste cancelación e historial; consulta del hecho de aprobación por contrato con MS3 **PENDIENTE DE DEFINICIÓN**. |
+| Esperando aprobación de presupuesto | El cliente solicita cancelar sin rechazar el presupuesto y el administrador confirma la solicitud después de comprobar que no existe una primera aprobación. | Cliente solicita; Administrador confirma | Cancelado | MS2 persiste cancelación e historial; consulta del hecho de aprobación por contrato con MS3 **PENDIENTE DE DEFINICIÓN**. |
+| Entregado | Ninguno. Estado terminal. | No aplica | Sin transición | MS2 rechaza el intento. |
+| Cancelado | Ninguno. Estado terminal. | No aplica | Sin transición | MS2 rechaza el intento. |
+
+### 5.1 Cambios que no son transiciones
+
+- Reasignar el mecánico conserva el estado actual y agrega solamente el historial
+  de asignación.
+- Registrar el diagnóstico no cambia por sí solo a `Esperando aprobación de
+  presupuesto`; el evento de transición es el envío del primer presupuesto.
+- Enviar o rechazar una modificación posterior del presupuesto no devuelve la
+  orden a `Esperando aprobación de presupuesto` ni la cancela. Sigue vigente el
+  último alcance aprobado.
+- Aprobar una nueva versión posterior no implica por sí solo una transición de
+  orden. Su efecto exacto sobre disponibilidad y ejecución está **PENDIENTE DE
+  DEFINICIÓN** y no se agrega a la tabla.
+- Devolver físicamente un vehículo cancelado no cambia `Cancelado` a `Entregado`.
+- Una solicitud de nueva atención no reabre la orden cancelada; puede originar
+  una orden nueva después de revisión administrativa.
+
+### 5.2 Transiciones expresamente excluidas
+
+No se permiten retrocesos, reaperturas, saltos administrativos, bypass del
+presupuesto, cambios especiales por reasignación ni transiciones automáticas por
+cada modificación posterior del presupuesto. Cualquier flujo no incluido en la
+tabla queda **PENDIENTE DE DEFINICIÓN** y no debe implementarse por inferencia.
+
+## 6. Responsabilidades por microservicio
+
+| Responsabilidad | Servicio propietario |
+|---|---|
+| Identidad, autenticación, actividad y roles de Cliente, Mecánico y Administrador | MS1 |
+| Orden, estado actual, validación de la transición e `HistorialEstado` | MS2 |
+| Presupuesto lógico, versiones, decisiones del cliente, repuestos, inventario y disponibilidad | MS3 |
+| Evidencias multimedia asociadas a la orden | MS4; no decide transiciones de esta tabla |
+
+MS2 no debe consultar directamente las tablas de MS1 o MS3 ni crear FK hacia sus
+bases. El evento puede originarse en otro servicio, pero MS2 conserva la autoridad
+sobre el estado de la orden y comprueba que el cambio solicitado sea compatible
+con el estado actual.
+
+Quedan **PENDIENTES DE DEFINICIÓN** los contratos concretos para comunicar a MS2
+el envío del primer presupuesto, la primera aprobación o rechazo y la
+disponibilidad de repuestos, incluidos autenticación entre servicios, identidad
+del actor original, idempotencia y manejo de reintentos.
+
+## 7. Relación con INT-33
+
+INT-33 ya implementa la transición puntual `Recibido → Esperando diagnóstico`.
+La condición usada coincide con esta tabla: debe ser la primera asignación
+(`mecanico_actual_id` anterior vacío) de una orden que todavía esté en
+`RECIBIDO`.
+
+La asignación y el cambio de estado se realizan bajo bloqueo de la orden y en la
+misma transacción junto con `HistorialAsignacion` e `HistorialEstado`. Una
+reasignación posterior mantiene el estado, y las órdenes `Entregado` o
+`Cancelado` rechazan asignación y reasignación. Por tanto, no corresponde
+reimplementar esta transición en SCRUM-313/SCRUM-314.
+
+## 8. Guía para la implementación futura
+
+La futura tarea de máquina de estados deberá, como mínimo:
+
+1. reutilizar las constantes y `ESTADOS_TERMINALES` existentes;
+2. declarar el mapa cerrado de eventos y transiciones sin duplicar el catálogo;
+3. autenticar y autorizar el actor según el evento;
+4. obtener por contrato los hechos que pertenecen a MS1 o MS3;
+5. bloquear la orden y volver a leer su estado antes de validar;
+6. actualizar estado e insertar historial en una transacción local;
+7. hacer rollback completo ante cualquier error;
+8. probar cada transición permitida y todos los rechazos relevantes, en especial
+   terminales, eventos repetidos y condiciones externas desactualizadas.
+
+Esta guía no autoriza endpoints generales ni el flujo completo de las Semanas
+4–6. Es la especificación técnica previa para que esas tareas se implementen sin
+inventar estados o transiciones.
+
+## 9. Referencias técnicas del repositorio
+
+- `backend/services/ms2_taller/models/estado_orden.py`
+- `backend/services/ms2_taller/models/orden_trabajo.py`
+- `backend/services/ms2_taller/models/historial_estado.py`
+- `backend/services/ms2_taller/alembic/versions/0003_ordenes_historial_ms2.py`
+- `backend/services/ms2_taller/alembic/versions/0004_auditoria_ms2.py`
+- `backend/services/ms2_taller/services/ordenes.py`
+- `backend/tests/test_ordenes_api.py`
+- `backend/tests/test_asignacion_ordenes_api.py`
+
+Historial revisado: commits `cf41988`, `490ede4`, `3b3a010`, `47c595f` y
+`6282d7f`.

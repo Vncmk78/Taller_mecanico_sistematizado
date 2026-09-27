@@ -99,10 +99,11 @@ verifica** · **cuándo** se implementa (tarea del plan).
   al subirlo.
   - Por qué: permite detectar archivos alterados y duplicados.
   - Cuándo: Semana 3 — modelo de metadatos.
-  - Nota: el cálculo y la comparación de SHA-256 quedaron verificados
-    (`scripts/prueba_minio.py` y `tests/test_ms4_minio_integracion.py`
-    descargan y comprueban que el hash coincide); falta **guardarlo** en los
-    metadatos, que es la tarea del modelo de la Semana 3.
+  - Nota: el cálculo/comparación quedaron verificados en la prueba mínima
+    (`scripts/prueba_minio.py` y `tests/test_ms4_minio_integracion.py`) y la
+    columna `sha256` quedó modelada en `models/evidencia.py` (se llena al
+    confirmar, regla 8 del modelo). Falta el guardado real al confirmar
+    (Semana 5).
 
 - [ ] **2.5 Convención de claves.** `ordenes/{orden_id}/{uuid}.{ext}`, sin
   datos personales en la ruta (ni patente, ni nombre, ni email).
@@ -115,13 +116,18 @@ verifica** · **cuándo** se implementa (tarea del plan).
   subir recibe `403`.
   - Cuándo: Semana 5 — *Implementar subida y consulta de archivos*.
 
-- [ ] **3.2 Quién puede ver.** El cliente solo ve evidencias de **sus**
+- [x] **3.2 Quién puede ver.** El cliente solo ve evidencias de **sus**
   órdenes. La propiedad de la orden se verifica consultando a MS2; nunca se
   confía en un `cliente_id` enviado por el propio cliente.
   - Verificación: test donde el cliente A pide una evidencia del cliente B y
     recibe `404` (no `403`, para no revelar que existe).
   - Cuándo: Semana 3 — *Definir modelo de metadatos, contexto y visibilidad*;
     implementación en Semana 5.
+  - ✅ **Diseño** definido en `models/evidencia.py` y
+    `docs/modelo-evidencias.md` (reglas de visibilidad por rol, filtro
+    `visible_cliente = true AND estado = 'confirmada' AND eliminada_en IS NULL`
+    y defaults por contexto, validados en `tests/test_ms4_modelo_evidencia.py`).
+    La implementación del endpoint (404 vs 403 vía consulta a MS2) es Semana 5.
 
 - [ ] **3.3 Descarga con URL prefirmada de corta duración.** MS4 entrega una
   URL firmada de MinIO que expira en **5 minutos**; nunca un enlace
@@ -172,10 +178,15 @@ verifica** · **cuándo** se implementa (tarea del plan).
 
 ## 5. Auditoría y ciclo de vida
 
-- [ ] **5.1 Registro de cada subida.** Se guarda quién subió (usuario del
+- [x] **5.1 Registro de cada subida.** Se guarda quién subió (usuario del
   JWT), cuándo, a qué orden o presupuesto pertenece, tamaño, tipo, SHA-256 y
   el `X-Request-ID` que propaga la Gateway.
   - Cuándo: Semana 3 — modelo de metadatos.
+  - ✅ **Diseño** definido en `models/evidencia.py`: `autor_usuario_id`,
+    `orden_id`/`presupuesto_id`, `tamano_bytes`, `tipo_archivo`, `sha256`,
+    `request_id` y `creada_en` (validados en
+    `tests/test_ms4_modelo_evidencia.py`). El llenado real desde el JWT y la
+    cabecera `X-Request-ID` es la tarea de recepción (Semana 5).
 
 - [ ] **5.2 Evidencia de presupuesto aprobado no se borra.** Una vez que el
   cliente aprobó el presupuesto, sus evidencias quedan inmutables (solo se

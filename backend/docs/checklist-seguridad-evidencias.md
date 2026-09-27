@@ -50,7 +50,7 @@ verifica** · **cuándo** se implementa (tarea del plan).
   - Verificación: test con un archivo de 10 MB + 1 byte.
   - Cuándo: Semana 6.
 
-- [ ] **1.4 Nombre de almacenamiento generado por el servidor.** El archivo
+- [x] **1.4 Nombre de almacenamiento generado por el servidor.** El archivo
   se guarda con un UUID (`{uuid}.{ext}`); el nombre original solo se guarda
   como metadato, limpio (sin rutas, sin `../`, máximo 255 caracteres).
   - Por qué: evita *path traversal*, colisiones y nombres con datos
@@ -59,6 +59,10 @@ verifica** · **cuándo** se implementa (tarea del plan).
     MinIO es un UUID.
   - Cuándo: Semana 3 — *Implementar base para recepción y almacenamiento de
     metadatos*.
+  - ✅ Implementado en `generar_clave_objeto` (UUID + extensión desde el
+    content_type) y `nombre_limpio` (basename de lo guardado como metadato);
+    verificado en `tests/test_ms4_recepcion.py`. La validación del *contenido*
+    (1.2) y del tamaño máximo (1.3) es Semana 6.
 
 - [ ] **1.5 Eliminar metadatos EXIF de las fotos.** Se quitan GPS, modelo
   del teléfono y fecha original antes de guardar.
@@ -95,19 +99,21 @@ verifica** · **cuándo** se implementa (tarea del plan).
   usuario administrador.
   - Cuándo: Semana 3 (local) y Semana 11 (despliegue).
 
-- [ ] **2.4 Integridad.** Se calcula y guarda el **SHA-256** de cada archivo
+- [x] **2.4 Integridad.** Se calcula y guarda el **SHA-256** de cada archivo
   al subirlo.
   - Por qué: permite detectar archivos alterados y duplicados.
   - Cuándo: Semana 3 — modelo de metadatos.
-  - Nota: el cálculo/comparación quedaron verificados en la prueba mínima
-    (`scripts/prueba_minio.py` y `tests/test_ms4_minio_integracion.py`) y la
-    columna `sha256` quedó modelada en `models/evidencia.py` (se llena al
-    confirmar, regla 8 del modelo). Falta el guardado real al confirmar
-    (Semana 5).
+  - ✅ Implementado: `recibir_evidencia` (flujo A) calcula el SHA-256 al recibir
+    y lo guarda en la fila con estado `confirmada` y `confirmada_en`
+    (`services/evidencias.py`); verificado en `tests/test_ms4_recepcion.py` y
+    `tests/test_ms4_recepcion_minio.py` (sube, descarga y compara el hash).
 
-- [ ] **2.5 Convención de claves.** `ordenes/{orden_id}/{uuid}.{ext}`, sin
+- [x] **2.5 Convención de claves.** `ordenes/{orden_id}/{uuid}.{ext}`, sin
   datos personales en la ruta (ni patente, ni nombre, ni email).
   - Cuándo: Semana 3.
+  - ✅ Implementado en `generar_clave_objeto`: la extensión sale del
+    content_type y nunca del nombre enviado; verificado en
+    `tests/test_ms4_recepcion.py`.
 
 ## 3. Acceso y visibilidad
 

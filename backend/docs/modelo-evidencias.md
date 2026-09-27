@@ -2,9 +2,9 @@
 
 Semana 3 · Bastián Liempi · Taller de Integración II (Grupo 10)
 
-Define el modelo `Evidencia` (metadatos) de fotos y videos de orden. **Aquí no
-hay endpoints ni migraciones**: solo el modelo, sus enums y las reglas de
-visibilidad que usarán las consultas futuras.
+Define el modelo `Evidencia` (metadatos) de fotos y videos de orden, las reglas
+de visibilidad que usarán las consultas y el flujo de recepción (A) que lo
+puebla. **Aquí no hay endpoints**: la subida y consulta por HTTP es tarea aparte.
 
 El archivo vive en MinIO/S3; en PostgreSQL solo van los **metadatos**. Fuentes:
 lámina 04-mer-erd (recuadro "BD MS4"), Sistematización final §4.3, §4.4, §8, y
@@ -119,6 +119,29 @@ La lista de `content_type` permitidos (`image/jpeg`, `image/png`, `image/webp`,
   (`eliminada_por_usuario_id`), para auditoría. No borra el archivo de MinIO
   automáticamente: eso lo define la tarea de recepción (checklist 5.3).
 
+## Flujo de recepción (A) — fotos a través de MS4
+
+La recepción (`recibir_evidencia` en `services/evidencias.py`) ejecuta este
+orden, diseñado para no dejar residuos:
+
+1. **Valida el content_type** (`image/*` → foto, `video/*` → video) y **calcula
+   el SHA-256 y el tamaño** leyendo en bloques de 1 MiB; al terminar deja el
+   archivo al inicio.
+2. **Archivo de 0 bytes se rechaza** (`EvidenciaInvalidaError`) antes de subir.
+3. **Genera la clave** `ordenes/{orden_id}/{uuid}.{ext}` — la extensión sale del
+   content_type, nunca del nombre original (checklist 1.4 y 2.5).
+4. **Sube a MinIO** con `subir_objeto` (multipart desde 8 MiB, decisión 3 del
+   estudio de almacenamiento). Si MinIO falla, se propaga y **no se crea
+   ninguna fila**.
+5. **Inserta la fila** con estado `confirmada`, `confirmada_en` y `sha256` y
+   hace commit. `visible_cliente` solo se escribe si vino en la entrada; si no,
+   rige el default por contexto del modelo.
+6. **Compensación**: si la base falla, `rollback` y `eliminar_objeto` del objeto
+   recién subido (no quedan archivos huérfanos).
+
+Los metadatos que vienen del JWT/cabeceras (autor, `request_id`) no forman
+parte del body: los resuelve el endpoint que llama a este servicio.
+
 ## Relación con los requisitos funcionales
 
 - **RF18** — *Crear presupuestos con monto y evidencia fotográfica o en
@@ -134,10 +157,20 @@ La lista de `content_type` permitidos (`image/jpeg`, `image/png`, `image/webp`,
 ## Pruebas
 
 `tests/test_ms4_modelo_evidencia.py` (SQLite en memoria con `create_all`):
-
 - inserción de una evidencia válida y sus valores por defecto;
 - `IntegrityError` para las reglas 1–9 (contexto inválido, tipo inválido,
   tamaño 0, estado inválido, sha256 corto, pareja presupuesto-id incoherente
   en ambas direcciones, presupuesto oculto, confirmada sin sha256, eliminación
   sin responsable, `clave_objeto` duplicada);
 - `visible_cliente` por defecto según contexto (4 casos).
+
+`tests/test_ms4_recepcion.py` (SQLite + `FakeS3` en memoria) y
+`tests/test_ms4_recepcion_minio.py` (integración real, se salta sin MinIO):
+- una foto válida queda confirmada con su sha256 y la clave por convención;
+- la clave nunca usa el nombre original (aunque sea `../../x.jpg`);
+- `text/plain` y archivos de 0 bytes se rechazan sin fila ni objeto;
+- las reglas 6 y 7 se aplican en el schema (`DatosRecepcion`);
+- si la base falla se borra el objeto recién subido; si MinIO falla no queda
+  ninguna fila;
+- `listar_por_orden` filtra por visibilidad según la vista, y
+  `presupuesto_tiene_evidencia` implementa la regla de RF18.

@@ -217,6 +217,27 @@ def test_post_sin_token_devuelve_401(api_ordenes: TestClient):
     assert respuesta.headers["www-authenticate"] == "Bearer"
 
 
+@pytest.mark.parametrize("vehiculo_id", [0, -1])
+def test_post_vehiculo_id_invalido_devuelve_422_sin_escrituras(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+    vehiculo_id: int,
+):
+    respuesta = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 422
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 0
+    assert db_ordenes.scalar(select(func.count()).select_from(OrdenTrabajo)) == 0
+    assert (
+        db_ordenes.scalar(select(func.count()).select_from(HistorialEstado))
+        == 0
+    )
+
+
 def test_post_vehiculo_inexistente_devuelve_404(
     api_ordenes: TestClient,
     db_ordenes: Session,

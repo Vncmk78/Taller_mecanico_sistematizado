@@ -49,15 +49,24 @@ export function AdminLayout() {
       onLogout={handleLogout}
       headerLeft={
         <div className="flex items-center gap-3">
-          <Search className="text-text-muted w-5 h-5" />
+          <Search className="text-text-muted w-5 h-5" aria-hidden />
           <input
             type="text"
             placeholder="Buscar patente, orden o cliente..."
+            aria-label="Buscar patente, orden o cliente"
             className="py-2.5 px-4 bg-black/40 border-none rounded-lg text-white text-sm outline-none w-[350px] placeholder:text-text-muted"
           />
         </div>
       }
-      headerRightPrepend={<Bell className="text-text-muted cursor-pointer w-5 h-5" />}
+      headerRightPrepend={
+        <button
+          type="button"
+          aria-label="Notificaciones"
+          className="text-text-muted hover:text-white transition-colors cursor-pointer bg-transparent border-none p-1"
+        >
+          <Bell className="w-5 h-5" />
+        </button>
+      }
     />
   );
 }

@@ -56,7 +56,7 @@ export function OrderHistoryTimeline({ entries, loading }: OrderHistoryTimelineP
                                 }`}
                             />
                             <div className="flex flex-wrap items-center gap-2">
-                                <OrderStatusBadge estadoCodigo={entry.estadoNuevoCodigo} />
+                                <OrderStatusBadge estadoCodigo={entry.estadoNuevoCodigo} size="sm" />
                                 {entry.estadoAnteriorCodigo !== null && (
                                     <span className="text-sm text-text-muted">
                                         desde {ordenStatusLabel(entry.estadoAnteriorCodigo)}

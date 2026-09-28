@@ -3,13 +3,12 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los 7 endpoints reales que enruta la Gateway hacia MS1 (Autenticación) y MS2
-(Vehículos), con sus esquemas (`gateway/contratos`), la seguridad `bearerAuth`
-y el formato común de errores de la Gateway (`gateway.esquemas`).
+los 11 endpoints reales que enruta la Gateway hacia MS1 (Autenticación) y MS2
+(Vehículos y Órdenes), con sus esquemas (`gateway/contratos`), la seguridad
+`bearerAuth` y el formato común de errores de la Gateway (`gateway.esquemas`).
 
-Los endpoints que todavía no existen en los microservicios (órdenes,
-presupuestos, evidencias) no se documentan: aparecen como pendientes en
-`docs/contratos-api-gateway.md`.
+Los endpoints todavía no implementados (presupuestos, evidencias, historial
+consultable y cambio general de estado) no se publican como contratos.
 """
 from __future__ import annotations
 
@@ -18,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
 
@@ -42,6 +42,10 @@ _TAGS = [
         "description": "Registro, consulta y actualización de vehículos (MS2).",
     },
     {
+        "name": "Órdenes",
+        "description": "Creación, consulta y asignación inicial de órdenes (MS2).",
+    },
+    {
         "name": "Gateway",
         "description": "Endpoints propios de la Gateway (índice y healthcheck).",
     },
@@ -55,6 +59,12 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("VehiculoCrear", contratos_vehiculos.VehiculoCrear),
     ("VehiculoActualizar", contratos_vehiculos.VehiculoActualizar),
     ("VehiculoRespuesta", contratos_vehiculos.VehiculoRespuesta),
+    ("OrdenCrear", contratos_ordenes.OrdenCrear),
+    (
+        "AsignacionMecanicoActualizar",
+        contratos_ordenes.AsignacionMecanicoActualizar,
+    ),
+    ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
 ]
 
 _PARAMETRO_X_REQUEST_ID: dict[str, object] = {
@@ -80,6 +90,14 @@ _PARAMETRO_VEHICULO_ID: dict[str, object] = {
     "required": True,
     "description": "Identificador del vehículo.",
     "schema": {"type": "integer", "format": "int64", "example": 12},
+}
+
+_PARAMETRO_ORDEN_ID: dict[str, object] = {
+    "name": "orden_id",
+    "in": "path",
+    "required": True,
+    "description": "Identificador de la orden de trabajo.",
+    "schema": {"type": "integer", "format": "int64", "example": 31},
 }
 
 
@@ -110,6 +128,7 @@ def _operacion(
     errores_ms: dict[str, str] | None = None,
     requiere_auth: bool,
     con_vehiculo_id: bool = False,
+    con_orden_id: bool = False,
     descripcion_404: str = (
         "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA)."
     ),
@@ -118,6 +137,8 @@ def _operacion(
     parametros: list[dict[str, object]] = [_PARAMETRO_X_REQUEST_ID]
     if con_vehiculo_id:
         parametros.append(_PARAMETRO_VEHICULO_ID)
+    if con_orden_id:
+        parametros.append(_PARAMETRO_ORDEN_ID)
 
     errores: dict[str, dict[str, object]] = {
         **{
@@ -133,8 +154,11 @@ def _operacion(
             _ref("ErrorRespuesta"),
         ),
         "500": _respuesta(
-            "Error no controlado de la Gateway (ERROR_INTERNO).",
-            _ref("ErrorRespuesta"),
+            (
+                "Error interno. Puede provenir del microservicio con "
+                "ErrorDetalle o de la Gateway con ERROR_INTERNO."
+            ),
+            {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
         ),
     }
 
@@ -156,9 +180,9 @@ def _operacion(
 
 
 def _caminos_documentados() -> dict[str, dict[str, object]]:
-    # El 404 de un vehículo puede venir del microservicio (Vehículo no
-    # encontrado, {"detail": ...}) o de la Gateway (RUTA_NO_ENCONTRADA).
-    error_404_vehiculo: dict[str, object] = {
+    # Un recurso ausente lo informa MS2 con {"detail": ...}; la Gateway
+    # conserva además su formato propio para errores que ella genera.
+    error_404_recurso: dict[str, object] = {
         "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")],
     }
 
@@ -235,6 +259,8 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
+                descripcion_404="No existe el perfil Cliente local en MS2.",
+                esquema_404=error_404_recurso,
             ),
             "get": _operacion(
                 tag="Vehículos",
@@ -253,6 +279,8 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "403": "Se requiere rol Cliente",
                 },
                 requiere_auth=True,
+                descripcion_404="No existe el perfil Cliente local en MS2.",
+                esquema_404=error_404_recurso,
             ),
         },
         "/api/vehiculos/{vehiculo_id}": {
@@ -275,7 +303,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "No encontrado. Si el vehículo no existe, el microservicio "
                     "responde {'detail': 'Vehículo no encontrado'}."
                 ),
-                esquema_404=error_404_vehiculo,
+                esquema_404=error_404_recurso,
             ),
             "patch": _operacion(
                 tag="Vehículos",
@@ -301,8 +329,100 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "No encontrado. Si el vehículo no existe, el microservicio "
                     "responde {'detail': 'Vehículo no encontrado'}."
                 ),
-                esquema_404=error_404_vehiculo,
+                esquema_404=error_404_recurso,
             ),
+        },
+        "/api/ordenes": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Crear una orden de trabajo",
+                descripcion=(
+                    "Solo un Administrador crea la orden para un vehículo "
+                    "registrado. Se asocia o crea el ingreso físico, la orden "
+                    "comienza en Recibido y puede quedar sin mecánico."
+                ),
+                operation_id="crear_orden",
+                cuerpo="OrdenCrear",
+                respuestas_ok={
+                    "201": _respuesta("Orden creada.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "Datos inválidos",
+                },
+                requiere_auth=True,
+                descripcion_404="Vehículo no encontrado.",
+                esquema_404=error_404_recurso,
+            ),
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Listar órdenes visibles",
+                descripcion=(
+                    "Administrador ve todas; Cliente ve las asociadas a sus "
+                    "vehículos; Mecánico ve las que tiene asignadas. En un "
+                    "usuario multirol se unen sus alcances, y Administrador "
+                    "mantiene visibilidad global."
+                ),
+                operation_id="listar_ordenes",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Lista de órdenes visibles.",
+                        {"type": "array", "items": _ref("OrdenRespuesta")},
+                    )
+                },
+                errores_ms={"401": "JWT ausente o inválido"},
+                requiere_auth=True,
+            ),
+        },
+        "/api/ordenes/{orden_id}": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar una orden visible",
+                descripcion=(
+                    "Aplica la misma visibilidad del listado. Una orden "
+                    "inexistente o ajena responde 404 sin revelar su existencia."
+                ),
+                operation_id="consultar_orden",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta("Orden encontrada.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={"401": "JWT ausente o inválido"},
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/mecanico": {
+            "put": _operacion(
+                tag="Órdenes",
+                resumen="Asignar o reasignar el mecánico responsable",
+                descripcion=(
+                    "Solo un Administrador asigna o reasigna. La primera "
+                    "asignación cambia Recibido a Esperando diagnóstico y "
+                    "registra los historiales de asignación y estado. Una "
+                    "reasignación conserva el estado; Entregado y Cancelado "
+                    "rechazan la operación."
+                ),
+                operation_id="asignar_mecanico",
+                cuerpo="AsignacionMecanicoActualizar",
+                respuestas_ok={
+                    "200": _respuesta("Responsable actualizado.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "Autoasignación o estado terminal",
+                    "422": "Datos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
         },
     }
 
@@ -339,7 +459,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 7 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 11 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:

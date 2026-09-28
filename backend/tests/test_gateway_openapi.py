@@ -1,9 +1,9 @@
-"""Pruebas de la documentación OpenAPI/Swagger de la Gateway (Semana 2, tarea 2).
+"""Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 7 endpoints reales (auth y
-vehículos) con sus contratos y seguridad, que el proxy genérico no aparece, y
-que las copias del contrato de la Gateway (`gateway/contratos`) no se
-desactualizan respecto a los esquemas reales de MS1 y MS2.
+Verifican que `/openapi.json` publica los 11 endpoints reales de Auth,
+Vehículos y Órdenes con sus contratos y seguridad, que el proxy genérico no
+aparece, y que las copias de `gateway/contratos` no se desactualizan respecto
+a los esquemas reales de MS1 y MS2.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.main import app
 from services.ms1_auth.schemas.auth import (
@@ -24,6 +25,11 @@ from services.ms2_taller.schemas.vehiculo import (
     VehiculoCrear as Ms2VehiculoCrear,
     VehiculoRespuesta as Ms2VehiculoRespuesta,
 )
+from services.ms2_taller.schemas.orden import (
+    AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
+    OrdenCrear as Ms2OrdenCrear,
+    OrdenRespuesta as Ms2OrdenRespuesta,
+)
 
 _ENDPOINTS_ESPERADOS = {
     ("/api/auth/register", "post"),
@@ -33,6 +39,10 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/vehiculos", "get"),
     ("/api/vehiculos/{vehiculo_id}", "get"),
     ("/api/vehiculos/{vehiculo_id}", "patch"),
+    ("/api/ordenes", "post"),
+    ("/api/ordenes", "get"),
+    ("/api/ordenes/{orden_id}", "get"),
+    ("/api/ordenes/{orden_id}/mecanico", "put"),
 }
 
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
@@ -40,6 +50,9 @@ _PROTEGIDOS = {
     "/api/auth/me",
     "/api/vehiculos",
     "/api/vehiculos/{vehiculo_id}",
+    "/api/ordenes",
+    "/api/ordenes/{orden_id}",
+    "/api/ordenes/{orden_id}/mecanico",
 }
 
 
@@ -72,7 +85,7 @@ def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["openapi"].startswith("3.")
 
 
-def test_estan_los_7_endpoints_con_sus_metodos(esquema: dict) -> None:
+def test_estan_los_11_endpoints_con_sus_metodos(esquema: dict) -> None:
     operaciones = set(_operaciones_documentadas(esquema))
     assert operaciones == _ENDPOINTS_ESPERADOS
 
@@ -104,13 +117,18 @@ def test_health_e_indice_publicos_no_exigen_token(esquema: dict) -> None:
     assert "security" not in esquema["paths"]["/api/health"]["get"]
 
 
-def test_errores_de_la_gateway_apuntan_a_errorrespuesta(esquema: dict) -> None:
+def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) -> None:
     operaciones = _operaciones_documentadas(esquema)
-    # En GET/PATCH /api/vehiculos/{vehiculo_id} el 404 puede venir del
-    # microservicio: su esquema es oneOf [ErrorRespuesta, ErrorDetalle].
-    vehiculos_con_404_ms = {
+    # En estas operaciones el 404 también puede venir de MS2 (perfil o recurso
+    # ausente): su esquema admite ErrorRespuesta y ErrorDetalle.
+    operaciones_con_404_ms = {
+        ("/api/vehiculos", "post"),
+        ("/api/vehiculos", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
         ("/api/vehiculos/{vehiculo_id}", "patch"),
+        ("/api/ordenes", "post"),
+        ("/api/ordenes/{orden_id}", "get"),
+        ("/api/ordenes/{orden_id}/mecanico", "put"),
     }
     for ruta, metodo in _ENDPOINTS_ESPERADOS:
         respuestas = operaciones[(ruta, metodo)]["responses"]
@@ -118,14 +136,16 @@ def test_errores_de_la_gateway_apuntan_a_errorrespuesta(esquema: dict) -> None:
             esquema_respuesta = respuestas[estado]["content"]["application/json"][
                 "schema"
             ]
-            if estado == "404" and (ruta, metodo) in vehiculos_con_404_ms:
+            if estado == "500" or (
+                estado == "404" and (ruta, metodo) in operaciones_con_404_ms
+            ):
                 referencias = {
                     item["$ref"] for item in esquema_respuesta["oneOf"]
                 }
                 assert referencias == {
                     "#/components/schemas/ErrorRespuesta",
                     "#/components/schemas/ErrorDetalle",
-                }, f"{metodo.upper()} {ruta} 404"
+                }, f"{metodo.upper()} {ruta} {estado}"
             else:
                 assert (
                     esquema_respuesta["$ref"]
@@ -153,14 +173,24 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/auth/login", "post"): "LoginSolicitud",
         ("/api/vehiculos", "post"): "VehiculoCrear",
         ("/api/vehiculos/{vehiculo_id}", "patch"): "VehiculoActualizar",
+        ("/api/ordenes", "post"): "OrdenCrear",
+        (
+            "/api/ordenes/{orden_id}/mecanico",
+            "put",
+        ): "AsignacionMecanicoActualizar",
     }
     for (ruta, metodo), ref in con_cuerpo.items():
         esquema_cuerpo = operaciones[(ruta, metodo)]["requestBody"]["content"][
             "application/json"
         ]["schema"]
         assert esquema_cuerpo["$ref"] == f"#/components/schemas/{ref}"
-    for (ruta, metodo) in (("/api/auth/me", "get"), ("/api/vehiculos", "get"),
-                           ("/api/vehiculos/{vehiculo_id}", "get")):
+    for (ruta, metodo) in (
+        ("/api/auth/me", "get"),
+        ("/api/vehiculos", "get"),
+        ("/api/vehiculos/{vehiculo_id}", "get"),
+        ("/api/ordenes", "get"),
+        ("/api/ordenes/{orden_id}", "get"),
+    ):
         assert "requestBody" not in operaciones[(ruta, metodo)]
 
 
@@ -179,6 +209,12 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (contratos_vehiculos.VehiculoCrear, Ms2VehiculoCrear),
         (contratos_vehiculos.VehiculoActualizar, Ms2VehiculoActualizar),
         (contratos_vehiculos.VehiculoRespuesta, Ms2VehiculoRespuesta),
+        (contratos_ordenes.OrdenCrear, Ms2OrdenCrear),
+        (
+            contratos_ordenes.AsignacionMecanicoActualizar,
+            Ms2AsignacionMecanicoActualizar,
+        ),
+        (contratos_ordenes.OrdenRespuesta, Ms2OrdenRespuesta),
     ],
 )
 def test_contrato_coincide_con_esquema_real(contrato, real) -> None:
@@ -205,6 +241,9 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "VehiculoCrear",
         "VehiculoActualizar",
         "VehiculoRespuesta",
+        "OrdenCrear",
+        "AsignacionMecanicoActualizar",
+        "OrdenRespuesta",
         "ErrorRespuesta",
         "DetalleError",
         "ErrorDetalle",
@@ -239,3 +278,36 @@ def test_contrato_vehiculo_no_inventa_formato_o_rangos(esquema: dict) -> None:
         contrato = propiedades_crear[campo]
         assert "minimum" not in contrato
         assert "maximum" not in contrato
+
+
+def test_contrato_ordenes_refleja_flujo_inicial_implementado(esquema: dict) -> None:
+    schemas = esquema["components"]["schemas"]
+    assert schemas["OrdenCrear"]["additionalProperties"] is False
+    assert schemas["OrdenCrear"]["properties"]["vehiculo_id"][
+        "exclusiveMinimum"
+    ] == 0
+    assert schemas["AsignacionMecanicoActualizar"]["additionalProperties"] is False
+    assert schemas["AsignacionMecanicoActualizar"]["properties"]["mecanico_id"][
+        "exclusiveMinimum"
+    ] == 0
+    observacion = schemas["AsignacionMecanicoActualizar"]["properties"][
+        "observacion"
+    ]
+    assert any(variante.get("minLength") == 1 for variante in observacion["anyOf"])
+
+    paths = esquema["paths"]
+    descripcion_listado = paths["/api/ordenes"]["get"]["description"]
+    assert "Administrador ve todas" in descripcion_listado
+    assert "Cliente" in descripcion_listado
+    assert "Mecánico" in descripcion_listado
+    assert "multirol" in descripcion_listado
+
+    descripcion_asignacion = paths["/api/ordenes/{orden_id}/mecanico"]["put"][
+        "description"
+    ]
+    assert "Recibido a Esperando diagnóstico" in descripcion_asignacion
+    assert "reasignación conserva el estado" in descripcion_asignacion
+    assert "Entregado y Cancelado" in descripcion_asignacion
+
+    assert "/api/ordenes/{orden_id}/historial" not in paths
+    assert "/api/ordenes/{orden_id}/estado" not in paths

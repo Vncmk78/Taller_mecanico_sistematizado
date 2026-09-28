@@ -9,6 +9,7 @@ from services.ms2_taller.services.clientes import (
 )
 from services.ms2_taller.services.ordenes import (
     OrdenNoEncontradaError,
+    OrdenTerminalError,
     PersistenciaOrdenError,
     VehiculoNoEncontradoError as VehiculoOrdenNoEncontradoError,
     asignar_mecanico,
@@ -29,6 +30,7 @@ from services.ms2_taller.services.vehiculos import (
 __all__ = [
     "ClienteDuplicadoError",
     "OrdenNoEncontradaError",
+    "OrdenTerminalError",
     "PatenteDuplicadaError",
     "PersistenciaClienteError",
     "PersistenciaOrdenError",

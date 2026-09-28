@@ -1,10 +1,10 @@
 """Pruebas rápidas de migración — MS2 (Semana 2).
 
-Verifican que el esquema producido por las migraciones `0001_ms2` y `0002_ms2`
+Verifican que el esquema producido por las migraciones hasta `0005_ms2`
 realmente hace cumplir en la base:
 
-- las claves e índices esperados (PK, unicidad, índice funcional, índice de FK),
-- las restricciones de dominio (CHECK) de vehículo y cliente,
+- las claves e índices esperados (PK, unicidad e índice de FK),
+- las restricciones documentadas de vehículo y cliente,
 - la unicidad de la referencia lógica `cliente.usuario_id`,
 - el borrado en cascada de la FK `vehiculo.cliente_id`.
 
@@ -40,18 +40,17 @@ def test_indices_esperados_existen(conn):
 
     # Índice de la FK (búsquedas 'vehículos del cliente X').
     assert "ix_vehiculo_cliente_id" in indices
-    # Índice ÚNICO FUNCIONAL sobre upper(patente): patente única case-insensitive.
+    # La restricción UNIQUE simple crea el índice físico de patente.
     assert "uq_vehiculo_patente" in indices
     definicion = indices["uq_vehiculo_patente"].lower()
-    assert "unique" in definicion and "upper" in definicion
+    assert "unique" in definicion
+    assert "upper" not in definicion
 
 
 @pytest.mark.parametrize(
     "constraint",
     [
-        "ck_vehiculo_patente_formato",
-        "ck_vehiculo_anio_valido",
-        "ck_vehiculo_km_no_negativo",
+        "ck_vehiculo_patente_no_vacia",
         "ck_cliente_usuario_id_positivo",
     ],
 )
@@ -63,6 +62,22 @@ def test_checks_esperados_existen(conn, constraint):
         {"n": constraint},
     ).scalar_one_or_none()
     assert existe == 1, f"falta el CHECK {constraint}"
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        "ck_vehiculo_patente_formato",
+        "ck_vehiculo_anio_valido",
+        "ck_vehiculo_km_no_negativo",
+    ],
+)
+def test_checks_sin_respaldo_funcional_fueron_retirados(conn, constraint):
+    existe = conn.execute(
+        text("SELECT 1 FROM pg_constraint WHERE conname = :n AND contype = 'c'"),
+        {"n": constraint},
+    ).scalar_one_or_none()
+    assert existe is None
 
 
 # --------------------------------------------------------------------------- #
@@ -98,53 +113,39 @@ def test_usuario_id_de_cliente_es_unico(conn):
 # 3) Restricciones de dominio (CHECK)                                         #
 # --------------------------------------------------------------------------- #
 
-def test_patente_sin_normalizar_es_rechazada(conn):
-    # Minúsculas: viola ck_vehiculo_patente_formato (exige patente = upper(...)).
+def test_patente_no_vacia_es_requerida(conn):
     cid = _nuevo_cliente(conn, 1003)
     with pytest.raises(IntegrityError):
         conn.execute(
             text(
                 "INSERT INTO vehiculo (cliente_id, patente, marca, modelo) "
-                "VALUES (:c, 'abcd12', 'Kia', 'Rio')"
+                "VALUES (:c, '   ', 'Kia', 'Rio')"
             ),
             {"c": cid},
         )
 
 
-def test_patente_demasiado_corta_es_rechazada(conn):
+def test_patente_no_impone_formato_o_largo_no_documentado(conn):
     cid = _nuevo_cliente(conn, 1004)
-    with pytest.raises(IntegrityError):
-        conn.execute(
-            text(
-                "INSERT INTO vehiculo (cliente_id, patente, marca, modelo) "
-                "VALUES (:c, 'AB1', 'Kia', 'Rio')"
-            ),
-            {"c": cid},
-        )
+    conn.execute(
+        text(
+            "INSERT INTO vehiculo (cliente_id, patente, marca, modelo) "
+            "VALUES (:c, 'a', 'Kia', 'Rio')"
+        ),
+        {"c": cid},
+    )
 
 
-def test_anio_fuera_de_rango_es_rechazado(conn):
+def test_anio_y_kilometraje_no_tienen_rangos_no_documentados(conn):
     cid = _nuevo_cliente(conn, 1005)
-    with pytest.raises(IntegrityError):
-        conn.execute(
-            text(
-                "INSERT INTO vehiculo (cliente_id, patente, marca, modelo, anio) "
-                "VALUES (:c, 'XYZW99', 'Kia', 'Rio', 1200)"
-            ),
-            {"c": cid},
-        )
-
-
-def test_kilometraje_negativo_es_rechazado(conn):
-    cid = _nuevo_cliente(conn, 1006)
-    with pytest.raises(IntegrityError):
-        conn.execute(
-            text(
-                "INSERT INTO vehiculo (cliente_id, patente, marca, modelo, kilometraje) "
-                "VALUES (:c, 'JJKK88', 'Mazda', '3', -5)"
-            ),
-            {"c": cid},
-        )
+    conn.execute(
+        text(
+            "INSERT INTO vehiculo "
+            "(cliente_id, patente, marca, modelo, anio, kilometraje) "
+            "VALUES (:c, 'sin-formato-prescrito', 'Kia', 'Rio', 1200, -5)"
+        ),
+        {"c": cid},
+    )
 
 
 def test_usuario_id_no_positivo_es_rechazado(conn):
@@ -157,7 +158,7 @@ def test_usuario_id_no_positivo_es_rechazado(conn):
 # --------------------------------------------------------------------------- #
 
 def test_borrar_cliente_borra_sus_vehiculos_en_cascada(conn):
-    cid = _nuevo_cliente(conn, 1007)
+    cid = _nuevo_cliente(conn, 1006)
     conn.execute(
         text(
             "INSERT INTO vehiculo (cliente_id, patente, marca, modelo) "

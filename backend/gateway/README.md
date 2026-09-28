@@ -31,8 +31,8 @@ gateway/
 
 ## Documentación
 
-El Swagger de la Gateway publica los contratos reales que enruta (Auth y
-Vehículos), con sus esquemas, ejemplos y el botón Authorize:
+El Swagger de la Gateway publica los contratos reales que enruta (Auth,
+Vehículos y Órdenes), con sus esquemas, ejemplos y el botón Authorize:
 
 - `GET /docs` — Swagger UI.
 - `GET /openapi.json` — esquema OpenAPI completo.
@@ -48,11 +48,11 @@ avisa que la documentación quedó desactualizada.
 
 La Gateway separa el primer segmento de `/api/*` y lo busca en la tabla
 `RUTAS` (archivo `rutas.py`): `/api/auth/login` se reenvía a
-`GATEWAY_MS1_URL` + `/auth/login`, y `/api/vehiculos?patente=AB1234` a
-`GATEWAY_MS2_URL` + `/vehiculos?patente=AB1234`. El método, el body, el query
-string y la cabecera `Authorization` (el JWT) llegan tal cual al
-microservicio. Un prefijo sin microservicio responde `404`; si el servicio
-destino está caído, `502`.
+`GATEWAY_MS1_URL` + `/auth/login`, `/api/vehiculos` a `GATEWAY_MS2_URL` +
+`/vehiculos` y `/api/ordenes/31/mecanico` a `GATEWAY_MS2_URL` +
+`/ordenes/31/mecanico`. El método, el body, el query string y la cabecera
+`Authorization` (el JWT) llegan tal cual al microservicio. Un prefijo sin
+microservicio responde `404`; si el servicio destino está caído, `502`.
 
 | Prefijo | Microservicio | Ejemplo |
 |---|---|---|
@@ -151,5 +151,5 @@ uvicorn gateway.main:app --reload --port 8000
 ## Pruebas
 
 ```bash
-pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py tests/test_gateway_formato.py -v
+pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py tests/test_gateway_formato.py tests/test_gateway_openapi.py -v
 ```

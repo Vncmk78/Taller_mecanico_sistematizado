@@ -121,7 +121,7 @@ export function ClientVehicleFormPage() {
             </div>
 
             {submitError && (
-            <div className="flex items-center gap-2 mb-4 text-status-red text-sm bg-status-red/10 border border-status-red/40 rounded-lg px-4 py-3">
+            <div role="alert" className="flex items-center gap-2 mb-4 text-status-red text-sm bg-status-red/10 border border-status-red/40 rounded-lg px-4 py-3">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 {submitError}
             </div>

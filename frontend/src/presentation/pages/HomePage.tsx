@@ -67,24 +67,24 @@ export function HomePage() {
   return (
     <div className="min-h-screen flex flex-col animate-fade-in">
       <nav className="flex justify-between items-center px-12 py-5 border-b border-border-custom bg-black/80 backdrop-blur-[10px] sticky top-0 z-50">
-        <div className="flex items-center gap-2.5 text-2xl font-bold text-white">
+        <Link to="/" className="flex items-center gap-2.5 text-2xl font-bold text-white no-underline">
           <span className="relative inline-block w-[35px] h-[35px] text-gray-400">
             <Settings className="absolute left-0 top-0 w-6 h-6" />
             <Wrench className="absolute left-3 top-3 w-4 h-4 text-primary-red -rotate-15" />
           </span>
           Sistema Mecánico
-        </div>
+        </Link>
         <div className="flex gap-6">
-          <a href="#" className="text-text-muted text-sm hover:text-white transition-colors">
+          <a href="#inicio" className="text-text-muted text-sm hover:text-white transition-colors">
             Inicio
           </a>
-          <a href="#" className="text-text-muted text-sm hover:text-white transition-colors">
+          <a href="#caracteristicas" className="text-text-muted text-sm hover:text-white transition-colors">
             Quiénes Somos
           </a>
-          <a href="#" className="text-text-muted text-sm hover:text-white transition-colors">
+          <a href="#flujo" className="text-text-muted text-sm hover:text-white transition-colors">
             Servicios
           </a>
-          <a href="#" className="text-text-muted text-sm hover:text-white transition-colors">
+          <a href="#contacto" className="text-text-muted text-sm hover:text-white transition-colors">
             Contacto
           </a>
         </div>
@@ -96,7 +96,7 @@ export function HomePage() {
         </Link>
       </nav>
 
-      <section className="text-center py-[120px] px-5 pb-20 flex flex-col items-center">
+      <section id="inicio" className="text-center py-[120px] px-5 pb-20 flex flex-col items-center">
         <div className="text-[90px] text-white/90 mb-5 drop-shadow-[0_0_30px_rgba(255,255,255,0.1)]">
           <Settings className="w-[90px] h-[90px]" />
         </div>
@@ -117,7 +117,7 @@ export function HomePage() {
         </Link>
       </section>
 
-      <h2 className="text-center text-4xl mb-12 mt-10">
+      <h2 id="caracteristicas" className="text-center text-4xl mb-12 mt-10">
         ¿Por qué elegir nuestro sistema?
       </h2>
       <section className="grid grid-cols-4 gap-5 px-12 mb-24">
@@ -136,7 +136,7 @@ export function HomePage() {
       </section>
 
       <section className="py-15 px-12 bg-black/40 border-y border-border-custom mb-20">
-        <h2 className="text-center text-4xl mb-12 mt-0">
+        <h2 id="flujo" className="text-center text-4xl mb-12 mt-0">
           ¿Cómo funciona el flujo?
         </h2>
         <div className="grid grid-cols-4 gap-5 max-w-[1200px] mx-auto">
@@ -152,7 +152,7 @@ export function HomePage() {
         </div>
       </section>
 
-      <footer className="flex justify-between items-center px-12 py-10 bg-black/95 text-text-muted text-sm">
+      <footer id="contacto" className="flex justify-between items-center px-12 py-10 bg-black/95 text-text-muted text-sm">
         <div className="flex items-center gap-2.5 text-xl">
           <span className="relative inline-block w-[28px] h-[28px] text-gray-400 scale-80">
             <Settings className="absolute left-0 top-0 w-5 h-5" />

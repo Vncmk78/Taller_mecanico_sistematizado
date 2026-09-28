@@ -16,7 +16,7 @@ class VehiculoCrear(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    patente: str = Field(min_length=1, max_length=10)
+    patente: str = Field(min_length=1)
     marca: str = Field(min_length=1, max_length=60)
     modelo: str = Field(min_length=1, max_length=60)
     anio: int | None = None

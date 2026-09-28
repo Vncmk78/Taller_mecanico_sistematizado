@@ -113,6 +113,8 @@ export function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  aria-pressed={showPassword}
                   className="absolute right-4 top-[42px] text-text-muted hover:text-white transition-colors bg-transparent border-none cursor-pointer"
                 >
                   {showPassword ? (
@@ -132,7 +134,7 @@ export function LoginPage() {
               </Button>
 
               {errorMessage && (
-                <div className="flex items-center justify-center gap-2 mt-4 text-status-red text-sm bg-status-red/10 border border-status-red/40 rounded-lg px-4 py-3">
+                <div role="alert" className="flex items-center justify-center gap-2 mt-4 text-status-red text-sm bg-status-red/10 border border-status-red/40 rounded-lg px-4 py-3">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   {errorMessage}
                 </div>

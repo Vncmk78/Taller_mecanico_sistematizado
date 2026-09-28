@@ -1,5 +1,5 @@
 import type { InputHTMLAttributes, ReactNode } from 'react';
-import { forwardRef } from 'react';
+import { forwardRef, useId } from 'react';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -9,10 +9,14 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, icon, error, className = '', ...props }, ref) => {
+    const generatedId = useId();
+    const inputId = props.id ?? generatedId;
     return (
       <div className="mb-6">
         {label && (
-          <label className="block mb-2 text-sm text-gray-200">{label}</label>
+          <label htmlFor={inputId} className="block mb-2 text-sm text-gray-200">
+            {label}
+          </label>
         )}
         <div className="relative flex items-center">
           {icon && (
@@ -22,6 +26,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           )}
           <input
             ref={ref}
+            id={inputId}
             className={`w-full py-3.5 pr-4 bg-black/50 border rounded-lg text-white text-base transition-all duration-300 outline-none focus:border-primary-red focus:bg-black/80 focus:shadow-[0_0_0_3px_rgba(211,47,47,0.2)] ${
               icon ? 'pl-12' : 'pl-4'
             } ${error ? 'border-status-red' : 'border-border-custom'} ${className}`}

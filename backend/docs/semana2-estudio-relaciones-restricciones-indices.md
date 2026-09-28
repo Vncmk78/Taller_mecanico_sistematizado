@@ -74,7 +74,7 @@ tenga un error**. Tipos usados en el proyecto:
 | `PrimaryKeyConstraint` | Identidad de fila | `pk_usuario`, `pk_cliente`, PK compuesta `pk_usuario_rol` |
 | `UniqueConstraint` | Evitar duplicados | `uq_usuario_correo`, `uq_cliente_usuario_id` |
 | `ForeignKeyConstraint` | Integridad referencial + `ON DELETE` | `fk_vehiculo_cliente_id_cliente` (CASCADE), FKs de `usuario_rol` (CASCADE / RESTRICT / SET NULL) |
-| `CheckConstraint` | Reglas de dominio | `ck_vehiculo_anio_valido`, `ck_vehiculo_km_no_negativo`, `ck_vehiculo_patente_formato`, `ck_cliente_usuario_id_positivo` |
+| `CheckConstraint` | Reglas de dominio documentadas | `ck_vehiculo_patente_no_vacia`, `ck_cliente_usuario_id_positivo` |
 | `NOT NULL` | Obligatoriedad | `correo`, `patente`, `marca`, ... |
 
 ### 2.1 Acciones `ON DELETE`
@@ -86,14 +86,16 @@ En `usuario_rol` se ve el abanico de comportamientos:
 - **SET NULL** (`asignado_por_id`): si se borra el administrador que asignó el rol,
   la asignación se conserva pero pierde el "quién".
 
-### 2.2 CHECKs añadidos en la Semana 2 (MS2)
+### 2.2 CHECKs vigentes después de la regularización de Semana 2 (MS2)
 
-- `ck_vehiculo_patente_formato`: `char_length(btrim(patente)) between 5 and 10 and
-  patente = upper(btrim(patente))` — largo razonable y patente ya normalizada
-  (mayúsculas, sin espacios).
-- `ck_vehiculo_anio_valido`: año nulo o entre 1900 y 2100.
-- `ck_vehiculo_km_no_negativo`: kilometraje nulo o ≥ 0.
+- `ck_vehiculo_patente_no_vacia`: la patente obligatoria no puede contener solo
+  espacios.
 - `ck_cliente_usuario_id_positivo`: la referencia lógica a MS1 debe ser un id > 0.
+
+La migración histórica `0002_ms2` agregó largo de patente, mayúsculas y rangos
+para año/kilometraje. Como esas reglas no aparecen en la sistematización final,
+`0005_ms2` las retira mediante una migración forward, sin reescribir la migración
+ya aplicada. Año y kilometraje permanecen como enteros opcionales.
 
 ### 2.3 Convención de nombres
 
@@ -115,12 +117,10 @@ Un índice acelera búsquedas y es el mecanismo físico detrás de `UNIQUE`. Tip
 - **Explícitos por columna**: `index=True` en `Vehiculo.cliente_id`
   (`ix_vehiculo_cliente_id`). Se indexan las FK porque se filtran/join-ean seguido
   ("dame los vehículos del cliente X").
-- **Funcionales**: `uq_vehiculo_patente` es un índice **único** sobre
-  `upper(patente)`. Con él "abcd12" y "ABCD12" se consideran la misma patente
-  (unicidad **insensible a mayúsculas**). Un índice funcional no se puede expresar
-  con la lista de columnas de `op.create_index`, por eso en la migración se crea con
-  `op.execute("CREATE UNIQUE INDEX ... ON vehiculo (upper(patente))")` y en el modelo
-  con `Index("uq_vehiculo_patente", text("upper(patente)"), unique=True)`.
+- **Único por columna**: `uq_vehiculo_patente` garantiza la unicidad de la patente
+  almacenada sin imponer una normalización de mayúsculas que la fuente funcional
+  no define. Los espacios exteriores sí se eliminan de forma técnica antes de
+  persistir.
 
 Criterio aplicado: se indexa lo que se busca o se une (FK, patente), no cada
 columna, para no penalizar las escrituras con índices que nadie usa.
@@ -142,27 +142,25 @@ importa `Base` y `engine` propios y `target_metadata = Base.metadata`.
 Cada migración declara `revision` y `down_revision`, formando una cadena:
 
 ```
-MS2:  (base) ──▶ 0001_ms2 ──▶ 0002_ms2
+MS2:  (base) ──▶ 0001_ms2 ──▶ 0002_ms2 ──▶ 0003_ms2 ──▶ 0004_ms2 ──▶ 0005_ms2
 ```
 
-`0002_ms2.down_revision = "0001_ms2"`. `upgrade()` aplica los cambios y
-`downgrade()` los revierte en orden inverso, para poder volver atrás sin recrear la
-base.
+Cada revisión apunta a la anterior. `0005_ms2` regulariza las restricciones de
+vehículo sin editar destructivamente `0002_ms2`. `upgrade()` aplica los cambios y
+`downgrade()` los revierte en orden inverso.
 
 ### 4.3 `op.create_*` vs `op.execute`
 
 Las operaciones comunes (tablas, columnas, constraints con nombre, índices por
 columna) se hacen con la API de `op`, que además aplica la convención de nombres.
-Lo que la API no expresa —como el índice funcional sobre `upper(patente)`— se hace
-con SQL explícito vía `op.execute`.
+El índice funcional histórico de `0002_ms2` requirió SQL explícito. La restricción
+vigente de patente usa operaciones estándar de Alembic.
 
 ### 4.4 Verificar la coherencia modelo ↔ base
 
 `alembic check` compara la metadata de los modelos con el estado migrado de la base
-y falla si hay diferencias ("upgrade operations detected"). En la Semana 2 se usó
-para confirmar que las restricciones declaradas en `__table_args__` y las creadas
-por la migración `0002` coinciden exactamente. También se probó el ciclo
-`upgrade → downgrade → upgrade` contra un PostgreSQL real.
+y falla si hay diferencias ("upgrade operations detected"). Después de aplicar
+`0005_ms2` debe confirmar que la metadata vigente y PostgreSQL coinciden.
 
 ---
 
@@ -173,8 +171,8 @@ por la migración `0002` coinciden exactamente. También se probó el ciclo
 - Nombrar constraints/índices sin prefijo en los modelos y dejar que la convención
   los complete, para que las migraciones sean estables y `downgrade()` sea fiable.
 - Indexar FK y campos de búsqueda; evitar índices que nadie consulta.
-- Normalizar en el modelo (`@validates`) los datos que un CHECK exige (p. ej. la
-  patente en mayúsculas), para no chocar con la restricción en tiempo de ejecución.
+- Normalizar solo cuando no se altere la semántica funcional. En patente se eliminan
+  espacios exteriores, sin imponer mayúsculas, regex o largo no documentados.
 - Ejecutar `alembic check` y un ciclo up/down antes de subir migraciones nuevas.
 
 ---

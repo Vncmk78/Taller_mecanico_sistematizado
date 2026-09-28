@@ -25,7 +25,14 @@ from services.ms2_taller.models import (
     OrdenTrabajo,
     Vehiculo,
 )
-from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN, RECIBIDO
+from services.ms2_taller.models.estado_orden import (
+    CANCELADO,
+    EN_REPARACION,
+    ENTREGADO,
+    ESPERANDO_DIAGNOSTICO,
+    ESTADOS_ORDEN,
+    RECIBIDO,
+)
 from services.ms2_taller.services.ordenes import (
     _consulta_orden_para_actualizacion,
 )
@@ -84,7 +91,7 @@ def api_asignaciones(
     app.dependency_overrides.clear()
 
 
-def test_administrador_asigna_orden_y_registra_historial(
+def test_primera_asignacion_cambia_estado_y_registra_ambos_historiales(
     api_asignaciones: TestClient,
     db_asignaciones: Session,
 ):
@@ -98,26 +105,40 @@ def test_administrador_asigna_orden_y_registra_historial(
 
     assert respuesta.status_code == 200
     assert respuesta.json()["mecanico_actual_id"] == 50
+    assert respuesta.json()["estado_codigo"] == ESPERANDO_DIAGNOSTICO
 
     db_asignaciones.expire_all()
     persistida = db_asignaciones.get(OrdenTrabajo, orden.orden_id)
-    historial = db_asignaciones.scalar(select(HistorialAsignacion))
+    historial_asignacion = db_asignaciones.scalar(select(HistorialAsignacion))
+    historial_estado = db_asignaciones.scalar(select(HistorialEstado))
     assert persistida is not None
     assert persistida.mecanico_actual_id == 50
-    assert historial is not None
-    assert historial.orden_id == orden.orden_id
-    assert historial.mecanico_anterior_id is None
-    assert historial.mecanico_nuevo_id == 50
-    assert historial.administrador_id == 99
-    assert historial.fecha_hora is not None
-    assert historial.observacion == "Primera asignación"
+    assert persistida.estado_codigo == ESPERANDO_DIAGNOSTICO
+    assert historial_asignacion is not None
+    assert historial_asignacion.orden_id == orden.orden_id
+    assert historial_asignacion.mecanico_anterior_id is None
+    assert historial_asignacion.mecanico_nuevo_id == 50
+    assert historial_asignacion.administrador_id == 99
+    assert historial_asignacion.fecha_hora is not None
+    assert historial_asignacion.observacion == "Primera asignación"
+    assert historial_estado is not None
+    assert historial_estado.orden_id == orden.orden_id
+    assert historial_estado.estado_anterior == RECIBIDO
+    assert historial_estado.estado_nuevo == ESPERANDO_DIAGNOSTICO
+    assert historial_estado.actor_usuario_id == 99
+    assert historial_estado.origen == "usuario"
+    assert historial_estado.fecha_hora is not None
 
 
 def test_administrador_reasigna_y_conserva_responsable_anterior(
     api_asignaciones: TestClient,
     db_asignaciones: Session,
 ):
-    orden = _crear_orden(db_asignaciones, mecanico_id=40)
+    orden = _crear_orden(
+        db_asignaciones,
+        mecanico_id=40,
+        estado_codigo=EN_REPARACION,
+    )
 
     respuesta = api_asignaciones.put(
         f"/ordenes/{orden.orden_id}/mecanico",
@@ -127,11 +148,15 @@ def test_administrador_reasigna_y_conserva_responsable_anterior(
 
     assert respuesta.status_code == 200
     assert respuesta.json()["mecanico_actual_id"] == 50
+    assert respuesta.json()["estado_codigo"] == EN_REPARACION
     historial = db_asignaciones.scalar(select(HistorialAsignacion))
     assert historial is not None
     assert historial.mecanico_anterior_id == 40
     assert historial.mecanico_nuevo_id == 50
     assert historial.administrador_id == 99
+    assert db_asignaciones.scalar(
+        select(func.count()).select_from(HistorialEstado)
+    ) == 0
 
 
 @pytest.mark.parametrize("rol", [NombreRol.CLIENTE, NombreRol.MECANICO])
@@ -299,14 +324,17 @@ def test_repetir_mismo_mecanico_es_idempotente(
     assert db_asignaciones.scalar(
         select(func.count()).select_from(HistorialAsignacion)
     ) == 1
+    assert db_asignaciones.scalar(
+        select(func.count()).select_from(HistorialEstado)
+    ) == 1
 
 
-def test_fallo_al_crear_historial_revierte_actualizacion_de_orden(
+def test_fallo_en_primera_asignacion_revierte_mecanico_estado_e_historiales(
     api_asignaciones: TestClient,
     db_asignaciones: Session,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    orden = _crear_orden(db_asignaciones, mecanico_id=40)
+    orden = _crear_orden(db_asignaciones)
     flush_real = db_asignaciones.flush
 
     def fallar_flush(*args, **kwargs) -> None:
@@ -324,9 +352,13 @@ def test_fallo_al_crear_historial_revierte_actualizacion_de_orden(
     db_asignaciones.expire_all()
     persistida = db_asignaciones.get(OrdenTrabajo, orden.orden_id)
     assert persistida is not None
-    assert persistida.mecanico_actual_id == 40
+    assert persistida.mecanico_actual_id is None
+    assert persistida.estado_codigo == RECIBIDO
     assert db_asignaciones.scalar(
         select(func.count()).select_from(HistorialAsignacion)
+    ) == 0
+    assert db_asignaciones.scalar(
+        select(func.count()).select_from(HistorialEstado)
     ) == 0
 
 
@@ -376,7 +408,7 @@ def test_mecanico_anterior_pierde_visibilidad_tras_reasignacion(
     assert detalle_nuevo.status_code == 200
 
 
-def test_asignacion_no_modifica_estado_ni_crea_historial_estado(
+def test_primera_asignacion_actualiza_estado_y_crea_historial_estado(
     api_asignaciones: TestClient,
     db_asignaciones: Session,
 ):
@@ -389,9 +421,46 @@ def test_asignacion_no_modifica_estado_ni_crea_historial_estado(
     )
 
     assert respuesta.status_code == 200
-    assert respuesta.json()["estado_codigo"] == RECIBIDO
+    assert respuesta.json()["estado_codigo"] == ESPERANDO_DIAGNOSTICO
     db_asignaciones.refresh(orden)
-    assert orden.estado_codigo == RECIBIDO
+    assert orden.estado_codigo == ESPERANDO_DIAGNOSTICO
+    assert db_asignaciones.scalar(
+        select(func.count()).select_from(HistorialEstado)
+    ) == 1
+
+
+@pytest.mark.parametrize("estado_codigo", [ENTREGADO, CANCELADO])
+@pytest.mark.parametrize("mecanico_actual_id", [None, 40])
+def test_estado_terminal_rechaza_asignacion_y_reasignacion(
+    api_asignaciones: TestClient,
+    db_asignaciones: Session,
+    estado_codigo: int,
+    mecanico_actual_id: int | None,
+):
+    orden = _crear_orden(
+        db_asignaciones,
+        mecanico_id=mecanico_actual_id,
+        estado_codigo=estado_codigo,
+    )
+
+    respuesta = api_asignaciones.put(
+        f"/ordenes/{orden.orden_id}/mecanico",
+        json={"mecanico_id": 50},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    assert respuesta.json() == {
+        "detail": "No se puede cambiar el mecánico de una orden terminal"
+    }
+    db_asignaciones.expire_all()
+    persistida = db_asignaciones.get(OrdenTrabajo, orden.orden_id)
+    assert persistida is not None
+    assert persistida.estado_codigo == estado_codigo
+    assert persistida.mecanico_actual_id == mecanico_actual_id
+    assert db_asignaciones.scalar(
+        select(func.count()).select_from(HistorialAsignacion)
+    ) == 0
     assert db_asignaciones.scalar(
         select(func.count()).select_from(HistorialEstado)
     ) == 0
@@ -417,6 +486,7 @@ def _crear_orden(
     db: Session,
     *,
     mecanico_id: int | None = None,
+    estado_codigo: int = RECIBIDO,
 ) -> OrdenTrabajo:
     cliente = Cliente(usuario_id=10)
     db.add(cliente)
@@ -438,7 +508,7 @@ def _crear_orden(
     orden = OrdenTrabajo(
         vehiculo_id=vehiculo.vehiculo_id,
         ingreso_id=ingreso.ingreso_id,
-        estado_codigo=RECIBIDO,
+        estado_codigo=estado_codigo,
         mecanico_actual_id=mecanico_id,
         creado_por_id=99,
     )

@@ -16,12 +16,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
-from services.ms2_taller.models.cliente import Cliente
-from services.ms2_taller.models.estado_orden import (
-    ESPERANDO_DIAGNOSTICO,
-    ESTADOS_TERMINALES,
-    RECIBIDO,
+from services.ms2_taller.domain.transiciones_orden import (
+    EventoOrden,
+    TransicionOrdenTerminalError,
+    resolver_transicion,
+    validar_estado_no_terminal,
 )
+from services.ms2_taller.models.cliente import Cliente
+from services.ms2_taller.models.estado_orden import RECIBIDO
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
@@ -112,10 +114,11 @@ def crear_orden(
             db.add(ingreso)
             db.flush()
 
+        estado_inicial = resolver_transicion(None, EventoOrden.CREACION)
         orden = OrdenTrabajo(
             vehiculo_id=vehiculo_id,
             ingreso_id=ingreso.ingreso_id,
-            estado_codigo=RECIBIDO,
+            estado_codigo=estado_inicial,
             mecanico_actual_id=None,
             creado_por_id=administrador_id,
         )
@@ -126,7 +129,7 @@ def crear_orden(
             HistorialEstado(
                 orden_id=orden.orden_id,
                 estado_anterior=None,
-                estado_nuevo=RECIBIDO,
+                estado_nuevo=estado_inicial,
                 actor_usuario_id=administrador_id,
                 origen="usuario",
             )
@@ -165,10 +168,12 @@ def asignar_mecanico(
         orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
         if orden is None:
             raise OrdenNoEncontradaError("Orden no encontrada")
-        if orden.estado_codigo in ESTADOS_TERMINALES:
+        try:
+            validar_estado_no_terminal(orden.estado_codigo)
+        except TransicionOrdenTerminalError as exc:
             raise OrdenTerminalError(
                 "No se puede cambiar el mecánico de una orden terminal"
-            )
+            ) from exc
 
         mecanico_anterior_id = orden.mecanico_actual_id
         if mecanico_anterior_id == mecanico_id:
@@ -189,12 +194,16 @@ def asignar_mecanico(
         )
 
         if mecanico_anterior_id is None and orden.estado_codigo == RECIBIDO:
-            orden.estado_codigo = ESPERANDO_DIAGNOSTICO
+            estado_nuevo = resolver_transicion(
+                orden.estado_codigo,
+                EventoOrden.PRIMERA_ASIGNACION,
+            )
+            orden.estado_codigo = estado_nuevo
             db.add(
                 HistorialEstado(
                     orden_id=orden.orden_id,
                     estado_anterior=RECIBIDO,
-                    estado_nuevo=ESPERANDO_DIAGNOSTICO,
+                    estado_nuevo=estado_nuevo,
                     actor_usuario_id=administrador_id,
                     origen="usuario",
                 )

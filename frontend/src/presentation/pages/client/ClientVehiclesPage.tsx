@@ -50,18 +50,19 @@ export function ClientVehiclesPage() {
         </div>
 
         <div className="relative w-full sm:w-[320px] mb-6">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden />
         <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
+            aria-label="Buscar por patente, marca o modelo"
             className="w-full py-2.5 pl-11 pr-4 bg-black/40 border border-border-custom rounded-lg text-white text-sm outline-none focus:border-primary-red"
         />
         </div>
 
         {justRegistered && (
-        <div className="flex items-center gap-2 mb-6 text-status-green text-sm bg-status-green/10 border border-status-green/40 rounded-lg px-4 py-3">
+        <div role="status" className="flex items-center gap-2 mb-6 text-status-green text-sm bg-status-green/10 border border-status-green/40 rounded-lg px-4 py-3">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             Vehículo registrado con éxito.
         </div>

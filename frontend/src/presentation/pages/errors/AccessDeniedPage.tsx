@@ -60,12 +60,14 @@ export function AccessDeniedPage() {
           )}
 
           <div className="flex flex-col gap-3 mt-8">
-            <Link to={getHomePath(user?.role)} className="no-underline">
-              <Button variant="primary" className="w-full py-4 text-lg">
-                <LayoutDashboard className="w-5 h-5" />
-                Ir a mi Panel
-              </Button>
-            </Link>
+            <Button
+              variant="primary"
+              className="w-full py-4 text-lg"
+              onClick={() => navigate(getHomePath(user?.role))}
+            >
+              <LayoutDashboard className="w-5 h-5" />
+              Ir a mi Panel
+            </Button>
             <Button variant="secondary" onClick={handleLogout} className="w-full py-3">
               <LogOut className="w-5 h-5" />
               Cerrar Sesión

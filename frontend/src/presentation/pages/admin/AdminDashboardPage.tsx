@@ -145,7 +145,7 @@ export function AdminDashboardPage() {
                     </span>
                   </div>
                 </div>
-                <button className="bg-white/5 border border-border-custom text-white px-5 py-2.5 rounded-lg transition-all duration-300 hover:bg-white/15 hover:border-white/30 text-sm font-medium">
+                <button disabled className="bg-white/5 border border-border-custom text-white px-5 py-2.5 rounded-lg transition-all duration-300 hover:bg-white/15 hover:border-white/30 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                   Gestionar
                 </button>
               </div>

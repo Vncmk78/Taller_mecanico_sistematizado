@@ -15,6 +15,15 @@ class OrdenCrear(BaseModel):
     vehiculo_id: int = Field(gt=0)
 
 
+class AsignacionMecanicoActualizar(BaseModel):
+    """Datos controlables al asignar o reasignar el responsable de una orden."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    mecanico_id: int = Field(gt=0)
+    observacion: str | None = Field(default=None, min_length=1)
+
+
 class OrdenRespuesta(BaseModel):
     """Representación inicial de una orden expuesta por la API de MS2."""
 

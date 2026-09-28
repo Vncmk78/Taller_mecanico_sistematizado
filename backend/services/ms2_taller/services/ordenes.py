@@ -1,8 +1,9 @@
-"""Creación y consultas iniciales de órdenes de trabajo.
+"""Creación, consulta y asociación inicial de órdenes de trabajo.
 
-Este módulo implementa únicamente el alcance de INT-32: alta en estado
-``Recibido`` y visibilidad por recurso. La validación configurable del cupo
-diario sigue pendiente según la sistematización y no se resuelve aquí.
+INT-32 aporta el alta en estado ``Recibido`` y la visibilidad por recurso.
+INT-33 agrega la asignación y reasignación auditada del mecánico, sin cambiar
+el estado. La validación remota del rol del destino y la capacidad configurable
+siguen pendientes porque su infraestructura todavía no está disponible.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from services.ms2_taller.models.cliente import Cliente
 from services.ms2_taller.models.estado_orden import RECIBIDO
+from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
@@ -32,6 +34,21 @@ class OrdenNoEncontradaError(Exception):
 
 class PersistenciaOrdenError(Exception):
     """La operación sobre órdenes no pudo completarse de forma segura."""
+
+
+def _consulta_orden_para_actualizacion(
+    orden_id: int,
+) -> Select[tuple[OrdenTrabajo]]:
+    """Selecciona y bloquea la orden cuyo responsable se modificará."""
+
+    return (
+        select(OrdenTrabajo)
+        .where(OrdenTrabajo.orden_id == orden_id)
+        # OrdenTrabajo carga EstadoOrden con un LEFT JOIN. Limitar el lock a la
+        # tabla de órdenes evita que PostgreSQL intente bloquear el lado nullable
+        # del join y expresa exactamente la fila que protege esta operación.
+        .with_for_update(of=OrdenTrabajo)
+    )
 
 
 def _consulta_vehiculo_para_actualizacion(
@@ -114,6 +131,58 @@ def crear_orden(
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaOrdenError("No fue posible crear la orden") from exc
+
+
+def asignar_mecanico(
+    db: Session,
+    *,
+    orden_id: int,
+    mecanico_id: int,
+    administrador_id: int,
+    observacion: str | None = None,
+) -> OrdenTrabajo:
+    """Asigna o reasigna el mecánico y conserva el cambio en una transacción.
+
+    El bloqueo de la orden se mantiene hasta el commit o rollback. De este modo,
+    una operación concurrente sobre la misma orden observa el responsable que
+    haya confirmado la operación anterior. La comprobación remota del rol del
+    destino y la capacidad configurable quedan deliberadamente fuera de INT-33.
+    """
+
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        mecanico_anterior_id = orden.mecanico_actual_id
+        if mecanico_anterior_id == mecanico_id:
+            # No hay cambio que auditar. El commit libera explícitamente el lock
+            # sin emitir UPDATE ni insertar una fila de historial.
+            db.commit()
+            return orden
+
+        orden.mecanico_actual_id = mecanico_id
+        db.add(
+            HistorialAsignacion(
+                orden_id=orden.orden_id,
+                mecanico_anterior_id=mecanico_anterior_id,
+                mecanico_nuevo_id=mecanico_id,
+                administrador_id=administrador_id,
+                observacion=observacion,
+            )
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except OrdenNoEncontradaError:
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible asignar el mecánico"
+        ) from exc
 
 
 def listar_ordenes(

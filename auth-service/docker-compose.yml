@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_pass
+      POSTGRES_DB: auth_service_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+
+  auth-service:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://auth_user:auth_pass@auth-db:5432/auth_service_db
+    ports:
+      - "8001:8001"
+    depends_on:
+      - auth-db
+
+volumes:
+  auth_db_data:

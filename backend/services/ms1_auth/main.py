@@ -1,9 +1,4 @@
-"""API del microservicio MS1: Autenticación y Usuarios.
-
-Por ahora solo expone los healthchecks que verifican que el servicio levanta y
-que su conexión a PostgreSQL responde. Los endpoints de negocio los agregan los
-integrantes responsables de este servicio.
-"""
+"""API del microservicio MS1: Autenticación y Usuarios."""
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI
@@ -12,8 +7,10 @@ from sqlalchemy.orm import Session
 
 from services.ms1_auth.config import settings
 from services.ms1_auth.db import get_db
+from services.ms1_auth.routers import router_auth
 
 app = FastAPI(title="SGTM — MS1: Autenticación y Usuarios", version="0.1.0")
+app.include_router(router_auth)
 
 
 @app.get("/health", tags=["health"])

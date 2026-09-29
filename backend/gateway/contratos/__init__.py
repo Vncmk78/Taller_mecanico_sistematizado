@@ -1,0 +1,1 @@
+"""Contratos de los microservicios que documenta la Gateway en Swagger."""

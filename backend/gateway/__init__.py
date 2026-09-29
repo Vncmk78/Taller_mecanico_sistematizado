@@ -1,0 +1,1 @@
+"""API Gateway del Sistema de Gestión de Talleres Mecánicos (SGTM)."""

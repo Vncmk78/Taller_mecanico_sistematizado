@@ -5,6 +5,9 @@ puedan convivir en un mismo archivo .env sin pisarse.
 """
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
@@ -22,6 +25,11 @@ class Settings(ServiceSettings):
     DATABASE_URL: str = (
         "postgresql+psycopg://taller:taller@localhost:5435/taller_ms3"
     )
+
+    # MS3 valida el JWT sin consultar la base de MS1 (mismo contrato que MS2 y
+    # MS4). Con HS256 debe recibir el mismo secreto configurado en MS1.
+    JWT_SECRET_KEY: SecretStr = Field(min_length=32)
+    JWT_ALGORITHM: Literal["HS256"] = "HS256"
 
 
 settings = Settings()

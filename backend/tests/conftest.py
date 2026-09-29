@@ -21,6 +21,10 @@ os.environ.setdefault(
     "MS2_DATABASE_URL",
     "sqlite+pysqlite:////tmp/sgtm_ms2_config_only.db",
 )
+os.environ.setdefault(
+    "MS4_JWT_SECRET_KEY",
+    "clave-secreta-exclusiva-para-pruebas-de-ms4-123456",
+)
 
 import pytest
 from fastapi.testclient import TestClient

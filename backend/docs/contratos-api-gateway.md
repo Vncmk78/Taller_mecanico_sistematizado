@@ -25,6 +25,46 @@ Reglas que se aplican a todos los endpoints:
   { "detail": [ { "loc": ["body", "email"], "msg": "value is not a valid email address", "type": "value_error" } ] }
   ```
 
+## Rutas de Presupuestos y Evidencias
+
+La Gateway decide el destino por el **primer segmento** de la ruta y reenvía
+el resto del camino, el query string y el body tal cual. Por eso MS3 y MS4
+deben publicar sus endpoints bajo sus prefijos propios y **nunca** colgarlos
+bajo `/ordenes/...`: ese prefijo resuelve a MS2.
+
+| Prefijos | Microservicio | Ejemplo |
+|---|---|---|
+| `auth` | MS1 (Autenticación y Usuarios) | `/api/auth/login` → `POST /auth/login` |
+| `vehiculos`, `vehiculo`, `ordenes`, `orden`, `clientes`, `mecanicos` | MS2 (Vehículos y Órdenes) | `/api/ordenes/31/mecanico` → `PUT /ordenes/31/mecanico` |
+| `presupuestos`, `presupuesto`, `repuestos`, `proveedores`, `inventario` | MS3 (Presupuestos) | `/api/presupuestos` → `GET /presupuestos` |
+| `evidencias`, `evidencia` | MS4 (Evidencia Multimedia) | `/api/evidencias?orden_id=31` → `GET /evidencias?orden_id=31` |
+
+Convención que deben respetar los endpoints de la Semana 5:
+
+- **MS4 publica todo bajo `/evidencias`**, por ejemplo `POST /evidencias`
+  (subida de archivos) y `GET /evidencias?orden_id=...` (listado de una
+  orden). **No existe** `GET /ordenes/{id}/evidencias`: esa ruta llegaría a
+  MS2, no a MS4.
+- **MS3 publica bajo sus propios prefijos**, por ejemplo
+  `GET /presupuestos?orden_id=...`. Tampoco se cuelga bajo `/ordenes/...`.
+- El microservicio recibe la ruta sin el prefijo `/api` (p. ej. MS4 recibe
+  `/evidencias`, no `/api/evidencias`).
+
+Nota sobre la subida de archivos: hoy la Gateway lee el body completo en
+memoria antes de reenviarlo y conserva el `Content-Type` con el `boundary`
+del multipart. Para fotos no es problema, pero el límite de tamaño (`413`), el
+modo de subida (streaming desde la Gateway o POST prefirmado directo a MinIO)
+y los timeouts para videos son las tareas pendientes de la Semana 5 (controles
+4.2, 4.3 y 4.5 del
+[checklist de seguridad de evidencias](checklist-seguridad-evidencias.md)).
+
+Deuda registrada (decisión pendiente): existen alias en singular
+(`presupuesto`, `evidencia`, `orden`, `vehiculo`) que reenvían la ruta tal
+cual, de modo que `/api/evidencia/x` llegaría a MS4 como `/evidencia/x`, una
+ruta que ningún servicio expone. Se conservan por compatibilidad con MS2 (los
+usa el equipo) y no se consideran contrato: MS3 y MS4 publican únicamente sus
+prefijos en plural.
+
 ## Relaciones y flujo inicial de MS2
 
 La aplicación web y la aplicación móvil consumen estas relaciones únicamente a

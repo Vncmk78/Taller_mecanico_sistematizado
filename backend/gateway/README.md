@@ -36,7 +36,7 @@ Vehículos y Órdenes), con sus esquemas, ejemplos y el botón Authorize:
 
 - `GET /docs` — Swagger UI.
 - `GET /openapi.json` — esquema OpenAPI completo.
-- [`docs/contratos-api-gateway.md`](../../docs/contratos-api-gateway.md) — el
+- [`docs/contratos-api-gateway.md`](../docs/contratos-api-gateway.md) — el
   documento que leen el equipo y la app móvil (contratos, ejemplos y pendientes).
 
 Los contratos viven en `gateway/contratos/` (la Gateway no importa código de
@@ -61,8 +61,12 @@ microservicio responde `404`; si el servicio destino está caído, `502`.
 | `presupuestos`, `presupuesto`, `repuestos`, `proveedores`, `inventario` | MS3 (Presupuestos) | `/api/presupuestos` -> MS3 `/presupuestos` |
 | `evidencias`, `evidencia` | MS4 (Evidencia Multimedia) | `/api/evidencias` -> MS4 `/evidencias` |
 
-Los prefijos de MS3 y MS4 se conservan desde el inicio, pero su verificación
-corresponde a la Semana 4.
+Los prefijos de MS3 y MS4 se conservan desde el inicio; desde la Semana 4 la
+Gateway verifica el reenvío hacia ambos microservicios
+(`tests/test_gateway_rutas.py`) y fija la convención: MS3 publica bajo sus
+prefijos (`presupuestos`, `repuestos`, `proveedores`, `inventario`) y MS4 todo
+bajo `evidencias`, nunca bajo `/ordenes/...` (ver
+[`docs/contratos-api-gateway.md`](../docs/contratos-api-gateway.md)).
 
 ## Formato común
 

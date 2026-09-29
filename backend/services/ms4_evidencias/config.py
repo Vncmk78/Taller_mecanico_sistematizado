@@ -5,6 +5,9 @@ puedan convivir en un mismo archivo .env sin pisarse.
 """
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
@@ -32,6 +35,11 @@ class Settings(ServiceSettings):
     S3_BUCKET: str = "evidencias"
     S3_REGION: str = "us-east-1"
     S3_SECURE: bool = False
+
+    # MS4 valida nuevamente el JWT sin consultar la base de datos de MS1.
+    # Con HS256 debe recibir el mismo secreto configurado en el emisor (MS1).
+    JWT_SECRET_KEY: SecretStr = Field(min_length=32)
+    JWT_ALGORITHM: Literal["HS256"] = "HS256"
 
 
 settings = Settings()

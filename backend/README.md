@@ -28,8 +28,11 @@ backend/
 │   └── ms4_evidencias/      Metadatos de evidencia multimedia
 │       ├── config.py        Variables de entorno con prefijo MS4_
 │       ├── db.py            Base, engine, SessionLocal y get_db de ESTE servicio
-│       ├── models/          Modelos ORM del servicio (se llenan en la tarea de modelos)
+│       ├── models/          Modelos ORM del servicio
 │       ├── alembic/         Migraciones propias del servicio
+│       ├── routers/         Endpoints de negocio (en desarrollo)
+│       ├── schemas/         Schemas Pydantic de evidencias (en desarrollo)
+│       ├── services/        Lógica de dominio (cliente S3; sha256 y confirmación en la tarea de recepción)
 │       └── main.py          App FastAPI con healthchecks
 ├── docker-compose.yml       Cuatro PostgreSQL: puertos 5433, 5434, 5435, 5436
 ├── verificar_conexion.py    Prueba las cuatro conexiones de una sola vez
@@ -85,6 +88,28 @@ Cada servicio publica `GET /health` (el proceso responde) y `GET /health/db`
 
 Los comandos se ejecutan **desde `backend/`**, porque los imports son
 `services.<paquete>...` y `shared...`.
+
+## MS4 — Evidencia Multimedia
+
+MS4 guarda los **metadatos** de las evidencias (fotos/videos) en su propia base;
+los **archivos** viven en MinIO/S3 (bucket `evidencias`, usuario `ms4-evidencias`).
+Para migrar su base y levantar el servicio:
+
+```bash
+# Migrar la base de MS4 (requiere MS4_JWT_SECRET_KEY en el entorno: ver .env)
+alembic -c services\ms4_evidencias\alembic.ini upgrade head
+
+# Levantar el servicio (no olvides levantar minio: docker compose up -d minio minio_init)
+uvicorn services.ms4_evidencias.main:app --reload --port 8004
+
+# Comprobar la salud del proceso, la base y el almacenamiento
+curl localhost:8004/health
+curl localhost:8004/health/db
+curl localhost:8004/health/storage
+```
+
+`/health/storage` responde 200 cuando el bucket S3 responde y 503 con un mensaje
+genérico en cualquier otro caso (sin filtrar endpoint ni claves).
 
 ## API Gateway
 

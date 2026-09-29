@@ -82,6 +82,13 @@ Contrato único de solicitudes, respuestas y errores de la Gateway.
   o con caracteres que no sean letras, números o guiones, la Gateway genera un
   UUID y lo usa.
 
+El reenvío usa un único cliente HTTPX compartido (`gateway/cliente_http.py`),
+creado de forma perezosa y cerrado en el lifespan de la app, con timeouts por
+fase (conectar 3 s, leer/escribir 15 s, pool 5 s). El prefijo `evidencias` usa
+read/write de 60 s porque sube archivos. Los fallos de red se mapean según la
+decisión 2 del estudio: `ConnectError`/`ConnectTimeout` → 502,
+`Read/WriteTimeout` → 504 y `PoolTimeout` → 503.
+
 ### Respuestas
 
 - Éxitos y errores de los microservicios pasan **sin modificarse** (cuerpo y
@@ -116,6 +123,9 @@ este cuerpo:
 | `RUTA_NO_ENCONTRADA` | 404 | Prefijo sin microservicio o ruta inexistente |
 | `METODO_NO_PERMITIDO` | 405 | Método HTTP no soportado en la ruta |
 | `MICROSERVICIO_INALCANZABLE` | 502 | El microservicio destino no responde (mensaje genérico, sin URL interna) |
+| `TIEMPO_AGOTADO` | 504 | El microservicio recibió la petición pero tardó más que el timeout en responder |
+| `GATEWAY_SATURADA` | 503 | El pool de conexiones de la Gateway está lleno |
+| `ERROR_MICROSERVICIO` | (del ms) | 4xx/5xx del microservicio sin body JSON, reemplazado por el formato común |
 | `ERROR_INTERNO` | 500 | Error no controlado (mensaje genérico, sin traza) |
 | `ERROR_HTTP` | otro | Estado HTTP no previsto (p. ej. un 400) |
 
@@ -148,7 +158,11 @@ uvicorn gateway.main:app --reload --port 8000
 | `GATEWAY_MS2_URL` | `http://localhost:8002` | MS2 Vehículos y Órdenes |
 | `GATEWAY_MS3_URL` | `http://localhost:8003` | MS3 Presupuestos, Repuestos y Proveedores |
 | `GATEWAY_MS4_URL` | `http://localhost:8004` | MS4 Evidencia Multimedia |
-| `GATEWAY_REQUEST_TIMEOUT_SECONDS` | `30` | Espera máxima a un microservicio |
+| `GATEWAY_TIMEOUT_CONNECT_SECONDS` | `3.0` | Tiempo para conectar a un microservicio (si no, 502) |
+| `GATEWAY_TIMEOUT_READ_SECONDS` | `15.0` | Espera entre bloques de la respuesta (si no, 504) |
+| `GATEWAY_TIMEOUT_WRITE_SECONDS` | `15.0` | Espera al enviar el body (si no, 504) |
+| `GATEWAY_TIMEOUT_POOL_SECONDS` | `5.0` | Espera por una conexión libre del pool (si no, 503) |
+| `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` | `60.0` | read/write ampliados para el prefijo `evidencias` |
 | `GATEWAY_CORS_ORIGINS` | `http://localhost:5173` | Orígenes permitidos (coma o JSON) |
 | `GATEWAY_CORS_ALLOW_CREDENTIALS` | `true` | Permite cookies/Authorization cross-origin |
 

@@ -15,8 +15,11 @@ Reglas que se aplican a todos los endpoints:
   Gateway y en el microservicio; si no viene (o es inválida), la Gateway
   genera un UUID y lo devuelve en la respuesta.
 - Errores propios de la Gateway: `RUTA_NO_ENCONTRADA` (404),
-  `MICROSERVICIO_INALCANZABLE` (502) y `ERROR_INTERNO` (500), todos con el
-  cuerpo `{"detail": "...", "error": {"codigo", "estado", "ruta", "request_id"}}`.
+  `MICROSERVICIO_INALCANZABLE` (502), `TIEMPO_AGOTADO` (504),
+  `GATEWAY_SATURADA` (503), `ERROR_MICROSERVICIO` y `ERROR_INTERNO` (500),
+  todos con el cuerpo `{"detail": "...", "error": {"codigo", "estado",
+  "ruta", "request_id"}}`. `GATEWAY_SATURADA` y `ERROR_MICROSERVICIO` son de
+  la Semana 4 (mapeo de errores y cabeceras).
 - Errores de los microservicios: `{"detail": "mensaje"}` con su status code.
   En los `422` (validación de body en MS1/MS2), `detail` es una **lista** de
   errores de FastAPI, no un string:
@@ -24,6 +27,37 @@ Reglas que se aplican a todos los endpoints:
   ```json
   { "detail": [ { "loc": ["body", "email"], "msg": "value is not a valid email address", "type": "value_error" } ] }
   ```
+
+### Errores que vienen de los microservicios
+
+Un 4xx/5xx que responde el microservicio **no es un error de la Gateway**:
+- Si el body es **JSON** (`{"detail": ...}` de FastAPI) se reenvía **tal
+  cual**, con su status code, para que el frontend siga leyendo `detail`.
+- Si el body **no es JSON** (texto plano o HTML, típico de un proxy
+  intermedio) se normaliza al formato común con el código
+  `ERROR_MICROSERVICIO` y el mismo estado. Los `404` y `405` no-JSON usan
+  `RUTA_NO_ENCONTRADA` y `METODO_NO_PERMITIDO` con sus mensajes habituales.
+  `WWW-Authenticate` y `Retry-After` se conservan.
+
+Fallo de red del proxy (no llega ninguna respuesta del microservicio):
+
+| Excepción | Estado | Código |
+|---|---|---|
+| `ConnectError`, `ConnectTimeout` | 502 | `MICROSERVICIO_INALCANZABLE` |
+| `ReadTimeout`, `WriteTimeout` | 504 | `TIEMPO_AGOTADO` |
+| `PoolTimeout` | 503 | `GATEWAY_SATURADA` |
+| Otro `RequestError` | 502 | `MICROSERVICIO_INALCANZABLE` |
+
+### Cabeceras de la respuesta
+
+La Gateway reenvía las cabeceras que manda el microservicio
+(`WWW-Authenticate`, `Content-Disposition`, `Cache-Control`, `Set-Cookie`,
+`Retry-After`, …), excepto las de conexión (*hop-by-hop*), `Content-Length`,
+`Content-Encoding`, `Server`, `Date`, `X-Request-ID` (lo pone la Gateway) y
+las `Access-Control-*` (el CORS lo resuelve la Gateway). Un `Location` que
+apunte a la URL interna del microservicio (por ejemplo la redirección 307 de
+FastAPI por la barra final) se traduce a la URL pública de la Gateway con
+`/api`: `http://localhost:8002/vehiculos` → `https://<gateway>/api/vehiculos`.
 
 ## Rutas de Presupuestos y Evidencias
 

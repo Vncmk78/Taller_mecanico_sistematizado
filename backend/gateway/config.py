@@ -33,8 +33,16 @@ class GatewaySettings(BaseSettings):
     MS3_URL: str = "http://localhost:8003"
     MS4_URL: str = "http://localhost:8004"
 
-    # Tiempo máximo de espera a un microservicio antes de responder 504.
-    REQUEST_TIMEOUT_SECONDS: float = 30.0
+    # Timeouts hacia los microservicios, por fase (ver estudio-httpx-proxy.md):
+    # conectar rápido (3 s) y leer/escribir con margen (15 s). No es un "tiempo
+    # total": cada fase de HTTPX tiene su techo y su excepción (Read/WriteTimeout
+    # generan 504, ConnectTimeout 502).
+    TIMEOUT_CONNECT_SECONDS: float = 3.0
+    TIMEOUT_READ_SECONDS: float = 15.0
+    TIMEOUT_WRITE_SECONDS: float = 15.0
+    TIMEOUT_POOL_SECONDS: float = 5.0
+    # Prefijo "evidencias": read/write ampliados porque sube archivos (fotos).
+    TIMEOUT_ARCHIVOS_SECONDS: float = 60.0
 
     # CORS: orígenes desde los que se permite consumir la Gateway (web, móvil,
     # herramientas de prueba). En desarrollo el frontend corre en localhost:5173.

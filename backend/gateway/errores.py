@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -26,10 +27,13 @@ from gateway.esquemas import DetalleError, ErrorRespuesta
 
 logger = logging.getLogger("gateway")
 
-# Códigos del catálogo de errores de la Gateway (Semana 2).
+# Códigos del catálogo de errores de la Gateway (Semana 2 y Semana 4).
 RUTA_NO_ENCONTRADA = "RUTA_NO_ENCONTRADA"
 METODO_NO_PERMITIDO = "METODO_NO_PERMITIDO"
 MICROSERVICIO_INALCANZABLE = "MICROSERVICIO_INALCANZABLE"
+TIEMPO_AGOTADO = "TIEMPO_AGOTADO"
+GATEWAY_SATURADA = "GATEWAY_SATURADA"
+ERROR_MICROSERVICIO = "ERROR_MICROSERVICIO"
 ERROR_INTERNO = "ERROR_INTERNO"
 # Estado HTTP no previsto (por ejemplo, un 400 lanzado por la propia app).
 ERROR_HTTP = "ERROR_HTTP"
@@ -39,18 +43,44 @@ _CODIGOS_POR_ESTADO: dict[int, str] = {
     404: RUTA_NO_ENCONTRADA,
     405: METODO_NO_PERMITIDO,
     502: MICROSERVICIO_INALCANZABLE,
+    503: GATEWAY_SATURADA,
+    504: TIEMPO_AGOTADO,
     500: ERROR_INTERNO,
 }
 
 # Detalles legibles para el frontend; reemplazan los mensajes en inglés que
 # genera FastAPI ("Not Found", "Method Not Allowed").
+MENSAJE_RUTA_NO_ENCONTRADA = "Ruta no encontrada"
+MENSAJE_METODO_NO_PERMITIDO = "Método no permitido"
 _DETALLES_POR_ESTADO: dict[int, str] = {
-    404: "Ruta no encontrada",
-    405: "Método no permitido",
+    404: MENSAJE_RUTA_NO_ENCONTRADA,
+    405: MENSAJE_METODO_NO_PERMITIDO,
 }
 
 _MENSAJE_ERROR_INTERNO = "Ocurrió un error inesperado en la Gateway."
 MENSAJE_SERVICIO_CAIDO = "El servicio no está disponible. Intente más tarde."
+MENSAJE_TIEMPO_AGOTADO = (
+    "El servicio tardó demasiado en responder. Intente más tarde."
+)
+MENSAJE_GATEWAY_SATURADA = "La Gateway está ocupada. Intente más tarde."
+MENSAJE_ERROR_MICROSERVICIO = "El servicio respondió con un error inesperado."
+
+
+def mapear_error_httpx(exc: httpx.RequestError) -> tuple[int, str, str]:
+    """Mapea un fallo de red de HTTPX a `(estado, código, detalle)`.
+
+    Se evalúan primero las clases concretas: `ConnectTimeout`, `ReadTimeout`,
+    `WriteTimeout` y `PoolTimeout` son subclases de `TimeoutException`, y
+    `ConnectError` de `NetworkError`; un chequeo por superclase no alcanza
+    para distinguirlos.
+    """
+    if isinstance(exc, httpx.PoolTimeout):
+        return 503, GATEWAY_SATURADA, MENSAJE_GATEWAY_SATURADA
+    if isinstance(exc, (httpx.ReadTimeout, httpx.WriteTimeout)):
+        return 504, TIEMPO_AGOTADO, MENSAJE_TIEMPO_AGOTADO
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+        return 502, MICROSERVICIO_INALCANZABLE, MENSAJE_SERVICIO_CAIDO
+    return 502, MICROSERVICIO_INALCANZABLE, MENSAJE_SERVICIO_CAIDO
 
 
 def _request_id(request: Request) -> str:

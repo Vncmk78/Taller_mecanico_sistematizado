@@ -39,13 +39,17 @@ es correcto en un proxy: la redirección debe llegar al cliente tal cual.
 
 ```python
 cuerpo = await request.body()                       # body completo en memoria
-async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT_SECONDS) as cliente:
+async with httpx.AsyncClient(timeout=30.0) as cliente:
     respuesta = await cliente.request(...)          # un cliente NUEVO por petición
 except httpx.HTTPError:
     return respuesta_error(..., estado=502, ...)    # todo error -> 502
 return Response(respuesta.content, respuesta.status_code,
                 headers={"content-type": ...})      # solo reenvía Content-Type
 ```
+
+El timeout único de 30 s y el cliente por petición quedan reemplazados por la
+tarea *Estandarizar mapeo de errores* (timeouts por fase, §3, y un cliente
+compartido, §5).
 
 Funciona y está probado (17/17 en `docs/pruebas-comunicacion-gateway.md`), pero
 tiene cinco puntos a mejorar:

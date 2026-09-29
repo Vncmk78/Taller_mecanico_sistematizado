@@ -43,6 +43,9 @@ class GatewaySettings(BaseSettings):
     TIMEOUT_POOL_SECONDS: float = 5.0
     # Prefijo "evidencias": read/write ampliados porque sube archivos (fotos).
     TIMEOUT_ARCHIVOS_SECONDS: float = 60.0
+    # Timeout por servicio del health check (GET /api/health/servicios). Corto
+    # a propósito: un servicio caído no debe bloquear la respuesta agregada.
+    HEALTH_TIMEOUT_SECONDS: float = 2.0
 
     # CORS: orígenes desde los que se permite consumir la Gateway (web, móvil,
     # herramientas de prueba). En desarrollo el frontend corre en localhost:5173.

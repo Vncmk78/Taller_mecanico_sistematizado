@@ -73,6 +73,7 @@ Usuarios de prueba (creados por el seed): `cliente@pruebas.cl`,
 | 10 | `/api/presupuestos` y `/api/evidencias` | 404 **del microservicio** (MS3/MS4 alcanzables; sus endpoints llegan en la Semana 5) |
 | 11 | `/api/noexiste` | 404 de la Gateway con el formato común (`error.codigo`) |
 | 12 | `X-Request-ID` enviado por el cliente | vuelve igual en la respuesta |
+| 13 | `GET /api/health/servicios` vía Gateway | 200 con los 4 microservicios en `"ok"` |
 
 ## Qué verifica `scripts/revisar_openapi.py`
 
@@ -87,7 +88,7 @@ discrepancia de contrato que el frontend heredaría.
 | Fecha | Entorno | Comunicación | OpenAPI | Notas |
 |---|---|---|---|---|
 | 2026-09-29 | Local, bases SQLite (verificación previa de los scripts) | 17/17 | 11 operaciones, sin discrepancias | Ensayo antes de la prueba conjunta |
-| _pendiente_ | Local, PostgreSQL (Docker), con Deris | _/17 | _ | Prueba conjunta Gateway ↔ Autenticación |
+| _pendiente_ | Local, PostgreSQL (Docker), con Deris | _/18 | _ | Prueba conjunta Gateway ↔ Autenticación |
 
 ## Coordinación con Deris (Autenticación)
 

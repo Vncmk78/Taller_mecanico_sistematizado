@@ -33,6 +33,9 @@ SERVICIOS = {
     "MS4 Evidencias": "http://localhost:8004",
 }
 
+# Claves que expone la Gateway en /api/health/servicios.
+MS_HEALTH = ("ms1_auth", "ms2_taller", "ms3_presupuestos", "ms4_evidencias")
+
 
 @dataclass
 class Resultado:
@@ -92,6 +95,15 @@ def main() -> int:
         for nombre, base in SERVICIOS.items():
             r = pedir(c, "GET", f"{base}/health")
             registrar(f"{nombre} /health", "200", estado(r), r is not None and r.status_code == 200)
+
+        r = pedir(c, "GET", f"{gw}/api/health/servicios")
+        cuerpo_health = cuerpo(r)
+        ok = (r is not None and r.status_code == 200
+              and cuerpo_health.get("status") == "ok"
+              and set(cuerpo_health.get("servicios", {})) == set(MS_HEALTH)
+              and all(estado.get("estado") == "ok"
+                      for estado in cuerpo_health.get("servicios", {}).values()))
+        registrar("/api/health/servicios (4 ok)", "200 + 4 ok", estado(r), ok)
 
         # 2) Autenticación a través de la Gateway (MS1, coordinado con Deris).
         token_cliente = login(c, gw, CLIENTE)

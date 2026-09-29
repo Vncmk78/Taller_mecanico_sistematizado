@@ -146,9 +146,39 @@ Desde la carpeta `backend/`, con el entorno virtual activo:
 uvicorn gateway.main:app --reload --port 8000
 ```
 
-- `GET http://localhost:8000/` — descripción y URLs de los microservicios.
+- `GET http://localhost:8000/` — descripción y prefijos `/api/*` que enruta.
 - `GET http://localhost:8000/api/health` — `{"status": "ok", "servicio": "gateway"}`.
+- `GET http://localhost:8000/api/health/servicios` — estado de los 4 microservicios.
 - `http://localhost:8000/docs` — Swagger de la Gateway.
+
+## Health checks
+
+- `GET /api/health` — responde solo por la Gateway, sin consultar a los
+  microservicios (lo usa Vercel y no puede depender de que estén arriba).
+- `GET /api/health/servicios` — consulta `/health/db` de los cuatro
+  microservicios en paralelo con el cliente HTTPX compartido y un timeout corto
+  por servicio (`GATEWAY_HEALTH_TIMEOUT_SECONDS`, 2 s por defecto): un servicio
+  caído no bloquea la respuesta agregada.
+
+```json
+{
+  "status": "ok",
+  "gateway": "ok",
+  "servicios": {
+    "ms1_auth": { "estado": "ok", "latencia_ms": 3 },
+    "ms2_taller": { "estado": "ok", "latencia_ms": 4 },
+    "ms3_presupuestos": { "estado": "ok", "latencia_ms": 2 },
+    "ms4_evidencias": { "estado": "ok", "latencia_ms": 5 }
+  }
+}
+```
+
+Responde `200` con `"status": "ok"` si los cuatro están `ok`, y `503` con
+`"status": "degradado"` si alguno no lo está. Estados por servicio: `ok`,
+`sin_base` (el proceso responde pero su health/base falla; incluye
+`codigo_http`), `tiempo_agotado` (superó el timeout) y `caido` (sin conexión).
+Toda respuesta trae `Cache-Control: no-store` y `X-Request-ID`; el body no
+expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 
 ## Variables de entorno
 
@@ -163,6 +193,7 @@ uvicorn gateway.main:app --reload --port 8000
 | `GATEWAY_TIMEOUT_WRITE_SECONDS` | `15.0` | Espera al enviar el body (si no, 504) |
 | `GATEWAY_TIMEOUT_POOL_SECONDS` | `5.0` | Espera por una conexión libre del pool (si no, 503) |
 | `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` | `60.0` | read/write ampliados para el prefijo `evidencias` |
+| `GATEWAY_HEALTH_TIMEOUT_SECONDS` | `2.0` | Timeout por servicio en `GET /api/health/servicios` |
 | `GATEWAY_CORS_ORIGINS` | `http://localhost:5173` | Orígenes permitidos (coma o JSON) |
 | `GATEWAY_CORS_ALLOW_CREDENTIALS` | `true` | Permite cookies/Authorization cross-origin |
 

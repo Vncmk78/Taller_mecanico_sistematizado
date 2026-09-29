@@ -59,6 +59,66 @@ apunte a la URL interna del microservicio (por ejemplo la redirección 307 de
 FastAPI por la barra final) se traduce a la URL pública de la Gateway con
 `/api`: `http://localhost:8002/vehiculos` → `https://<gateway>/api/vehiculos`.
 
+## Health checks (`/api/health`)
+
+Públicos (no exigen `Authorization`) y de solo lectura: miden la salud del
+sistema, no son endpoints de negocio.
+
+### GET `/api/health`
+
+Responde la propia Gateway, **sin consultar a los microservicios** (lo usa
+Vercel y no puede depender de que estén arriba). `200` siempre que el proceso
+de la Gateway esté vivo:
+
+```json
+// Response 200
+{ "status": "ok", "servicio": "gateway" }
+```
+
+### GET `/api/health/servicios`
+
+Consulta `/health/db` de los cuatro microservicios en paralelo con un timeout
+de `GATEWAY_HEALTH_TIMEOUT_SECONDS` (2 s por defecto) por servicio. `200` si
+todos responden; `503` si al menos uno no lo está. Toda respuesta trae
+`Cache-Control: no-store`. El body no expone URLs internas.
+
+```json
+// Response 200
+{
+  "status": "ok",
+  "gateway": "ok",
+  "servicios": {
+    "ms1_auth": { "estado": "ok", "latencia_ms": 3 },
+    "ms2_taller": { "estado": "ok", "latencia_ms": 4 },
+    "ms3_presupuestos": { "estado": "ok", "latencia_ms": 2 },
+    "ms4_evidencias": { "estado": "ok", "latencia_ms": 5 }
+  }
+}
+```
+
+```json
+// Response 503
+{
+  "status": "degradado",
+  "gateway": "ok",
+  "servicios": {
+    "ms1_auth": { "estado": "ok", "latencia_ms": 3 },
+    "ms2_taller": { "estado": "ok", "latencia_ms": 4 },
+    "ms3_presupuestos": { "estado": "caido" },
+    "ms4_evidencias": { "estado": "sin_base", "latencia_ms": 6, "codigo_http": 503 }
+  }
+}
+```
+
+Estados por servicio:
+
+- `ok` — respondió `200` a `/health/db` en menos del timeout (`latencia_ms` en
+  milisegundos enteros).
+- `sin_base` — el proceso responde pero su health/base falla; incluye
+  `codigo_http`.
+- `tiempo_agotado` — superó el timeout de 2 s.
+- `caido` — sin conexión (servicio apagado o no arrancado).
+
 ## Rutas de Presupuestos y Evidencias
 
 La Gateway decide el destino por el **primer segmento** de la ruta y reenvía

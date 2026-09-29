@@ -10,7 +10,7 @@ import {
 const stats = [
   {
     label: 'Vehículos en Taller',
-    value: '13',
+    value: '—',
     valueColor: 'text-white',
     icon: <Car className="w-6 h-6" />,
     iconColor: 'text-blue-400',
@@ -19,7 +19,7 @@ const stats = [
   },
   {
     label: 'Esperando Diagnóstico',
-    value: '3',
+    value: '—',
     valueColor: 'text-status-yellow',
     icon: <Clock className="w-6 h-6" />,
     iconColor: 'text-status-yellow',
@@ -28,7 +28,7 @@ const stats = [
   },
   {
     label: 'Listos para Entrega',
-    value: '2',
+    value: '—',
     valueColor: 'text-status-green',
     icon: <CheckCircle className="w-6 h-6" />,
     iconColor: 'text-status-green',
@@ -37,39 +37,12 @@ const stats = [
   },
   {
     label: 'Presupuestos por Revisar',
-    value: '1',
+    value: '—',
     valueColor: 'text-status-orange',
     icon: <FileText className="w-6 h-6" />,
     iconColor: 'text-status-orange',
     iconBg: 'bg-status-orange/15',
     borderLeft: 'border-l-4 border-l-status-red',
-  },
-];
-
-const recentOrders = [
-  {
-    vehicle: 'Ford Fiesta',
-    patent: 'ABCD-12',
-    service: 'Mantención 15.000 km',
-    status: 'Esperando Aprobación',
-    statusColor: 'bg-status-orange text-white',
-    borderColor: 'border-l-status-orange',
-  },
-  {
-    vehicle: 'Nissan Kicks',
-    patent: 'EFGH-34',
-    service: 'Cambio Pastillas Freno',
-    status: 'En Diagnóstico',
-    statusColor: 'bg-status-blue text-white',
-    borderColor: 'border-l-status-blue',
-  },
-  {
-    vehicle: 'Kia Morning',
-    patent: 'MNOP-78',
-    service: 'Revisión Técnica',
-    status: 'Listo para Entrega',
-    statusColor: 'bg-status-green text-white',
-    borderColor: 'border-l-status-green',
   },
 ];
 
@@ -82,7 +55,7 @@ export function AdminDashboardPage() {
             Panel de Control Global
           </h2>
           <p className="text-text-muted text-lg">
-            Resumen operativo del taller en tiempo real
+            Resumen operativo del taller
           </p>
         </div>
         <div className="bg-status-green/20 px-5 py-2.5 rounded-[20px] text-status-green text-sm font-bold border border-status-green/50">
@@ -119,37 +92,9 @@ export function AdminDashboardPage() {
             <h3 className="text-xl font-semibold">Cola de Trabajo Activa</h3>
           </div>
           <div className="flex flex-col gap-3.5">
-            {recentOrders.map((order) => (
-              <div
-                key={order.patent}
-                className={`flex items-center justify-between p-4 border border-border-custom rounded-xl bg-black/40 transition-all duration-200 hover:bg-white/5 border-l-4 ${order.borderColor}`}
-              >
-                <div className="flex items-center gap-5">
-                  <div className="w-20 h-[60px] rounded-lg bg-white/10 flex items-center justify-center text-status-blue">
-                    <Car className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-medium mb-1">
-                      {order.vehicle}{' '}
-                      <span className="text-xs bg-white/90 text-black px-1.5 py-0.5 rounded font-mono font-bold">
-                        {order.patent}
-                      </span>
-                    </h4>
-                    <p className="text-sm text-text-muted mb-2">
-                      {order.service}
-                    </p>
-                    <span
-                      className={`inline-block text-xs px-2.5 py-1 rounded-full font-bold ${order.statusColor}`}
-                    >
-                      {order.status}
-                    </span>
-                  </div>
-                </div>
-                <button disabled className="bg-white/5 border border-border-custom text-white px-5 py-2.5 rounded-lg transition-all duration-300 hover:bg-white/15 hover:border-white/30 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                  Gestionar
-                </button>
-              </div>
-            ))}
+            <p className="text-text-muted text-center py-10">
+              Aún no hay órdenes de trabajo activas.
+            </p>
           </div>
         </div>
 
@@ -158,17 +103,17 @@ export function AdminDashboardPage() {
             <div className="flex justify-between items-center mb-5 border-b border-border-custom pb-3">
               <h4 className="text-xl font-semibold">Actividad Reciente</h4>
             </div>
-            <div className="flex flex-col">
-              <div className="flex gap-4 mb-5 pb-5 border-b border-border-custom">
+            <div className="flex flex-col gap-4">
+              <div className="flex gap-4">
                 <div className="w-10 h-10 rounded-full bg-status-green/10 flex items-center justify-center text-status-green shrink-0">
                   <TrendingUp className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-sm mb-1">
-                    <strong>Eduardo Werner</strong> aprobó presupuesto.
+                    <strong>Actividad pendiente</strong> de registro.
                   </p>
                   <p className="text-xs text-text-muted">
-                    Orden #12345 (Ford Fiesta) • Hace 10 min
+                    Pronto se mostrará el historial de operaciones.
                   </p>
                 </div>
               </div>
@@ -178,10 +123,10 @@ export function AdminDashboardPage() {
                 </div>
                 <div>
                   <p className="text-sm mb-1">
-                    Stock bajo: <strong>Filtro Aceite 10W40</strong>
+                    <strong>Avisos</strong> visibles aquí.
                   </p>
                   <p className="text-xs text-text-muted">
-                    Solo 2 unidades restantes • Hace 45 min
+                    Sin alertas por el momento.
                   </p>
                 </div>
               </div>

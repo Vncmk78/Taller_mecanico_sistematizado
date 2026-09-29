@@ -22,6 +22,10 @@ os.environ.setdefault(
     "sqlite+pysqlite:////tmp/sgtm_ms2_config_only.db",
 )
 os.environ.setdefault(
+    "MS3_JWT_SECRET_KEY",
+    "clave-secreta-exclusiva-para-pruebas-de-ms3-123456",
+)
+os.environ.setdefault(
     "MS4_JWT_SECRET_KEY",
     "clave-secreta-exclusiva-para-pruebas-de-ms4-123456",
 )

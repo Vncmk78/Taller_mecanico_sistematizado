@@ -89,6 +89,25 @@ Cada servicio publica `GET /health` (el proceso responde) y `GET /health/db`
 Los comandos se ejecutan **desde `backend/`**, porque los imports son
 `services.<paquete>...` y `shared...`.
 
+## MS3 — Presupuestos, Repuestos y Proveedores
+
+MS3 guarda presupuestos versionados, repuestos, proveedores e inventario en su
+propia base. Las reglas de versionado (versión enviada congelada, bloqueo al
+aprobar, decisión inmutable) las garantiza la base con triggers.
+
+```bash
+# 1. Migrar la base de MS3 (requiere MS3_JWT_SECRET_KEY en el entorno: ver .env)
+alembic -c services/ms3_presupuestos/alembic.ini upgrade head
+
+# 2. Datos de prueba (idempotente): proveedores, repuestos, umbral e inventario.
+#    Con --orden-id agrega un presupuesto de ejemplo (versión 1 enviada).
+python scripts/seed_datos_ms3.py --orden-id 1
+
+# 3. Pruebas de persistencia ORM contra PostgreSQL migrado (se omiten si no hay base)
+MS3_ORM_TEST_DATABASE_URL=postgresql+psycopg://taller:taller@localhost:5435/taller_ms3 \
+    pytest services/ms3_presupuestos/tests -q
+```
+
 ## MS4 — Evidencia Multimedia
 
 MS4 guarda los **metadatos** de las evidencias (fotos/videos) en su propia base;

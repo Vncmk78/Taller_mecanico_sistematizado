@@ -68,6 +68,38 @@ requieran):
 | `PATCH /api/vehiculos/{id}` | MS2 | Edición de vehículo. Sin vista aún. |
 | `POST /api/auth/register` | MS1 | Registro de usuario. Sin vista aún. |
 
+## Estados de carga, vacío y error
+
+El frontend clasifica cada fallo antes de decidir qué muestra, para no rotular
+como "sin conexión" un error que el servidor sí respondió. La clasificación vive
+en `isOfflineError` (`src/infrastructure/api/errors.ts`):
+
+| Situación | `isOffline` | Qué ve el usuario |
+| --- | --- | --- |
+| Sin respuesta HTTP (DNS, red caída, Axios sin `response`) | `true` | Banner "No se pudo conectar con el servidor" + caché |
+| HTTP `502` / `503` / `504` (Gateway o microservicio caído) | `true` | Mismo banner de conexión |
+| HTTP `500` y otros `5xx` con respuesta | `false` | "El servidor tuvo un problema. Intente más tarde." + botón Reintentar |
+| HTTP `401` / `403` | `false` | Error; la sesión se restaura por separado en `AuthService` |
+| HTTP `404` en un detalle | `false` | Estado vacío "no encontrado" (el recurso existe, pero no está en el alcance del rol) |
+| HTTP `404` en un listado | `false` | Estado vacío de la colección |
+| HTTP `409` / `422` | `false` | Mensaje de negocio de MS2, sin tratarlo como caída de conexión |
+| Colección vacía con `200` | `false` | Estado vacío del portal, con su acción correspondiente |
+
+Reglas que se aplican en listados, detalles e historial:
+
+- `fetchCollection` reinicia `status`/`error`/`isOffline` al empezar cada
+  intento, así que un reintento limpio no arrastra el error anterior.
+- Un fallo conserva la caché: se avisa y se siguen mostrando los últimos datos
+  conocidos. Solo sin copia local el listado o el detalle cae al estado de error.
+- En un detalle, `404` produce `notFound` y cualquier otro fallo sin caché produce
+  `failed`; son estados distintos y las vistas los tratan distinto para no
+  mostrar un "no encontrado" que no es cierto.
+- En el historial de la orden, un fallo muestra "No fue posible mostrar el
+  historial de estados de esta orden." en lugar del vacío "Aún no hay registros".
+
+Componentes compartidos por los tres portales: `EmptyState` (vacío),
+`ErrorState` (error reintentable), `RetryButton` y `OfflineBanner`.
+
 ## Desactualizaciones del documento de contrato
 
 `backend/docs/contratos-api-gateway.md` sigue figurando `/api/ordenes` como

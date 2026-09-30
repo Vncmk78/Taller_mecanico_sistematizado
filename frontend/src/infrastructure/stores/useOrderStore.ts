@@ -12,6 +12,7 @@ import {
 interface FetchOrderResult {
     order: Order | null;
     notFound: boolean;
+    failed: boolean;
 }
 
 interface OrderState extends AsyncStatus {
@@ -43,7 +44,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
             () => get().orders,
             (state, order) => ({ orders: upsertById(state.orders, order) })
         );
-        return { order: result.item, notFound: result.notFound };
+        return { order: result.item, notFound: result.notFound, failed: result.failed };
     },
 
     updateOrder: (order) =>

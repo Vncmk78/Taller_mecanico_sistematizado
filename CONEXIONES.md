@@ -320,9 +320,9 @@ de datos simulados.
 
 | Suite | Comando | Resultado |
 | --- | --- | --- |
-| Backend | `.\\.venv\\Scripts\\python.exe -m pytest -q` (desde `backend/`) | 427 passed, 61 skipped |
-| Lint frontend | `npm run lint` | 0 warnings / 0 errors (139 archivos) |
-| Tests frontend | `npm test` | 210 passed / 43 archivos |
+| Backend | `.\.venv\Scripts\python.exe -m pytest -q` (desde `backend/`) | 427 passed, 61 skipped |
+| Lint frontend | `npm run lint` | 0 warnings / 0 errors (150 archivos) |
+| Tests frontend | `npm test` | 286 passed / 51 archivos |
 | Build frontend | `npm run build` (tsc -b && vite build) | OK |
 
 **Backend**: `VehiculoRespuesta` expone ahora `cliente_id` (schema de MS2,
@@ -351,3 +351,41 @@ Pendiente de coordinar con backend: exponer nombres reales requiere que MS2
 resuelva MS1 (o un endpoint de clientes/mecánicos), fuera del alcance de esta
 misión. Ver `frontend/docs/contratos-openapi.md` y el plan en
 `.opencode/plans/r32x-reemplazar-mocks-gateway.md`.
+
+## Estados de carga, vacío y error en la interfaz
+
+Los 3 portales (Administrador, Mecánico y Cliente) comparten los mismos estados en
+los listados, detalles e historial de vehículos y órdenes, con el texto
+acomodado a cada portal.
+
+**`isOffline` ya no significa "cualquier error"**: `isOfflineError`
+(`frontend/src/infrastructure/api/errors.ts`) solo marca `true` cuando el fallo
+es de transporte —error no Axios, Axios sin `response`, o `502/503/504`—. Un
+`500` u otro `5xx` con respuesta llega como error del servidor, porque el
+problema no es la conexión del usuario. Un `404` en un detalle se traduce a
+"no encontrado" en vez de a un error.
+
+| Estado | Comportamiento |
+| --- | --- |
+| Cargando | `LoadingState` o skeleton según la vista |
+| Vacío | `EmptyState` con el texto del portal y, si aplica, la acción para crear el primer registro |
+| Sin conexión | `OfflineBanner` + los últimos datos de la caché, con `RetryButton` |
+| Error del servidor con caché | Se conservan los datos y se avisa en un `Alert` con reintento |
+| Error del servidor sin caché | `ErrorState` a pantalla completa con mensaje y botón de reintento |
+| Detalle inexistente | `EmptyState` "no encontrado" con el link de regreso del portal |
+
+Detalles del comportamiento:
+
+- `fetchCollection` limpia `status`, `error` e `isOffline` al iniciar cada
+  intento, para que un reintento no herede el error anterior.
+- Ante un fallo nunca se borra la caché: primero se avisa, después se muestran
+  los últimos datos conocidos.
+- Un detalle distingue `notFound` (el `404` real) de `failed` (el fetch falló sin
+  copia local), de modo que un error de red no se presenta como "no encontrado".
+- El historial de la orden usa su propio aviso: "No fue posible mostrar el
+  historial de estados de esta orden." en vez del vacío "Aún no hay registros".
+- Componentes nuevos reutilizables: `EmptyState`, `ErrorState` y `RetryButton`;
+  `OfflineBanner` quedó delegando el reintento en `RetryButton`.
+
+La tabla completa por código de respuesta está en
+`frontend/docs/contratos-openapi.md`, sección "Estados de carga, vacío y error".

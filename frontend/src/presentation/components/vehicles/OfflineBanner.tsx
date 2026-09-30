@@ -1,5 +1,5 @@
-import { RefreshCw } from 'lucide-react';
 import { Alert } from '@/presentation/components/ui/Alert';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 
 interface OfflineBannerProps {
     message: string | null;
@@ -7,22 +7,19 @@ interface OfflineBannerProps {
     className?: string;
 }
 
+/**
+ * Aviso de fallo de transporte: la Gateway no respondió o el servicio no estaba
+ * disponible, por lo que se conserva la caché local. Los errores HTTP del
+ * servidor se muestran con Alert/ErrorState, no con este banner.
+ */
 export function OfflineBanner({ message, onRetry, className = '' }: OfflineBannerProps) {
     return (
-    <Alert
-        tone="warning"
-        className={className}
-        action={
-        <button
-            type="button"
-            onClick={onRetry}
-            className="flex items-center gap-1.5 shrink-0 text-primary-blue bg-status-yellow/10 hover:bg-status-yellow/20 transition-colors rounded-md border border-status-yellow/40 hover:border-status-yellow/60 px-3 py-1.5"
+        <Alert
+            tone="warning"
+            className={className}
+            action={<RetryButton tone="warning" onClick={onRetry} />}
         >
-            <RefreshCw className="w-3.5 h-3.5" /> Reintentar
-        </button>
-        }
-    >
-        {message ?? 'No se pudo conectar con el servidor.'} Mostrando datos disponibles localmente.
-    </Alert>
+            {message ?? 'No se pudo conectar con el servidor.'} Mostrando datos disponibles localmente.
+        </Alert>
     );
 }

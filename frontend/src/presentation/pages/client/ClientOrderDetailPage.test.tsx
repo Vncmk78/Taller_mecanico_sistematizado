@@ -30,6 +30,7 @@ const orden: Order = {
 };
 
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
+const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
 
 function renderPage() {
     return render(
@@ -67,5 +68,14 @@ describe('ClientOrderDetailPage: detalle desde el portal del cliente', () => {
         expect(
             screen.getByRole('link', { name: 'Volver a mis órdenes' })
         ).toHaveAttribute('href', '/client/ordenes');
+    });
+
+    it('muestra estado de error cuando falla el fetch sin caché', async () => {
+        vi.mocked(orderService.getOrderById).mockRejectedValue(axios500);
+
+        renderPage();
+
+        expect(await screen.findByText('No se pudo cargar el detalle de la orden')).toBeInTheDocument();
+        expect(screen.queryByText(/Orden no encontrada/)).not.toBeInTheDocument();
     });
 });

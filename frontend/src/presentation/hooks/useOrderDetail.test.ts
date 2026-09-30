@@ -16,6 +16,7 @@ const orden: Order = {
 };
 
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
+const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
 
 describe('useOrderDetail: carga del detalle de una orden', () => {
     beforeEach(() => {
@@ -40,6 +41,7 @@ describe('useOrderDetail: carga del detalle de una orden', () => {
 
         await waitFor(() => expect(result.current.loading).toBe(false));
         expect(result.current.notFound).toBe(true);
+        expect(result.current.failed).toBe(false);
         expect(result.current.order).toBeUndefined();
     });
 
@@ -52,7 +54,45 @@ describe('useOrderDetail: carga del detalle de una orden', () => {
         await waitFor(() => expect(result.current.loading).toBe(false));
         expect(result.current.order?.id).toBe('101');
         expect(result.current.notFound).toBe(false);
+        expect(result.current.failed).toBe(false);
         expect(useOrderStore.getState().isOffline).toBe(true);
+    });
+
+    it('marca failed (no notFound) si el fetch falla sin copia local', async () => {
+        const loader = vi.fn((_id: string) => Promise.reject(new Error('network')));
+
+        const { result } = renderHook(() => useOrderDetail('999', loader));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.notFound).toBe(false);
+        expect(result.current.failed).toBe(true);
+        expect(result.current.order).toBeUndefined();
+    });
+
+    it('un error del servidor sin copia local también marca failed', async () => {
+        const loader = vi.fn((_id: string) => Promise.reject(axios500));
+
+        const { result } = renderHook(() => useOrderDetail('999', loader));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.failed).toBe(true);
+        // Un 500 no es un problema de conexión: la vista lo muestra como error.
+        expect(useOrderStore.getState().isOffline).toBe(false);
+    });
+
+    it('refetch limpia failed y vuelve a intentar', async () => {
+        const loader = vi.fn((_id: string) => Promise.resolve(orden));
+        loader.mockRejectedValueOnce(axios500);
+
+        const { result } = renderHook(() => useOrderDetail('101', loader));
+
+        await waitFor(() => expect(result.current.failed).toBe(true));
+
+        act(() => result.current.refetch());
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.failed).toBe(false);
+        expect(result.current.order?.id).toBe('101');
     });
 
     it('con id indefinido marca notFound sin invocar el loader', async () => {

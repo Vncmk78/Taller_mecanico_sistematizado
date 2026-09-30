@@ -1,12 +1,15 @@
 import { Bot, Clock, History, MessageSquare, UserCircle2 } from 'lucide-react';
 import type { OrderHistoryEntry } from '@/domain/entities/OrderHistory';
 import { ordenStatusLabel } from '@/domain/entities/Order';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { formatDateTime, estadoDotClasses } from '@/presentation/utils/orderDisplay';
 import { OrderStatusBadge } from './OrderStatusBadge';
 
 interface OrderHistoryTimelineProps {
     entries: OrderHistoryEntry[];
     loading: boolean;
+    /** El fetch del historial falló: no se debe presentar como "aún sin registros". */
+    failed?: boolean;
 }
 
 const skeletonRows = [
@@ -20,7 +23,7 @@ const skeletonRows = [
  * primero. Cada entrada muestra el estado al que se movió, el anterior, la
  * fecha, el responsable (usuario o sistema) y la observación registrada.
  */
-export function OrderHistoryTimeline({ entries, loading }: OrderHistoryTimelineProps) {
+export function OrderHistoryTimeline({ entries, loading, failed = false }: OrderHistoryTimelineProps) {
     return (
         <section aria-labelledby="order-history-title" className="card p-6">
             <h3
@@ -41,9 +44,17 @@ export function OrderHistoryTimeline({ entries, loading }: OrderHistoryTimelineP
                     ))}
                 </div>
             ) : entries.length === 0 ? (
-                <p className="text-sm text-text-muted">
-                    Aún no hay registros del historial de estados de esta orden.
-                </p>
+                failed ? (
+                    <p className="text-sm text-text-muted">
+                        No fue posible mostrar el historial de estados de esta orden.
+                    </p>
+                ) : (
+                    <EmptyState
+                        className="!py-6 !px-0"
+                        icon={History}
+                        title="Aún no hay registros del historial de estados de esta orden."
+                    />
+                )
             ) : (
                 <div className="relative pl-6">
                     <span aria-hidden className="absolute left-1 top-3 bottom-3 w-px bg-border-custom" />

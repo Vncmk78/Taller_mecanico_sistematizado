@@ -148,6 +148,23 @@ def crear(body: ProveedorCrear, uow: UnidadDeTrabajo = Depends(obtener_unidad_de
     return registrar_proveedor(uow, body.nombre, body.contacto)   # 409 si el nombre ya existe
 ```
 
+### Aislamiento de la base de MS3
+
+MS3 solo conoce su base (`MS3_DATABASE_URL`). Las órdenes (MS2) y los usuarios
+(MS1) se guardan como **referencias lógicas**: un id sin FK que se valida por API.
+`services/ms3_presupuestos/aislamiento.py` define las reglas y se comprueba con:
+
+```bash
+# Revisa modelo, configuración y la base real (local o Neon). Sale con 1 si hay problemas.
+python scripts/verificar_aislamiento_ms3.py
+```
+
+Falla si: una FK apunta fuera de MS3, una referencia lógica tiene FK, MS3 comparte
+tablas o la misma base con otro servicio, hay tablas ajenas en su base, o está
+instalado `dblink`/`postgres_fdw`. Pruebas: `tests/test_ms3_aislamiento.py`
+(sin base; además verifica que el código de MS3 no importa `ms1_`/`ms2_`/`ms4_`)
+y `services/ms3_presupuestos/tests/test_aislamiento_bd.py` (PostgreSQL).
+
 ## MS4 — Evidencia Multimedia
 
 MS4 guarda los **metadatos** de las evidencias (fotos/videos) en su propia base;

@@ -7,14 +7,15 @@ import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
 
 export function ClientVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
     const user = useAuthStore((s) => s.user);
-    const clientId = user?.id ?? CURRENT_CLIENT_ID;
+    // Identidad real de la sesión (usuario_id de MS1) para resolver la
+    // pertenencia del vehículo en la caché compartida entre portales.
+    const clientId = user?.id;
     const { vehicle, loading, notFound, refetch } = useVehicleDetail(id, (vid) =>
-    vehicleService.getVehicleById(vid)
+    vehicleService.getVehicleById(vid, clientId)
     );
     const { isOffline, error } = useVehicleStore();
 

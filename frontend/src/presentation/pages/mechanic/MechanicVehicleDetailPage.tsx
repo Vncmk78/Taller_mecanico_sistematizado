@@ -6,7 +6,6 @@ import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { mockAssignedVehicleIds, mockOwners } from '@/infrastructure/mocks/vehicles.mock';
 
 export function MechanicVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -14,15 +13,15 @@ export function MechanicVehicleDetailPage() {
     vehicleService.getVehicleById(vid)
     );
     const { isOffline, error } = useVehicleStore();
-    // Online, getVehicleById del rol Mecánico ya responde 404 si el vehículo no
-    // está entre los asignados; el mock solo aplica para el modo offline.
-    const isAssigned = isOffline ? (id ? mockAssignedVehicleIds.includes(id) : false) : true;
+    // El alcance no se comprueba en el cliente: la Gateway responde 404 al rol
+    // Mecánico cuando el vehículo no está entre sus órdenes asignadas, y offline
+    // solo se muestra lo que quedó en la caché de esa misma respuesta.
 
     if (loading) {
     return <LoadingState message="Cargando ficha del vehículo..." className="p-10" />;
     }
 
-    if (!vehicle || notFound || !isAssigned) {
+    if (!vehicle || notFound) {
     return (
         <div className="p-10 text-text-muted">
         Vehículo no encontrado o no está entre sus órdenes asignadas.{' '}
@@ -45,7 +44,7 @@ export function MechanicVehicleDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6">
         <VehicleInfoPanel
             vehicle={vehicle}
-            owner={vehicle.clientId ? mockOwners[vehicle.clientId] : undefined}
+            ownerLabel={vehicle.clientId ? `Cliente #${vehicle.clientId}` : undefined}
           />
         <div className="card">
             <h3 className="text-xl font-semibold flex items-center gap-2 mb-4 pb-4 border-b border-border-custom">

@@ -5,7 +5,6 @@ import { VehicleListSkeleton } from '@/presentation/components/vehicles/VehicleL
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { mockOwners } from '@/infrastructure/mocks/vehicles.mock';
 
 export function AdminVehiclesPage() {
     const [search, setSearch] = useState('');
@@ -56,7 +55,7 @@ export function AdminVehiclesPage() {
             <VehicleCard
                 key={vehicle.id}
                 vehicle={vehicle}
-                ownerName={mockOwners[vehicle.clientId]?.fullName}
+                ownerName={vehicle.clientId ? `Cliente #${vehicle.clientId}` : undefined}
                 detailPath={`/admin/vehiculos/${vehicle.id}`}
             />
             ))}

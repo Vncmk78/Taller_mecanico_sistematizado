@@ -232,6 +232,7 @@ _USUARIO_EJEMPLO: dict[str, Any] = {
 
 _VEHICULO_EJEMPLO: dict[str, Any] = {
     "vehiculo_id": 12,
+    "cliente_id": 7,
     "patente": "AB1234",
     "marca": "Toyota",
     "modelo": "Corolla",

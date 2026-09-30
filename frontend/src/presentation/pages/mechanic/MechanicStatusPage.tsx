@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
 import { AVANCES_MECANICO, ESTADOS_ORDEN } from '@/domain/entities/Order';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import { orderService } from '@/infrastructure/api/OrderService';
-import { CURRENT_MECHANIC_ID } from '@/infrastructure/mocks/orders.mock';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
@@ -133,12 +132,10 @@ export function MechanicStatusPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const myOrders = useMemo(() => {
-        // Online el servidor ya filtra las órdenes del mecánico; el filtro por
-        // CURRENT_MECHANIC_ID es solo para los datos de demo (offline).
-        if (!isOffline) return orders;
-        return orders.filter((o) => o.mecanicoActualId === CURRENT_MECHANIC_ID);
-    }, [orders, isOffline]);
+    // Online la Gateway ya devuelve solo las órdenes asignadas al mecánico
+    // autenticado; la caché conserva esa misma respuesta, así que offline no
+    // hace falta volver a filtrar por identidad.
+    const myOrders = orders;
 
     return (
         <div className="animate-fade-in p-10">

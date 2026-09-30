@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { OrderHistoryEntry } from '@/domain/entities/OrderHistory';
-import { mockOrderHistory } from '@/infrastructure/mocks/orders.history.mock';
 import type { OrderPort } from '@/domain/ports/OrderPort';
 import {
     initialAsyncStatus,
@@ -19,7 +18,7 @@ interface OrderHistoryState extends AsyncStatus {
 // reemplaza por completo su historial (fuente autoritativa de esa orden) para
 // no mezclar datos reales con los demos de la misma orden.
 export const useOrderHistoryStore = create<OrderHistoryState>((set) => ({
-    entries: mockOrderHistory,
+    entries: [],
     ...initialAsyncStatus,
 
     fetchOrderHistory: (ordenId, loader) =>

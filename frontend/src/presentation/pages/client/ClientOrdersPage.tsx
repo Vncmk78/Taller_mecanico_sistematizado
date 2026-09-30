@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { ordenStatusLabel } from '@/domain/entities/Order';
 import { OrderCard } from '@/presentation/components/orders/OrderCard';
 import { OrderListSkeleton } from '@/presentation/components/orders/OrderListSkeleton';
@@ -8,17 +8,13 @@ import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner'
 import { useOrderListFilters } from '@/presentation/hooks/useOrderListFilters';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { orderService } from '@/infrastructure/api/OrderService';
-import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
-import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 export function ClientOrdersPage() {
-    const user = useAuthStore((s) => s.user);
     const { orders, status, error, isOffline, fetchOrders } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
 
-    const clientId = user?.id ?? CURRENT_CLIENT_ID;
     const loadOrders = () => fetchOrders(() => orderService.getOrders());
 
     useEffect(() => {
@@ -26,13 +22,10 @@ export function ClientOrdersPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const myOrders = useMemo(() => {
-        if (!isOffline) return orders;
-        const myVehicleIds = new Set(
-            vehicles.filter((v) => v.clientId === clientId).map((v) => v.id)
-        );
-        return orders.filter((o) => myVehicleIds.has(o.vehicleId));
-    }, [orders, isOffline, vehicles, clientId]);
+    // Online la Gateway ya devuelve solo las órdenes del cliente autenticado; la
+    // caché conserva esa misma respuesta, así que offline no hace falta volver
+    // a filtrar por identidad.
+    const myOrders = orders;
 
     const {
         search,

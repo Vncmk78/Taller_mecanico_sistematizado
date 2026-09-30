@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { CheckCircle2, Plus, Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { VehicleCard } from '@/presentation/components/vehicles/VehicleCard';
 import { VehicleListSkeleton } from '@/presentation/components/vehicles/VehicleListSkeleton';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
@@ -62,10 +63,9 @@ export function ClientVehiclesPage() {
         </div>
 
         {justRegistered && (
-        <div role="status" className="flex items-center gap-2 mb-6 text-status-green text-sm bg-status-green/10 border border-status-green/40 rounded-lg px-4 py-3">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            Vehículo registrado con éxito.
-        </div>
+        <Alert tone="success" className="mb-6">
+          Vehículo registrado con éxito.
+        </Alert>
         )}
 
         {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} className="mb-6" />}

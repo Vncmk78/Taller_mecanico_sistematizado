@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertCircle, Calendar, Car, Gauge, Hash } from 'lucide-react';
+import { Calendar, Car, Gauge, Hash } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { isConflictError } from '@/infrastructure/api/errors';
@@ -121,10 +122,9 @@ export function ClientVehicleFormPage() {
             </div>
 
             {submitError && (
-            <div role="alert" className="flex items-center gap-2 mb-4 text-status-red text-sm bg-status-red/10 border border-status-red/40 rounded-lg px-4 py-3">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                {submitError}
-            </div>
+            <Alert tone="error" className="mb-4 justify-center">
+              {submitError}
+            </Alert>
             )}
 
             <div className="flex gap-3 mt-2">

@@ -83,6 +83,54 @@ prefijo y comprueba que la ruta y el método existan y que los campos del body
 y de la respuesta exitosa sean los mismos. Cualquier diferencia es una
 discrepancia de contrato que el frontend heredaría.
 
+## Pruebas de integración automáticas
+
+Además de la prueba manual con servicios levantados hay tres niveles de tests
+automáticos que cubren la comunicación Gateway ↔ microservicios:
+
+| Nivel | Archivo | Chiste | Rápido |
+|---|---|---|---|
+| Gateway simulada (respx) | `tests/test_gateway_rutas.py`, `tests/test_gateway_errores_proxy.py` | Los microservicios son respuestas respx; se prueban enrutamiento, cabeceras y errores de la Gateway | Sí |
+| Integración in-process | `tests/test_integracion_prefijos.py` | Gateway REAL + los 4 apps REALES conectados por `httpx.ASGITransport` por URL base, cada uno con SQLite en memoria | Sí |
+| Servicios levantados | `scripts/prueba_comunicacion.py` | Red real + PostgreSQL + MinIO/S3 | No |
+
+El nivel in-process (`tests/test_integracion_prefijos.py`) es el gemelo
+automático del `prueba_comunicacion.py`: como los transports se cuelgan de las
+mismas URLs (`GATEWAY_MS1_URL`... `GATEWAY_MS4_URL`) que usan los servicios
+reales, el enrutamiento de `gateway.rutas` hace lo mismo que en producción. La
+Gateway y los 4 microservicios ejecutan su código real (mismas rutas, schemas,
+auth y motor SQLAlchemy); lo único simulado es la capa de red (se cambia el
+transporte HTTPX por ASGI) y la base de datos (SQLite en memoria en vez de
+PostgreSQL).
+
+Para correrlo solo:
+
+```bash
+python -m pytest tests/test_integracion_prefijos.py -v
+```
+
+Qué cubre:
+
+- **MS1**: registro público (`201`, solo rol `cliente`), login (`200` con token),
+  `me` (`200`), login con contraseña incorrecta (`401`) y `me` sin token
+  (`401` con `WWW-Authenticate`).
+- **MS2**: flujo completo de vehículos con un token emitido por MS1 (`201/200/200`),
+  falta de token (`401`), body inválido (`422` con `detail` en lista), vehículo
+  de otro cliente (`404 "Vehículo no encontrado"`), órdenes como admin (`200
+  []`) y token alterado (`401`).
+- **MS3 y MS4**: sus prefijos responden `404 {"detail": "Not Found"}` propio del
+  microservicio, sin la clave `error` que identifica al 404 de la Gateway
+  (hasta la Semana 5 no tienen endpoints de negocio).
+- **Transversales**: `GET /api/health/servicios` con los 4 en `"ok"`,
+  `X-Request-ID` de ida y vuelta en una petición proxied, y `/api/noexiste`
+  devolviendo el 404 en el formato común de la Gateway.
+- **Por servicio**: una petición proxied responde algo que solo ese
+  microservicio produce (perfil del usuario autenticado, el vehículo recién
+  creado, el 404 del microservicio).
+
+No usa respx a propósito: responder el código real de cada microservicio es
+justamente lo que se quiere comprobar.
+
 ## Resultados
 
 | Fecha | Entorno | Comunicación | OpenAPI | Notas |

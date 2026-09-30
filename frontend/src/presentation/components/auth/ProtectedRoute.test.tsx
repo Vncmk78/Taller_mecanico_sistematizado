@@ -54,6 +54,10 @@ function renderProtectedRoute({ entry, allowedRoles }: RenderProtectedRouteOptio
           <Route path="/client" element={<div data-testid="home-client">Portal Cliente</div>} />
           <Route path="/mechanic" element={<div data-testid="home-mechanic">Portal Mecánico</div>} />
           <Route
+            path="/acceso-denegado"
+            element={<div data-testid="access-denied">Acceso Denegado</div>}
+          />
+          <Route
             path="/admin"
             element={
               <ProtectedRoute allowedRoles={allowedRoles}>
@@ -101,7 +105,7 @@ describe('ProtectedRoute: acceso a rutas protegidas', () => {
     expect(screen.getByTestId('admin-panel')).toBeInTheDocument();
   });
 
-  it('redirige al panel del rol cuando no tiene permisos para la ruta', () => {
+  it('lleva a /acceso-denegado cuando no tiene permisos para la ruta', () => {
     useAuthStore.setState({
       user: clientUser,
       token: 'token-cliente',
@@ -110,7 +114,7 @@ describe('ProtectedRoute: acceso a rutas protegidas', () => {
 
     renderProtectedRoute({ entry: '/admin', allowedRoles: ['administrador'] });
 
-    expect(screen.getByTestId('home-client')).toBeInTheDocument();
+    expect(screen.getByTestId('access-denied')).toBeInTheDocument();
     expect(screen.queryByTestId('admin-panel')).not.toBeInTheDocument();
   });
 });

@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ShieldAlert, Settings, Wrench, LogOut, LayoutDashboard } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuth } from '@/presentation/components/auth/authContext';
 import { getHomePath } from '@/presentation/routes/rolePaths';
 
@@ -54,9 +55,9 @@ export function AccessDeniedPage() {
           </p>
 
           {message && (
-            <div className="flex items-center justify-center gap-2 mt-4 text-status-orange text-sm bg-status-orange/10 border border-status-orange/40 rounded-lg px-4 py-3">
+            <Alert tone="orange" className="mt-4 justify-center">
               {message}
-            </div>
+            </Alert>
           )}
 
           <div className="flex flex-col gap-3 mt-8">

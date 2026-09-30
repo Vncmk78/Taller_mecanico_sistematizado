@@ -116,6 +116,58 @@ describe('asyncCollection: helpers de colección asíncrona', () => {
             expect(state.error).not.toBeNull();
             expect(state.items.map((i) => i.id)).toEqual(['1']);
         });
+
+        it('un error del servidor no se marca offline y conserva la caché', async () => {
+            state.items = [{ id: '1', name: 'a' }];
+            const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
+
+            await fetchCollection<TestItem, TestState>(
+                async () => {
+                    throw axios500;
+                },
+                set,
+                (_s, fetched) => ({ items: fetched })
+            );
+
+            expect(state.status).toBe('error');
+            expect(state.isOffline).toBe(false);
+            expect(state.error).toMatch(/El servidor tuvo un problema/);
+            expect(state.items.map((i) => i.id)).toEqual(['1']);
+        });
+
+        it('un 503 (servicio no disponible) sí se marca offline', async () => {
+            const axios503 = { isAxiosError: true, response: { status: 503, data: {} } };
+
+            await fetchCollection<TestItem, TestState>(
+                async () => {
+                    throw axios503;
+                },
+                set,
+                (_s, fetched) => ({ items: fetched })
+            );
+
+            expect(state.status).toBe('error');
+            expect(state.isOffline).toBe(true);
+        });
+
+        it('al reintentar limpia el estado offline anterior', async () => {
+            state = { items: [], status: 'error', error: 'No se pudo conectar', isOffline: true };
+            let resolveLoader: (value: TestItem[]) => void = () => {};
+
+            const promise = fetchCollection<TestItem, TestState>(
+                () => new Promise<TestItem[]>((resolve) => { resolveLoader = resolve; }),
+                set,
+                (_s, fetched) => ({ items: fetched })
+            );
+
+            // Durante el reintento no se muestra el banner offline junto al skeleton.
+            expect(state.status).toBe('loading');
+            expect(state.isOffline).toBe(false);
+            expect(state.error).toBeNull();
+
+            resolveLoader([]);
+            await promise;
+        });
     });
 
     describe('fetchItemById', () => {
@@ -131,6 +183,7 @@ describe('asyncCollection: helpers de colección asíncrona', () => {
             );
 
             expect(result.notFound).toBe(false);
+            expect(result.failed).toBe(false);
             expect(result.item?.name).toBe('a2');
             expect(state.items.find((i) => i.id === '1')?.name).toBe('a2');
             expect(state.isOffline).toBe(false);
@@ -151,6 +204,7 @@ describe('asyncCollection: helpers de colección asíncrona', () => {
             );
 
             expect(result.notFound).toBe(true);
+            expect(result.failed).toBe(false);
             expect(result.item).toBeNull();
             expect(state.items.map((i) => i.id)).toEqual(['1']);
             expect(state.isOffline).toBe(false);
@@ -170,9 +224,49 @@ describe('asyncCollection: helpers de colección asíncrona', () => {
             );
 
             expect(result.notFound).toBe(false);
+            expect(result.failed).toBe(false);
             expect(result.item?.id).toBe('1');
             expect(state.isOffline).toBe(true);
             expect(state.error).not.toBeNull();
+        });
+
+        it('sin caché local devuelve failed en vez de un falso notFound', async () => {
+            state.items = [];
+
+            const result = await fetchItemById<TestItem, TestState>(
+                '9',
+                async () => {
+                    throw new Error('network');
+                },
+                set,
+                getItems,
+                upsert
+            );
+
+            // Un corte de red no puede presentarse como "no encontrado".
+            expect(result.notFound).toBe(false);
+            expect(result.failed).toBe(true);
+            expect(result.item).toBeNull();
+        });
+
+        it('un error del servidor con caché local no se marca offline', async () => {
+            state.items = [{ id: '1', name: 'a' }];
+            const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
+
+            const result = await fetchItemById<TestItem, TestState>(
+                '1',
+                async () => {
+                    throw axios500;
+                },
+                set,
+                getItems,
+                upsert
+            );
+
+            expect(result.item?.id).toBe('1');
+            expect(result.failed).toBe(false);
+            expect(state.isOffline).toBe(false);
+            expect(state.error).toMatch(/El servidor tuvo un problema/);
         });
     });
 });

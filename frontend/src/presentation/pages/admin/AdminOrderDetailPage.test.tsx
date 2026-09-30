@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import { orderService } from '@/infrastructure/api/OrderService';
@@ -33,6 +33,7 @@ const orden: Order = {
 const hist101 = mockOrderHistory.filter((e) => e.ordenId === '101');
 
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
+const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
 
 // Error de red simulado: es un error Axios pero sin respuesta HTTP del servidor.
 const axiosNetworkError = { isAxiosError: true };
@@ -82,6 +83,29 @@ describe('AdminOrderDetailPage: detalle con panel e historial', () => {
         expect(
             screen.getByRole('link', { name: 'Volver a la gestión de órdenes' })
         ).toHaveAttribute('href', '/admin/ordenes');
+    });
+
+    it('muestra estado de error cuando falla el fetch sin caché', async () => {
+        vi.mocked(orderService.getOrderById).mockRejectedValue(axios500);
+
+        renderPage();
+
+        expect(await screen.findByText('No se pudo cargar el detalle de la orden')).toBeInTheDocument();
+        // Un fallo de fetch no debe confundirse con un 404.
+        expect(screen.queryByText(/Orden no encontrada/)).not.toBeInTheDocument();
+    });
+
+    it('reintenta la carga desde el estado de error', async () => {
+        vi.mocked(orderService.getOrderById).mockRejectedValue(axios500);
+        vi.mocked(orderService.getOrderHistory).mockResolvedValue(hist101);
+
+        renderPage();
+
+        const reintentar = await screen.findByRole('button', { name: 'Reintentar' });
+        vi.mocked(orderService.getOrderById).mockResolvedValue(orden);
+        fireEvent.click(reintentar);
+
+        expect(await screen.findByText('Orden de trabajo n° 101')).toBeInTheDocument();
     });
 
     it('queda offline con banner y muestra la caché local', async () => {

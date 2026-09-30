@@ -35,6 +35,12 @@ const ordVeh1 = orden('101', '1', 5);
 const ordVeh2 = orden('102', '2', 3);
 const ordVeh6 = orden('106', '6', 6);
 
+// Fallo de transporte: error Axios sin respuesta HTTP, así que isOfflineError
+// lo clasifica como "sin conexión" (no como error del servidor).
+const axiosNetworkError = { isAxiosError: true };
+// Error del servidor: llegó respuesta con status 500, así que no es "sin conexión".
+const axiosServerError = { isAxiosError: true, response: { status: 500, data: {} } };
+
 function renderPage() {
     return render(
         <MemoryRouter>
@@ -62,7 +68,7 @@ describe('ClientOrdersPage: mis órdenes del cliente', () => {
 
   it('offline conserva la caché con las órdenes del cliente', async () => {
     useOrderStore.setState({ orders: [ordVeh1, ordVeh2, ordVeh6], isOffline: true });
-    vi.mocked(orderService.getOrders).mockRejectedValue(new Error('network'));
+    vi.mocked(orderService.getOrders).mockRejectedValue(axiosNetworkError);
 
     renderPage();
 
@@ -78,7 +84,7 @@ describe('ClientOrdersPage: mis órdenes del cliente', () => {
 
   it('muestra el estado vacío cuando el cliente no tiene órdenes', async () => {
     useOrderStore.setState({ orders: [], isOffline: true });
-    vi.mocked(orderService.getOrders).mockRejectedValue(new Error('network'));
+    vi.mocked(orderService.getOrders).mockRejectedValue(axiosNetworkError);
 
     renderPage();
 
@@ -93,5 +99,14 @@ describe('ClientOrdersPage: mis órdenes del cliente', () => {
         const { container } = renderPage();
 
         expect(container.querySelector('.animate-pulse')).not.toBeNull();
+    });
+
+    it('un error del servidor sin caché muestra el estado de error, no el banner offline', async () => {
+        vi.mocked(orderService.getOrders).mockRejectedValue(axiosServerError);
+
+        renderPage();
+
+        expect(await screen.findByText('No se pudieron cargar sus órdenes')).toBeInTheDocument();
+        expect(screen.queryByText(/No se pudo conectar con el servidor/)).not.toBeInTheDocument();
     });
 });

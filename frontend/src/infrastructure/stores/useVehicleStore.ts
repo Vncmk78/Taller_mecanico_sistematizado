@@ -14,6 +14,7 @@ import {
 interface FetchVehicleResult {
     vehicle: Vehicle | null;
     notFound: boolean;
+    failed: boolean;
 }
 
 interface VehicleState extends AsyncStatus {
@@ -46,7 +47,7 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
             () => get().vehicles,
             (state, vehicle) => ({ vehicles: upsertById(state.vehicles, vehicle) })
         );
-        return { vehicle: result.item, notFound: result.notFound };
+        return { vehicle: result.item, notFound: result.notFound, failed: result.failed };
     },
 
     patentExists: (patent) =>

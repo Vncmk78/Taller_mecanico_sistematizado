@@ -32,6 +32,10 @@ function orden(id: string, estadoCodigo: number, mecanicoActualId: string | null
 const ordEnReparacion = orden('101', 5);
 const ordDeOtro = orden('102', 1, 'm2');
 
+// Fallo de transporte: error Axios sin respuesta HTTP, así que isOfflineError
+// lo clasifica como "sin conexión" (no como error del servidor).
+const axiosNetworkError = { isAxiosError: true };
+
 function renderPage() {
     return render(
         <MemoryRouter>
@@ -117,7 +121,7 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
 
   it('offline conserva la caché con las órdenes asignadas al mecánico', async () => {
     useOrderStore.setState({ orders: [ordEnReparacion, ordDeOtro], isOffline: true });
-    vi.mocked(orderService.getOrders).mockRejectedValue(new Error('network'));
+    vi.mocked(orderService.getOrders).mockRejectedValue(axiosNetworkError);
 
     renderPage();
 

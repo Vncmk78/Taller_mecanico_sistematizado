@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, ClipboardList } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
 import { AVANCES_MECANICO, ESTADOS_ORDEN } from '@/domain/entities/Order';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
@@ -11,6 +11,9 @@ import { OrderStatusBadge } from '@/presentation/components/orders/OrderStatusBa
 import { OrderStateStepper } from '@/presentation/components/orders/OrderStateStepper';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
+import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { OrderListSkeleton } from '@/presentation/components/orders/OrderListSkeleton';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 
@@ -137,6 +140,10 @@ export function MechanicStatusPage() {
     // hace falta volver a filtrar por identidad.
     const myOrders = orders;
 
+    // El store solo marca isOffline ante fallos de transporte: un error HTTP del
+    // servidor se muestra aparte para no rotularlo como "sin conexión".
+    const isServerError = status === 'error' && !isOffline;
+
     return (
         <div className="animate-fade-in p-10">
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Actualizar Estados</h2>
@@ -144,8 +151,20 @@ export function MechanicStatusPage() {
 
             {isOffline && <OfflineBanner message={error} onRetry={loadOrders} className="mb-6" />}
 
+            {isServerError && myOrders.length > 0 && (
+                <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={loadOrders} />}>
+                    {error ?? 'No se pudieron cargar las órdenes.'} Se muestran los últimos datos disponibles.
+                </Alert>
+            )}
+
             {status === 'loading' ? (
                 <OrderListSkeleton count={3} />
+            ) : isServerError && myOrders.length === 0 ? (
+                <ErrorState
+                    title="No se pudieron cargar las órdenes"
+                    message={error}
+                    onRetry={loadOrders}
+                />
             ) : (
                 <div className="space-y-6">
                     {myOrders.map((order) => (
@@ -157,9 +176,11 @@ export function MechanicStatusPage() {
                         />
                     ))}
                     {myOrders.length === 0 && (
-                        <p className="text-text-muted text-center py-10">
-                            No tiene órdenes asignadas por el momento.
-                        </p>
+                        <EmptyState
+                            icon={ClipboardList}
+                            title="No tiene órdenes asignadas por el momento."
+                            description="Las órdenes que se le asignen aparecerán aquí para poder avanzar su estado."
+                        />
                     )}
                 </div>
             )}

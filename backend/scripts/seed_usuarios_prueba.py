@@ -54,6 +54,18 @@ USUARIOS = [
 ]
 
 
+def _ocultar_correo(correo: str) -> str:
+    """Enmascara el correo para poder identificar la cuenta sin imprimirlo.
+
+    La salida de este script termina en los logs del despliegue, así que no debe
+    contener datos de usuario en claro. Conserva el dominio y las iniciales, que
+    es lo necesario para saber qué cuenta se sembró.
+    """
+    local, _, dominio = correo.partition("@")
+    visible = local[:1]
+    return f"{visible}***@{dominio}" if dominio else f"{visible}***"
+
+
 def _sembrar_ms1() -> int:
     """Crea o actualiza las cuentas y sus roles en la base de MS1.
 
@@ -86,12 +98,12 @@ def _sembrar_ms1() -> int:
                 )
                 db.add(usuario)
                 db.flush()
-                print(f"  + Usuario creado: {correo}")
+                print(f"  + Usuario creado: {_ocultar_correo(correo)}")
             else:
                 usuario.nombre = datos["nombre"]
                 usuario.contrasena_hash = hash_contrasena(datos["contrasena"])
                 usuario.activo = True
-                print(f"  ~ Usuario actualizado: {correo}")
+                print(f"  ~ Usuario actualizado: {_ocultar_correo(correo)}")
 
             roles_actuales = {a.rol.nombre for a in usuario.roles}
             for rol in datos["roles"]:

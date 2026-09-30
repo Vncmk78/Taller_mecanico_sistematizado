@@ -17,8 +17,10 @@ export function UserMenu({ userName, subtitle, onLogout, prepend }: UserMenuProp
         <div className="text-xs text-text-muted">{subtitle}</div>
       </div>
       <button
+        type="button"
+        aria-label="Cerrar sesión"
         onClick={onLogout}
-        className="ml-5 text-primary-red cursor-pointer text-lg bg-transparent border-none hover:text-white transition-colors"
+        className="ml-5 text-primary-orange cursor-pointer text-lg bg-transparent border-none hover:text-primary-orange-hover transition-colors"
         title="Cerrar Sesión"
       >
         <LogOut className="w-5 h-5" />

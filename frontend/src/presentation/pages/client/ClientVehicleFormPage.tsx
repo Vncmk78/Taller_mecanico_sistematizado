@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AlertCircle, Calendar, Car, Gauge, Hash } from 'lucide-react';
+import { Calendar, Car, Gauge, Hash } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { isConflictError } from '@/infrastructure/api/errors';
@@ -76,7 +77,7 @@ export function ClientVehicleFormPage() {
     <div className="animate-fade-in flex justify-center">
         <GlassCard className="w-full max-w-[600px] p-10">
         <h2 className="text-2xl font-bold mb-2 text-center flex items-center justify-center gap-3">
-            <Car className="w-6 h-6 text-primary-red" /> Registrar Nuevo Vehículo
+            <Car className="w-6 h-6 text-primary-orange" /> Registrar Nuevo Vehículo
         </h2>
         <p className="text-text-muted text-sm text-center mb-8">
             Complete los datos del vehículo. La patente debe ser única en el sistema.
@@ -121,10 +122,9 @@ export function ClientVehicleFormPage() {
             </div>
 
             {submitError && (
-            <div role="alert" className="flex items-center gap-2 mb-4 text-status-red text-sm bg-status-red/10 border border-status-red/40 rounded-lg px-4 py-3">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                {submitError}
-            </div>
+            <Alert tone="error" className="mb-4 justify-center">
+              {submitError}
+            </Alert>
             )}
 
             <div className="flex gap-3 mt-2">

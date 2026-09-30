@@ -112,21 +112,25 @@ describe('AppRoutes: navegación por los tres roles', () => {
       ).toBeInTheDocument();
     });
 
-    it('niega /admin a un cliente y lo redirige a su portal', () => {
+    it('niega /admin a un cliente y lo lleva a acceso denegado', () => {
       logueadoComo(clientUser);
       renderApp('/admin');
 
-      expect(screen.getByText('Portal Cliente')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Acceso Denegado' })
+      ).toBeInTheDocument();
       expect(
         screen.queryByRole('heading', { name: 'Panel de Control Global' })
       ).not.toBeInTheDocument();
     });
 
-    it('niega /admin a un mecánico y lo redirige a su portal', () => {
+    it('niega /admin a un mecánico y lo lleva a acceso denegado', () => {
       logueadoComo(mechanicUser);
       renderApp('/admin');
 
-      expect(screen.getByText('Actualizar Estados')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Acceso Denegado' })
+      ).toBeInTheDocument();
       expect(
         screen.queryByRole('heading', { name: 'Panel de Control Global' })
       ).not.toBeInTheDocument();
@@ -157,21 +161,23 @@ describe('AppRoutes: navegación por los tres roles', () => {
       ).toBeInTheDocument();
     });
 
-    it('niega /client a un administrador y lo redirige a su panel', () => {
+    it('niega /client a un administrador y lo lleva a acceso denegado', () => {
       logueadoComo(adminUser);
       renderApp('/client');
 
       expect(
-        screen.getByRole('heading', { name: 'Panel de Control Global' })
+        screen.getByRole('heading', { name: 'Acceso Denegado' })
       ).toBeInTheDocument();
       expect(screen.queryByText('Portal Cliente')).not.toBeInTheDocument();
     });
 
-    it('niega /client a un mecánico y lo redirige a su portal', () => {
+    it('niega /client a un mecánico y lo lleva a acceso denegado', () => {
       logueadoComo(mechanicUser);
       renderApp('/client');
 
-      expect(screen.getByText('Actualizar Estados')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Acceso Denegado' })
+      ).toBeInTheDocument();
       expect(screen.queryByText('Portal Cliente')).not.toBeInTheDocument();
     });
   });
@@ -198,21 +204,23 @@ describe('AppRoutes: navegación por los tres roles', () => {
       ).toBeInTheDocument();
     });
 
-    it('niega /mechanic a un administrador y lo redirige a su panel', () => {
+    it('niega /mechanic a un administrador y lo lleva a acceso denegado', () => {
       logueadoComo(adminUser);
       renderApp('/mechanic');
 
       expect(
-        screen.getByRole('heading', { name: 'Panel de Control Global' })
+        screen.getByRole('heading', { name: 'Acceso Denegado' })
       ).toBeInTheDocument();
       expect(screen.queryByText('Actualizar Estados')).not.toBeInTheDocument();
     });
 
-    it('niega /mechanic a un cliente y lo redirige a su portal', () => {
+    it('niega /mechanic a un cliente y lo lleva a acceso denegado', () => {
       logueadoComo(clientUser);
       renderApp('/mechanic');
 
-      expect(screen.getByText('Portal Cliente')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Acceso Denegado' })
+      ).toBeInTheDocument();
       expect(screen.queryByText('Actualizar Estados')).not.toBeInTheDocument();
     });
   });

@@ -11,10 +11,10 @@ const stats = [
   {
     label: 'Vehículos en Taller',
     value: '—',
-    valueColor: 'text-white',
+    valueColor: 'text-primary-blue',
     icon: <Car className="w-6 h-6" />,
-    iconColor: 'text-blue-400',
-    iconBg: 'bg-blue-400/15',
+    iconColor: 'text-primary-blue',
+    iconBg: 'bg-primary-blue/10',
     borderLeft: 'border-l-4 border-l-primary-blue',
   },
   {
@@ -67,7 +67,7 @@ export function AdminDashboardPage() {
         {stats.map((stat) => (
           <div
             key={stat.label}
-            className={`glass-card flex justify-between items-center p-5 ${stat.borderLeft}`}
+            className={`card flex justify-between items-center p-5 ${stat.borderLeft}`}
           >
             <div>
               <span className="text-text-muted text-sm block mb-2">
@@ -87,7 +87,7 @@ export function AdminDashboardPage() {
       </div>
 
       <div className="grid grid-cols-[2fr_1fr] gap-7 px-10 pb-10">
-        <div className="glass-card flex flex-col p-7">
+        <div className="card flex flex-col p-7">
           <div className="flex justify-between items-center mb-6 border-b border-border-custom pb-4">
             <h3 className="text-xl font-semibold">Cola de Trabajo Activa</h3>
           </div>
@@ -99,7 +99,7 @@ export function AdminDashboardPage() {
         </div>
 
         <div className="flex flex-col gap-7">
-          <div className="glass-card">
+          <div className="card">
             <div className="flex justify-between items-center mb-5 border-b border-border-custom pb-3">
               <h4 className="text-xl font-semibold">Actividad Reciente</h4>
             </div>

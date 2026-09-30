@@ -89,6 +89,82 @@ Cada servicio publica `GET /health` (el proceso responde) y `GET /health/db`
 Los comandos se ejecutan **desde `backend/`**, porque los imports son
 `services.<paquete>...` y `shared...`.
 
+## MS3 — Presupuestos, Repuestos y Proveedores
+
+MS3 guarda presupuestos versionados, repuestos, proveedores e inventario en su
+propia base. Las reglas de versionado (versión enviada congelada, bloqueo al
+aprobar, decisión inmutable) las garantiza la base con triggers.
+
+```bash
+# 1. Migrar la base de MS3 (requiere MS3_JWT_SECRET_KEY en el entorno: ver .env)
+alembic -c services/ms3_presupuestos/alembic.ini upgrade head
+
+# 2. Datos de prueba (idempotente): proveedores, repuestos, umbral e inventario.
+#    Con --orden-id agrega un presupuesto de ejemplo (versión 1 enviada).
+python scripts/seed_datos_ms3.py --orden-id 1
+
+# 3. Pruebas de persistencia ORM contra PostgreSQL migrado (se omiten si no hay base)
+MS3_ORM_TEST_DATABASE_URL=postgresql+psycopg://taller:taller@localhost:5435/taller_ms3 \
+    pytest services/ms3_presupuestos/tests -q
+```
+
+### Datos mínimos y fixtures de prueba de MS3
+
+- `services/ms3_presupuestos/datos_prueba.py`: **única fuente** del catálogo de
+  prueba (2 proveedores, 4 repuestos, umbral general 5, presupuesto de ejemplo
+  de $68.990). La usan la semilla y las pruebas.
+- `services/ms3_presupuestos/tests/fabricas.py`: fábricas que crean lo mínimo
+  válido (`nuevo_repuesto`, `nuevo_movimiento`, `nuevo_presupuesto(estado=...)`,
+  `enviar`, `decidir`...) con nombres y órdenes únicos.
+- Fixtures en `tests/conftest.py`: `uow`, `catalogo`, `repuesto_bajo_umbral`,
+  `umbral_general`, `presupuesto_borrador` / `_enviado` / `_aprobado` /
+  `_rechazado` y `presupuesto_ejemplo`. Todo se revierte al terminar cada prueba.
+
+```python
+def test_no_se_edita_un_presupuesto_aprobado(presupuesto_aprobado, uow):
+    ...
+```
+
+### Patrón de persistencia de MS3 (sesión, repositorio y transacciones)
+
+`services/ms3_presupuestos/persistencia/`:
+
+- `repositorios.py`: un repositorio por agregado (proveedores, repuestos,
+  movimientos, parámetros, presupuestos). Consultan y agregan, **nunca hacen commit**.
+- `unidad_de_trabajo.py`: `UnidadDeTrabajo` reúne los repositorios sobre una
+  misma sesión. Todo caso de uso va dentro de `with uow.transaccion():` →
+  commit al final o rollback si algo falla (anidado = SAVEPOINT).
+- `errores.py`: traduce los errores de PostgreSQL (UNIQUE, FK, CHECK, triggers)
+  a `ConflictoDeDatos` (409), `ReglaDeDatosViolada` (422) y `RecursoNoEncontrado`
+  (404); `main.py` los convierte en respuestas HTTP sin exponer SQL.
+
+```python
+def registrar_proveedor(uow: UnidadDeTrabajo, nombre: str, contacto: str) -> Proveedor:
+    with uow.transaccion():
+        return uow.proveedores.agregar(Proveedor(nombre=nombre, contacto=contacto))
+
+@router.post("", status_code=201)
+def crear(body: ProveedorCrear, uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo)):
+    return registrar_proveedor(uow, body.nombre, body.contacto)   # 409 si el nombre ya existe
+```
+
+### Aislamiento de la base de MS3
+
+MS3 solo conoce su base (`MS3_DATABASE_URL`). Las órdenes (MS2) y los usuarios
+(MS1) se guardan como **referencias lógicas**: un id sin FK que se valida por API.
+`services/ms3_presupuestos/aislamiento.py` define las reglas y se comprueba con:
+
+```bash
+# Revisa modelo, configuración y la base real (local o Neon). Sale con 1 si hay problemas.
+python scripts/verificar_aislamiento_ms3.py
+```
+
+Falla si: una FK apunta fuera de MS3, una referencia lógica tiene FK, MS3 comparte
+tablas o la misma base con otro servicio, hay tablas ajenas en su base, o está
+instalado `dblink`/`postgres_fdw`. Pruebas: `tests/test_ms3_aislamiento.py`
+(sin base; además verifica que el código de MS3 no importa `ms1_`/`ms2_`/`ms4_`)
+y `services/ms3_presupuestos/tests/test_aislamiento_bd.py` (PostgreSQL).
+
 ## MS4 — Evidencia Multimedia
 
 MS4 guarda los **metadatos** de las evidencias (fotos/videos) en su propia base;

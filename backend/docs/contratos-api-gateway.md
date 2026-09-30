@@ -302,6 +302,83 @@ Devuelve el usuario identificado por el token.
   "roles": ["cliente"], "is_active": true }
 ```
 
+### El JWT: claims, validación y quién las aplica
+
+Esta sección es la **fuente de verdad** del token de acceso. La implementación
+que la garantiza es [`shared/auth.py`](../shared/auth.py), un módulo puro sin
+FastAPI, SQLAlchemy ni conexión a base de datos, pensado para que todos los
+microservicios compartan exactamente el mismo contrato. Si este documento y el
+código discrepan, el código es la referencia: no se reimplementa la validación
+en otro lado.
+
+#### Claims emitidos
+
+`POST /api/auth/login` entrega un JWT firmado con **HS256** que contiene
+exactamente tres claims:
+
+| Claim | Tipo | Obligatorio | Contenido |
+|---|---|---|---|
+| `sub` | `string` | Sí | El `usuario_id` de MS1 como texto **entero positivo** (`"7"`, nunca `"usr_7"`) |
+| `roles` | `list[string]` | Sí | Lista **no vacía y sin duplicados** con los roles del usuario, ordenada alfabéticamente |
+| `exp` | `number` | Sí | Vencimiento en epoch seconds (por defecto 60 minutos, `MS1_JWT_EXPIRE_MINUTES`) |
+
+Los valores de `roles` solo pueden ser `cliente`, `mecanico` o `administrador`
+(enum `NombreRol`). Cualquier otro valor hace que el token sea rechazado.
+
+Deliberadamente **no** viajan `email`, `role` (singular), `nombre` ni `iat`: la
+identidad se resuelve siempre contra la base de MS1 o MS2 en el momento de la
+petición, de modo que un token no queda obsoleto si el usuario cambia de correo,
+nombre o roles mientras el token sigue vigente. El correo y el nombre completos
+se obtienen en `GET /api/auth/me`.
+
+> **Atención al integrarse con otros módulos:** el claim es `roles` y es una
+> **lista**, aunque el usuario tenga un único rol. Un cliente que lea
+> `payload.role` (singular) o que asuma un string en lugar de un array obtendrá
+> `undefined` y denegará el acceso a usuarios legítimos.
+
+#### Quién valida el token
+
+**La Gateway no valida el JWT.** Reenvía la cabecera `Authorization` al
+microservicio destino sin inspeccionarla, y por eso no lee ni necesita el secreto
+de firma. Cada microservicio valida por su cuenta, y lo hace siempre con
+`shared.auth.validar_token_acceso`, que:
+
+- exige `sub` y `exp` presentes (`require_sub`, `require_exp`);
+- rechaza firmas inválidas y tokens expirados con el mismo error `401`;
+- devuelve un `PrincipalAutenticado` con `usuario_id: int` y
+  `roles: frozenset[NombreRol]`, sin tocar la base de datos;
+- no acepta un `sub` no numérico, una `roles` vacía, con duplicados o con un rol
+  desconocido.
+
+La ventaja de este diseño es que la Gateway no puede falsificar una identidad ni
+filtrar el token, y que el secreto de cada microservicio se mantiene en su
+propio prefijo de variables (`MS1_JWT_SECRET_KEY`, `MS2_JWT_SECRET_KEY`, …).
+
+El secreto es obligatorio, se lee solo del entorno y debe tener **al menos 32
+caracteres**: `shared/auth.py` lanza `ConfiguracionJWTError` en el arranque si
+falta, es corto o si el algoritmo no es `HS256`. No debe existir un valor por
+defecto en el código, porque un default conocido permitiría firmar tokens
+válidos.
+
+#### Errores de autenticación y autorización
+
+| Situación | Respuesta |
+|---|---|
+| Sin cabecera `Authorization`, o con un esquema distinto de `Bearer` | `401` + `WWW-Authenticate: Bearer` |
+| Token con firma inválida, expirado, o con `sub`/`roles` mal formados | `401` + `WWW-Authenticate: Bearer` |
+| Token válido, pero el usuario ya no existe o está inactivo | `401` |
+| Token válido, pero el principal no tiene ninguno de los roles exigidos | `403` |
+| Recurso inexistente **o** ajeno al principal | `404` (se usa el mismo código para no revelar la existencia de recursos de otros) |
+
+La distinción `401` / `403` es parte del contrato: `401` significa "identifícate
+otra vez" y `403` significa "identificado, pero no te corresponde". Un cliente
+que limpie la sesión ante un `401` debe ignorar los `403` y puede mostrar un
+mensaje de permisos.
+
+Para obtener las tres identidades de prueba (Cliente, Mecánico y
+Administrador) existe `scripts/seed_usuarios_prueba.py`; el registro público solo
+puede crear clientes, porque los roles se asignan en el servidor.
+
 ## Vehículos (MS2)
 
 Todas requieren `Authorization: Bearer <token>` con rol Cliente y un perfil

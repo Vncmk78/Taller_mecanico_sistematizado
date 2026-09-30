@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarPlus, ClipboardList } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
@@ -18,7 +19,7 @@ export function ClientVehicleDetailPage() {
     const { isOffline, error } = useVehicleStore();
 
     if (loading) {
-    return <div className="text-text-muted">Cargando ficha del vehículo...</div>;
+    return <LoadingState message="Cargando ficha del vehículo..." />;
     }
 
   // Ownership check: aunque el vehículo exista en caché, no es tuyo si el clientId no calza.
@@ -26,7 +27,7 @@ export function ClientVehicleDetailPage() {
     return (
         <div className="text-text-muted">
         Vehículo no encontrado o no pertenece a su cuenta.{' '}
-        <Link to="/client/vehiculos" className="text-primary-red">Volver a mis vehículos</Link>
+        <Link to="/client/vehiculos" className="text-primary-blue">Volver a mis vehículos</Link>
         </div>
     );
     }
@@ -35,7 +36,7 @@ export function ClientVehicleDetailPage() {
     <div className="animate-fade-in">
         <Link
         to="/client/vehiculos"
-        className="inline-flex items-center gap-2 text-text-muted hover:text-white mb-6 no-underline"
+        className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
         >
         <ArrowLeft className="w-4 h-4" /> Volver a mis vehículos
         </Link>
@@ -47,13 +48,13 @@ export function ClientVehicleDetailPage() {
             <VehicleInfoPanel vehicle={vehicle} />
             <Link
             to="/client/agendar"
-            className="bg-primary-red text-white py-3 rounded-lg font-bold text-center flex items-center justify-center gap-2 no-underline hover:bg-primary-red-hover transition-colors"
+            className="bg-primary-blue text-white py-3 rounded-lg font-bold text-center flex items-center justify-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors"
             >
             <CalendarPlus className="w-4 h-4" /> Agendar mantención para este vehículo
             </Link>
         </div>
 
-        <div className="glass-card">
+        <div className="card">
             <h3 className="text-xl font-semibold flex items-center gap-2 mb-4 pb-4 border-b border-border-custom">
             <ClipboardList className="w-5 h-5 text-text-muted" />
             Historial de Órdenes

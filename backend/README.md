@@ -108,6 +108,29 @@ MS3_ORM_TEST_DATABASE_URL=postgresql+psycopg://taller:taller@localhost:5435/tall
     pytest services/ms3_presupuestos/tests -q
 ```
 
+### Patrón de persistencia de MS3 (sesión, repositorio y transacciones)
+
+`services/ms3_presupuestos/persistencia/`:
+
+- `repositorios.py`: un repositorio por agregado (proveedores, repuestos,
+  movimientos, parámetros, presupuestos). Consultan y agregan, **nunca hacen commit**.
+- `unidad_de_trabajo.py`: `UnidadDeTrabajo` reúne los repositorios sobre una
+  misma sesión. Todo caso de uso va dentro de `with uow.transaccion():` →
+  commit al final o rollback si algo falla (anidado = SAVEPOINT).
+- `errores.py`: traduce los errores de PostgreSQL (UNIQUE, FK, CHECK, triggers)
+  a `ConflictoDeDatos` (409), `ReglaDeDatosViolada` (422) y `RecursoNoEncontrado`
+  (404); `main.py` los convierte en respuestas HTTP sin exponer SQL.
+
+```python
+def registrar_proveedor(uow: UnidadDeTrabajo, nombre: str, contacto: str) -> Proveedor:
+    with uow.transaccion():
+        return uow.proveedores.agregar(Proveedor(nombre=nombre, contacto=contacto))
+
+@router.post("", status_code=201)
+def crear(body: ProveedorCrear, uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo)):
+    return registrar_proveedor(uow, body.nombre, body.contacto)   # 409 si el nombre ya existe
+```
+
 ## MS4 — Evidencia Multimedia
 
 MS4 guarda los **metadatos** de las evidencias (fotos/videos) en su propia base;

@@ -9,6 +9,11 @@ presupuestos, repuestos, proveedores e inventario se protegen así:
 o, si el endpoint necesita saber quién llama:
 
     def endpoint(principal: PrincipalAutenticado = Depends(obtener_principal_actual)):
+
+Para acceder a datos, el endpoint pide la unidad de trabajo (una sesión por
+petición, cerrada siempre por get_db) y delega en services:
+
+    def endpoint(uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo)):
 """
 from __future__ import annotations
 
@@ -16,8 +21,11 @@ from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
 from services.ms3_presupuestos.config import settings
+from services.ms3_presupuestos.db import get_db
+from services.ms3_presupuestos.persistencia import UnidadDeTrabajo
 from shared.auth import (
     NombreRol,
     PrincipalAutenticado,
@@ -63,6 +71,11 @@ def requerir_roles(
         return principal
 
     return dependencia
+
+
+def obtener_unidad_de_trabajo(db: Session = Depends(get_db)) -> UnidadDeTrabajo:
+    """Unidad de trabajo de la petición, sobre la sesión que abre y cierra get_db."""
+    return UnidadDeTrabajo(db)
 
 
 def _error_no_autenticado(detalle: str) -> HTTPException:

@@ -125,7 +125,7 @@ function OrderAdvanceCard({ order, patente, vehicleLabel }: OrderAdvanceCardProp
 }
 
 export function MechanicStatusPage() {
-    const { orders, status, error, isOffline, fetchOrders } = useOrderStore();
+    const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     const loadOrders = () => fetchOrders(() => orderService.getOrders());
@@ -149,7 +149,7 @@ export function MechanicStatusPage() {
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Actualizar Estados</h2>
             <p className="text-text-muted text-lg mb-8">Mantén el flujo de las órdenes al día</p>
 
-            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} className="mb-6" />}
+            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} requestId={requestId} className="mb-6" />}
 
             {isServerError && myOrders.length > 0 && (
                 <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={loadOrders} />}>
@@ -163,6 +163,7 @@ export function MechanicStatusPage() {
                 <ErrorState
                     title="No se pudieron cargar las órdenes"
                     message={error}
+                    requestId={requestId}
                     onRetry={loadOrders}
                 />
             ) : (

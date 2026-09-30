@@ -1,5 +1,6 @@
 import { Car, User } from 'lucide-react';
 import type { Vehicle } from '@/domain/entities/Vehicle';
+import { vehicleMileageLabel, vehicleYearLabel } from '@/presentation/utils/vehicleDisplay';
 
 interface VehicleInfoPanelProps {
     vehicle: Vehicle;
@@ -26,11 +27,11 @@ export function VehicleInfoPanel({ vehicle, ownerLabel }: VehicleInfoPanelProps)
         <div className="grid grid-cols-2 gap-4 mb-6">
         <div>
             <span className="text-text-muted text-sm block mb-1">Año</span>
-            <span className="text-lg font-medium">{vehicle.year}</span>
+            <span className="text-lg font-medium">{vehicleYearLabel(vehicle.year)}</span>
         </div>
         <div>
             <span className="text-text-muted text-sm block mb-1">Kilometraje registrado</span>
-            <span className="text-lg font-medium">{vehicle.mileage.toLocaleString('es-CL')} km</span>
+            <span className="text-lg font-medium">{vehicleMileageLabel(vehicle.mileage)}</span>
         </div>
         </div>
         {ownerLabel && (

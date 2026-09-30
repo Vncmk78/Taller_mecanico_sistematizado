@@ -9,6 +9,8 @@ interface ErrorStateProps {
     retryLabel?: string;
     /** Acción secundaria (volver al listado, por ejemplo). */
     action?: ReactNode;
+    /** X-Request-ID de la Gateway, para rastrear el fallo en los logs del backend. */
+    requestId?: string | null;
     className?: string;
 }
 
@@ -23,6 +25,7 @@ export function ErrorState({
     onRetry,
     retryLabel = 'Reintentar',
     action,
+    requestId,
     className = '',
 }: ErrorStateProps) {
     return (
@@ -35,6 +38,11 @@ export function ErrorState({
             </span>
             <p className="font-semibold">{title}</p>
             {message && <p className="text-text-muted text-sm mt-1 max-w-md">{message}</p>}
+            {requestId && (
+                <p className="text-text-muted text-xs mt-2 font-mono max-w-md break-all">
+                    Referencia: {requestId}
+                </p>
+            )}
             {(onRetry || action) && (
                 <div className="mt-4 flex items-center gap-3 flex-wrap justify-center">
                     {onRetry && (

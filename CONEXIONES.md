@@ -389,3 +389,59 @@ Detalles del comportamiento:
 
 La tabla completa por código de respuesta está en
 `frontend/docs/contratos-openapi.md`, sección "Estados de carga, vacío y error".
+
+## Mapeo y errores probados con payloads reales del backend (2026-09-30)
+
+Los tests de mapeo y de errores ya no usan cuerpos inventados: se prueban contra
+los literales que devuelve el backend, copiados a
+`frontend/src/infrastructure/mocks/payloads.reales.ts` con la referencia al
+archivo del backend del que salió cada uno.
+
+Qué se verificó:
+
+- **Éxitos**: vehículo `AB1234`/Toyota/Corolla/2018/45000 km, orden con
+  `mecanico_actual_id: null` y fechas `-03:00`, historial de usuario y de sistema
+  (con `estado_anterior`, `actor_usuario_id` y `observacion` en `null`), y el
+  token de login con el usuario anidado.
+- **Errores de la Gateway**: los 7 códigos de su catálogo (`RUTA_NO_ENCONTRADA`,
+  `METODO_NO_PERMITIDO`, `ERROR_INTERNO`, `ERROR_MICROSERVICIO`,
+  `MICROSERVICIO_INALCANZABLE`, `GATEWAY_SATURADA`, `TIEMPO_AGOTADO`), con su
+  `detail`, `request_id` y código.
+- **Errores de los microservicios**: 409 de patente y de correo, 401 de
+  credenciales y de token, 403, y los 422 en sus tres formas (lista de FastAPI y
+  dos strings).
+
+Cambios que salieron de esta prueba:
+
+- `502/503/504` se siguen marcando como fallo de servicio, pero ahora la
+  interfaz muestra el mensaje que escribió el backend ("La Gateway está
+  ocupada. Intente más tarde.") en vez de un texto genérico. Antes ya se
+  respetaba el `detail`; ahora está fijado con pruebas para que no se pierda.
+- Se expone el `request_id` de la Gateway como `Referencia: <id>` en los estados
+  de error, en el banner de servicio caído y en el formulario de registro, para
+  poder rastrear el fallo en los logs. `getApiErrorRequestId` lo lee del bloque
+  `error` y, si no está, de la cabecera `X-Request-ID`.
+- El `409` de patente duplicada muestra el literal del servidor ("La patente ya
+  está registrada") en el campo Patente, en vez de un texto propio del frontend.
+- `anio` y `kilometraje` son opcionales en el contrato y llegan en `null` para un
+  vehículo sin esos datos: `vehicleDisplay.ts` muestra "Sin especificar" en vez
+  de "Año: 0". Limitación asumida: un vehículo con 0 km reales queda
+  indistinguible de uno sin dato.
+- Con `roles` múltiple en la respuesta de MS1 gana el primero (`roles[0]`), que
+  es el que define el portal de ingreso. Queda documentado y fijado con un test.
+- Vitest corre con `TZ: America/Santiago`, así que las pruebas de fechas con
+  offset `-03:00` no dependen de la zona horaria de la máquina.
+
+Desajuste detectado, sin modificar: el formulario exige una patente con formato
+`ABCD-12`, pero el backend solo pide `min_length=1` y su test afirma que el
+contrato no define patrón. La UI es más restrictiva que el servidor. Es una
+decisión de producto, así que queda anotada en
+`frontend/docs/contratos-openapi.md` ("Desajuste detectado: formato de patente")
+para resolverla con el equipo.
+
+| Verificación | Resultado |
+| --- | --- |
+| `npx tsc --noEmit -p tsconfig.json` | Sin errores |
+| `npm run lint` | 0 errores, 0 warnings |
+| `npx vitest run` | 341 tests en 54 archivos, todos verdes (antes 286 en 51) |
+| `npm run build` | Compila; queda el aviso preexistente de chunk > 500 kB |

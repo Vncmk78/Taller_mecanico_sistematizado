@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { errorAxios, gatewaySaturada } from '@/infrastructure/mocks/payloads.reales';
 import type { FetchStatus } from './asyncCollection';
 import {
     fetchCollection,
@@ -18,6 +19,7 @@ interface TestState {
     status: FetchStatus;
     error: string | null;
     isOffline: boolean;
+    requestId: string | null;
 }
 
 let state: TestState;
@@ -29,7 +31,7 @@ const upsert = (s: TestState, item: TestItem) => ({ items: upsertById(s.items, i
 
 describe('asyncCollection: helpers de colección asíncrona', () => {
     beforeEach(() => {
-        state = { items: [], status: 'idle', error: null, isOffline: false };
+        state = { items: [], status: 'idle', error: null, isOffline: false, requestId: null };
         vi.clearAllMocks();
     });
 
@@ -150,8 +152,47 @@ describe('asyncCollection: helpers de colección asíncrona', () => {
             expect(state.isOffline).toBe(true);
         });
 
+        it('guarda el request_id de la Gateway y el mensaje real del 503', async () => {
+            // Cuerpo real de gateway/errores.py: el mensaje del backend debe
+            // llegar a la vista y la referencia permitir rastrearlo en los logs.
+            await fetchCollection<TestItem, TestState>(
+                async () => {
+                    throw errorAxios(503, gatewaySaturada);
+                },
+                set,
+                (_s, fetched) => ({ items: fetched })
+            );
+
+            expect(state.error).toBe('La Gateway está ocupada. Intente más tarde.');
+            expect(state.requestId).toBe('9f1c2b3a-4d5e-6f70-8192-a3b4c5d6e7f8');
+        });
+
+        it('deja el request_id en null cuando el error no lo trae', async () => {
+            await fetchCollection<TestItem, TestState>(
+                async () => {
+                    throw errorAxios(500, { detail: 'No fue posible consultar los vehículos' });
+                },
+                set,
+                (_s, fetched) => ({ items: fetched })
+            );
+
+            expect(state.error).toBe('No fue posible consultar los vehículos');
+            expect(state.requestId).toBeNull();
+        });
+
+        it('limpia el request_id de un fallo anterior al reintentar con éxito', async () => {
+            state = { items: [], status: 'error', error: 'La Gateway está ocupada.', isOffline: true, requestId: 'req-1' };
+
+            await fetchCollection<TestItem, TestState>(async () => [{ id: '1', name: 'a' }], set, (_s, fetched) => ({
+                items: fetched,
+            }));
+
+            expect(state.status).toBe('success');
+            expect(state.requestId).toBeNull();
+        });
+
         it('al reintentar limpia el estado offline anterior', async () => {
-            state = { items: [], status: 'error', error: 'No se pudo conectar', isOffline: true };
+            state = { items: [], status: 'error', error: 'No se pudo conectar', isOffline: true, requestId: null };
             let resolveLoader: (value: TestItem[]) => void = () => {};
 
             const promise = fetchCollection<TestItem, TestState>(

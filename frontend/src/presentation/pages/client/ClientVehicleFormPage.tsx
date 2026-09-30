@@ -10,7 +10,7 @@ import { GlassCard } from '@/presentation/components/ui/GlassCard';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
-import { isConflictError } from '@/infrastructure/api/errors';
+import { getApiErrorMessage, getApiErrorRequestId, isConflictError } from '@/infrastructure/api/errors';
 
 const PATENT_REGEX = /^[A-Za-z]{4}-\d{2}$/;
 const currentYear = new Date().getFullYear();
@@ -41,6 +41,9 @@ export function ClientVehicleFormPage() {
     const user = useAuthStore((s) => s.user);
     const { patentExists, addVehicle } = useVehicleStore();
     const [submitError, setSubmitError] = useState<string | null>(null);
+    // Referencia de la Gateway para que el usuario pueda pedir ayuda con este
+    // registro concreto si el error viene de un 500/502/503/504.
+    const [submitRequestId, setSubmitRequestId] = useState<string | null>(null);
 
     const {
     register,
@@ -56,6 +59,7 @@ export function ClientVehicleFormPage() {
     const onSubmit = async (data: VehicleForm) => {
     if (!clientId) return;
     setSubmitError(null);
+    setSubmitRequestId(null);
     const patent = data.patent.toUpperCase();
 
     if (patentExists(patent)) {
@@ -67,10 +71,14 @@ export function ClientVehicleFormPage() {
         await addVehicle({ ...data, patent }, clientId);
         navigate('/client/vehiculos', { state: { justRegistered: true } });
     } catch (error) {
+        // El backend es la autoridad: si la patente ya existe responde 409 con
+        // su propio mensaje, y se muestra ese texto en vez de uno inventado
+        // aquí, para que el motivo del rechazo sea el que dio el servidor.
         if (isConflictError(error)) {
-        setError('patent', { message: 'Ya existe un vehículo registrado con esa patente.' });
+        setError('patent', { message: getApiErrorMessage(error) });
         } else {
-        setSubmitError('No pudimos registrar el vehículo. Intente nuevamente.');
+        setSubmitError(getApiErrorMessage(error, 'No pudimos registrar el vehículo. Intente nuevamente.'));
+        setSubmitRequestId(getApiErrorRequestId(error));
         }
     }
     };
@@ -126,6 +134,9 @@ export function ClientVehicleFormPage() {
             {submitError && (
             <Alert tone="error" className="mb-4 justify-center">
               {submitError}
+              {submitRequestId && (
+                <span className="block mt-1 font-mono text-xs opacity-80">Referencia: {submitRequestId}</span>
+              )}
             </Alert>
             )}
 

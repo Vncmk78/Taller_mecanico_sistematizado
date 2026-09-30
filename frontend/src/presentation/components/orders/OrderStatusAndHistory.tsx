@@ -24,16 +24,20 @@ export function OrderStatusAndHistory({ order }: OrderStatusAndHistoryProps) {
     );
     const isOffline = useOrderHistoryStore((s) => s.isOffline);
     const error = useOrderHistoryStore((s) => s.error);
+    const requestId = useOrderHistoryStore((s) => s.requestId);
     // El store solo marca isOffline ante fallos de transporte: un error HTTP del
     // servidor se informa aparte para no rotularlo como "sin conexión".
     const isServerError = error !== null && !isOffline;
 
     return (
         <div className="mt-6 space-y-6">
-            {isOffline && <OfflineBanner message={error} onRetry={refetch} />}
+            {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} />}
             {isServerError && (
                 <Alert tone="error" action={<RetryButton tone="error" onClick={refetch} />}>
                     {error} Se muestran los últimos datos disponibles del historial.
+                    {requestId && (
+                        <span className="block mt-1 font-mono text-xs opacity-80">Referencia: {requestId}</span>
+                    )}
                 </Alert>
             )}
             <OrderStateStepper estadoCodigo={order.estadoCodigo} />

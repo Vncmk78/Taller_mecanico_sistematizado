@@ -19,7 +19,7 @@ export function MechanicOrderDetailPage() {
     const { order, loading, notFound, failed, refetch } = useOrderDetail(id, (oid) =>
         orderService.getOrderById(oid)
     );
-    const { isOffline, error } = useOrderStore();
+    const { isOffline, error, requestId } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     if (loading) {
@@ -34,6 +34,7 @@ export function MechanicOrderDetailPage() {
                 className="p-10"
                 title="No se pudo cargar el detalle de la orden"
                 message={error}
+                requestId={requestId}
                 onRetry={refetch}
                 action={
                     <Link to="/mechanic/ordenes" className="text-primary-blue text-sm font-medium no-underline hover:underline">
@@ -69,7 +70,7 @@ export function MechanicOrderDetailPage() {
                 <ArrowLeft className="w-4 h-4" /> Volver a mis órdenes
             </Link>
 
-            {isOffline && <OfflineBanner message={error} onRetry={refetch} className="mb-6" />}
+            {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
             {/* Error del servidor con copia local en caché: se conserva la orden y se avisa. */}
             {!isOffline && error && (

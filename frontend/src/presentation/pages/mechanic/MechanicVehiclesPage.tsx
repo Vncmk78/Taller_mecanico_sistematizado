@@ -12,7 +12,7 @@ import { vehicleService } from '@/infrastructure/api/VehicleService';
 
 export function MechanicVehiclesPage() {
     const [search, setSearch] = useState('');
-    const { vehicles, status, error, isOffline, fetchVehicles } = useVehicleStore();
+    const { vehicles, status, error, isOffline, requestId, fetchVehicles } = useVehicleStore();
 
     const loadVehicles = () => fetchVehicles(() => vehicleService.getAssignedVehicles());
 
@@ -54,7 +54,7 @@ export function MechanicVehiclesPage() {
         />
         </div>
 
-        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} className="mb-6" />}
+        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} requestId={requestId} className="mb-6" />}
 
         {isServerError && assignedVehicles.length > 0 && (
         <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={loadVehicles} />}>
@@ -68,6 +68,7 @@ export function MechanicVehiclesPage() {
         <ErrorState
             title="No se pudieron cargar los vehículos"
             message={error}
+            requestId={requestId}
             onRetry={loadVehicles}
         />
         ) : (

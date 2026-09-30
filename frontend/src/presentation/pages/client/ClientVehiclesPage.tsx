@@ -16,7 +16,7 @@ export function ClientVehiclesPage() {
     const location = useLocation();
     const [search, setSearch] = useState('');
     const user = useAuthStore((s) => s.user);
-    const { vehicles, status, error, isOffline, fetchVehicles } = useVehicleStore();
+    const { vehicles, status, error, isOffline, requestId, fetchVehicles } = useVehicleStore();
 
     // Identidad real de la sesión (usuario_id de MS1): la Gateway ya limita
     // GET /vehiculos al cliente autenticado, y este id se usa para resolver la
@@ -80,7 +80,7 @@ export function ClientVehiclesPage() {
         </Alert>
         )}
 
-        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} className="mb-6" />}
+        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} requestId={requestId} className="mb-6" />}
 
         {isServerError && myVehicles.length > 0 && (
         <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={loadVehicles} />}>
@@ -93,8 +93,9 @@ export function ClientVehiclesPage() {
         ) : isServerError && myVehicles.length === 0 ? (
         <ErrorState
             title="No se pudieron cargar sus vehículos"
-            message={error}
-            onRetry={loadVehicles}
+                    message={error}
+                    requestId={requestId}
+                    onRetry={loadVehicles}
             action={
             <Link
                 to="/client/vehiculos/nuevo"

@@ -10,8 +10,8 @@ interface VehicleCardProps {
 
 export function VehicleCard({ vehicle, detailPath, ownerName }: VehicleCardProps) {
     return (
-    <div className="glass-card p-0 overflow-hidden flex flex-col">
-        <div className="h-[140px] bg-white/5 flex items-center justify-center text-text-muted">
+    <div className="card p-0 overflow-hidden flex flex-col">
+        <div className="h-[140px] bg-bg-secondary flex items-center justify-center text-text-muted">
         <Car className="w-12 h-12" />
         </div>
         <div className="p-5 flex-grow flex flex-col">
@@ -19,7 +19,7 @@ export function VehicleCard({ vehicle, detailPath, ownerName }: VehicleCardProps
             <h3 className="text-lg font-semibold">
             {vehicle.brand} {vehicle.model}
             </h3>
-            <span className="bg-white/90 text-black font-mono font-bold text-sm px-2.5 py-1 rounded tracking-wide">
+            <span className="bg-bg-secondary text-text-main font-mono font-bold text-sm px-2.5 py-1 rounded tracking-wide">
             {vehicle.patent}
             </span>
         </div>
@@ -28,14 +28,14 @@ export function VehicleCard({ vehicle, detailPath, ownerName }: VehicleCardProps
             Km registrado: {vehicle.mileage.toLocaleString('es-CL')} km
         </div>
         {ownerName && (
-            <div className="flex items-center gap-2 text-sm bg-white/5 rounded-lg px-3 py-2 mb-4">
+            <div className="flex items-center gap-2 text-sm bg-bg-secondary rounded-lg px-3 py-2 mb-4">
             <User className="w-4 h-4 text-text-muted" />
             <span>Dueño: {ownerName}</span>
         </div>
         )}
         <Link
             to={detailPath}
-            className="mt-auto flex items-center justify-center gap-2 bg-white/5 border border-border-custom text-white py-2.5 rounded-lg text-sm hover:bg-white/15 transition-colors no-underline"
+            className="mt-auto flex items-center justify-center gap-2 bg-surface border border-border-custom text-primary-blue py-2.5 rounded-lg text-sm hover:bg-bg-secondary transition-colors no-underline"
         >
             <FileText className="w-4 h-4" />
             Ver ficha técnica

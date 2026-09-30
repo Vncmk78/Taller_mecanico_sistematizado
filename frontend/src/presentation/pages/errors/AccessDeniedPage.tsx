@@ -23,17 +23,17 @@ export function AccessDeniedPage() {
 
   return (
     <div className="min-h-screen flex flex-col animate-fade-in">
-      <nav className="flex justify-between items-center px-12 py-5 border-b border-border-custom bg-black/80 backdrop-blur-[10px] sticky top-0 z-50">
-        <Link to="/" className="flex items-center gap-2.5 text-2xl font-bold no-underline text-white">
-          <span className="relative inline-block w-[35px] h-[35px] text-gray-400">
+      <nav className="flex justify-between items-center px-12 py-5 border-b border-border-custom bg-surface sticky top-0 z-50">
+        <Link to="/" className="flex items-center gap-2.5 text-2xl font-bold no-underline text-text-main">
+          <span className="relative inline-block w-[35px] h-[35px] text-text-muted">
             <Settings className="absolute left-0 top-0 w-6 h-6" />
-            <Wrench className="absolute left-3 top-3 w-4 h-4 text-primary-red -rotate-15" />
+            <Wrench className="absolute left-3 top-3 w-4 h-4 text-primary-orange -rotate-15" />
           </span>
-          Sistema Mecánico
+          TallerConect
         </Link>
         <Link
           to="/"
-          className="bg-white/5 border border-border-custom text-white px-6 py-3 rounded-lg transition-all duration-300 hover:bg-white/15 hover:border-white/30 no-underline flex items-center gap-2"
+          className="bg-primary-blue text-white px-6 py-3 rounded-lg font-bold text-base transition-all duration-300 shadow-[0_4px_15px_rgba(21,40,63,0.25)] hover:bg-primary-blue-hover hover:-translate-y-0.5 no-underline flex items-center gap-2"
         >
           Volver al Inicio
         </Link>
@@ -42,7 +42,7 @@ export function AccessDeniedPage() {
       <div className="flex flex-col items-center justify-center flex-grow px-5 py-8">
         <GlassCard className="w-full max-w-[480px] p-[50px_40px] text-center">
           <ShieldAlert className="w-20 h-20 mx-auto mb-5 text-status-red" />
-          <h1 className="text-3xl font-bold tracking-tight text-white">
+          <h1 className="text-3xl font-bold tracking-tight text-text-main">
             Acceso Denegado
           </h1>
           <p className="mt-2 text-status-red text-sm font-bold tracking-wide uppercase">

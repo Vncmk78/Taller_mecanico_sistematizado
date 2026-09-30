@@ -14,7 +14,7 @@ export function ClientDashboardPage() {
         <div className="flex gap-6">
         <Link
             to="/client/vehiculos"
-            className="glass-card w-[280px] p-8 text-center no-underline text-white hover:-translate-y-1 transition-transform"
+            className="card w-[280px] p-8 text-center no-underline text-text-main hover:-translate-y-1 transition-transform"
         >
             <Car className="w-10 h-10 mx-auto mb-4 text-primary-blue" />
             <h3 className="font-semibold mb-1">Mis Vehículos</h3>
@@ -22,7 +22,7 @@ export function ClientDashboardPage() {
         </Link>
         <Link
             to="/client/agendar"
-            className="glass-card w-[280px] p-8 text-center no-underline text-white hover:-translate-y-1 transition-transform"
+            className="card w-[280px] p-8 text-center no-underline text-text-main hover:-translate-y-1 transition-transform"
         >
             <CalendarPlus className="w-10 h-10 mx-auto mb-4 text-status-green" />
             <h3 className="font-semibold mb-1">Agendar Mantención</h3>

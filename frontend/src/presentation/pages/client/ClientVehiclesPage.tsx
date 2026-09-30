@@ -43,7 +43,7 @@ export function ClientVehiclesPage() {
         </div>
         <Link
             to="/client/vehiculos/nuevo"
-            className="bg-primary-red text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center gap-2 no-underline hover:bg-primary-red-hover transition-colors shrink-0"
+            className="bg-primary-blue text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors shrink-0"
         >
             <Plus className="w-4 h-4" /> Añadir vehículo
         </Link>
@@ -57,7 +57,7 @@ export function ClientVehiclesPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
             aria-label="Buscar por patente, marca o modelo"
-            className="w-full py-2.5 pl-11 pr-4 bg-black/40 border border-border-custom rounded-lg text-white text-sm outline-none focus:border-primary-red"
+            className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
         />
         </div>
 

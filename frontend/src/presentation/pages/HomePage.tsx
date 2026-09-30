@@ -66,43 +66,43 @@ const steps = [
 export function HomePage() {
   return (
     <div className="min-h-screen flex flex-col animate-fade-in">
-      <nav className="flex justify-between items-center px-12 py-5 border-b border-border-custom bg-black/80 backdrop-blur-[10px] sticky top-0 z-50">
-        <Link to="/" className="flex items-center gap-2.5 text-2xl font-bold text-white no-underline">
-          <span className="relative inline-block w-[35px] h-[35px] text-gray-400">
+      <nav className="flex justify-between items-center px-12 py-5 border-b border-border-custom bg-surface sticky top-0 z-50">
+        <Link to="/" className="flex items-center gap-2.5 text-2xl font-bold text-text-main no-underline">
+          <span className="relative inline-block w-[35px] h-[35px] text-text-muted">
             <Settings className="absolute left-0 top-0 w-6 h-6" />
-            <Wrench className="absolute left-3 top-3 w-4 h-4 text-primary-red -rotate-15" />
+            <Wrench className="absolute left-3 top-3 w-4 h-4 text-primary-orange -rotate-15" />
           </span>
-          Sistema Mecánico
+          TallerConect
         </Link>
         <div className="flex gap-6">
-          <a href="#inicio" className="text-text-muted text-sm hover:text-white transition-colors">
+          <a href="#inicio" className="text-text-muted text-sm hover:text-primary-orange transition-colors">
             Inicio
           </a>
-          <a href="#caracteristicas" className="text-text-muted text-sm hover:text-white transition-colors">
+          <a href="#caracteristicas" className="text-text-muted text-sm hover:text-primary-orange transition-colors">
             Quiénes Somos
           </a>
-          <a href="#flujo" className="text-text-muted text-sm hover:text-white transition-colors">
+          <a href="#flujo" className="text-text-muted text-sm hover:text-primary-orange transition-colors">
             Servicios
           </a>
-          <a href="#contacto" className="text-text-muted text-sm hover:text-white transition-colors">
+          <a href="#contacto" className="text-text-muted text-sm hover:text-primary-orange transition-colors">
             Contacto
           </a>
         </div>
         <Link
           to="/login"
-          className="bg-primary-red text-white px-6 py-3 rounded-lg font-bold text-base transition-all duration-300 shadow-[0_4px_15px_rgba(211,47,47,0.3)] hover:bg-primary-red-hover hover:-translate-y-0.5 no-underline flex items-center gap-2"
+          className="bg-primary-blue text-white px-6 py-3 rounded-lg font-bold text-base transition-all duration-300 shadow-[0_4px_15px_rgba(21,40,63,0.25)] hover:bg-primary-blue-hover hover:-translate-y-0.5 no-underline flex items-center gap-2"
         >
           Ingresar al Portal
         </Link>
       </nav>
 
       <section id="inicio" className="text-center py-[120px] px-5 pb-20 flex flex-col items-center">
-        <div className="text-[90px] text-white/90 mb-5 drop-shadow-[0_0_30px_rgba(255,255,255,0.1)]">
+        <div className="text-[90px] text-primary-blue mb-5">
           <Settings className="w-[90px] h-[90px]" />
         </div>
         <h1 className="text-6xl font-extrabold mb-5 tracking-tight">
           El taller del futuro,{' '}
-          <span className="text-primary-red">hoy.</span>
+          <span className="text-primary-orange">hoy.</span>
         </h1>
         <p className="text-text-muted text-xl mb-10 max-w-[700px] leading-relaxed">
           Digitalizamos la gestión integral de talleres mecánicos. Conectamos
@@ -111,7 +111,7 @@ export function HomePage() {
         </p>
         <Link
           to="/login"
-          className="bg-primary-red text-white px-8 py-4 rounded-lg font-bold text-xl transition-all duration-300 shadow-[0_4px_15px_rgba(211,47,47,0.3)] hover:bg-primary-red-hover hover:-translate-y-0.5 no-underline"
+          className="bg-primary-orange text-white px-8 py-4 rounded-lg font-bold text-xl transition-all duration-300 shadow-[0_4px_15px_rgba(242,106,46,0.25)] hover:bg-primary-orange-hover hover:-translate-y-0.5 no-underline"
         >
           Comenzar Ahora
         </Link>
@@ -124,9 +124,9 @@ export function HomePage() {
         {features.map((feature) => (
           <div
             key={feature.title}
-            className="glass-card text-left p-10 hover:-translate-y-2.5 hover:border-primary-red/50 hover:shadow-[0_15px_40px_rgba(0,0,0,0.6)] transition-all duration-300"
-          >
-            <div className="w-[55px] h-[55px] rounded-xl bg-primary-red/15 text-primary-red flex items-center justify-center mb-6 border border-primary-red/30 text-2xl">
+className="card text-left p-10 hover:-translate-y-2.5 hover:border-primary-orange/50 hover:shadow-[0_15px_40px_rgba(23,33,43,0.12)] transition-all duration-300"
+            >
+            <div className="w-[55px] h-[55px] rounded-xl bg-primary-orange/15 text-primary-orange flex items-center justify-center mb-6 border border-primary-orange/30 text-2xl">
               {feature.icon}
             </div>
             <h3 className="text-xl font-semibold mb-3">{feature.title}</h3>
@@ -135,14 +135,14 @@ export function HomePage() {
         ))}
       </section>
 
-      <section className="py-15 px-12 bg-black/40 border-y border-border-custom mb-20">
+      <section className="py-15 px-12 bg-bg-secondary border-y border-border-custom mb-20">
         <h2 id="flujo" className="text-center text-4xl mb-12 mt-0">
           ¿Cómo funciona el flujo?
         </h2>
         <div className="grid grid-cols-4 gap-5 max-w-[1200px] mx-auto">
           {steps.map((step) => (
             <div key={step.number} className="text-center p-5">
-              <div className="w-[60px] h-[60px] rounded-full bg-primary-red text-white flex items-center justify-center text-2xl font-bold mx-auto mb-5 shadow-[0_0_20px_rgba(211,47,47,0.4)]">
+              <div className="w-[60px] h-[60px] rounded-full bg-primary-blue text-white flex items-center justify-center text-2xl font-bold mx-auto mb-5 shadow-[0_0_20px_rgba(21,40,63,0.3)]">
                 {step.number}
               </div>
               <h3 className="mb-2.5">{step.title}</h3>
@@ -152,20 +152,20 @@ export function HomePage() {
         </div>
       </section>
 
-      <footer id="contacto" className="flex justify-between items-center px-12 py-10 bg-black/95 text-text-muted text-sm">
-        <div className="flex items-center gap-2.5 text-xl">
-          <span className="relative inline-block w-[28px] h-[28px] text-gray-400 scale-80">
+      <footer id="contacto" className="flex justify-between items-center px-12 py-10 bg-primary-blue text-white text-sm">
+        <div className="flex items-center gap-2.5 text-xl text-white">
+          <span className="relative inline-block w-[28px] h-[28px] text-white/60 scale-80">
             <Settings className="absolute left-0 top-0 w-5 h-5" />
-            <Wrench className="absolute left-2.5 top-2.5 w-3 h-3 text-primary-red -rotate-15" />
+            <Wrench className="absolute left-2.5 top-2.5 w-3 h-3 text-primary-orange -rotate-15" />
           </span>
-          Sistema Mecánico
+          TallerConect
         </div>
-        <div className="text-right leading-relaxed">
+        <div className="text-right leading-relaxed text-white/80">
           Soporte Técnico y Ventas
           <br />
-          <Phone className="w-5 inline text-text-muted mr-1" /> +443 379 771
+          <Phone className="w-5 inline text-white/60 mr-1" /> +443 379 771
           <br />
-          <Mail className="w-5 inline text-text-muted mr-1" />{' '}
+          <Mail className="w-5 inline text-white/60 mr-1" />{' '}
           mecanica@sistema.cl
         </div>
       </footer>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AxiosError } from 'axios';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import { setForbiddenHandler, setUnauthorizedHandler } from '@/infrastructure/config/apiClient';
 import { AuthContext, type AuthContextValue } from '@/presentation/components/auth/authContext';
 
@@ -24,8 +25,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       navigate('/login', { replace: true, state: { from: window.location.pathname } });
     });
     setForbiddenHandler((error: AxiosError) => {
-      const detail = (error.response?.data as { detail?: string } | undefined)?.detail;
-      navigate('/acceso-denegado', { replace: true, state: { message: detail } });
+      const message = getApiErrorMessage(error, 'No tiene permisos para acceder a este recurso.');
+      navigate('/acceso-denegado', { replace: true, state: { message } });
     });
     return () => {
       setUnauthorizedHandler(null);

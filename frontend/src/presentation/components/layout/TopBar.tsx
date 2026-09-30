@@ -19,7 +19,7 @@ export function TopBar({
   onLogout,
 }: TopBarProps) {
   return (
-    <header className="flex justify-between items-center px-10 py-4 border-b border-border-custom bg-black/30 backdrop-blur-[10px] sticky top-0 z-5">
+    <header className="flex justify-between items-center px-10 py-4 border-b border-border-custom bg-surface sticky top-0 z-5">
       <div className="flex items-center gap-3">{left}</div>
       <div className="flex items-center gap-4">
         {badge && (

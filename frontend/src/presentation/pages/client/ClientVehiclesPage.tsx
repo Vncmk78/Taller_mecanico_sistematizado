@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { CheckCircle2, Plus, Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { VehicleCard } from '@/presentation/components/vehicles/VehicleCard';
 import { VehicleListSkeleton } from '@/presentation/components/vehicles/VehicleListSkeleton';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
@@ -43,7 +44,7 @@ export function ClientVehiclesPage() {
         </div>
         <Link
             to="/client/vehiculos/nuevo"
-            className="bg-primary-red text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center gap-2 no-underline hover:bg-primary-red-hover transition-colors shrink-0"
+            className="bg-primary-blue text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors shrink-0"
         >
             <Plus className="w-4 h-4" /> Añadir vehículo
         </Link>
@@ -57,15 +58,14 @@ export function ClientVehiclesPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
             aria-label="Buscar por patente, marca o modelo"
-            className="w-full py-2.5 pl-11 pr-4 bg-black/40 border border-border-custom rounded-lg text-white text-sm outline-none focus:border-primary-red"
+            className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
         />
         </div>
 
         {justRegistered && (
-        <div role="status" className="flex items-center gap-2 mb-6 text-status-green text-sm bg-status-green/10 border border-status-green/40 rounded-lg px-4 py-3">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            Vehículo registrado con éxito.
-        </div>
+        <Alert tone="success" className="mb-6">
+          Vehículo registrado con éxito.
+        </Alert>
         )}
 
         {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} className="mb-6" />}

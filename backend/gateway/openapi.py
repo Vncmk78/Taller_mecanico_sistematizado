@@ -20,6 +20,7 @@ from gateway.contratos import auth as contratos_auth
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
+from shared.openapi_ordenes import agregar_ejemplos_ordenes
 
 _TITULO = "SGTM — API Gateway"
 _VERSION = "0.1.0"
@@ -389,7 +390,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 respuestas_ok={
                     "200": _respuesta("Orden encontrada.", _ref("OrdenRespuesta"))
                 },
-                errores_ms={"401": "JWT ausente o inválido"},
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de orden inválido",
+                },
                 requiere_auth=True,
                 con_orden_id=True,
                 descripcion_404="Orden inexistente o no visible.",
@@ -487,5 +491,6 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         **_esquemas_documentados(),
     }
 
+    agregar_ejemplos_ordenes(esquema, prefijo="/api")
     app.openapi_schema = esquema
     return esquema

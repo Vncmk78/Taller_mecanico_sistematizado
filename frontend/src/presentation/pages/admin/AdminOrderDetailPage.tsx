@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { useOrderDetail } from '@/presentation/hooks/useOrderDetail';
 import { orderService } from '@/infrastructure/api/OrderService';
@@ -18,14 +19,14 @@ export function AdminOrderDetailPage() {
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     if (loading) {
-        return <div className="p-10 text-text-muted">Cargando detalle de la orden...</div>;
+        return <LoadingState message="Cargando detalle de la orden..." className="p-10" />;
     }
 
     if (!order || notFound) {
         return (
             <div className="p-10 text-text-muted">
                 Orden no encontrada.{' '}
-                <Link to="/admin/ordenes" className="text-primary-red">
+                <Link to="/admin/ordenes" className="text-primary-blue">
                     Volver a la gestión de órdenes
                 </Link>
             </div>
@@ -36,7 +37,7 @@ export function AdminOrderDetailPage() {
         <div className="animate-fade-in p-10">
             <Link
                 to="/admin/ordenes"
-                className="inline-flex items-center gap-2 text-text-muted hover:text-white mb-6 no-underline"
+                className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
             >
                 <ArrowLeft className="w-4 h-4" /> Volver a la gestión de órdenes
             </Link>

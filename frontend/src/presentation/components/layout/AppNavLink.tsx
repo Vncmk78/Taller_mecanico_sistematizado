@@ -26,13 +26,13 @@ const baseClasses: Record<AppNavLinkProps['variant'], string> = {
 
 const activeClasses: Record<AppNavLinkProps['variant'], string> = {
   sidebar:
-    'bg-primary-red text-white shadow-[0_4px_15px_rgba(211,47,47,0.3)] translate-x-[5px]',
-  topnav: 'bg-primary-red text-white shadow-[0_4px_15px_rgba(211,47,47,0.3)]',
+    'bg-primary-blue text-white shadow-[0_4px_15px_rgba(21,40,63,0.25)] translate-x-[5px]',
+  topnav: 'bg-primary-blue text-white shadow-[0_4px_15px_rgba(21,40,63,0.25)]',
 };
 
 const idleClasses: Record<AppNavLinkProps['variant'], string> = {
-  sidebar: 'text-text-muted hover:bg-white/5 hover:text-white hover:translate-x-[5px]',
-  topnav: 'text-text-muted hover:bg-white/5 hover:text-white',
+  sidebar: 'text-text-muted hover:bg-bg-secondary hover:text-primary-blue hover:translate-x-[5px]',
+  topnav: 'text-text-muted hover:bg-bg-secondary hover:text-primary-blue',
 };
 
 export function AppNavLink({ to, label, icon, end, variant }: AppNavLinkProps) {

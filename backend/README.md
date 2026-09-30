@@ -108,6 +108,23 @@ MS3_ORM_TEST_DATABASE_URL=postgresql+psycopg://taller:taller@localhost:5435/tall
     pytest services/ms3_presupuestos/tests -q
 ```
 
+### Datos mínimos y fixtures de prueba de MS3
+
+- `services/ms3_presupuestos/datos_prueba.py`: **única fuente** del catálogo de
+  prueba (2 proveedores, 4 repuestos, umbral general 5, presupuesto de ejemplo
+  de $68.990). La usan la semilla y las pruebas.
+- `services/ms3_presupuestos/tests/fabricas.py`: fábricas que crean lo mínimo
+  válido (`nuevo_repuesto`, `nuevo_movimiento`, `nuevo_presupuesto(estado=...)`,
+  `enviar`, `decidir`...) con nombres y órdenes únicos.
+- Fixtures en `tests/conftest.py`: `uow`, `catalogo`, `repuesto_bajo_umbral`,
+  `umbral_general`, `presupuesto_borrador` / `_enviado` / `_aprobado` /
+  `_rechazado` y `presupuesto_ejemplo`. Todo se revierte al terminar cada prueba.
+
+```python
+def test_no_se_edita_un_presupuesto_aprobado(presupuesto_aprobado, uow):
+    ...
+```
+
 ### Patrón de persistencia de MS3 (sesión, repositorio y transacciones)
 
 `services/ms3_presupuestos/persistencia/`:

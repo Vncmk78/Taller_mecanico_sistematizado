@@ -20,6 +20,9 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from services.ms3_presupuestos.datos_prueba import ADMIN_ID as ADMIN
+from services.ms3_presupuestos.datos_prueba import CLIENTE_ID as CLIENTE
+from services.ms3_presupuestos.datos_prueba import MECANICO_ID as MECANICO
 from services.ms3_presupuestos.models import (
     DecisionPresupuesto,
     HistorialUmbral,
@@ -32,10 +35,12 @@ from services.ms3_presupuestos.models import (
     VersionPresupuesto,
 )
 
-ADMIN, MECANICO, CLIENTE = 3, 2, 1
+from services.ms3_presupuestos.tests.fabricas import enviar, nueva_version, nuevo_repuesto
 
 
 # ------------------------------------------------------------------ helpers --
+# Las fábricas de datos (nuevo_repuesto, nueva_version, enviar) están en
+# fabricas.py; aquí solo queda el helper propio de estas pruebas.
 
 def _rechaza(db: Session, *objetos) -> None:
     """Afirma que guardar los objetos viola una regla de la base.
@@ -46,36 +51,6 @@ def _rechaza(db: Session, *objetos) -> None:
         with db.begin_nested():
             db.add_all(objetos)
             db.flush()
-
-
-def _repuesto(db: Session, nombre: str = "Pastillas de prueba", stock: int = 10) -> Repuesto:
-    proveedor = Proveedor(nombre=f"Proveedor {nombre}", contacto="prueba@taller.cl")
-    repuesto = Repuesto(proveedor=proveedor, nombre=nombre, stock=stock)
-    db.add(proveedor)
-    db.flush()
-    return repuesto
-
-
-def _presupuesto(db: Session, orden_id: int = 900001) -> VersionPresupuesto:
-    """Presupuesto con versión 1 en borrador y un ítem de mano de obra."""
-    presupuesto = Presupuesto(orden_id=orden_id)
-    version = VersionPresupuesto(numero=1, creado_por_id=MECANICO)
-    version.items.append(ItemPresupuesto(
-        tipo="mano_de_obra", descripcion="Revision", cantidad=Decimal("1"),
-        precio_unitario=Decimal("20000"),
-    ))
-    presupuesto.versiones.append(version)
-    db.add(presupuesto)
-    db.flush()
-    return version
-
-
-def _enviar(db: Session, version: VersionPresupuesto) -> None:
-    # Dentro de la transacción de prueba now() es constante: se envía en el
-    # mismo instante de creación para que la decisión (now()) no quede antes.
-    db.refresh(version)
-    version.enviado_en = version.creado_en
-    db.flush()
 
 
 # ------------------------------------------------ 1) guardar y leer relaciones --
@@ -95,8 +70,8 @@ def test_proveedor_con_repuestos_se_guarda_y_se_lee(db: Session) -> None:
 
 
 def test_presupuesto_con_version_e_items_calcula_subtotal(db: Session) -> None:
-    repuesto = _repuesto(db)
-    version = _presupuesto(db)
+    repuesto = nuevo_repuesto(db)
+    version = nueva_version(db)
     version.items.append(ItemPresupuesto(
         tipo="repuesto", repuesto=repuesto, descripcion="Pastillas",
         cantidad=Decimal("2"), precio_unitario=Decimal("15000.50"),
@@ -112,7 +87,7 @@ def test_presupuesto_con_version_e_items_calcula_subtotal(db: Session) -> None:
 
 
 def test_movimiento_de_inventario_queda_asociado_al_repuesto(db: Session) -> None:
-    repuesto = _repuesto(db)
+    repuesto = nuevo_repuesto(db)
     db.add(MovimientoInventario(clave_operacion="op-orm-1", repuesto=repuesto, orden_id=10,
                                 tipo="compromiso", cantidad=2, registrado_por_id=MECANICO))
     db.flush()
@@ -128,7 +103,7 @@ def test_stock_negativo_es_rechazado(db: Session) -> None:
 
 
 def test_clave_de_operacion_repetida_es_rechazada(db: Session) -> None:
-    repuesto = _repuesto(db)
+    repuesto = nuevo_repuesto(db)
     db.add(MovimientoInventario(clave_operacion="op-dup", repuesto=repuesto, orden_id=10,
                                 tipo="consumo", cantidad=1, registrado_por_id=MECANICO))
     db.flush()
@@ -137,7 +112,7 @@ def test_clave_de_operacion_repetida_es_rechazada(db: Session) -> None:
 
 
 def test_consumo_sin_orden_es_rechazado(db: Session) -> None:
-    repuesto = _repuesto(db)
+    repuesto = nuevo_repuesto(db)
     _rechaza(db, MovimientoInventario(clave_operacion="op-sin-orden", repuesto=repuesto,
                                       tipo="consumo", cantidad=1, registrado_por_id=MECANICO))
 
@@ -157,27 +132,27 @@ def test_umbral_general_sin_valor_nuevo_es_rechazado(db: Session) -> None:
 
 
 def test_item_de_repuesto_sin_repuesto_es_rechazado(db: Session) -> None:
-    version = _presupuesto(db)
+    version = nueva_version(db)
     _rechaza(db, ItemPresupuesto(version_id=version.version_id, tipo="repuesto",
                                  descripcion="Sin repuesto", cantidad=1, precio_unitario=1))
 
 
 def test_un_solo_presupuesto_por_orden(db: Session) -> None:
-    _presupuesto(db, orden_id=900002)
+    nueva_version(db, orden_id=900002)
     _rechaza(db, Presupuesto(orden_id=900002))
 
 
 # ------------------------------------------ 3) versionado y bloqueo (triggers) --
 
 def test_numeracion_de_versiones_es_correlativa(db: Session) -> None:
-    version = _presupuesto(db)
+    version = nueva_version(db)
     _rechaza(db, VersionPresupuesto(presupuesto_id=version.presupuesto_id, numero=3,
                                     creado_por_id=MECANICO))
 
 
 def test_version_enviada_no_admite_cambios_en_items(db: Session) -> None:
-    version = _presupuesto(db)
-    _enviar(db, version)
+    version = nueva_version(db)
+    enviar(db, version)
     assert version.editable is False
     with pytest.raises(IntegrityError):
         with db.begin_nested():
@@ -186,21 +161,21 @@ def test_version_enviada_no_admite_cambios_en_items(db: Session) -> None:
 
 
 def test_no_se_decide_sobre_una_version_en_borrador(db: Session) -> None:
-    version = _presupuesto(db)
+    version = nueva_version(db)
     _rechaza(db, DecisionPresupuesto(version_id=version.version_id,
                                      cliente_usuario_id=CLIENTE, decision="aprobado"))
 
 
 def test_rechazo_sin_motivo_es_rechazado(db: Session) -> None:
-    version = _presupuesto(db)
-    _enviar(db, version)
+    version = nueva_version(db)
+    enviar(db, version)
     _rechaza(db, DecisionPresupuesto(version_id=version.version_id,
                                      cliente_usuario_id=CLIENTE, decision="rechazado"))
 
 
 def test_aprobar_bloquea_la_version_y_la_decision_es_inmutable(db: Session) -> None:
-    version = _presupuesto(db)
-    _enviar(db, version)
+    version = nueva_version(db)
+    enviar(db, version)
     decision = DecisionPresupuesto(version_id=version.version_id,
                                    cliente_usuario_id=CLIENTE, decision="aprobado")
     db.add(decision)
@@ -217,8 +192,8 @@ def test_aprobar_bloquea_la_version_y_la_decision_es_inmutable(db: Session) -> N
 
 
 def test_rechazar_modificacion_mantiene_vigente_la_ultima_aprobada(db: Session) -> None:
-    v1 = _presupuesto(db)
-    _enviar(db, v1)
+    v1 = nueva_version(db)
+    enviar(db, v1)
     db.add(DecisionPresupuesto(version_id=v1.version_id, cliente_usuario_id=CLIENTE,
                                decision="aprobado"))
     db.flush()
@@ -227,7 +202,7 @@ def test_rechazar_modificacion_mantiene_vigente_la_ultima_aprobada(db: Session) 
                             creado_por_id=MECANICO, es_modificacion=True)
     db.add(v2)
     db.flush()
-    _enviar(db, v2)
+    enviar(db, v2)
     db.add(DecisionPresupuesto(version_id=v2.version_id, cliente_usuario_id=CLIENTE,
                                decision="rechazado", motivo="Muy caro"))
     db.flush()

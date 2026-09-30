@@ -20,13 +20,13 @@ from __future__ import annotations
 
 import argparse
 import sys
-from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from services.ms3_presupuestos import datos_prueba as datos  # noqa: E402
 from services.ms3_presupuestos.db import SessionLocal  # noqa: E402
 from services.ms3_presupuestos.models import (  # noqa: E402
     HistorialUmbral,
@@ -39,31 +39,23 @@ from services.ms3_presupuestos.models import (  # noqa: E402
     VersionPresupuesto,
 )
 
-UMBRAL_GENERAL = 5
-
-# proveedor -> [(repuesto, stock, umbral_particular)]
-CATALOGO = {
-    ("Frenos del Sur", "contacto@frenosdelsur.cl / +56 9 8765 4321"): [
-        ("Pastillas de freno delanteras", 10, 4),
-        ("Disco de freno delantero", 2, 3),  # bajo su umbral: dispara alerta
-    ],
-    ("Repuestos Temuco", "ventas@repuestostemuco.cl / +56 45 221 0000"): [
-        ("Filtro de aceite", 15, None),
-        ("Aceite 10W-40 (litro)", 24, None),
-    ],
-}
+# El catálogo, el umbral y los ítems de ejemplo vienen de
+# services/ms3_presupuestos/datos_prueba.py: la misma fuente que usan las
+# fixtures de las pruebas, así la semilla y los tests no se desalinean.
+UMBRAL_GENERAL = datos.UMBRAL_GENERAL
 
 
 def _sembrar_catalogo(db, admin_id: int) -> dict[str, Repuesto]:
     repuestos: dict[str, Repuesto] = {}
-    for (nombre_prov, contacto), items in CATALOGO.items():
-        proveedor = db.scalar(select(Proveedor).where(Proveedor.nombre == nombre_prov))
+    for prov in datos.CATALOGO:
+        proveedor = db.scalar(select(Proveedor).where(Proveedor.nombre == prov.nombre))
         if proveedor is None:
-            proveedor = Proveedor(nombre=nombre_prov, contacto=contacto)
+            proveedor = Proveedor(nombre=prov.nombre, contacto=prov.contacto)
             db.add(proveedor)
             db.flush()
-            print(f"  + Proveedor: {nombre_prov}")
-        for nombre, stock, umbral in items:
+            print(f"  + Proveedor: {prov.nombre}")
+        for item in prov.repuestos:
+            nombre, stock, umbral = item.nombre, item.stock, item.umbral_particular
             repuesto = db.scalar(select(Repuesto).where(Repuesto.nombre == nombre))
             if repuesto is None:
                 repuesto = Repuesto(proveedor=proveedor, nombre=nombre, stock=stock,
@@ -109,11 +101,10 @@ def _sembrar_presupuesto(db, orden_id: int, mecanico_id: int,
     presupuesto = Presupuesto(orden_id=orden_id)
     version = VersionPresupuesto(numero=1, creado_por_id=mecanico_id)
     version.items += [
-        ItemPresupuesto(tipo="repuesto", repuesto=repuestos["Pastillas de freno delanteras"],
-                        descripcion="Juego de pastillas de freno delanteras",
-                        cantidad=Decimal("1"), precio_unitario=Decimal("38990")),
-        ItemPresupuesto(tipo="mano_de_obra", descripcion="Cambio de pastillas y revision de frenos",
-                        cantidad=Decimal("1.5"), precio_unitario=Decimal("20000")),
+        ItemPresupuesto(tipo=i.tipo, descripcion=i.descripcion, cantidad=i.cantidad,
+                        precio_unitario=i.precio_unitario,
+                        repuesto=repuestos[i.repuesto] if i.repuesto else None)
+        for i in datos.ITEMS_PRESUPUESTO_EJEMPLO
     ]
     presupuesto.versiones.append(version)
     db.add(presupuesto)
@@ -128,9 +119,9 @@ def _sembrar_presupuesto(db, orden_id: int, mecanico_id: int,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--admin-id", type=int, default=3,
+    parser.add_argument("--admin-id", type=int, default=datos.ADMIN_ID,
                         help="usuario_id (MS1) del administrador (por defecto 3)")
-    parser.add_argument("--mecanico-id", type=int, default=2,
+    parser.add_argument("--mecanico-id", type=int, default=datos.MECANICO_ID,
                         help="usuario_id (MS1) del mecanico que arma el presupuesto")
     parser.add_argument("--orden-id", type=int, default=None,
                         help="orden (MS2) para la que se crea un presupuesto de ejemplo")

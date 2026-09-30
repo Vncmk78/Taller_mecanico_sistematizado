@@ -96,6 +96,11 @@ export function HomePage() {
         </Link>
       </nav>
 
+      <main
+        id="contenido-principal"
+        tabIndex={-1}
+        className="flex-grow focus:outline-none"
+      >
       <section id="inicio" className="text-center py-[120px] px-5 pb-20 flex flex-col items-center">
         <div className="text-[90px] text-primary-blue mb-5">
           <Settings className="w-[90px] h-[90px]" />
@@ -151,6 +156,7 @@ className="card text-left p-10 hover:-translate-y-2.5 hover:border-primary-orang
           ))}
         </div>
       </section>
+      </main>
 
       <footer id="contacto" className="flex justify-between items-center px-12 py-10 bg-primary-blue text-white text-sm">
         <div className="flex items-center gap-2.5 text-xl text-white">

@@ -64,7 +64,11 @@ export function LoginPage() {
         </Link>
       </nav>
 
-      <div className="flex flex-col items-center justify-center flex-grow px-5 py-8">
+      <main
+        id="contenido-principal"
+        tabIndex={-1}
+        className="flex flex-col items-center justify-center flex-grow px-5 py-8 focus:outline-none"
+      >
         <GlassCard className="w-full max-w-[480px] p-[50px_40px] text-center">
           <div className="flex flex-col items-center mb-8">
             <span className="relative inline-block w-20 h-20 mb-4 text-text-muted">
@@ -85,6 +89,7 @@ export function LoginPage() {
               <Input
                 label="Correo Electrónico"
                 type="email"
+                autoComplete="username"
                 placeholder="correo@ejemplo.com"
                 icon={<Mail className="w-5 h-5" />}
                 error={errors.email?.message}
@@ -95,6 +100,7 @@ export function LoginPage() {
                 <Input
                   label="Contraseña"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
                   placeholder="••••••••"
                   icon={<Lock className="w-5 h-5" />}
                   error={errors.password?.message}
@@ -132,7 +138,7 @@ export function LoginPage() {
             </form>
           </div>
         </GlassCard>
-      </div>
+      </main>
     </div>
   );
 }

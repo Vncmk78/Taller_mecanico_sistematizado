@@ -115,4 +115,10 @@ describe('AccessDeniedPage: pantalla de acceso denegado', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(useAuthStore.getState().user).toBeNull();
   });
+
+  it('expone el contenido principal como landmark accesible', () => {
+    renderAccessDenied('/acceso-denegado', clientUser);
+
+    expect(screen.getByRole('main')).toBeInTheDocument();
+  });
 });

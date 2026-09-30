@@ -30,6 +30,12 @@ export function RoleLayout({
   if (variant === 'topnav') {
     return (
       <div className="min-h-screen flex flex-col animate-fade-in">
+        <a
+          href="#contenido-principal"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-text-main"
+        >
+          Saltar al contenido principal
+        </a>
         <header className="flex items-center justify-between px-10 py-4 border-b border-border-custom bg-surface sticky top-0 z-50">
           <div className="flex items-center gap-2.5">
             <AppBrand />
@@ -40,7 +46,7 @@ export function RoleLayout({
             )}
           </div>
 
-          <nav className="flex gap-2">
+          <nav aria-label="Navegación principal" className="flex gap-2">
             {sections.flatMap((section) => section.items).map((item) => (
               <AppNavLink key={item.to} variant="topnav" {...item} />
             ))}
@@ -53,7 +59,7 @@ export function RoleLayout({
           />
         </header>
 
-        <main className="flex-grow">
+        <main id="contenido-principal" tabIndex={-1} className="flex-grow focus:outline-none">
           <Outlet />
         </main>
       </div>
@@ -62,9 +68,19 @@ export function RoleLayout({
 
   return (
     <div className="flex min-h-screen">
+      <a
+        href="#contenido-principal"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-text-main"
+      >
+        Saltar al contenido principal
+      </a>
       <SidebarNav sections={sections} />
 
-      <main className="flex-grow flex flex-col bg-bg-main h-screen overflow-y-auto">
+      <main
+        id="contenido-principal"
+        tabIndex={-1}
+        className="flex-grow flex flex-col bg-bg-main h-screen overflow-y-auto focus:outline-none"
+      >
         <TopBar
           left={headerLeft}
           rightPrepend={headerRightPrepend}

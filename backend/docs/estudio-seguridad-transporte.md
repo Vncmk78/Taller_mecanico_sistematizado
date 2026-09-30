@@ -280,16 +280,20 @@ delega ese juicio al microservicio, que es quien tiene el secreto.
 | Enumeración de recursos | ✅ Ausente | Recurso ajeno e inexistente devuelven el mismo `404` |
 | CORS permisivo con credenciales | ✅ Ausente | Lista explícita + regex acotada a `https://*.vercel.app` |
 | Token o contraseña en los logs del backend | ✅ Ausente | Único `logger.exception` del Gateway registra `url.path` y `request_id`; nunca cabeceras, body ni query string |
+| Token en la consola del navegador | ✅ Corregido | `ErrorBoundary` ya no vuelca el objeto error (§7.5). Residual de React en desarrollo: §7.6 |
+| Correo de usuario en la salida del seed | ✅ Corregido | `seed_usuarios_prueba.py` enmascara con `_ocultar_correo()` (§7.8) |
 | `.env` real versionado | ✅ Ausente | Solo se versionan `.env.example` con placeholders |
 | Contraseña del DSN en errores de conexión | ✅ Enmascarada | Comprobado: SQLAlchemy no incluye la contraseña en `str(error)` |
+| `WWW-Authenticate` en el 401 de la Gateway | ⚠️ Se pierde | El proxy solo reenvía `content-type` (§7.7) |
 
 ---
 
 ## 7. Hallazgos y recomendaciones
 
-Lo que sigue son observaciones que **no se cambiaron** en esta tarea: son
-refactors o decisiones de mantenimiento que conviene acordar con el equipo antes
-de tocarlas, no defectos que haya que corregir.
+La revisión de logs (tarea «Revisar que los logs no expongan contraseñas, tokens
+ni datos sensibles») encontró **dos filtraciones reales**, que sí se corrigieron
+porque son defectos y no refactors. Las secciones 7.5 a 7.8 son observaciones
+que **no se tocaron**: son refactors o decisiones de mantenimiento.
 
 ### 7.1 `obtener_principal_actual` está copiado en los cuatro microservicios
 
@@ -330,3 +334,93 @@ El propio docstring lo dice: la dependencia está lista y ningún endpoint la
 consume todavía, a la espera de los endpoints de recepción y consulta de
 evidencias. No es un defecto; queda registrado para que no se interprete como
 código muerto por error.
+
+### 7.5 CORREGIDO: el `ErrorBoundary` volcaba el token de acceso en la consola
+
+`frontend/src/presentation/components/ui/ErrorBoundary.tsx` tenía:
+
+```ts
+console.error('Error capturado por ErrorBoundary:', error, errorInfo);
+```
+
+Si el error capturado es un `AxiosError` —que es lo que ocurre cuando un fallo de
+la API llega hasta el render— ese objeto lleva dentro
+`config.headers.Authorization`. Al imprimirlo entero, la consola del navegador
+muestra el **Bearer token en claro**. Y la consola es precisamente lo que queda
+visible cuando se comparte pantalla en una sesión de soporte, o cuando se graba
+la pantalla para un ticket.
+
+*Corrección aplicada:* se registra solo `nombre`, `mensaje` y la pila de
+componentes, que es lo que sirve para depurar, y nunca el objeto del error:
+
+```ts
+console.error(
+  'Error capturado por ErrorBoundary:',
+  `${error?.name ?? 'Error'}: ${error?.message ?? 'sin mensaje'}`,
+  errorInfo.componentStack,
+);
+```
+
+Añadida la prueba `no vuelca el token de acceso en la consola` en
+`ErrorBoundary.test.tsx`. Se comprobó en las dos direcciones: **falla** contra el
+código anterior y **pasa** contra el corregido. Para que la prueba sea real hay
+que serializar el objeto recibido, porque `String(error)` solo devuelve el
+mensaje y no delata el token que va anidado.
+
+### 7.6 Residual conocido: React también registra el objeto error completo
+
+Al verificar la corrección anterior apareció un segundo volcado que **no está en
+nuestro código**: React, en desarrollo, registra por su cuenta el error que
+captura con
+
+```
+console.error("%o\n\n%s\n\n%s\n", error, componentStack, mensaje)
+```
+
+y ahí el `error` vuelve a ser el `AxiosError` completo, con el token dentro.
+
+*No se puede corregir desde la aplicación* sin dejar de capturar el error, así
+que queda documentado. Consecuencias prácticas:
+
+- No lanzar objetos `AxiosError` crudos durante el render; en su lugar, lanzar
+  un error propio con un código y el mensaje.
+- El impacto es de desarrollo, no de producción: los registros de React se
+  elaboran en el build de desarrollo y el bundle de producción no los emite.
+- Aun así, quien depure en desarrollo debe tratar la consola como un medio con
+  datos sensibles: no pegar capturas de la consola en tickets sin censurar.
+
+### 7.7 Observación: la Gateway no reenvía `WWW-Authenticate`
+
+El proxy devuelve el cuerpo y el estado del microservicio, pero solo conserva la
+cabecera `content-type` de la respuesta. Como MS1 responde los `401` con
+`WWW-Authenticate: Bearer`, esa cabecera **se pierde** al pasar por la Gateway:
+
+```
+MS1 directo   : /auth/me  ->  401, WWW-Authenticate: Bearer
+Por la Gateway: /api/auth/me -> 401, sin WWW-Authenticate
+```
+
+RFC 9110 pide que un `401` incluya `WWW-Authenticate`, para que el cliente sepa
+qué esquema usar. Al cliente no le rompe nada (los navegadores con `fetch` ya
+saben que el token va en `Authorization`), pero es una desviación del estándar.
+
+*Recomendación:* en `gateway/routers/proxy.py`, reenviar también las cabeceras
+de respuesta que no sean `hop-by-hop`. No se hizo en esta entrega porque cambia
+el comportamiento del proxy y hay 19 pruebas de `test_gateway_rutas.py`
+apoyándose en su contrato actual.
+
+### 7.8 CORREGIDO: el seed imprimía los correos de los usuarios
+
+`backend/scripts/seed_usuarios_prueba.py` imprimía la dirección completa de cada
+cuenta creada (`Usuario creado: cliente@pruebas.cl`). Como la salida del script
+termina en los logs del despliegue, era el único punto del backend donde salía
+un dato de usuario a la salida estándar.
+
+*Corrección aplicada:* los correos se enmascaran con `_ocultar_correo()`, que
+conserva la inicial y el dominio (`c***@pruebas.cl`), que basta para saber qué
+cuenta se sembró.
+
+Residual aceptable y documentado a propósito: el propio archivo sigue
+conteniendo las credenciales de prueba en su docstring, y
+`CONEXIONES.md` las documenta. Son cuentas de la revisión, no datos reales; el
+cambio evita que el patrón se arrastre a un seed de usuarios reales.

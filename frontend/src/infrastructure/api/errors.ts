@@ -45,3 +45,30 @@ export function isOfflineError(error: unknown): boolean {
 export function isConflictError(error: unknown): boolean {
     return axios.isAxiosError(error) && error.response?.status === 409;
 }
+
+/**
+ * Identificador de la petición que falló, para poder rastrearla en los logs del
+ * backend. La Gateway lo publica en el bloque `error` de su formato común y
+ * además en la cabecera `X-Request-ID`; los errores que pasan directo desde un
+ * microservicio no traen ninguno de los dos, y entonces no hay nada que mostrar.
+ */
+export function getApiErrorRequestId(error: unknown): string | null {
+    if (!axios.isAxiosError(error) || !error.response) return null;
+    const fromBody = (error.response.data as { error?: { request_id?: unknown } } | undefined)?.error?.request_id;
+    if (typeof fromBody === 'string' && fromBody) return fromBody;
+    const headers = error.response.headers as unknown as Record<string, unknown> | undefined;
+    const fromHeader = headers?.['x-request-id'] ?? headers?.['X-Request-ID'];
+    return typeof fromHeader === 'string' && fromHeader ? fromHeader : null;
+}
+
+/**
+ * Código del catálogo de errores de la Gateway (RUTA_NO_ENCONTRADA,
+ * MICROSERVICIO_INALCANZABLE, GATEWAY_SATURADA, TIEMPO_AGOTADO, ERROR_INTERNO,
+ * ERROR_MICROSERVICIO, ERROR_HTTP). Solo la Gateway lo envía: los errores que
+ * llegan tal cual desde un microservicio vienen sin él.
+ */
+export function getApiErrorCode(error: unknown): string | null {
+    if (!axios.isAxiosError(error) || !error.response) return null;
+    const codigo = (error.response.data as { error?: { codigo?: unknown } } | undefined)?.error?.codigo;
+    return typeof codigo === 'string' && codigo ? codigo : null;
+}

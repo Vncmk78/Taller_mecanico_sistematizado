@@ -1,4 +1,9 @@
-import { getApiErrorMessage, isNotFoundError, isOfflineError } from '@/infrastructure/api/errors';
+import {
+    getApiErrorMessage,
+    getApiErrorRequestId,
+    isNotFoundError,
+    isOfflineError,
+} from '@/infrastructure/api/errors';
 
 export type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -7,12 +12,18 @@ export interface AsyncStatus {
     error: string | null;
     /** true solo cuando la API no respondió o el servicio no estaba disponible (red caída / 502-504). */
     isOffline: boolean;
+    /**
+     * Identificador de la petición fallida (X-Request-ID de la Gateway) para
+     * poder rastrearla en los logs del backend. Solo la Gateway lo envía.
+     */
+    requestId: string | null;
 }
 
 export const initialAsyncStatus: AsyncStatus = {
     status: 'idle',
     error: null,
     isOffline: false,
+    requestId: null,
 };
 
 export interface FetchItemResult<T> {
@@ -54,7 +65,7 @@ export async function fetchCollection<T, S extends AsyncStatus>(
     set: SetStateUpdater<S>,
     merge: (state: S, fetched: T[]) => Partial<S>
 ): Promise<void> {
-    set({ status: 'loading', error: null, isOffline: false } as Partial<S>);
+    set({ status: 'loading', error: null, isOffline: false, requestId: null } as Partial<S>);
     try {
         const fetched = await loader();
         set((state): Partial<S> => ({
@@ -62,12 +73,14 @@ export async function fetchCollection<T, S extends AsyncStatus>(
             status: 'success',
             error: null,
             isOffline: false,
+            requestId: null,
         }));
     } catch (err) {
         set({
             status: 'error',
             error: getApiErrorMessage(err),
             isOffline: isOfflineError(err),
+            requestId: getApiErrorRequestId(err),
         } as Partial<S>);
     }
 }
@@ -92,6 +105,7 @@ export async function fetchItemById<T extends { id: string }, S extends AsyncSta
             ...upsert(state, item),
             error: null,
             isOffline: false,
+            requestId: null,
         }));
         return { item, notFound: false, failed: false };
     } catch (err) {
@@ -99,7 +113,11 @@ export async function fetchItemById<T extends { id: string }, S extends AsyncSta
             return { item: null, notFound: true, failed: false };
         }
         const local = getItems().find((cached) => cached.id === id) ?? null;
-        set({ error: getApiErrorMessage(err), isOffline: isOfflineError(err) } as Partial<S>);
+        set({
+            error: getApiErrorMessage(err),
+            isOffline: isOfflineError(err),
+            requestId: getApiErrorRequestId(err),
+        } as Partial<S>);
         return { item: local, notFound: false, failed: local === null };
     }
 }

@@ -77,13 +77,17 @@ en `isOfflineError` (`src/infrastructure/api/errors.ts`):
 | Situación | `isOffline` | Qué ve el usuario |
 | --- | --- | --- |
 | Sin respuesta HTTP (DNS, red caída, Axios sin `response`) | `true` | Banner "No se pudo conectar con el servidor" + caché |
-| HTTP `502` / `503` / `504` (Gateway o microservicio caído) | `true` | Mismo banner de conexión |
+| HTTP `502` / `503` / `504` (Gateway o microservicio caído) | `true` | Banner de servicio caído + caché, con el mensaje del backend |
 | HTTP `500` y otros `5xx` con respuesta | `false` | "El servidor tuvo un problema. Intente más tarde." + botón Reintentar |
 | HTTP `401` / `403` | `false` | Error; la sesión se restaura por separado en `AuthService` |
 | HTTP `404` en un detalle | `false` | Estado vacío "no encontrado" (el recurso existe, pero no está en el alcance del rol) |
 | HTTP `404` en un listado | `false` | Estado vacío de la colección |
 | HTTP `409` / `422` | `false` | Mensaje de negocio de MS2, sin tratarlo como caída de conexión |
 | Colección vacía con `200` | `false` | Estado vacío del portal, con su acción correspondiente |
+
+Cuando la respuesta trae `request_id`, el estado de error o el banner agregan una
+línea `Referencia: <id>` para que el usuario pueda entregar la referencia al
+soporte y el fallo se rastree en los logs del backend.
 
 Reglas que se aplican en listados, detalles e historial:
 
@@ -99,6 +103,58 @@ Reglas que se aplican en listados, detalles e historial:
 
 Componentes compartidos por los tres portales: `EmptyState` (vacío),
 `ErrorState` (error reintentable), `RetryButton` y `OfflineBanner`.
+
+## Errores reales del backend
+
+La Gateway responde con su propio formato (`gateway/esquemas.py`): `detail` es un
+string legible y `error` trae `codigo`, `estado`, `ruta` y `request_id`. Los errores
+que emite un microservicio pasan tal cual por el proxy y llegan solo con `detail`.
+
+| Origen | Cuerpo | Cómo lo muestra el frontend |
+| --- | --- | --- |
+| `404` | `{ detail: "Ruta no encontrada", error: { codigo: "RUTA_NO_ENCONTRADA", ... } }` | Estado vacío del recurso |
+| `405` | `{ detail: "Método no permitido", error: { codigo: "METODO_NO_PERMITIDO", ... } }` | Mensaje del backend |
+| `500` | `{ detail: "Ocurrió un error inesperado en la Gateway.", error: { codigo: "ERROR_INTERNO", ... } }` | Error reintentable + referencia |
+| `500` | `{ detail: "El servicio respondió con un error inesperado.", error: { codigo: "ERROR_MICROSERVICIO", ... } }` | Error reintentable + referencia |
+| `502` | `{ detail: "El servicio no está disponible. Intente más tarde.", ... }` | Banner de servicio caído + caché |
+| `503` | `{ detail: "La Gateway está ocupada. Intente más tarde.", ... }` | Banner de servicio caído + caché |
+| `504` | `{ detail: "El servicio tardó demasiado en responder. Intente más tarde.", ... }` | Banner de servicio caído + caché |
+| `409` (MS2) | `{ detail: "La patente ya está registrada" }` | Error en el campo Patente del formulario |
+| `409` (MS1) | `{ detail: "El correo ya está registrado" }` | Mensaje de negocio |
+| `401` (MS1) | `{ detail: "Correo o contraseña incorrectos" }` / `{ detail: "Token inválido o expirado" }` | Mensaje de negocio |
+| `403` (MS1) | `{ detail: "No tienes permiso para realizar esta operación" }` | Mensaje de negocio |
+| `422` | `detail` como lista `{ loc, msg, type }` o como string (`"Estado de destino desconocido: 999"`, `"La contraseña no puede superar 72 bytes"`) | Primer `msg` de la lista, o el string |
+| `500` (MS2) | `{ detail: "No fue posible consultar los vehículos" }` | Error reintentable |
+
+`getApiErrorMessage` siempre prefiere el `detail` real sobre cualquier mensaje
+genérico por status, incluidos los `502/503/504`: aunque se marquen como fallo de
+transporte, el texto que ve el usuario es el que escribió el backend.
+`getApiErrorRequestId` extrae el `request_id` (con respaldo en la cabecera
+`X-Request-ID`) y `getApiErrorCode` el código del catálogo, para clasificar sin
+parsear el mensaje. Cuando el error no trae ninguno de los dos, la interfaz no
+muestra ninguna referencia en vez de inventar una.
+
+Los cuerpos literales están en `src/infrastructure/mocks/payloads.reales.ts`, con
+la referencia al archivo del backend del que salió cada uno, y se prueban contra
+`errors.test.ts`.
+
+## Datos opcionales y decisiones de mapeo
+
+- `VehiculoRespuesta.anio` y `kilometraje` son opcionales en el contrato: un
+  vehículo registrado puede venir sin ellos. `VehicleService` los normaliza a `0`
+  y `vehicleDisplay.ts` traduce ese `0` a "Sin especificar", para no mostrar
+  "Año: 0". Limitación asumida: un vehículo con 0 km reales queda indistinguible
+  de uno sin dato.
+- `OrdenRespuesta.mecanico_actual_id` y los campos del historial
+  (`estado_anterior`, `actor_usuario_id`, `observacion`) pueden llegar en `null` y
+  el mapeo los conserva como `null`/`undefined`, sin inventar valores.
+- `UsuarioRespuesta.roles` es una lista. El dominio tiene un único `role` y hoy
+  gana el primero (`roles[0]`), que es el que define el portal de ingreso. Queda
+  fijado con una prueba en `AuthService.test.ts`; si el backend llegara a entregar
+  dos roles con reglas de portal distintas, habría que revisarlo.
+- Las fechas llegan con offset `-03:00`. El mapeo las conserva tal cual y
+  `orderDisplay.ts` las formatea con `es-CL`; Vitest corre con
+  `TZ: America/Santiago` para que el texto esperado sea estable.
 
 ## Desactualizaciones del documento de contrato
 
@@ -117,3 +173,19 @@ actualizar ese documento.
 - Ninguna vista depende de datos simulados: los stores arrancan vacíos y solo
   se llenan con respuestas de la Gateway. Los archivos de
   `src/infrastructure/mocks/` quedan como fixtures exclusivos de los tests.
+- El mapeo y los errores se prueban contra los cuerpos literales que devuelve el
+  backend (`src/infrastructure/mocks/payloads.reales.ts`), no contra payloads
+  inventados en el test.
+
+## Desajuste detectado: formato de patente
+
+El formulario de registro de vehículo valida la patente con
+`/^[A-Za-z]{4}-\d{2}$/` (por ejemplo `ABCD-12`), pero el backend solo exige
+`min_length=1` y su propio test afirma que el contrato **no** define un patrón
+(`backend/tests/test_vehiculos_api.py`: `assert "pattern" not in patente`). El
+ejemplo real de la Gateway usa `AB1234`, un formato que el formulario rechaza.
+
+Consecuencia: la UI es más restrictiva que el servidor y puede impedir registrar
+vehículos que el backend aceptaría. No se modificó la validación porque es una
+decisión de producto (si el negocio exige el formato chileno o se acepta el que
+envíe el backend); queda anotado para resolverlo con el equipo.

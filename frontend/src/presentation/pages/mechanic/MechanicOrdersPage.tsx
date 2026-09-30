@@ -17,7 +17,7 @@ import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 export function MechanicOrdersPage() {
-    const { orders, status, error, isOffline, fetchOrders } = useOrderStore();
+    const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     const loadOrders = () => fetchOrders(() => orderService.getOrders());
@@ -74,7 +74,7 @@ export function MechanicOrdersPage() {
                 searchPlaceholder="Buscar por n° de orden o patente..."
             />
 
-            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} className="mb-6" />}
+            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} requestId={requestId} className="mb-6" />}
 
             {isServerError && filteredOrders.length > 0 && (
                 <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={loadOrders} />}>
@@ -88,6 +88,7 @@ export function MechanicOrdersPage() {
                 <ErrorState
                     title="No se pudieron cargar sus órdenes"
                     message={error}
+                    requestId={requestId}
                     onRetry={loadOrders}
                 />
             ) : (

@@ -17,7 +17,7 @@ import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 export function AdminOrdersPage() {
-    const { orders, status, error, isOffline, fetchOrders } = useOrderStore();
+    const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     const loadOrders = () => fetchOrders(() => orderService.getOrders());
@@ -75,7 +75,7 @@ export function AdminOrdersPage() {
                 />
             </div>
 
-            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} className="mx-10 mb-6" />}
+            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} requestId={requestId} className="mx-10 mb-6" />}
 
             {isServerError && filteredOrders.length > 0 && (
                 <Alert
@@ -94,6 +94,7 @@ export function AdminOrdersPage() {
                     className="px-10 pb-10"
                     title="No se pudieron cargar las órdenes"
                     message={error}
+                    requestId={requestId}
                     onRetry={loadOrders}
                 />
             ) : (

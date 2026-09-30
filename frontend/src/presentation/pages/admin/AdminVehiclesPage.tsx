@@ -12,7 +12,7 @@ import { vehicleService } from '@/infrastructure/api/VehicleService';
 
 export function AdminVehiclesPage() {
     const [search, setSearch] = useState('');
-    const { vehicles, status, error, isOffline, fetchVehicles } = useVehicleStore();
+    const { vehicles, status, error, isOffline, requestId, fetchVehicles } = useVehicleStore();
 
     const loadVehicles = () => fetchVehicles(() => vehicleService.getAllVehicles());
 
@@ -53,7 +53,7 @@ export function AdminVehiclesPage() {
         </div>
         </div>
 
-        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} className="mx-10 mb-6" />}
+        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} requestId={requestId} className="mx-10 mb-6" />}
 
         {isServerError && filtered.length > 0 && (
         <Alert
@@ -72,6 +72,7 @@ export function AdminVehiclesPage() {
             className="px-10 pb-10"
             title="No se pudieron cargar los vehículos"
             message={error}
+            requestId={requestId}
             onRetry={loadVehicles}
         />
         ) : (

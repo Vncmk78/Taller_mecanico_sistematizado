@@ -363,6 +363,18 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
             },
         },
     },
+    ("/api/vehiculos/asignados", "get"): {
+        "respuestas": {
+            "200": {
+                "lista_asignados": {
+                    "summary": "Lista con un vehículo asignado al mecánico",
+                    "value": [_VEHICULO_EJEMPLO],
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+        },
+    },
     ("/api/vehiculos/{vehiculo_id}", "get"): {
         "respuestas": {
             "200": {

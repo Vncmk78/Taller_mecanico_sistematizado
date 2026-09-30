@@ -226,7 +226,22 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
     esquema: dict,
 ) -> None:
     operaciones = _operaciones_de_negocio(esquema)
-    assert len(operaciones) == 11
+    assert set(operaciones) == {
+        ("/api/auth/login", "post"),
+        ("/api/auth/me", "get"),
+        ("/api/auth/register", "post"),
+        ("/api/ordenes", "get"),
+        ("/api/ordenes", "post"),
+        ("/api/ordenes/{orden_id}", "get"),
+        ("/api/ordenes/{orden_id}/estado", "patch"),
+        ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/{orden_id}/mecanico", "put"),
+        ("/api/vehiculos", "get"),
+        ("/api/vehiculos", "post"),
+        ("/api/vehiculos/asignados", "get"),
+        ("/api/vehiculos/{vehiculo_id}", "get"),
+        ("/api/vehiculos/{vehiculo_id}", "patch"),
+    }
     for (ruta, metodo), operacion in operaciones.items():
         respuestas = operacion["responses"]
         etiqueta = f"{metodo.upper()} {ruta}"

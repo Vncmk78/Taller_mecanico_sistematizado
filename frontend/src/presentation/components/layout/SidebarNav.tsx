@@ -7,12 +7,15 @@ interface SidebarNavProps {
 
 export function SidebarNav({ sections }: SidebarNavProps) {
   return (
-    <aside className="w-[280px] bg-surface border-r border-border-custom flex flex-col z-10 shrink-0">
+    <aside
+      aria-label="Menú lateral"
+      className="w-[280px] bg-surface border-r border-border-custom flex flex-col z-10 shrink-0"
+    >
       <div className="flex items-center gap-2.5 p-7 border-b border-border-custom">
         <AppBrand />
       </div>
 
-      <nav className="flex flex-col gap-2 p-5 flex-grow overflow-y-auto">
+      <nav aria-label="Navegación de sesión" className="flex flex-col gap-2 p-5 flex-grow overflow-y-auto">
         {sections.map((section, indice) => (
           <div key={section.title ?? `seccion-${indice}`} className="flex flex-col">
             {section.title && (

@@ -38,12 +38,13 @@ export function MechanicVehiclesPage() {
         </p>
 
         <div className="relative w-full sm:w-[320px] mb-6">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden="true" />
         <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
+            aria-label="Buscar por patente, marca o modelo"
             className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
         />
         </div>

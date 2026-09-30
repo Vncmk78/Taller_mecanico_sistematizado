@@ -40,7 +40,11 @@ export function AccessDeniedPage() {
         </Link>
       </nav>
 
-      <div className="flex flex-col items-center justify-center flex-grow px-5 py-8">
+      <main
+        id="contenido-principal"
+        tabIndex={-1}
+        className="flex flex-col items-center justify-center flex-grow px-5 py-8 focus:outline-none"
+      >
         <GlassCard className="w-full max-w-[480px] p-[50px_40px] text-center">
           <ShieldAlert className="w-20 h-20 mx-auto mb-5 text-status-red" />
           <h1 className="text-3xl font-bold tracking-tight text-text-main">
@@ -75,7 +79,7 @@ export function AccessDeniedPage() {
             </Button>
           </div>
         </GlassCard>
-      </div>
+      </main>
     </div>
   );
 }

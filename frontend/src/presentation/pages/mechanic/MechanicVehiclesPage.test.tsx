@@ -6,6 +6,7 @@ import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { MechanicVehiclesPage } from '@/presentation/pages/mechanic/MechanicVehiclesPage';
 
 const vehiculosAsignados = mockVehicles.filter((v) => mockAssignedVehicleIds.includes(v.id));
+const vehiculoFueraDelMock = mockVehicles.find((v) => !mockAssignedVehicleIds.includes(v.id))!;
 
 vi.mock('@/infrastructure/stores/useVehicleStore', () => ({
   useVehicleStore: vi.fn(),
@@ -49,6 +50,36 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
 
     expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
     expect(screen.queryByText('Nissan Kicks')).not.toBeInTheDocument();
+  });
+
+  it('online muestra lo que devuelve la API sin filtrar por el mock', () => {
+    vi.mocked(useVehicleStore).mockReturnValue({
+      vehicles: [vehiculoFueraDelMock],
+      status: 'success',
+      error: null,
+      isOffline: false,
+      fetchVehicles: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('Hyundai Tucson')).toBeInTheDocument();
+  });
+
+  it('offline filtra por los datos de demo asignados al mecánico', () => {
+    vi.mocked(useVehicleStore).mockReturnValue({
+      vehicles: mockVehicles,
+      status: 'success',
+      error: null,
+      isOffline: true,
+      fetchVehicles: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
+    expect(screen.getByText('Nissan Kicks')).toBeInTheDocument();
+    expect(screen.queryByText('Hyundai Tucson')).not.toBeInTheDocument();
   });
 
   it('preserva el nombre del dueño desde el mock cuando hay tarjetas', () => {

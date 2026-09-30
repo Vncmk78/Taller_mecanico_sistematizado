@@ -70,6 +70,14 @@ class OrderService implements OrderPort {
         const { data } = await apiClient.get<HistorialEstadoApi[]>(`/ordenes/${ordenId}/historial`);
         return data.map(mapHistorialApi);
     }
+
+    async cambiarEstado(ordenId: string, estadoDestino: number, observacion?: string): Promise<Order> {
+        const { data } = await apiClient.patch<OrdenRespuesta>(`/ordenes/${ordenId}/estado`, {
+            estado_destino: estadoDestino,
+            observacion: observacion?.trim() || undefined,
+        });
+        return mapOrdenApi(data);
+    }
 }
 
 export const orderService = new OrderService();

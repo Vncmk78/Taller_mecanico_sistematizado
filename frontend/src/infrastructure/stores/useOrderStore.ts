@@ -19,6 +19,8 @@ interface OrderState extends AsyncStatus {
     orders: Order[];
     fetchOrders: (loader: () => Promise<Order[]>) => Promise<void>;
     fetchOrderById: (id: string, loader: (id: string) => Promise<Order>) => Promise<FetchOrderResult>;
+    /** Reemplaza (o inserta) una orden en la caché, p. ej. tras cambiar de estado. */
+    updateOrder: (order: Order) => void;
 }
 
 // Caché en memoria compartida entre portales, con la misma filosofía que
@@ -44,4 +46,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         );
         return { order: result.item, notFound: result.notFound };
     },
+
+    updateOrder: (order) =>
+        set((state) => ({ orders: upsertById(state.orders, order) })),
 }));

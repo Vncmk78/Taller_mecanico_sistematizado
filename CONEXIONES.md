@@ -72,11 +72,17 @@ Base: `https://tallerconect.vercel.app`
 | `POST` | `/api/auth/register` | Registro público (rol Cliente) | — |
 | `POST` | `/api/auth/login` | Login → JWT + usuario con roles | — |
 | `GET` | `/api/auth/me` | Usuario autenticado | Bearer |
-| `GET` | `/api/vehiculos/mios` | Vehículos del cliente autenticado | Bearer |
-| `GET` | `/api/vehiculos` | Lista de vehículos (token + rol) | Bearer |
-| `GET` | `/api/vehiculos/{id}` | Detalle de un vehículo | Bearer |
-| `POST` | `/api/vehiculos` | Registra un vehículo | Bearer |
-| `PATCH` | `/api/vehiculos/{id}` | Actualiza un vehículo | Bearer |
+| `GET` | `/api/vehiculos` | Cliente lista los suyos; Administrador lista todos | Bearer |
+| `GET` | `/api/vehiculos/asignados` | Vehículos con órdenes asignadas al Mecánico | Bearer |
+| `GET` | `/api/vehiculos/{id}` | Detalle según rol (propios, todos o asignados) | Bearer |
+| `POST` | `/api/vehiculos` | Registra un vehículo (rol Cliente) | Bearer |
+| `PATCH` | `/api/vehiculos/{id}` | Actualiza un vehículo propio (rol Cliente) | Bearer |
+| `POST` | `/api/ordenes` | Crea una orden (rol Administrador) | Bearer |
+| `GET` | `/api/ordenes` | Lista órdenes visibles | Bearer |
+| `GET` | `/api/ordenes/{id}` | Detalle de una orden visible | Bearer |
+| `PUT` | `/api/ordenes/{id}/mecanico` | Asigna o reasigna el mecánico responsable | Bearer |
+| `GET` | `/api/ordenes/{id}/historial` | Historial de estados de una orden | Bearer |
+| `PATCH` | `/api/ordenes/{id}/estado` | Cambia el estado de una orden | Bearer |
 
 > Regla del gateway: llama siempre por **primer segmento**. Endpoints de
 > negocio que aún no existan en un MS devolverán `404 {"detail":"Not Found"}`
@@ -270,4 +276,4 @@ Resultados probados contra `https://tallerconect.vercel.app`:
 | `POST /api/auth/login` (contraseña incorrecta) | 401 |
 | `GET /api/auth/me` (con token) | 200 usuario con roles |
 | `GET /api/vehiculos` (token cliente) | 200 `[]` |
-| `GET /api/vehiculos` (token admin) | 403 (control de rol OK) |
+| `GET /api/vehiculos` (token admin) | 200 (el Administrador ya ve todos los vehículos; antes respondía 403) |

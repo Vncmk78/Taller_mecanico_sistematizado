@@ -8,6 +8,7 @@ import apiClient from '@/infrastructure/config/apiClient';
 vi.mock('@/infrastructure/config/apiClient', () => ({
   default: {
     get: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 
@@ -75,7 +76,7 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
     expect(order.mecanicoActualId).toBeNull();
   });
 
-  it('getOrderHistory consulta GET /ordenes/{id}/historial (endpoint pendiente de MS2)', async () => {
+  it('getOrderHistory consulta GET /ordenes/{id}/historial', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: [historialApi] });
 
     const entries = await orderService.getOrderHistory('9');
@@ -90,6 +91,32 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
       origen: 'usuario',
       fecha: '2026-09-02T15:30:00Z',
       observacion: 'Avanza a reparación',
+    });
+  });
+
+  it('cambiarEstado publica PATCH /ordenes/{id}/estado y traduce la orden actualizada', async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({
+      data: { ...ordenApi, estado_codigo: 6 },
+    });
+
+    const order = await orderService.cambiarEstado('3', 6, 'Trabajo terminado');
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/ordenes/3/estado', {
+      estado_destino: 6,
+      observacion: 'Trabajo terminado',
+    });
+    expect(order.estadoCodigo).toBe(6);
+    expect(order.mecanicoActualId).toBe('40');
+  });
+
+  it('cambiarEstado omite la observación vacía en el cuerpo', async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: ordenApi });
+
+    await orderService.cambiarEstado('3', 2);
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/ordenes/3/estado', {
+      estado_destino: 2,
+      observacion: undefined,
     });
   });
 });

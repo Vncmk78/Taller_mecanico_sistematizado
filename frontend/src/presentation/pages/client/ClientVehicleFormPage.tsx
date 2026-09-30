@@ -11,7 +11,6 @@ import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { isConflictError } from '@/infrastructure/api/errors';
-import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
 
 const PATENT_REGEX = /^[A-Za-z]{4}-\d{2}$/;
 const currentYear = new Date().getFullYear();
@@ -50,9 +49,12 @@ export function ClientVehicleFormPage() {
     formState: { errors, isSubmitting },
     } = useForm<VehicleForm>({ resolver: zodResolver(vehicleSchema) });
 
-    const clientId = user?.id ?? CURRENT_CLIENT_ID;
+    // Identidad real de la sesión (usuario_id de MS1): la Gateway asigna el
+    // cliente desde el JWT y este id se usa para la ficha recién creada.
+    const clientId = user?.id;
 
     const onSubmit = async (data: VehicleForm) => {
+    if (!clientId) return;
     setSubmitError(null);
     const patent = data.patent.toUpperCase();
 

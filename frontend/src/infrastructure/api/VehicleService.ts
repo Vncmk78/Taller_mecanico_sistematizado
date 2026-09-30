@@ -8,6 +8,7 @@ import apiClient from '../config/apiClient';
 // traduce ambos sentidos manteniendo intacto el resto de la app.
 interface VehiculoApi {
     vehiculo_id: number;
+    cliente_id: number;
     patente: string;
     marca: string;
     modelo: string;
@@ -15,7 +16,13 @@ interface VehiculoApi {
     kilometraje: number | null;
 }
 
-function mapVehiculoApi(v: VehiculoApi, clientId = ''): Vehicle {
+// clientId es la identidad de la sesión (usuario_id de MS1) y se usa para
+// resolver la pertenencia en el portal Cliente, donde la Gateway ya devuelve
+// únicamente los vehículos del cliente autenticado. En los portales
+// Administrador y Mecánico no se pasa y el campo queda con el cliente_id real
+// de MS2 (identificador del perfil de Cliente propietario), que es el dato que
+// la Gateway expone.
+function mapVehiculoApi(v: VehiculoApi, clientId?: string): Vehicle {
     return {
         id: String(v.vehiculo_id),
         patent: v.patente,
@@ -23,7 +30,7 @@ function mapVehiculoApi(v: VehiculoApi, clientId = ''): Vehicle {
         model: v.modelo,
         year: v.anio ?? 0,
         mileage: v.kilometraje ?? 0,
-        clientId,
+        clientId: clientId ?? String(v.cliente_id),
     };
 }
 
@@ -43,9 +50,9 @@ class VehicleService implements VehiclePort {
     return data.map((v) => mapVehiculoApi(v));
     }
 
-    async getVehicleById(id: string): Promise<Vehicle> {
+    async getVehicleById(id: string, clientId?: string): Promise<Vehicle> {
     const { data } = await apiClient.get<VehiculoApi>(`/vehiculos/${id}`);
-    return mapVehiculoApi(data);
+    return mapVehiculoApi(data, clientId);
     }
 
     async createVehicle(input: CreateVehicleInput): Promise<Vehicle> {

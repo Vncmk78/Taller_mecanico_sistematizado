@@ -61,23 +61,27 @@ describe('MechanicOrdersPage: mis órdenes del mecánico', () => {
         expect(screen.getByText('Orden n° 103')).toBeInTheDocument();
     });
 
-    it('offline filtra por el mecánico actual y mantiene la caché', async () => {
-        useOrderStore.setState({ orders: [ordA, ordB, ordC], isOffline: true });
-        vi.mocked(orderService.getOrders).mockRejectedValue(new Error('network'));
+  it('offline conserva la caché con las órdenes asignadas al mecánico', async () => {
+    useOrderStore.setState({ orders: [ordA, ordB, ordC], isOffline: true });
+    vi.mocked(orderService.getOrders).mockRejectedValue(new Error('network'));
 
-        renderPage();
+    renderPage();
 
-        expect(
-            await screen.findByText(/No se pudo conectar con el servidor/)
-        ).toBeInTheDocument();
-        expect(screen.getByText('Orden n° 101')).toBeInTheDocument();
-        expect(screen.getByText('Mecánico: Martín Herrera')).toBeInTheDocument();
-        expect(screen.queryByText('Orden n° 102')).not.toBeInTheDocument();
-        expect(screen.queryByText('Orden n° 103')).not.toBeInTheDocument();
-    });
+    expect(
+      await screen.findByText(/No se pudo conectar con el servidor/)
+    ).toBeInTheDocument();
+    // La caché ya viene filtrada por la Gateway, así que offline se conserva
+    // tal cual y el mecánico se identifica con su id real.
+    expect(screen.getByText('Orden n° 101')).toBeInTheDocument();
+    expect(screen.getByText('Mecánico: m1')).toBeInTheDocument();
+    expect(screen.getByText('Orden n° 102')).toBeInTheDocument();
+    expect(screen.getByText('Orden n° 103')).toBeInTheDocument();
+  });
 
     it('muestra el estado vacío cuando no tiene órdenes asignadas', async () => {
-        useOrderStore.setState({ orders: [ordB], isOffline: true });
+        // La Gateway devuelve solo las órdenes del mecánico: una caché vacía
+        // significa que no tiene ninguna asignada.
+        useOrderStore.setState({ orders: [], isOffline: true });
         vi.mocked(orderService.getOrders).mockRejectedValue(new Error('network'));
 
         renderPage();

@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { useOrderDetail } from '@/presentation/hooks/useOrderDetail';
 import { orderService } from '@/infrastructure/api/OrderService';
@@ -18,7 +19,7 @@ export function AdminOrderDetailPage() {
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     if (loading) {
-        return <div className="p-10 text-text-muted">Cargando detalle de la orden...</div>;
+        return <LoadingState message="Cargando detalle de la orden..." className="p-10" />;
     }
 
     if (!order || notFound) {

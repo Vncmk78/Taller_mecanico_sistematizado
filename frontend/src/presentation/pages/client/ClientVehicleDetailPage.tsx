@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarPlus, ClipboardList } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
@@ -18,7 +19,7 @@ export function ClientVehicleDetailPage() {
     const { isOffline, error } = useVehicleStore();
 
     if (loading) {
-    return <div className="text-text-muted">Cargando ficha del vehículo...</div>;
+    return <LoadingState message="Cargando ficha del vehículo..." />;
     }
 
   // Ownership check: aunque el vehículo exista en caché, no es tuyo si el clientId no calza.

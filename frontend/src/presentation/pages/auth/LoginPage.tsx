@@ -3,12 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import axios from 'axios';
 import { Mail, Lock, Eye, EyeOff, Settings, Wrench } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
 import { Alert } from '@/presentation/components/ui/Alert';
+import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import { useAuth } from '@/presentation/components/auth/authContext';
 import { getHomePath } from '@/presentation/routes/rolePaths';
 
@@ -36,21 +36,13 @@ export function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
-  const getErrorMessage = (error: unknown) => {
-    if (axios.isAxiosError(error)) {
-      const detail = error.response?.data?.detail;
-      if (typeof detail === 'string') return detail;
-    }
-    return 'Credenciales incorrectas';
-  };
-
   const onSubmit = async (data: LoginForm) => {
     setErrorMessage(null);
     try {
       const user = await login(data.email, data.password);
       navigate(from ?? getHomePath(user.role), { replace: true });
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setErrorMessage(getApiErrorMessage(error, 'Credenciales incorrectas'));
     }
   };
 

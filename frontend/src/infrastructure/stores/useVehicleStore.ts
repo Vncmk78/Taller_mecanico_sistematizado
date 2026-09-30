@@ -1,107 +1,72 @@
 import { create } from 'zustand';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import type { CreateVehicleInput } from '@/domain/ports/VehiclePort';
-import { getApiErrorMessage, isNotFoundError } from '@/infrastructure/api/errors';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
-
-export type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
+import {
+    initialAsyncStatus,
+    type AsyncStatus,
+    fetchCollection,
+    fetchItemById,
+    mergeById,
+    upsertById,
+} from '@/infrastructure/stores/asyncCollection';
 
 interface FetchVehicleResult {
     vehicle: Vehicle | null;
     notFound: boolean;
 }
 
-interface VehicleState {
+interface VehicleState extends AsyncStatus {
     vehicles: Vehicle[];
-    status: FetchStatus;
-    error: string | null;
-  /** true cuando lo mostrado son datos locales porque la API no respondió (MS2/Gateway aún no disponibles). */
-    isOffline: boolean;
     fetchVehicles: (loader: () => Promise<Vehicle[]>) => Promise<void>;
-    fetchVehicleById: (
-    id: string,
-    loader: (id: string) => Promise<Vehicle>
-    ) => Promise<FetchVehicleResult>;
+    fetchVehicleById: (id: string, loader: (id: string) => Promise<Vehicle>) => Promise<FetchVehicleResult>;
     patentExists: (patent: string) => boolean;
     addVehicle: (input: CreateVehicleInput, clientId: string) => Promise<Vehicle>;
 }
 
 // Caché en memoria compartida entre portales. Se inicializa con datos de
 // demostración para que la UI nunca quede vacía ante fallos de red o mientras
-// algún endpoint de MS2 aún no está disponible. Cada fetch* intenta la API
-// real primero; si falla, se conserva la caché local y se marca isOffline
-// para avisar al usuario.
+// algún endpoint de MS2 aún no está disponible. La lógica de estados, merge y
+// offline vive en asyncCollection (fetchCollection / fetchItemById).
 export const useVehicleStore = create<VehicleState>((set, get) => ({
     vehicles: mockVehicles,
-    status: 'idle',
-    error: null,
-    isOffline: false,
+    ...initialAsyncStatus,
 
-    fetchVehicles: async (loader) => {
-    set({ status: 'loading', error: null });
-    try {
-        const fetched = await loader();
-        set((state) => {
-        // Merge por id: cada portal trae un subconjunto distinto (todos /
-        // míos / asignados); no queremos que uno pise la caché del otro.
-        const byId = new Map(state.vehicles.map((v) => [v.id, v]));
-        fetched.forEach((v) => byId.set(v.id, v));
-        return {
-            vehicles: Array.from(byId.values()),
-            status: 'success',
-            isOffline: false,
-            error: null,
-        };
-        });
-    } catch (err) {
-        set({ status: 'error', error: getApiErrorMessage(err), isOffline: true });
-    }
-    },
+    fetchVehicles: (loader) =>
+        fetchCollection<Vehicle, VehicleState>(
+            loader,
+            set,
+            (state, fetched) => ({ vehicles: mergeById(state.vehicles, fetched) })
+        ),
 
     fetchVehicleById: async (id, loader) => {
-    try {
-        const vehicle = await loader(id);
-        set((state) => {
-        const exists = state.vehicles.some((v) => v.id === vehicle.id);
-        return {
-            vehicles: exists
-            ? state.vehicles.map((v) => (v.id === vehicle.id ? vehicle : v))
-            : [...state.vehicles, vehicle],
-            isOffline: false,
-            error: null,
-        };
-        });
-        return { vehicle, notFound: false };
-    } catch (err) {
-        if (isNotFoundError(err)) {
-        // El backend respondió: el vehículo realmente no existe.
-        return { vehicle: null, notFound: true };
-        }
-      // Error de red/servidor: no sabemos si existe; mostramos lo que haya
-      // en caché local y avisamos que no se pudo confirmar contra el servidor.
-        const local = get().vehicles.find((v) => v.id === id) ?? null;
-        set({ error: getApiErrorMessage(err), isOffline: true });
-        return { vehicle: local, notFound: local === null };
-    }
+        const result = await fetchItemById<Vehicle, VehicleState>(
+            id,
+            loader,
+            set,
+            () => get().vehicles,
+            (state, vehicle) => ({ vehicles: upsertById(state.vehicles, vehicle) })
+        );
+        return { vehicle: result.item, notFound: result.notFound };
     },
 
     patentExists: (patent) =>
-    get().vehicles.some((v) => v.patent.toLowerCase() === patent.toLowerCase()),
+        get().vehicles.some((v) => v.patent.toLowerCase() === patent.toLowerCase()),
 
     addVehicle: async (input, clientId) => {
-    // Registro real contra MS2 vía la API Gateway. El backend valida la
-    // unicidad de patente de forma autoritativa (409) y asigna el cliente
-    // desde el JWT; patentExists del cliente es solo una verificación
-    // optimista antes de llamar a la API.
-    const creado = await vehicleService.createVehicle(input);
-    const vehiculo: Vehicle = { ...creado, clientId };
-    set((state) => ({
-        vehicles: [
-        vehiculo,
-        ...state.vehicles.filter((v) => v.id !== vehiculo.id),
-        ],
-    }));
-    return vehiculo;
+        // Registro real contra MS2 vía la API Gateway. El backend valida la
+        // unicidad de patente de forma autoritativa (409) y asigna el cliente
+        // desde el JWT; patentExists del cliente es solo una verificación
+        // optimista antes de llamar a la API.
+        const creado = await vehicleService.createVehicle(input);
+        const vehiculo: Vehicle = { ...creado, clientId };
+        set((state) => ({
+            vehicles: [
+                vehiculo,
+                ...state.vehicles.filter((v) => v.id !== vehiculo.id),
+            ],
+        }));
+        return vehiculo;
     },
 }));

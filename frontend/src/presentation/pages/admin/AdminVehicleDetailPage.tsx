@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardList } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
@@ -15,7 +16,7 @@ export function AdminVehicleDetailPage() {
     const { isOffline, error } = useVehicleStore();
 
     if (loading) {
-    return <div className="p-10 text-text-muted">Cargando ficha del vehículo...</div>;
+    return <LoadingState message="Cargando ficha del vehículo..." className="p-10" />;
     }
 
     if (!vehicle || notFound) {

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
+from services.ms2_taller.dependencies import obtener_principal_actual
 from services.ms2_taller.models.cliente import Cliente
 from services.ms2_taller.models.vehiculo import Vehiculo
 from services.ms2_taller.schemas.vehiculo import (
@@ -22,8 +23,13 @@ from services.ms2_taller.services.vehiculos import (
     actualizar_vehiculo_propio,
     crear_vehiculo,
     listar_vehiculos,
+    listar_vehiculos_para_mecanico,
+    listar_vehiculos_taller,
+    obtener_vehiculo_para_mecanico,
+    obtener_vehiculo_por_id,
     obtener_vehiculo_propio,
 )
+from shared.auth import NombreRol, PrincipalAutenticado
 
 ResolverClienteActual = Callable[..., Cliente]
 
@@ -78,7 +84,9 @@ def crear_router_vehiculos(
         summary="Listar vehículos",
         responses={
             status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
-            status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Cliente"},
+            status.HTTP_403_FORBIDDEN: {
+                "description": "Se requiere rol Cliente o Administrador"
+            },
             status.HTTP_404_NOT_FOUND: {
                 "description": "No existe el perfil Cliente local"
             },
@@ -89,10 +97,50 @@ def crear_router_vehiculos(
     )
     def consultar_vehiculos(
         db: Session = Depends(get_db),
-        cliente: Cliente = Depends(resolver_cliente_actual),
+        principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     ) -> list[Vehiculo]:
         try:
-            return listar_vehiculos(db, cliente)
+            if NombreRol.ADMINISTRADOR in principal.roles:
+                return listar_vehiculos_taller(db)
+            if NombreRol.CLIENTE in principal.roles:
+                cliente = resolver_cliente_actual(principal=principal, db=db)
+                return listar_vehiculos(db, cliente)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Se requiere rol Cliente o Administrador",
+            )
+        except HTTPException:
+            raise
+        except PersistenciaVehiculoError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No fue posible consultar los vehículos",
+            ) from exc
+
+    @router.get(
+        "/asignados",
+        response_model=list[VehiculoRespuesta],
+        summary="Listar vehículos asignados al mecánico",
+        responses={
+            status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+            status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Mecánico"},
+            status.HTTP_500_INTERNAL_SERVER_ERROR: {
+                "description": "No fue posible completar la consulta"
+            },
+        },
+    )
+    def consultar_vehiculos_asignados(
+        db: Session = Depends(get_db),
+        principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    ) -> list[Vehiculo]:
+        if NombreRol.MECANICO not in principal.roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Se requiere rol Mecánico",
+            )
+
+        try:
+            return listar_vehiculos_para_mecanico(db, principal.usuario_id)
         except PersistenciaVehiculoError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -105,7 +153,6 @@ def crear_router_vehiculos(
         summary="Consultar un vehículo",
         responses={
             status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
-            status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Cliente"},
             status.HTTP_404_NOT_FOUND: {"description": "Vehículo no encontrado"},
             status.HTTP_500_INTERNAL_SERVER_ERROR: {
                 "description": "No fue posible completar la consulta"
@@ -115,10 +162,19 @@ def crear_router_vehiculos(
     def consultar_vehiculo(
         vehiculo_id: int,
         db: Session = Depends(get_db),
-        cliente: Cliente = Depends(resolver_cliente_actual),
+        principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     ) -> Vehiculo:
         try:
-            return obtener_vehiculo_propio(db, cliente, vehiculo_id)
+            if NombreRol.ADMINISTRADOR in principal.roles:
+                return obtener_vehiculo_por_id(db, vehiculo_id)
+            if NombreRol.CLIENTE in principal.roles:
+                cliente = resolver_cliente_actual(principal=principal, db=db)
+                return obtener_vehiculo_propio(db, cliente, vehiculo_id)
+            return obtener_vehiculo_para_mecanico(
+                db, principal.usuario_id, vehiculo_id
+            )
+        except HTTPException:
+            raise
         except VehiculoNoEncontradoError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

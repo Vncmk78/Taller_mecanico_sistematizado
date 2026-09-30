@@ -7,20 +7,28 @@ from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import obtener_principal_actual
+from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
+    CambioEstadoSolicitud,
+    HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
 )
 from services.ms2_taller.services.ordenes import (
+    OrdenEstadoInvalidoError,
+    OrdenEstadoNoAutorizadoError,
     OrdenNoEncontradaError,
     OrdenTerminalError,
+    OrdenTransicionNoPermitidaError,
     PersistenciaOrdenError,
     VehiculoNoEncontradoError,
     asignar_mecanico,
+    cambiar_estado_orden,
     crear_orden,
     listar_ordenes,
+    obtener_historial_orden,
     obtener_orden_visible,
 )
 from shared.auth import NombreRol, PrincipalAutenticado
@@ -119,6 +127,99 @@ def consultar_orden(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible consultar la orden",
+        ) from exc
+
+
+@router_ordenes.get(
+    "/{orden_id}/historial",
+    response_model=list[HistorialEstadoRespuesta],
+    summary="Consultar el historial de estados de una orden",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la consulta"
+        },
+    },
+)
+def consultar_historial_orden(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> list[HistorialEstado]:
+    try:
+        return obtener_historial_orden(db, principal, orden_id)
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar el historial de la orden",
+        ) from exc
+
+
+@router_ordenes.patch(
+    "/{orden_id}/estado",
+    response_model=OrdenRespuesta,
+    summary="Cambiar el estado de una orden",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Se requiere rol Administrador o ser el mecánico asignado"
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_409_CONFLICT: {
+            "description": "La transición solicitada no está permitida o la orden es terminal"
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Estado de destino desconocido o datos inválidos"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def cambiar_estado(
+    orden_id: int,
+    body: CambioEstadoSolicitud,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> OrdenTrabajo:
+    try:
+        return cambiar_estado_orden(
+            db,
+            orden_id=orden_id,
+            estado_destino=body.estado_destino,
+            principal=principal,
+            observacion=body.observacion,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except OrdenEstadoInvalidoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible cambiar el estado de la orden",
         ) from exc
 
 

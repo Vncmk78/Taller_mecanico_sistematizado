@@ -3,12 +3,12 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los 11 endpoints reales que enruta la Gateway hacia MS1 (Autenticación) y MS2
+los 14 endpoints reales que enruta la Gateway hacia MS1 (Autenticación) y MS2
 (Vehículos y Órdenes), con sus esquemas (`gateway/contratos`), la seguridad
 `bearerAuth` y el formato común de errores de la Gateway (`gateway.esquemas`).
 
-Los endpoints todavía no implementados (presupuestos, evidencias, historial
-consultable y cambio general de estado) no se publican como contratos.
+Los endpoints todavía no implementados (presupuestos, evidencias e integración
+con facturación) no se publican como contratos.
 """
 from __future__ import annotations
 
@@ -82,11 +82,16 @@ _TAGS = [
     },
     {
         "name": "Vehículos",
-        "description": "Registro, consulta y actualización de vehículos (MS2).",
+        "description": (
+            "Registro, consulta por rol y actualización de vehículos (MS2)."
+        ),
     },
     {
         "name": "Órdenes",
-        "description": "Creación, consulta y asignación inicial de órdenes (MS2).",
+        "description": (
+            "Creación, consulta, historial, cambio de estado y asignación "
+            "inicial de órdenes (MS2)."
+        ),
     },
     {
         "name": "Gateway",
@@ -108,6 +113,8 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         contratos_ordenes.AsignacionMecanicoActualizar,
     ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
+    ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
+    ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
 ]
 
 _PARAMETRO_X_REQUEST_ID: dict[str, object] = {
@@ -325,7 +332,11 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
             "get": _operacion(
                 tag="Vehículos",
                 resumen="Listar vehículos",
-                descripcion="Lista los vehículos registrados del cliente autenticado.",
+                descripcion=(
+                    "Administrador lista todos los vehículos del taller; "
+                    "Cliente lista los suyos. Un Mecánico recibe 403 y usa "
+                    "/api/vehiculos/asignados."
+                ),
                 operation_id="listar_vehiculos",
                 cuerpo=None,
                 respuestas_ok={
@@ -336,32 +347,57 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
-                    "403": "Se requiere rol Cliente",
+                    "403": "Se requiere rol Cliente o Administrador",
                 },
                 requiere_auth=True,
                 descripcion_404="No existe el perfil Cliente local en MS2.",
                 esquema_404=error_404_recurso,
             ),
         },
+        "/api/vehiculos/asignados": {
+            "get": _operacion(
+                tag="Vehículos",
+                resumen="Listar vehículos asignados al mecánico",
+                descripcion=(
+                    "Solo un Mecánico lista los vehículos con órdenes de "
+                    "trabajo que tiene asignadas."
+                ),
+                operation_id="listar_vehiculos_asignados",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Lista de vehículos asignados (sin duplicados).",
+                        {"type": "array", "items": _ref("VehiculoRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Mecánico",
+                },
+                requiere_auth=True,
+            ),
+        },
         "/api/vehiculos/{vehiculo_id}": {
             "get": _operacion(
                 tag="Vehículos",
                 resumen="Consultar un vehículo",
-                descripcion="Devuelve un vehículo del cliente autenticado.",
+                descripcion=(
+                    "Devuelve un vehículo según el rol: Cliente solo el propio, "
+                    "Administrador cualquiera del taller y Mecánico solo los "
+                    "que tiene asignados."
+                ),
                 operation_id="consultar_vehiculo",
                 cuerpo=None,
                 respuestas_ok={
                     "200": _respuesta("Vehículo encontrado.", _ref("VehiculoRespuesta"))
                 },
-                errores_ms={
-                    "401": "JWT ausente o inválido",
-                    "403": "Se requiere rol Cliente",
-                },
+                errores_ms={"401": "JWT ausente o inválido"},
                 requiere_auth=True,
                 con_vehiculo_id=True,
                 descripcion_404=(
-                    "No encontrado. Si el vehículo no existe, el microservicio "
-                    "responde {'detail': 'Vehículo no encontrado'}."
+                    "No encontrado. Si el vehículo no existe o no está entre "
+                    "los accesibles por el rol, el microservicio responde "
+                    "{'detail': 'Vehículo no encontrado'}."
                 ),
                 esquema_404=error_404_recurso,
             ),
@@ -487,6 +523,65 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             )
         },
+        "/api/ordenes/{orden_id}/historial": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar el historial de estados de una orden",
+                descripcion=(
+                    "Devuelve los cambios de estado de una orden, en orden "
+                    "cronológico, con el actor que los registró y su "
+                    "observación. Aplica la misma visibilidad del detalle: una "
+                    "orden inexistente o ajena responde 404."
+                ),
+                operation_id="consultar_historial_orden",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Historial de estados.",
+                        {
+                            "type": "array",
+                            "items": _ref("HistorialEstadoRespuesta"),
+                        },
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de orden inválido",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/estado": {
+            "patch": _operacion(
+                tag="Órdenes",
+                resumen="Cambiar el estado de una orden",
+                descripcion=(
+                    "Cambia el estado validando rol, catálogo oficial y "
+                    "transición declarada por el dominio. Administrador siempre; "
+                    "Mecánico solo en órdenes que tiene asignadas. Una orden "
+                    "Entregada o Cancelada es terminal y rechaza cualquier "
+                    "cambio. Registra el historial en la misma transacción."
+                ),
+                operation_id="cambiar_estado_orden",
+                cuerpo="CambioEstadoSolicitud",
+                respuestas_ok={
+                    "200": _respuesta("Orden con su nuevo estado.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador o ser el mecánico asignado",
+                    "409": "Transición no permitida o terminal",
+                    "422": "Estado de destino desconocido o datos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
     }
 
 
@@ -522,7 +617,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 11 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 14 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:

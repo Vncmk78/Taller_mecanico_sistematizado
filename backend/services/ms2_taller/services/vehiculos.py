@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from services.ms2_taller.models.cliente import Cliente
+from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.vehiculo import Vehiculo
 from services.ms2_taller.schemas.vehiculo import VehiculoActualizar, VehiculoCrear
 
@@ -93,6 +94,45 @@ def listar_vehiculos(db: Session, cliente: Cliente) -> list[Vehiculo]:
         ) from exc
 
 
+def listar_vehiculos_taller(db: Session) -> list[Vehiculo]:
+    """Lista todo el parque vehicular (visión global del Administrador)."""
+
+    try:
+        consulta = select(Vehiculo).order_by(Vehiculo.vehiculo_id)
+        return list(db.scalars(consulta).all())
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaVehiculoError(
+            "No fue posible consultar los vehículos"
+        ) from exc
+
+
+def listar_vehiculos_para_mecanico(
+    db: Session,
+    mecanico_usuario_id: int,
+) -> list[Vehiculo]:
+    """Lista los vehículos con órdenes asignadas al mecánico, sin duplicados.
+
+    Un vehículo puede aparecer en más de una orden activa del mismo mecánico;
+    el join devuelve una fila por orden, por eso se eliminan los duplicados con
+    ``unique()`` conservando el orden por identificador.
+    """
+
+    try:
+        consulta = (
+            select(Vehiculo)
+            .join(OrdenTrabajo, OrdenTrabajo.vehiculo_id == Vehiculo.vehiculo_id)
+            .where(OrdenTrabajo.mecanico_actual_id == mecanico_usuario_id)
+            .order_by(Vehiculo.vehiculo_id)
+        )
+        return list(db.scalars(consulta).unique().all())
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaVehiculoError(
+            "No fue posible consultar los vehículos"
+        ) from exc
+
+
 def obtener_vehiculo_propio(
     db: Session,
     cliente: Cliente,
@@ -106,6 +146,57 @@ def obtener_vehiculo_propio(
                 Vehiculo.vehiculo_id == vehiculo_id,
                 Vehiculo.cliente_id == cliente.cliente_id,
             )
+        )
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaVehiculoError(
+            "No fue posible consultar el vehículo"
+        ) from exc
+
+    if vehiculo is None:
+        raise VehiculoNoEncontradoError("Vehículo no encontrado")
+    return vehiculo
+
+
+def obtener_vehiculo_por_id(
+    db: Session,
+    vehiculo_id: int,
+) -> Vehiculo:
+    """Obtiene cualquier vehículo por su identificador (visión administrativa)."""
+
+    try:
+        vehiculo = db.get(Vehiculo, vehiculo_id)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaVehiculoError(
+            "No fue posible consultar el vehículo"
+        ) from exc
+
+    if vehiculo is None:
+        raise VehiculoNoEncontradoError("Vehículo no encontrado")
+    return vehiculo
+
+
+def obtener_vehiculo_para_mecanico(
+    db: Session,
+    mecanico_usuario_id: int,
+    vehiculo_id: int,
+) -> Vehiculo:
+    """Obtiene un vehículo solo si tiene órdenes asignadas al mecánico.
+
+    Un vehículo inexistente y uno sin órdenes de este mecánico devuelven el
+    mismo error de recurso ausente para no revelar recursos ajenos.
+    """
+
+    try:
+        vehiculo = db.scalar(
+            select(Vehiculo)
+            .join(OrdenTrabajo, OrdenTrabajo.vehiculo_id == Vehiculo.vehiculo_id)
+            .where(
+                Vehiculo.vehiculo_id == vehiculo_id,
+                OrdenTrabajo.mecanico_actual_id == mecanico_usuario_id,
+            )
+            .limit(1)
         )
     except SQLAlchemyError as exc:
         db.rollback()

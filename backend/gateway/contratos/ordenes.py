@@ -28,6 +28,22 @@ _EJEMPLO_RESPUESTA: dict[str, object] = {
     "actualizado_en": "2026-09-28T10:30:00-03:00",
 }
 
+_EJEMPLO_CAMBIAR_ESTADO: dict[str, object] = {
+    "estado_destino": 2,
+    "observacion": "Inicia evaluación técnica",
+}
+
+_EJEMPLO_HISTORIAL: dict[str, object] = {
+    "historial_id": 41,
+    "orden_id": 31,
+    "estado_anterior": 1,
+    "estado_nuevo": 2,
+    "actor_usuario_id": 50,
+    "origen": "usuario",
+    "fecha_hora": "2026-09-28T11:00:00-03:00",
+    "observacion": "Inicia evaluación técnica",
+}
+
 
 class OrdenCrear(BaseModel):
     """Dato que un administrador proporciona al crear una orden."""
@@ -95,4 +111,61 @@ class OrdenRespuesta(BaseModel):
     creado_en: datetime = Field(description="Fecha y hora de creación de la orden.")
     actualizado_en: datetime = Field(
         description="Fecha y hora de la última actualización de la orden."
+    )
+
+
+class CambioEstadoSolicitud(BaseModel):
+    """Datos controlables al solicitar un cambio de estado de una orden."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra="forbid",
+        json_schema_extra={"examples": [_EJEMPLO_CAMBIAR_ESTADO]},
+    )
+
+    # Sin tope superior: el catálogo oficial (1 a 8) lo valida el dominio, que
+    # es quien conoce los estados y las transiciones permitidas.
+    estado_destino: int = Field(
+        gt=0,
+        description="Código del estado de destino en el catálogo oficial.",
+        examples=[2],
+    )
+    observacion: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Observación opcional del cambio de estado.",
+        examples=["Inicia evaluación técnica"],
+    )
+
+
+class HistorialEstadoRespuesta(BaseModel):
+    """Registro inmutable de un cambio de estado de una orden."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [_EJEMPLO_HISTORIAL]})
+
+    historial_id: int = Field(
+        description="Identificador del registro de historial.", examples=[41]
+    )
+    orden_id: int = Field(description="Orden a la que pertenece.", examples=[31])
+    estado_anterior: int | None = Field(
+        description="Estado de origen; nulo en la transición de creación.",
+        examples=[1],
+    )
+    estado_nuevo: int = Field(
+        description="Estado al que pasó la orden.", examples=[2]
+    )
+    actor_usuario_id: int | None = Field(
+        description="Referencia lógica al usuario de MS1 que registró el cambio.",
+        examples=[50],
+    )
+    origen: str = Field(
+        description="Origen del registro: 'usuario' o 'sistema'.",
+        examples=["usuario"],
+    )
+    fecha_hora: datetime = Field(
+        description="Fecha y hora del cambio, generada por la base."
+    )
+    observacion: str | None = Field(
+        description="Observación opcional registrada con el cambio.",
+        examples=["Inicia evaluación técnica"],
     )

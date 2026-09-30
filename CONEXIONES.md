@@ -277,3 +277,29 @@ Resultados probados contra `https://tallerconect.vercel.app`:
 | `GET /api/auth/me` (con token) | 200 usuario con roles |
 | `GET /api/vehiculos` (token cliente) | 200 `[]` |
 | `GET /api/vehiculos` (token admin) | 200 (el Administrador ya ve todos los vehículos; antes respondía 403) |
+
+---
+
+## 9. Verificación de pruebas funcionales de los primeros flujos web (2026-09-30)
+
+Pruebas automatizadas (robots) ejecutadas tras sincronizar `Vicente` con el
+`main` actual (FF a `6690a87`, que incluye el trabajo del gateway de Basti):
+
+| Suite | Comando | Resultado |
+| --- | --- | --- |
+| Backend | `.\\.venv\\Scripts\\python.exe -m pytest -q` (desde `backend/`) | 427 passed, 61 skipped (saltan JWT/PostgreSQL) |
+| Lint frontend | `npm run lint` | 0 warnings / 0 errors |
+| Tests frontend | `npm test` | 209 passed / 43 archivos |
+| Build frontend | `npm run build` (tsc -b && vite build) | OK |
+
+Flujos cubiertos: auth (register/login/me), vehículos (listado por rol,
+`/api/vehiculos/asignados`, detalle, alta, PATCH) y órdenes (listado, filtro,
+paginación, detalle, historial, `PATCH .../estado` con 409/422/403/404/401,
+asignación de mecánico). Ver plan detallado en
+`.opencode/plans/r32x-pruebas-funcionales-primeros-flujos-web.md`.
+
+Ajustes post-merge: los dos tests de `test_gateway_openapi_ejemplos.py` de Basti
+asumían 11 operaciones de negocio; pasan a validar las **14 operaciones**
+vigentes (set explícito) y se agregó el ejemplo 200 `lista_asignados` de
+`GET /api/vehiculos/asignados` en `gateway/openapi_ejemplos.py`. Dependencia
+nueva del venv: `openapi-spec-validator` (de `requirements-dev.txt`).

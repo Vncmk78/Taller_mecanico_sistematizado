@@ -14,4 +14,12 @@ describe('FullScreenLoader: pantalla completa de carga', () => {
 
     expect(screen.getByText('Cargando tu panel...')).toBeInTheDocument();
   });
+
+  it('expone el spinner accesible con el mensaje como etiqueta', () => {
+    render(<FullScreenLoader message="Cargando tu panel..." />);
+
+    expect(
+      screen.getByRole('status', { name: 'Cargando tu panel...' })
+    ).toBeInTheDocument();
+  });
 });

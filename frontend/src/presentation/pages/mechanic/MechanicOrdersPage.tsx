@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { ordenStatusLabel } from '@/domain/entities/Order';
 import { OrderCard } from '@/presentation/components/orders/OrderCard';
 import { OrderListSkeleton } from '@/presentation/components/orders/OrderListSkeleton';
@@ -8,7 +8,6 @@ import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner'
 import { useOrderListFilters } from '@/presentation/hooks/useOrderListFilters';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { orderService } from '@/infrastructure/api/OrderService';
-import { CURRENT_MECHANIC_ID, mockMechanics } from '@/infrastructure/mocks/orders.mock';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
@@ -23,12 +22,10 @@ export function MechanicOrdersPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const myOrders = useMemo(() => {
-        // Cuando hay API, el servidor ya filtra las órdenes del mecánico; el
-        // filtro por CURRENT_MECHANIC_ID es solo para los datos de demo.
-        if (!isOffline) return orders;
-        return orders.filter((o) => o.mecanicoActualId === CURRENT_MECHANIC_ID);
-    }, [orders, isOffline]);
+    // Online la Gateway ya devuelve solo las órdenes asignadas al mecánico
+    // autenticado; la caché conserva esa misma respuesta, así que offline no
+    // hace falta volver a filtrar por identidad.
+    const myOrders = orders;
 
     const {
         search,
@@ -77,7 +74,8 @@ export function MechanicOrdersPage() {
                                 detailPath={`/mechanic/ordenes/${order.id}`}
                                 patente={orderPatente(order, vehicles)}
                                 vehicleLabel={orderVehicleLabel(order, vehicles)}
-                                mechanicName={order.mecanicoNombre ?? mockMechanics[String(order.mecanicoActualId)]}
+                                // MS2 no expone el nombre del mecánico, solo su id real.
+                                mechanicName={order.mecanicoNombre ?? order.mecanicoActualId ?? undefined}
                             />
                         ))}
                         {filteredOrders.length === 0 && (

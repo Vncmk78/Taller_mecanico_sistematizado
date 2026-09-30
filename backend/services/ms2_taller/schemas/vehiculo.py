@@ -49,6 +49,7 @@ class VehiculoRespuesta(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     vehiculo_id: int
+    cliente_id: int
     patente: str
     marca: str
     modelo: str

@@ -5,7 +5,6 @@ import { VehicleListSkeleton } from '@/presentation/components/vehicles/VehicleL
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { mockAssignedVehicleIds, mockOwners } from '@/infrastructure/mocks/vehicles.mock';
 
 export function MechanicVehiclesPage() {
     const [search, setSearch] = useState('');
@@ -21,15 +20,12 @@ export function MechanicVehiclesPage() {
     const assignedVehicles = useMemo(() => {
     const term = search.trim().toLowerCase();
     // Online, getAssignedVehicles() ya devuelve solo los vehículos de las
-    // órdenes asignadas al mecánico; el filtro por mock es solo para el modo
-    // offline (caché con datos de demo).
-    const base = isOffline
-        ? vehicles.filter((v) => mockAssignedVehicleIds.includes(v.id))
-        : vehicles;
-    return base.filter((v) =>
+    // órdenes asignadas al mecánico; la caché conserva esa misma respuesta,
+    // así que offline no hace falta volver a filtrar por identidad.
+    return vehicles.filter((v) =>
         term ? [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term)) : true
         );
-    }, [vehicles, search, isOffline]);
+    }, [vehicles, search]);
 
     return (
     <div className="animate-fade-in p-10">
@@ -60,7 +56,7 @@ export function MechanicVehiclesPage() {
             <VehicleCard
                 key={vehicle.id}
                 vehicle={vehicle}
-                ownerName={vehicle.clientId ? mockOwners[vehicle.clientId]?.fullName : undefined}
+                ownerName={vehicle.clientId ? `Cliente #${vehicle.clientId}` : undefined}
                 detailPath={`/mechanic/vehiculos/${vehicle.id}`}
             />
             ))}

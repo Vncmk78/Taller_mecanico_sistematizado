@@ -8,7 +8,6 @@ import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
 
 export function ClientVehiclesPage() {
     const location = useLocation();
@@ -16,8 +15,14 @@ export function ClientVehiclesPage() {
     const user = useAuthStore((s) => s.user);
     const { vehicles, status, error, isOffline, fetchVehicles } = useVehicleStore();
 
-    const clientId = user?.id ?? CURRENT_CLIENT_ID;
-    const loadVehicles = () => fetchVehicles(() => vehicleService.getMyVehicles(clientId));
+    // Identidad real de la sesión (usuario_id de MS1): la Gateway ya limita
+    // GET /vehiculos al cliente autenticado, y este id se usa para resolver la
+    // pertenencia de cada ficha en la caché compartida entre portales.
+    const clientId = user?.id;
+    const loadVehicles = () => {
+    if (!clientId) return;
+    fetchVehicles(() => vehicleService.getMyVehicles(clientId));
+    };
 
     useEffect(() => {
     loadVehicles();

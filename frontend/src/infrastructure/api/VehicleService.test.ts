@@ -14,6 +14,7 @@ vi.mock('@/infrastructure/config/apiClient', () => ({
 
 const vehiculoApi = {
   vehiculo_id: 7,
+  cliente_id: 4,
   patente: 'KKTT11',
   marca: 'Toyota',
   modelo: 'Yaris',
@@ -50,14 +51,17 @@ describe('VehicleService: contrato HTTP de MS2 (vehículos)', () => {
 
     expect(apiClient.get).toHaveBeenCalledWith('/vehiculos');
     expect(vehicles[0].brand).toBe('Toyota');
+    // Sin identidad de sesión, el propietario es el cliente_id real de MS2.
+    expect(vehicles[0].clientId).toBe('4');
   });
 
-  it('getAssignedVehicles consulta GET /vehiculos/asignados (endpoint pendiente de MS2)', async () => {
+  it('getAssignedVehicles consulta GET /vehiculos/asignados con el cliente_id real', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: [vehiculoApi] });
 
-    await vehicleService.getAssignedVehicles();
+    const vehicles = await vehicleService.getAssignedVehicles();
 
     expect(apiClient.get).toHaveBeenCalledWith('/vehiculos/asignados');
+    expect(vehicles[0].clientId).toBe('4');
   });
 
   it('getVehicleById interpola el id en GET /vehiculos/{id}', async () => {
@@ -67,6 +71,15 @@ describe('VehicleService: contrato HTTP de MS2 (vehículos)', () => {
 
     expect(apiClient.get).toHaveBeenCalledWith('/vehiculos/7');
     expect(vehicle.id).toBe('7');
+    expect(vehicle.clientId).toBe('4');
+  });
+
+  it('getVehicleById con clientId de sesión conserva la pertenencia del portal Cliente', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: vehiculoApi });
+
+    const vehicle = await vehicleService.getVehicleById('7', '12');
+
+    expect(vehicle.clientId).toBe('12');
   });
 
   it('createVehicle publica el body en español del contrato MS2', async () => {
@@ -88,5 +101,6 @@ describe('VehicleService: contrato HTTP de MS2 (vehículos)', () => {
       kilometraje: 52000,
     });
     expect(created.id).toBe('7');
+    expect(created.clientId).toBe('4');
   });
 });

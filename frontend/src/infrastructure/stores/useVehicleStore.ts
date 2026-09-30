@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import type { CreateVehicleInput } from '@/domain/ports/VehiclePort';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
 import {
     initialAsyncStatus,
     type AsyncStatus,
@@ -25,12 +24,11 @@ interface VehicleState extends AsyncStatus {
     addVehicle: (input: CreateVehicleInput, clientId: string) => Promise<Vehicle>;
 }
 
-// Caché en memoria compartida entre portales. Se inicializa con datos de
-// demostración para que la UI nunca quede vacía ante fallos de red o mientras
-// algún endpoint de MS2 aún no está disponible. La lógica de estados, merge y
-// offline vive en asyncCollection (fetchCollection / fetchItemById).
+// Caché en memoria compartida entre portales, inicialmente vacía: solo contiene
+// respuestas reales de la Gateway. La lógica de estados, merge y offline vive en
+// asyncCollection (fetchCollection / fetchItemById).
 export const useVehicleStore = create<VehicleState>((set, get) => ({
-    vehicles: mockVehicles,
+    vehicles: [],
     ...initialAsyncStatus,
 
     fetchVehicles: (loader) =>

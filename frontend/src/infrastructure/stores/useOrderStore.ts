@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Order } from '@/domain/entities/Order';
-import { mockOrders } from '@/infrastructure/mocks/orders.mock';
 import {
     initialAsyncStatus,
     type AsyncStatus,
@@ -26,7 +25,7 @@ interface OrderState extends AsyncStatus {
 // Caché en memoria compartida entre portales, con la misma filosofía que
 // asyncCollection: los estados, el merge y el manejo offline centralizados.
 export const useOrderStore = create<OrderState>((set, get) => ({
-    orders: mockOrders,
+    orders: [],
     ...initialAsyncStatus,
 
     fetchOrders: (loader) =>

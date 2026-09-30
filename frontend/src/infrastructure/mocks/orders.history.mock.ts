@@ -1,9 +1,8 @@
 import type { OrderHistoryEntry } from '@/domain/entities/OrderHistory';
 
-// Historial de estados de las órdenes demo. Cada orden termina en su estado
-// actual y sus transiciones son siempre válidas (estado_nuevo <> estado_anterior
-// y coherentes con el catálogo fijo de 8 estados). TODO: reemplazar por
-// orderService.getOrderHistory (MS2) cuando el endpoint esté disponible.
+// Fixtures SOLO para tests (ver notas de vehicles.mock.ts). Cada orden termina
+// en su estado actual y sus transiciones son siempre válidas (estado_nuevo <>
+// estado_anterior y coherentes con el catálogo fijo de 8 estados).
 export const mockOrderHistory: OrderHistoryEntry[] = [
     // Orden 101 → En reparación (5)
     { id: 'h-101-1', ordenId: '101', estadoAnteriorCodigo: null, estadoNuevoCodigo: 1, actorUsuarioId: null, origen: 'sistema', fecha: '2026-09-01T10:15:00', observacion: 'Ingreso registrado por el administrador' },

@@ -570,6 +570,7 @@ def test_patch_actualiza_varios_campos(api_ms2: TestClient, db_ms2: Session):
     assert respuesta.status_code == 200
     assert respuesta.json() == {
         "vehiculo_id": vehiculo.vehiculo_id,
+        "cliente_id": vehiculo.cliente_id,
         "patente": DATOS_VEHICULO["patente"],
         "marca": "Honda",
         "modelo": "Civic",

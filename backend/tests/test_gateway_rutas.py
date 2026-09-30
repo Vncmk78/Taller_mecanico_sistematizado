@@ -1,12 +1,14 @@
-"""Pruebas del enrutamiento de la API Gateway (Semana 1, tarea 2).
+"""Pruebas del enrutamiento de la API Gateway.
 
-Simulan MS1 y MS2 con `respx` (sin levantarlos) para comprobar que la Gateway
-reenvía hacia la URL correcta conservando método, body, query string y la
-cabecera Authorization, que es donde viaja el JWT hacia el microservicio.
+Simulan MS1 y MS2 (Semana 1) y MS3 y MS4 (Semana 4) con `respx` (sin
+levantarlos): la Gateway reenvía hacia la URL correcta conservando método,
+body, query string y las cabeceras Authorization y X-Request-ID, incluida la
+subida multipart con su content-type completo (boundary incluido).
 """
 from __future__ import annotations
 
 import json
+import uuid
 
 import httpx
 import pytest
@@ -14,6 +16,7 @@ import respx
 from fastapi.testclient import TestClient
 
 from gateway.config import settings
+from gateway.errores import MENSAJE_SERVICIO_CAIDO, MICROSERVICIO_INALCANZABLE
 from gateway.main import app
 from gateway.rutas import resolver_microservicio
 
@@ -136,6 +139,121 @@ def test_microservicio_caido_devuelve_502(
     assert respuesta.status_code == 502
 
 
+def test_presupuestos_5_reenvia_a_ms3(
+    gateway: TestClient, api_mock: respx.MockRouter
+) -> None:
+    ruta = api_mock.get(f"{settings.MS3_URL}/presupuestos/5")
+
+    respuesta = gateway.get("/api/presupuestos/5")
+
+    assert respuesta.status_code == 200
+    assert str(ruta.calls.last.request.url) == f"{settings.MS3_URL}/presupuestos/5"
+
+
+@pytest.mark.parametrize("prefijo", ["repuestos", "proveedores", "inventario"])
+def test_demas_prefijos_de_presupuestos_llegan_a_ms3(
+    gateway: TestClient, api_mock: respx.MockRouter, prefijo: str
+) -> None:
+    ruta = api_mock.get(f"{settings.MS3_URL}/{prefijo}")
+
+    respuesta = gateway.get(f"/api/{prefijo}")
+
+    assert respuesta.status_code == 200
+    assert ruta.called
+
+
+def test_evidencias_con_orden_id_llega_a_ms4_con_su_query(
+    gateway: TestClient, api_mock: respx.MockRouter
+) -> None:
+    ruta = api_mock.get(f"{settings.MS4_URL}/evidencias", params={"orden_id": "7"})
+
+    respuesta = gateway.get("/api/evidencias", params={"orden_id": 7})
+
+    assert respuesta.status_code == 200
+    assert str(ruta.calls.last.request.url) == f"{settings.MS4_URL}/evidencias?orden_id=7"
+
+
+def test_post_multipart_de_evidencia_llega_a_ms4_con_mismos_bytes(
+    gateway: TestClient, api_mock: respx.MockRouter
+) -> None:
+    contenido_archivo = b"\xff\xd8\xff\xe1" + b"\x00" * 32
+    peticion_original = httpx.Request(
+        "POST",
+        f"{settings.MS4_URL}/evidencias",
+        files={"archivo": ("foto.jpg", contenido_archivo, "image/jpeg")},
+    )
+    cuerpo_esperado = peticion_original.read()
+    content_type_esperado = peticion_original.headers["content-type"]
+    assert content_type_esperado.startswith("multipart/form-data; boundary=")
+
+    peticiones: list[httpx.Request] = []
+
+    def capturar(peticion: httpx.Request) -> httpx.Response:
+        peticiones.append(peticion)
+        return httpx.Response(200)
+
+    api_mock.post(f"{settings.MS4_URL}/evidencias").mock(side_effect=capturar)
+
+    respuesta = gateway.post(
+        "/api/evidencias",
+        content=cuerpo_esperado,
+        headers={"content-type": content_type_esperado},
+    )
+
+    assert respuesta.status_code == 200
+    assert len(peticiones) == 1
+    reenviada = peticiones[0]
+    assert str(reenviada.url) == f"{settings.MS4_URL}/evidencias"
+    assert reenviada.content == cuerpo_esperado
+    assert reenviada.headers["content-type"] == content_type_esperado
+
+
+@pytest.mark.parametrize(
+    ("prefijo", "base"),
+    [("presupuestos", settings.MS3_URL), ("evidencias", settings.MS4_URL)],
+)
+def test_authorization_y_x_request_id_llegan_a_ms3_y_ms4(
+    gateway: TestClient, api_mock: respx.MockRouter, prefijo: str, base: str
+) -> None:
+    ruta = api_mock.get(f"{base}/{prefijo}")
+
+    respuesta = gateway.get(
+        f"/api/{prefijo}",
+        headers={
+            "Authorization": "Bearer token.jwt.xyz",
+            "X-Request-ID": "abc-123-9f0e",
+        },
+    )
+
+    assert respuesta.status_code == 200
+    llamada = ruta.calls.last.request
+    assert llamada.headers["authorization"] == "Bearer token.jwt.xyz"
+    assert llamada.headers["x-request-id"] == "abc-123-9f0e"
+
+
+@pytest.mark.parametrize(
+    ("prefijo", "base"),
+    [("presupuestos", settings.MS3_URL), ("evidencias", settings.MS4_URL)],
+)
+def test_ms3_o_ms4_caido_devuelve_502_con_formato_comun(
+    gateway: TestClient, api_mock: respx.MockRouter, prefijo: str, base: str
+) -> None:
+    api_mock.get(f"{base}/{prefijo}").mock(
+        side_effect=httpx.ConnectError("servicio caído")
+    )
+
+    respuesta = gateway.get(f"/api/{prefijo}")
+
+    assert respuesta.status_code == 502
+    cuerpo = respuesta.json()
+    assert cuerpo["detail"] == MENSAJE_SERVICIO_CAIDO
+    assert cuerpo["error"]["codigo"] == MICROSERVICIO_INALCANZABLE
+    assert cuerpo["error"]["estado"] == 502
+    assert cuerpo["error"]["ruta"] == f"/api/{prefijo}"
+    assert uuid.UUID(cuerpo["error"]["request_id"])
+    assert respuesta.headers["x-request-id"] == cuerpo["error"]["request_id"]
+
+
 @pytest.mark.parametrize(
     ("ruta", "esperado"),
     [
@@ -145,6 +263,16 @@ def test_microservicio_caido_devuelve_502(
         ("ordenes", settings.MS2_URL),
         ("clientes", settings.MS2_URL),
         ("MECANICOS", settings.MS2_URL),
+        ("presupuestos", settings.MS3_URL),
+        ("presupuestos/5", settings.MS3_URL),
+        ("repuestos", settings.MS3_URL),
+        ("proveedores", settings.MS3_URL),
+        ("inventario", settings.MS3_URL),
+        ("evidencias", settings.MS4_URL),
+        ("evidencia", settings.MS4_URL),
+        # La trampa de la convención: MS4 vive bajo /evidencias, nunca bajo
+        # /ordenes/...; un endpoint así resolvería a MS2, no a MS4.
+        ("ordenes/1/evidencias", settings.MS2_URL),
         ("desconocido", None),
     ],
 )

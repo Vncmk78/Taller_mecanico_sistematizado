@@ -23,6 +23,7 @@ gateway/
 ├── errores.py       Formato común de errores + middleware del 500 (dentro de CORS)
 ├── middleware.py    Cabecera X-Request-ID en cada petición
 ├── openapi.py       Reescribe el Swagger con los contratos reales de MS1 y MS2
+├── openapi_ejemplos.py Ejemplos reales, respuestas comunes y X-Request-ID
 ├── contratos/       Copias de los contratos HTTP de MS1 y MS2 (para documentar)
 └── routers/
     ├── health.py    GET /  y  GET /api/health (endpoints propios de la Gateway)
@@ -36,8 +37,17 @@ Vehículos y Órdenes), con sus esquemas, ejemplos y el botón Authorize:
 
 - `GET /docs` — Swagger UI.
 - `GET /openapi.json` — esquema OpenAPI completo.
-- [`docs/contratos-api-gateway.md`](../../docs/contratos-api-gateway.md) — el
+- [`docs/contratos-api-gateway.md`](../docs/contratos-api-gateway.md) — el
   documento que leen el equipo y la app móvil (contratos, ejemplos y pendientes).
+
+`GET /docs` muestra un ejemplo por body y por respuesta, y las respuestas
+reutilizables de `components.responses` (`NoAutenticado`, `ErrorInterno`,
+`ServicioNoDisponible`, `GatewaySaturada` y `TiempoAgotado`). Los ejemplos reales,
+los `X-Request-ID` y los de los health checks se agregan en
+`openapi_ejemplos.py`, que es idempotente y nunca pisa los ejemplos de órdenes de
+`shared/openapi_ordenes.py`. `tests/test_gateway_openapi_ejemplos.py` valida el
+esquema con `openapi-spec-validator` y comprueba que cada ejemplo cumple su
+esquema.
 
 Los contratos viven en `gateway/contratos/` (la Gateway no importa código de
 los microservicios). `tests/test_gateway_openapi.py` compara esas copias con
@@ -61,8 +71,12 @@ microservicio responde `404`; si el servicio destino está caído, `502`.
 | `presupuestos`, `presupuesto`, `repuestos`, `proveedores`, `inventario` | MS3 (Presupuestos) | `/api/presupuestos` -> MS3 `/presupuestos` |
 | `evidencias`, `evidencia` | MS4 (Evidencia Multimedia) | `/api/evidencias` -> MS4 `/evidencias` |
 
-Los prefijos de MS3 y MS4 se conservan desde el inicio, pero su verificación
-corresponde a la Semana 4.
+Los prefijos de MS3 y MS4 se conservan desde el inicio; desde la Semana 4 la
+Gateway verifica el reenvío hacia ambos microservicios
+(`tests/test_gateway_rutas.py`) y fija la convención: MS3 publica bajo sus
+prefijos (`presupuestos`, `repuestos`, `proveedores`, `inventario`) y MS4 todo
+bajo `evidencias`, nunca bajo `/ordenes/...` (ver
+[`docs/contratos-api-gateway.md`](../docs/contratos-api-gateway.md)).
 
 ## Formato común
 
@@ -77,6 +91,13 @@ Contrato único de solicitudes, respuestas y errores de la Gateway.
   Gateway y del microservicio. Si no viene, o viene con más de 128 caracteres
   o con caracteres que no sean letras, números o guiones, la Gateway genera un
   UUID y lo usa.
+
+El reenvío usa un único cliente HTTPX compartido (`gateway/cliente_http.py`),
+creado de forma perezosa y cerrado en el lifespan de la app, con timeouts por
+fase (conectar 3 s, leer/escribir 15 s, pool 5 s). El prefijo `evidencias` usa
+read/write de 60 s porque sube archivos. Los fallos de red se mapean según la
+decisión 2 del estudio: `ConnectError`/`ConnectTimeout` → 502,
+`Read/WriteTimeout` → 504 y `PoolTimeout` → 503.
 
 ### Respuestas
 
@@ -112,6 +133,9 @@ este cuerpo:
 | `RUTA_NO_ENCONTRADA` | 404 | Prefijo sin microservicio o ruta inexistente |
 | `METODO_NO_PERMITIDO` | 405 | Método HTTP no soportado en la ruta |
 | `MICROSERVICIO_INALCANZABLE` | 502 | El microservicio destino no responde (mensaje genérico, sin URL interna) |
+| `TIEMPO_AGOTADO` | 504 | El microservicio recibió la petición pero tardó más que el timeout en responder |
+| `GATEWAY_SATURADA` | 503 | El pool de conexiones de la Gateway está lleno |
+| `ERROR_MICROSERVICIO` | (del ms) | 4xx/5xx del microservicio sin body JSON, reemplazado por el formato común |
 | `ERROR_INTERNO` | 500 | Error no controlado (mensaje genérico, sin traza) |
 | `ERROR_HTTP` | otro | Estado HTTP no previsto (p. ej. un 400) |
 
@@ -132,9 +156,39 @@ Desde la carpeta `backend/`, con el entorno virtual activo:
 uvicorn gateway.main:app --reload --port 8000
 ```
 
-- `GET http://localhost:8000/` — descripción y URLs de los microservicios.
+- `GET http://localhost:8000/` — descripción y prefijos `/api/*` que enruta.
 - `GET http://localhost:8000/api/health` — `{"status": "ok", "servicio": "gateway"}`.
+- `GET http://localhost:8000/api/health/servicios` — estado de los 4 microservicios.
 - `http://localhost:8000/docs` — Swagger de la Gateway.
+
+## Health checks
+
+- `GET /api/health` — responde solo por la Gateway, sin consultar a los
+  microservicios (lo usa Vercel y no puede depender de que estén arriba).
+- `GET /api/health/servicios` — consulta `/health/db` de los cuatro
+  microservicios en paralelo con el cliente HTTPX compartido y un timeout corto
+  por servicio (`GATEWAY_HEALTH_TIMEOUT_SECONDS`, 2 s por defecto): un servicio
+  caído no bloquea la respuesta agregada.
+
+```json
+{
+  "status": "ok",
+  "gateway": "ok",
+  "servicios": {
+    "ms1_auth": { "estado": "ok", "latencia_ms": 3 },
+    "ms2_taller": { "estado": "ok", "latencia_ms": 4 },
+    "ms3_presupuestos": { "estado": "ok", "latencia_ms": 2 },
+    "ms4_evidencias": { "estado": "ok", "latencia_ms": 5 }
+  }
+}
+```
+
+Responde `200` con `"status": "ok"` si los cuatro están `ok`, y `503` con
+`"status": "degradado"` si alguno no lo está. Estados por servicio: `ok`,
+`sin_base` (el proceso responde pero su health/base falla; incluye
+`codigo_http`), `tiempo_agotado` (superó el timeout) y `caido` (sin conexión).
+Toda respuesta trae `Cache-Control: no-store` y `X-Request-ID`; el body no
+expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 
 ## Variables de entorno
 
@@ -144,7 +198,12 @@ uvicorn gateway.main:app --reload --port 8000
 | `GATEWAY_MS2_URL` | `http://localhost:8002` | MS2 Vehículos y Órdenes |
 | `GATEWAY_MS3_URL` | `http://localhost:8003` | MS3 Presupuestos, Repuestos y Proveedores |
 | `GATEWAY_MS4_URL` | `http://localhost:8004` | MS4 Evidencia Multimedia |
-| `GATEWAY_REQUEST_TIMEOUT_SECONDS` | `30` | Espera máxima a un microservicio |
+| `GATEWAY_TIMEOUT_CONNECT_SECONDS` | `3.0` | Tiempo para conectar a un microservicio (si no, 502) |
+| `GATEWAY_TIMEOUT_READ_SECONDS` | `15.0` | Espera entre bloques de la respuesta (si no, 504) |
+| `GATEWAY_TIMEOUT_WRITE_SECONDS` | `15.0` | Espera al enviar el body (si no, 504) |
+| `GATEWAY_TIMEOUT_POOL_SECONDS` | `5.0` | Espera por una conexión libre del pool (si no, 503) |
+| `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` | `60.0` | read/write ampliados para el prefijo `evidencias` |
+| `GATEWAY_HEALTH_TIMEOUT_SECONDS` | `2.0` | Timeout por servicio en `GET /api/health/servicios` |
 | `GATEWAY_CORS_ORIGINS` | `http://localhost:5173` | Orígenes permitidos (coma o JSON) |
 | `GATEWAY_CORS_ALLOW_CREDENTIALS` | `true` | Permite cookies/Authorization cross-origin |
 

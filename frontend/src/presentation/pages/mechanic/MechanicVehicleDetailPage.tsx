@@ -1,15 +1,19 @@
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ClipboardList } from 'lucide-react';
+import { ArrowLeft, ClipboardList, SearchX } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Alert } from '@/presentation/components/ui/Alert';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
+import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 
 export function MechanicVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const { vehicle, loading, notFound, refetch } = useVehicleDetail(id, (vid) =>
+    const { vehicle, loading, notFound, failed, refetch } = useVehicleDetail(id, (vid) =>
     vehicleService.getVehicleById(vid)
     );
     const { isOffline, error } = useVehicleStore();
@@ -21,12 +25,37 @@ export function MechanicVehicleDetailPage() {
     return <LoadingState message="Cargando ficha del vehículo..." className="p-10" />;
     }
 
+    // El fetch falló y no hay copia local: se muestra un error reintentable en
+    // lugar de un "no encontrado" que no es cierto.
+    if (failed) {
+    return (
+        <ErrorState
+            className="p-10"
+            title="No se pudo cargar la ficha del vehículo"
+            message={error}
+            onRetry={refetch}
+            action={
+            <Link to="/mechanic/vehiculos" className="text-primary-blue text-sm font-medium no-underline hover:underline">
+                Volver
+            </Link>
+            }
+        />
+    );
+    }
+
     if (!vehicle || notFound) {
     return (
-        <div className="p-10 text-text-muted">
-        Vehículo no encontrado o no está entre sus órdenes asignadas.{' '}
-        <Link to="/mechanic/vehiculos" className="text-primary-blue">Volver</Link>
-        </div>
+        <EmptyState
+            className="p-10"
+            icon={SearchX}
+            title="Vehículo no encontrado o no está entre sus órdenes asignadas."
+            description="Verifique la patente o que el vehículo siga asignado a su cuenta."
+            action={
+            <Link to="/mechanic/vehiculos" className="text-primary-blue text-sm font-medium no-underline hover:underline">
+                Volver
+            </Link>
+            }
+        />
     );
     }
 
@@ -40,6 +69,13 @@ export function MechanicVehicleDetailPage() {
         </Link>
 
         {isOffline && <OfflineBanner message={error} onRetry={refetch} className="mb-6" />}
+
+        {/* Error del servidor con copia local en caché: se conserva la ficha y se avisa. */}
+        {!isOffline && error && (
+        <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={refetch} />}>
+            {error} Se muestran los últimos datos disponibles.
+        </Alert>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6">
         <VehicleInfoPanel

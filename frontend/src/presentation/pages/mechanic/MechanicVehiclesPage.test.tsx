@@ -84,6 +84,51 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
     expect(screen.getByText('Hyundai Tucson')).toBeInTheDocument();
   });
 
+  it('muestra el estado vacío cuando no hay vehículos asignados', () => {
+    vi.mocked(useVehicleStore).mockReturnValue({
+      vehicles: [],
+      status: 'success',
+      error: null,
+      isOffline: false,
+      fetchVehicles: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('No tiene vehículos asignados por el momento.')).toBeInTheDocument();
+  });
+
+  it('un error del servidor sin caché muestra el estado de error, no el banner offline', () => {
+    vi.mocked(useVehicleStore).mockReturnValue({
+      vehicles: [],
+      status: 'error',
+      error: 'El servidor tuvo un problema. Intente más tarde.',
+      isOffline: false,
+      fetchVehicles: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('No se pudieron cargar los vehículos')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+    expect(screen.queryByText(/No se pudo conectar con el servidor/)).not.toBeInTheDocument();
+  });
+
+  it('con error del servidor y caché previa avisa pero conserva los vehículos', () => {
+    vi.mocked(useVehicleStore).mockReturnValue({
+      vehicles: vehiculosAsignados,
+      status: 'error',
+      error: 'El servidor tuvo un problema. Intente más tarde.',
+      isOffline: false,
+      fetchVehicles: vi.fn(),
+    });
+
+    renderPage();
+
+    expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('El servidor tuvo un problema.');
+  });
+
   it('muestra el identificador real del propietario en lugar de un nombre simulado', () => {
     renderPage();
 

@@ -1,11 +1,11 @@
-import { getApiErrorMessage, isNotFoundError } from '@/infrastructure/api/errors';
+import { getApiErrorMessage, isNotFoundError, isOfflineError } from '@/infrastructure/api/errors';
 
 export type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
 export interface AsyncStatus {
     status: FetchStatus;
     error: string | null;
-    /** true cuando lo mostrado son datos locales porque la API no respondió (MS2/Gateway aún no disponibles). */
+    /** true solo cuando la API no respondió o el servicio no estaba disponible (red caída / 502-504). */
     isOffline: boolean;
 }
 
@@ -17,7 +17,10 @@ export const initialAsyncStatus: AsyncStatus = {
 
 export interface FetchItemResult<T> {
     item: T | null;
+    /** El backend confirmó con 404 que el recurso no existe. */
     notFound: boolean;
+    /** El fetch falló y no hay copia local que mostrar: la vista debe renderizar un estado de error. */
+    failed: boolean;
 }
 
 type SetStateUpdater<S> = (partial: Partial<S> | ((state: S) => Partial<S>)) => void;
@@ -43,14 +46,15 @@ export function replaceWhere<T, K extends keyof T>(current: T[], key: K, value: 
  * Fetch de colección compartido por todos los stores. Establece el estado de
  * carga, integra la respuesta con la caché (cada portal trae un subconjunto
  * distinto y no queremos que uno pise el del otro) y ante cualquier fallo
- * conserva la caché local marcando isOffline para avisar al usuario.
+ * conserva la caché local: isOffline distingue los fallos de transporte de los
+ * errores del servidor para que la vista elija el mensaje correcto.
  */
 export async function fetchCollection<T, S extends AsyncStatus>(
     loader: () => Promise<T[]>,
     set: SetStateUpdater<S>,
     merge: (state: S, fetched: T[]) => Partial<S>
 ): Promise<void> {
-    set({ status: 'loading', error: null } as Partial<S>);
+    set({ status: 'loading', error: null, isOffline: false } as Partial<S>);
     try {
         const fetched = await loader();
         set((state): Partial<S> => ({
@@ -60,14 +64,20 @@ export async function fetchCollection<T, S extends AsyncStatus>(
             isOffline: false,
         }));
     } catch (err) {
-        set({ status: 'error', error: getApiErrorMessage(err), isOffline: true } as Partial<S>);
+        set({
+            status: 'error',
+            error: getApiErrorMessage(err),
+            isOffline: isOfflineError(err),
+        } as Partial<S>);
     }
 }
 
 /**
- * Fetch de un item por id. Distingue "no existe" (404 confirmado por el
- * backend, no toca la caché) de "no se pudo confirmar" (error de red/servidor:
- * se conserva la caché local y se avisa con isOffline).
+ * Fetch de un item por id. Distingue tres salidas: "no existe" (404 confirmado
+ * por el backend, no toca la caché), "no se pudo confirmar" con copia local
+ * (se conserva la caché y se avisa con isOffline/error) y "no se pudo confirmar"
+ * sin copia local (failed: la vista muestra un estado de error reintentable en
+ * lugar de un falso "no encontrado").
  */
 export async function fetchItemById<T extends { id: string }, S extends AsyncStatus>(
     id: string,
@@ -83,13 +93,13 @@ export async function fetchItemById<T extends { id: string }, S extends AsyncSta
             error: null,
             isOffline: false,
         }));
-        return { item, notFound: false };
+        return { item, notFound: false, failed: false };
     } catch (err) {
         if (isNotFoundError(err)) {
-            return { item: null, notFound: true };
+            return { item: null, notFound: true, failed: false };
         }
         const local = getItems().find((cached) => cached.id === id) ?? null;
-        set({ error: getApiErrorMessage(err), isOffline: true } as Partial<S>);
-        return { item: local, notFound: local === null };
+        set({ error: getApiErrorMessage(err), isOffline: isOfflineError(err) } as Partial<S>);
+        return { item: local, notFound: false, failed: local === null };
     }
 }

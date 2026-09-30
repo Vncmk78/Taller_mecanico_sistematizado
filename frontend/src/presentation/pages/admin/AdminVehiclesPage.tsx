@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Car, Search } from 'lucide-react';
 import { VehicleCard } from '@/presentation/components/vehicles/VehicleCard';
 import { VehicleListSkeleton } from '@/presentation/components/vehicles/VehicleListSkeleton';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Alert } from '@/presentation/components/ui/Alert';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
+import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 
@@ -24,6 +28,10 @@ export function AdminVehiclesPage() {
         [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term))
     );
     }, [vehicles, search]);
+
+    // El store solo marca isOffline ante fallos de transporte: un error HTTP del
+    // servidor se muestra aparte para no rotularlo como "sin conexión".
+    const isServerError = status === 'error' && !isOffline;
 
     return (
     <div className="animate-fade-in">
@@ -47,8 +55,25 @@ export function AdminVehiclesPage() {
 
         {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} className="mx-10 mb-6" />}
 
+        {isServerError && filtered.length > 0 && (
+        <Alert
+            tone="error"
+            className="mx-10 mb-6"
+            action={<RetryButton tone="error" onClick={loadVehicles} />}
+        >
+            {error ?? 'No se pudieron cargar los vehículos.'} Se muestran los últimos datos disponibles.
+        </Alert>
+        )}
+
         {status === 'loading' ? (
         <VehicleListSkeleton className="px-10 pb-10" />
+        ) : isServerError && filtered.length === 0 ? (
+        <ErrorState
+            className="px-10 pb-10"
+            title="No se pudieron cargar los vehículos"
+            message={error}
+            onRetry={loadVehicles}
+        />
         ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-10 pb-10">
             {filtered.map((vehicle) => (
@@ -60,9 +85,19 @@ export function AdminVehiclesPage() {
             />
             ))}
             {filtered.length === 0 && (
-            <p className="text-text-muted col-span-full text-center py-10">
-                No se encontraron vehículos para "{search}".
-            </p>
+            <EmptyState
+                icon={Car}
+                title={
+                    search.trim()
+                        ? `No se encontraron vehículos para "${search}".`
+                        : 'Aún no hay vehículos registrados en el taller.'
+                }
+                description={
+                    search.trim()
+                        ? 'Pruebe con otra patente, marca o modelo.'
+                        : 'Los vehículos que registre el administrador aparecerán aquí.'
+                }
+            />
             )}
         </div>
         )}

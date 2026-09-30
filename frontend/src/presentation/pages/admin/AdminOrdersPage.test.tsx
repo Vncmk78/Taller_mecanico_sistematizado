@@ -44,6 +44,8 @@ const ocho = Array.from({ length: 8 }, (_, i) =>
 
 // Error de red simulado: es un error Axios pero sin respuesta HTTP del servidor.
 const axiosNetworkError = { isAxiosError: true };
+// Error del servidor: llegó respuesta con status 500, así que no es "sin conexión".
+const axiosServerError = { isAxiosError: true, response: { status: 500, data: {} } };
 
 function renderPage() {
     return render(
@@ -141,5 +143,42 @@ describe('AdminOrdersPage: listado de órdenes (filtros, paginación, offline)',
         ).toBeInTheDocument();
         expect(screen.getByText('Orden n° 1')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+    });
+
+    it('un error del servidor sin caché muestra el estado de error, no el banner offline', async () => {
+        vi.mocked(orderService.getOrders).mockRejectedValue(axiosServerError);
+
+        renderPage();
+
+        expect(await screen.findByText('No se pudieron cargar las órdenes')).toBeInTheDocument();
+        expect(screen.getByText('El servidor tuvo un problema. Intente más tarde.')).toBeInTheDocument();
+        expect(screen.queryByText(/No se pudo conectar con el servidor/)).not.toBeInTheDocument();
+    });
+
+    it('reintenta la carga desde el estado de error', async () => {
+        vi.mocked(orderService.getOrders).mockRejectedValue(axiosServerError);
+
+        renderPage();
+
+        const reintentar = await screen.findByRole('button', { name: 'Reintentar' });
+        vi.mocked(orderService.getOrders).mockResolvedValue([ord1]);
+        fireEvent.click(reintentar);
+
+        expect(await screen.findByText('Orden n° 1')).toBeInTheDocument();
+    });
+
+    it('con error del servidor y caché previa avisa pero conserva las órdenes', async () => {
+        useOrderStore.setState({
+            orders: [ord1],
+            status: 'error',
+            error: 'El servidor tuvo un problema. Intente más tarde.',
+            isOffline: false,
+        });
+        vi.mocked(orderService.getOrders).mockRejectedValue(axiosServerError);
+
+        renderPage();
+
+        expect(await screen.findByText('Orden n° 1')).toBeInTheDocument();
+        expect(screen.getByRole('alert')).toHaveTextContent('El servidor tuvo un problema.');
     });
 });

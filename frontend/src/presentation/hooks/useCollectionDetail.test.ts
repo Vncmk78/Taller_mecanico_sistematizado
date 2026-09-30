@@ -15,7 +15,7 @@ describe('useCollectionDetail: carga de detalle de un item', () => {
     });
 
     it('expone el item de la caché y desactiva loading al resolver', async () => {
-        const fetchById = vi.fn(() => Promise.resolve({ notFound: false }));
+        const fetchById = vi.fn(() => Promise.resolve({ notFound: false, failed: false }));
 
         const { result } = renderHook(() =>
             useCollectionDetail<TestItem>({ id: '1', items: [item1], fetchById, loader: vi.fn() })
@@ -28,7 +28,7 @@ describe('useCollectionDetail: carga de detalle de un item', () => {
     });
 
     it('marca notFound cuando el backend responde 404', async () => {
-        const fetchById = vi.fn(() => Promise.resolve({ notFound: true }));
+        const fetchById = vi.fn(() => Promise.resolve({ notFound: true, failed: false }));
 
         const { result } = renderHook(() =>
             useCollectionDetail<TestItem>({ id: '999', items: [], fetchById, loader: vi.fn() })
@@ -40,7 +40,7 @@ describe('useCollectionDetail: carga de detalle de un item', () => {
     });
 
     it('con id indefinido marca notFound sin invocar fetchById', async () => {
-        const fetchById = vi.fn(() => Promise.resolve({ notFound: false }));
+        const fetchById = vi.fn(() => Promise.resolve({ notFound: false, failed: false }));
 
         const { result } = renderHook(() =>
             useCollectionDetail<TestItem>({ id: undefined, items: [], fetchById, loader: vi.fn() })
@@ -51,8 +51,33 @@ describe('useCollectionDetail: carga de detalle de un item', () => {
         expect(fetchById).not.toHaveBeenCalled();
     });
 
+    it('marca failed cuando el fetch falla sin copia local', async () => {
+        const fetchById = vi.fn(() => Promise.resolve({ notFound: false, failed: true }));
+
+        const { result } = renderHook(() =>
+            useCollectionDetail<TestItem>({ id: '999', items: [], fetchById, loader: vi.fn() })
+        );
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.failed).toBe(true);
+        expect(result.current.notFound).toBe(false);
+    });
+
+    it('un fallo con copia local no marca failed ni notFound', async () => {
+        const fetchById = vi.fn(() => Promise.resolve({ notFound: false, failed: false }));
+
+        const { result } = renderHook(() =>
+            useCollectionDetail<TestItem>({ id: '1', items: [item1], fetchById, loader: vi.fn() })
+        );
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.failed).toBe(false);
+        expect(result.current.notFound).toBe(false);
+        expect(result.current.item?.id).toBe('1');
+    });
+
     it('refetch vuelve a invocar fetchById', async () => {
-        const fetchById = vi.fn(() => Promise.resolve({ notFound: false }));
+        const fetchById = vi.fn(() => Promise.resolve({ notFound: false, failed: false }));
 
         const { result } = renderHook(() =>
             useCollectionDetail<TestItem>({ id: '1', items: [item1], fetchById, loader: vi.fn() })
@@ -65,9 +90,9 @@ describe('useCollectionDetail: carga de detalle de un item', () => {
     });
 
     it('alterna loading mientras la petición está pendiente', async () => {
-        let resolveFetch: (value: { notFound: boolean }) => void = () => {};
+        let resolveFetch: (value: { notFound: boolean; failed: boolean }) => void = () => {};
         const fetchById = vi.fn(
-            () => new Promise<{ notFound: boolean }>((resolve) => {
+            () => new Promise<{ notFound: boolean; failed: boolean }>((resolve) => {
                 resolveFetch = resolve;
             })
         );
@@ -77,7 +102,7 @@ describe('useCollectionDetail: carga de detalle de un item', () => {
         );
 
         await waitFor(() => expect(result.current.loading).toBe(true));
-        act(() => resolveFetch({ notFound: false }));
+        act(() => resolveFetch({ notFound: false, failed: false }));
         await waitFor(() => expect(result.current.loading).toBe(false));
         expect(result.current.item?.id).toBe('1');
     });

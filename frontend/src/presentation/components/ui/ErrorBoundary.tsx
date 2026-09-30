@@ -33,7 +33,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         return this.props.fallback;
       }
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center px-5 animate-fade-in">
+        <main
+          id="contenido-principal"
+          tabIndex={-1}
+          className="min-h-screen flex flex-col items-center justify-center px-5 animate-fade-in focus:outline-none"
+        >
           <GlassCard className="w-full max-w-[480px] p-[40px_36px] text-center">
             <AlertTriangle className="w-14 h-14 mx-auto mb-5 text-status-red" />
             <h1 className="text-2xl font-bold tracking-tight text-text-main">
@@ -47,7 +51,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               Recargar página
             </Button>
           </GlassCard>
-        </div>
+        </main>
       );
     }
     return this.props.children;

@@ -79,4 +79,36 @@ describe('RoleLayout: layout y navegación reutilizable', () => {
     expect(await screen.findByText('Catálogo de vehículos')).toBeInTheDocument();
     expect(screen.queryByText('Dashboard del portal')).not.toBeInTheDocument();
   });
+
+  it('incluye un skip-link y un main anclable para saltar al contenido', () => {
+    renderRoleLayout();
+
+    expect(
+      screen.getByRole('link', { name: 'Saltar al contenido principal' })
+    ).toHaveAttribute('href', '#contenido-principal');
+    expect(screen.getByRole('main')).toHaveAttribute('id', 'contenido-principal');
+  });
+
+  it('variante sidebar: nombra los landmarks de navegación', () => {
+    renderRoleLayout();
+
+    expect(
+      screen.getByRole('navigation', { name: 'Navegación de sesión' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('complementary')).toBeInTheDocument();
+  });
+
+  it('variante topnav: nombra la navegación principal', () => {
+    renderRoleLayout({
+      variant: 'topnav',
+      sections: seccionesCliente,
+      badge: 'Portal Cliente',
+      userName: 'cliente@taller.cl',
+      userSubtitle: 'Cliente',
+    }, '/client');
+
+    expect(
+      screen.getByRole('navigation', { name: 'Navegación principal' })
+    ).toBeInTheDocument();
+  });
 });

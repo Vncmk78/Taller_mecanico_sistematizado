@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { Alert } from '@/presentation/components/ui/Alert';
+import { Alert, type AlertTone } from '@/presentation/components/ui/Alert';
 
 describe('Alert: notificación contextual', () => {
   it('muestra el mensaje y usa role="alert"', () => {
@@ -27,4 +27,21 @@ describe('Alert: notificación contextual', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(handleRetry).toHaveBeenCalled();
   });
+
+  const toneCases: Array<[AlertTone, string]> = [
+    ['error', 'text-status-red'],
+    ['success', 'text-status-green'],
+    ['warning', 'text-status-yellow'],
+    ['info', 'text-status-blue'],
+    ['orange', 'text-status-orange'],
+  ];
+
+  it.each(toneCases)(
+    'el tono %s aplica las clases de color correspondientes',
+    (tone, expectedClass) => {
+      render(<Alert tone={tone}>{tone}</Alert>);
+
+      expect(screen.getByRole('alert').className).toContain(expectedClass);
+    }
+  );
 });

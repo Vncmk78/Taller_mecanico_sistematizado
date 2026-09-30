@@ -57,3 +57,69 @@ def db(engine: Engine) -> Session:
         sesion.close()
         transaccion.rollback()
         conexion.close()
+
+
+# --------------------------------------------------------------------------- #
+# Fixtures de datos mínimos (ver fabricas.py y datos_prueba.py)               #
+# --------------------------------------------------------------------------- #
+# Todas viven dentro de la transacción de `db`: se crean al pedirlas y
+# desaparecen al terminar la prueba.
+
+from services.ms3_presupuestos.models import (  # noqa: E402
+    ParametroInventario,
+    Presupuesto,
+    Repuesto,
+)
+from services.ms3_presupuestos.persistencia import UnidadDeTrabajo  # noqa: E402
+from services.ms3_presupuestos.tests import fabricas  # noqa: E402
+
+
+@pytest.fixture
+def uow(db: Session) -> UnidadDeTrabajo:
+    """Unidad de trabajo sobre la sesión de prueba."""
+    return UnidadDeTrabajo(db)
+
+
+@pytest.fixture
+def catalogo(db: Session) -> dict[str, Repuesto]:
+    """Catálogo mínimo: 2 proveedores, 4 repuestos e ingreso inicial de stock."""
+    return fabricas.cargar_catalogo(db)
+
+
+@pytest.fixture
+def repuesto_bajo_umbral(catalogo: dict[str, Repuesto]) -> Repuesto:
+    from services.ms3_presupuestos.datos_prueba import REPUESTO_BAJO_UMBRAL
+    return catalogo[REPUESTO_BAJO_UMBRAL]
+
+
+@pytest.fixture
+def umbral_general(db: Session) -> ParametroInventario:
+    """Un único umbral general vigente (= datos_prueba.UMBRAL_GENERAL)."""
+    return fabricas.umbral_general_vigente(db)
+
+
+@pytest.fixture
+def presupuesto_borrador(db: Session) -> Presupuesto:
+    return fabricas.nuevo_presupuesto(db, estado="borrador")
+
+
+@pytest.fixture
+def presupuesto_enviado(db: Session) -> Presupuesto:
+    return fabricas.nuevo_presupuesto(db, estado="enviado")
+
+
+@pytest.fixture
+def presupuesto_aprobado(db: Session) -> Presupuesto:
+    return fabricas.nuevo_presupuesto(db, estado="aprobado")
+
+
+@pytest.fixture
+def presupuesto_rechazado(db: Session) -> Presupuesto:
+    return fabricas.nuevo_presupuesto(db, estado="rechazado")
+
+
+@pytest.fixture
+def presupuesto_ejemplo(db: Session, catalogo: dict[str, Repuesto]) -> Presupuesto:
+    """El presupuesto de la semilla (pastillas + mano de obra = $68.990), enviado."""
+    return fabricas.nuevo_presupuesto(db, estado="enviado",
+                                      items=fabricas.items_de_ejemplo(catalogo))

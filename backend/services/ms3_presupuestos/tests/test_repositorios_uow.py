@@ -12,13 +12,14 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.orm import Session
 
+from services.ms3_presupuestos.datos_prueba import ADMIN_ID as ADMIN
+from services.ms3_presupuestos.datos_prueba import MECANICO_ID as MECANICO
 from services.ms3_presupuestos.models import (
     ItemPresupuesto,
     MovimientoInventario,
     ParametroInventario,
     Presupuesto,
     Proveedor,
-    Repuesto,
     VersionPresupuesto,
 )
 from services.ms3_presupuestos.persistencia import (
@@ -27,29 +28,17 @@ from services.ms3_presupuestos.persistencia import (
     ReglaDeDatosViolada,
     UnidadDeTrabajo,
 )
-
-ADMIN, MECANICO = 3, 2
-
-
-@pytest.fixture
-def uow(db: Session) -> UnidadDeTrabajo:
-    return UnidadDeTrabajo(db)
+from services.ms3_presupuestos.tests.fabricas import nuevo_proveedor
 
 
-def _proveedor_con_repuestos(uow: UnidadDeTrabajo, nombre: str = "Prov UoW") -> Proveedor:
-    proveedor = Proveedor(nombre=nombre, contacto="uow@prueba.cl")
-    proveedor.repuestos += [
-        Repuesto(nombre=f"{nombre} disco", stock=1, umbral_particular=3),
-        Repuesto(nombre=f"{nombre} filtro", stock=50),
-    ]
-    return uow.proveedores.agregar(proveedor)
+# La fixture `uow` vive en conftest.py.
 
 
 # ----------------------------------------------------------------- repositorios --
 
 def test_agregar_asigna_id_y_obtener_lo_encuentra(uow: UnidadDeTrabajo) -> None:
     with uow.transaccion():
-        proveedor = _proveedor_con_repuestos(uow)
+        proveedor = nuevo_proveedor(uow.sesion, "Prov UoW")
     assert proveedor.proveedor_id is not None
     assert uow.proveedores.obtener(proveedor.proveedor_id) is proveedor
     assert uow.proveedores.buscar_por_nombre("Prov UoW") is proveedor
@@ -74,7 +63,7 @@ def test_listar_pagina_en_orden_estable(uow: UnidadDeTrabajo) -> None:
 
 def test_repuestos_de_proveedor_y_bajo_umbral(uow: UnidadDeTrabajo) -> None:
     with uow.transaccion():
-        proveedor = _proveedor_con_repuestos(uow)
+        proveedor = nuevo_proveedor(uow.sesion, "Prov UoW")
     nombres = [r.nombre for r in uow.repuestos.de_proveedor(proveedor.proveedor_id)]
     assert nombres == ["Prov UoW disco", "Prov UoW filtro"]
     bajo = {r.nombre for r in uow.repuestos.bajo_umbral(umbral_general=5)}
@@ -84,7 +73,7 @@ def test_repuestos_de_proveedor_y_bajo_umbral(uow: UnidadDeTrabajo) -> None:
 
 def test_obtener_para_actualizar_bloquea_y_devuelve_la_fila(uow: UnidadDeTrabajo) -> None:
     with uow.transaccion():
-        repuesto = _proveedor_con_repuestos(uow).repuestos[0]
+        repuesto = nuevo_proveedor(uow.sesion, "Prov UoW").repuestos[0]
     with uow.transaccion():
         bloqueado = uow.repuestos.obtener_para_actualizar(repuesto.repuesto_id)
         bloqueado.stock += 5
@@ -93,7 +82,7 @@ def test_obtener_para_actualizar_bloquea_y_devuelve_la_fila(uow: UnidadDeTrabajo
 
 def test_movimientos_por_clave_y_por_orden(uow: UnidadDeTrabajo) -> None:
     with uow.transaccion():
-        repuesto = _proveedor_con_repuestos(uow).repuestos[1]
+        repuesto = nuevo_proveedor(uow.sesion, "Prov UoW").repuestos[1]
         uow.movimientos.agregar(MovimientoInventario(
             clave_operacion="uow-mov-1", repuesto=repuesto, orden_id=777,
             tipo="compromiso", cantidad=2, registrado_por_id=MECANICO))
@@ -119,7 +108,7 @@ def test_parametro_vigente_y_presupuesto_de_orden(uow: UnidadDeTrabajo, db: Sess
 def test_error_en_el_caso_de_uso_revierte_todo(uow: UnidadDeTrabajo) -> None:
     with pytest.raises(ValueError):
         with uow.transaccion():
-            _proveedor_con_repuestos(uow, "Prov Revertido")
+            nuevo_proveedor(uow.sesion, "Prov Revertido")
             raise ValueError("falla a mitad del caso de uso")
     assert uow.proveedores.buscar_por_nombre("Prov Revertido") is None
 
@@ -137,7 +126,7 @@ def test_clave_duplicada_se_traduce_a_conflicto(uow: UnidadDeTrabajo) -> None:
 def test_check_de_la_base_se_traduce_a_regla_violada(uow: UnidadDeTrabajo) -> None:
     with pytest.raises(ReglaDeDatosViolada) as info:
         with uow.transaccion():
-            _proveedor_con_repuestos(uow).repuestos[0].stock = -1
+            nuevo_proveedor(uow.sesion, "Prov UoW").repuestos[0].stock = -1
             uow.sesion.flush()
     assert info.value.restriccion == "ck_repuesto_stock_no_negativo"
 

@@ -8,7 +8,9 @@ a los esquemas reales de MS1 y MS2.
 from __future__ import annotations
 
 import pytest
+from fastapi.openapi.models import OpenAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from gateway.contratos import auth as contratos_auth
 from gateway.contratos import ordenes as contratos_ordenes
@@ -20,6 +22,10 @@ from services.ms1_auth.schemas.auth import (
     TokenRespuesta as Ms1TokenRespuesta,
     UsuarioRespuesta as Ms1UsuarioRespuesta,
 )
+from services.ms2_taller.config import settings as ms2_settings
+from services.ms2_taller.db import get_db as get_db_ms2
+from services.ms2_taller.main import app as ms2_app
+from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN
 from services.ms2_taller.schemas.vehiculo import (
     VehiculoActualizar as Ms2VehiculoActualizar,
     VehiculoCrear as Ms2VehiculoCrear,
@@ -30,6 +36,8 @@ from services.ms2_taller.schemas.orden import (
     OrdenCrear as Ms2OrdenCrear,
     OrdenRespuesta as Ms2OrdenRespuesta,
 )
+from shared.auth import NombreRol, crear_token_acceso
+from shared.openapi_ordenes import ESTADOS_DOCUMENTADOS
 
 _ENDPOINTS_ESPERADOS = {
     ("/api/auth/register", "post"),
@@ -311,3 +319,102 @@ def test_contrato_ordenes_refleja_flujo_inicial_implementado(esquema: dict) -> N
 
     assert "/api/ordenes/{orden_id}/historial" not in paths
     assert "/api/ordenes/{orden_id}/estado" not in paths
+
+
+@pytest.mark.parametrize("aplicacion,prefijo", [(app, "/api"), (ms2_app, "")])
+def test_ejemplos_ordenes_y_catalogo_en_ambos_openapi(aplicacion, prefijo: str) -> None:
+    esquema = aplicacion.openapi()
+    OpenAPI.model_validate(esquema)
+    assert ESTADOS_DOCUMENTADOS == ESTADOS_ORDEN
+    assert len(ESTADOS_DOCUMENTADOS) == 8
+    contrato = esquema["components"]["schemas"]["OrdenRespuesta"]
+    estado = contrato["properties"]["estado_codigo"]
+    assert estado["examples"] == list(ESTADOS_ORDEN)
+    for codigo, nombre in ESTADOS_ORDEN.items():
+        assert f"{codigo} = {nombre}" in estado["description"]
+
+    for ruta, metodo, codigo in (
+        ("/ordenes", "post", "201"),
+        ("/ordenes", "get", "200"),
+        ("/ordenes/{orden_id}", "get", "200"),
+        ("/ordenes/{orden_id}/mecanico", "put", "200"),
+    ):
+        respuestas = esquema["paths"][prefijo + ruta][metodo]["responses"]
+        ejemplos = respuestas[codigo]["content"]["application/json"]["examples"]
+        for ejemplo in ejemplos.values():
+            valor = ejemplo["value"]
+            ordenes = valor if isinstance(valor, list) else [valor]
+            for orden in ordenes:
+                Ms2OrdenRespuesta.model_validate(orden)
+                assert orden["estado_codigo"] in ESTADOS_ORDEN
+                if metodo == "post":
+                    assert orden["estado_codigo"] == 1
+                    assert orden["mecanico_actual_id"] is None
+                if metodo == "put":
+                    assert orden["estado_codigo"] == 2
+                    assert orden["mecanico_actual_id"] is not None
+        assert "sin_token" in respuestas["401"]["content"]["application/json"][
+            "examples"
+        ]
+        if metodo in ("post", "put"):
+            for error in ("403", "404", "422"):
+                assert respuestas[error]["content"]["application/json"]["examples"]
+        elif "{orden_id}" in ruta:
+            assert respuestas["404"]["content"]["application/json"]["examples"]
+            assert respuestas["422"]["content"]["application/json"]["examples"]
+    assert [orden["estado_codigo"] for orden in contrato["examples"]] == [1, 2]
+
+
+def test_ejemplos_errores_coinciden_con_respuestas_reales_ms2(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secreto = SecretStr("secreto-solo-pruebas-openapi-scrum-357-123456")
+    monkeypatch.setattr(ms2_settings, "JWT_SECRET_KEY", secreto)
+
+    def db_sin_consultas():
+        # Estos rechazos ocurren antes de consultar o escribir en la base.
+        yield None
+
+    monkeypatch.setitem(ms2_app.dependency_overrides, get_db_ms2, db_sin_consultas)
+    token_admin = crear_token_acceso(
+        99, [NombreRol.ADMINISTRADOR], clave_secreta=secreto.get_secret_value(),
+    )
+    token_cliente = crear_token_acceso(
+        10, [NombreRol.CLIENTE], clave_secreta=secreto.get_secret_value(),
+    )
+    headers_admin = {"Authorization": f"Bearer {token_admin}"}
+    headers_cliente = {"Authorization": f"Bearer {token_cliente}"}
+    casos = (
+        ("/ordenes", "post", "401", "sin_token", {}, {"vehiculo_id": 12}),
+        (
+            "/ordenes", "post", "401", "token_invalido",
+            {"Authorization": "Bearer invalido"}, {"vehiculo_id": 12},
+        ),
+        (
+            "/ordenes", "post", "403", "rol_no_autorizado",
+            headers_cliente, {"vehiculo_id": 12},
+        ),
+        (
+            "/ordenes", "post", "422", "id_no_positivo",
+            headers_admin, {"vehiculo_id": 0},
+        ),
+        (
+            "/ordenes/{orden_id}/mecanico", "put", "422", "id_no_positivo",
+            headers_admin, {"mecanico_id": 0},
+        ),
+        (
+            "/ordenes/{orden_id}", "get", "422", "id_invalido",
+            headers_admin, None,
+        ),
+    )
+    esquemas = [(app.openapi(), "/api"), (ms2_app.openapi(), "")]
+    with TestClient(ms2_app) as cliente:
+        for ruta, metodo, codigo, nombre, headers, body in casos:
+            url = ruta.replace("{orden_id}", "abc" if metodo == "get" else "31")
+            respuesta = cliente.request(metodo, url, headers=headers, json=body)
+            assert respuesta.status_code == int(codigo)
+            for esquema, prefijo in esquemas:
+                ejemplo = esquema["paths"][prefijo + ruta][metodo]["responses"][codigo][
+                    "content"
+                ]["application/json"]["examples"][nombre]["value"]
+                assert respuesta.json() == ejemplo

@@ -4,10 +4,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import axios from 'axios';
-import { Mail, Lock, Eye, EyeOff, Settings, Wrench, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Settings, Wrench } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuth } from '@/presentation/components/auth/authContext';
 import { getHomePath } from '@/presentation/routes/rolePaths';
 
@@ -132,10 +133,9 @@ export function LoginPage() {
               </Button>
 
               {errorMessage && (
-                <div role="alert" className="flex items-center justify-center gap-2 mt-4 text-status-red text-sm bg-status-red/10 border border-status-red/40 rounded-lg px-4 py-3">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
+                <Alert tone="error" className="mt-4 justify-center">
                   {errorMessage}
-                </div>
+                </Alert>
               )}
             </form>
           </div>

@@ -3,7 +3,6 @@ import { Navigate, useLocation } from 'react-router-dom';
 import type { UserRole } from '@/domain/entities/User';
 import { useAuth } from '@/presentation/components/auth/authContext';
 import { FullScreenLoader } from '@/presentation/components/ui/FullScreenLoader';
-import { getHomePath } from '@/presentation/routes/rolePaths';
 
 interface ProtectedRouteProps {
   allowedRoles?: UserRole[];
@@ -23,7 +22,13 @@ export function ProtectedRoute({ allowedRoles, children }: ProtectedRouteProps) 
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    return <Navigate to={getHomePath(user.role)} replace />;
+    return (
+      <Navigate
+        to="/acceso-denegado"
+        state={{ message: `Tu rol (${user.role}) no tiene permisos para acceder a esta sección.` }}
+        replace
+      />
+    );
   }
 
   return <>{children}</>;

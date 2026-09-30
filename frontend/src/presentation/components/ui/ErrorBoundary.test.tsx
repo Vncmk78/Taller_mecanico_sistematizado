@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ErrorBoundary } from '@/presentation/components/ui/ErrorBoundary';
 
 function ComponenteQueExplota(): never {
@@ -46,5 +46,25 @@ describe('ErrorBoundary: manejo de errores de render', () => {
     );
 
     expect(screen.getByText('Contenido sin errores')).toBeInTheDocument();
+  });
+
+  it('Recargar página invoca window.location.reload', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const reloadSpy = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { reload: reloadSpy },
+      writable: true,
+    });
+    render(
+      <ErrorBoundary>
+        <ComponenteQueExplota />
+      </ErrorBoundary>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recargar página' }));
+
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    consoleSpy.mockRestore();
   });
 });

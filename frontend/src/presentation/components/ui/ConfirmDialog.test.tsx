@@ -50,6 +50,59 @@ describe('ConfirmDialog: confirmación de acciones', () => {
     expect(handleCancel).toHaveBeenCalled();
   });
 
+  it('cierra al hacer clic fuera del diálogo', () => {
+    const handleCancel = vi.fn();
+    const { container } = render(
+      <ConfirmDialog open title="Confirmar" onConfirm={vi.fn()} onCancel={handleCancel} />
+    );
+
+    fireEvent.mouseDown(container.firstElementChild as HTMLElement);
+    expect(handleCancel).toHaveBeenCalled();
+  });
+
+  it('no cierra al hacer clic dentro del diálogo', () => {
+    const handleCancel = vi.fn();
+    render(
+      <ConfirmDialog open title="Confirmar" onConfirm={vi.fn()} onCancel={handleCancel} />
+    );
+
+    fireEvent.mouseDown(screen.getByRole('dialog'));
+    expect(handleCancel).not.toHaveBeenCalled();
+  });
+
+  it('cierra con el botón X', () => {
+    const handleCancel = vi.fn();
+    render(
+      <ConfirmDialog open title="Confirmar" onConfirm={vi.fn()} onCancel={handleCancel} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(handleCancel).toHaveBeenCalled();
+  });
+
+  it('deshabilita las acciones y evita confirmar mientras isLoading', () => {
+    const handleConfirm = vi.fn();
+    const handleCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        open
+        title="Confirmar"
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+        isLoading
+      />
+    );
+
+    const confirmButton = screen.getByRole('button', { name: 'Cargando...' });
+    expect(confirmButton).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+
+    fireEvent.click(confirmButton);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(handleConfirm).not.toHaveBeenCalled();
+    expect(handleCancel).not.toHaveBeenCalled();
+  });
+
   it('no renderiza nada cuando está cerrado', () => {
     render(<ConfirmDialog open={false} title="Confirmar" onConfirm={vi.fn()} onCancel={vi.fn()} />);
 

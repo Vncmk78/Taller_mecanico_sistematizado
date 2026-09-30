@@ -2,6 +2,26 @@
 
 **TAREA 6 - Semana 2**
 
+> ⚠️ **Estado de este documento — léelo antes de usarlo**
+>
+> El sistema **ejecutado** es la arquitectura de microservicios en FastAPI:
+> `services/ms1_auth` (MS1, :8001), `services/ms2_taller` (MS2, :8002),
+> `gateway` (:8000) y el contrato común `shared/auth.py`. Ahí viven el
+> registro, el login, la validación del token y la autorización por rol.
+>
+> Los diagramas de las secciones 1, 3, 4, 5, 6, 7, 8, 9 y 10 se redactaron
+> contra un **monolito en Node/Express** (`:3001`, `bcryptjs`, `authMiddleware`,
+> `requireRole`, `checkOrderOwnership`, claims `id`/`email`/`role`). Ese código
+> quedó en `backend/src/` y **no forma parte del sistema en ejecución**: su
+> modelo `src/models/User` ni siquiera existe en el repositorio.
+>
+> Se conservan aquí como registro del diseño original, no como especificación.
+> Para el comportamiento vigente usa la **sección 2** (claims reales) y
+> [`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md).
+> Para las pruebas ejecutables de este flujo, ver
+> [`TAREA_7_PRUEBAS_ACCESO_CRUZADO.md`](TAREA_7_PRUEBAS_ACCESO_CRUZADO.md) y
+> [`tests/`](tests).
+
 ---
 
 ## 1. FLUJO COMPLETO: REGISTRO → LOGIN → ACCESO A RECURSO
@@ -151,19 +171,42 @@
 
 ## 2. TABLA DE CLAIMS EN JWT
 
+> ⚠️ **Implementación vigente:** los claims reales son los de la tabla de abajo.
+> La fuente de verdad es [`shared/auth.py`](shared/auth.py) y su documentación
+> está en [`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md),
+> sección «El JWT: claims, validación y quién las aplica».
+> Los diagramas de las demás secciones se conservan como **antecedente del
+> diseño original en Node/Express**, que ya no se ejecuta (ver el aviso de la
+> cabecera). Al integrar, lee el contrato, no los diagramas.
+
 ```
 CLAIM          TIPO       PROPÓSITO
-────────────────────────────────────
-id             string     Identificar usuario
-email          string     Email del usuario
-role           string     Determinar autorización (CRUCIAL)
-iat            number     Timestamp de creación (automático)
-exp            number     Timestamp de expiración (automático)
+────────────────────────────────────────────────────────────
+sub            string     Identificar usuario: entero positivo ("7")
+roles          list       Determinar autorización (CRUCIAL); no vacía,
+                          sin duplicados, de "cliente" | "mecanico" |
+                          "administrador"
+exp            number     Timestamp de expiración (obligatorio)
 ```
 
-**CLAIM más importante:** `role`
+**NO viajan** `id`, `email`, `role` (singular) ni `iat`. El correo y el nombre se
+resuelven siempre contra la base de MS1/MS2 en el momento de la petición, para
+que un token no quede obsoleto si el usuario cambia de correo, nombre o roles
+mientras sigue vigente.
+
+**CLAIM más importante:** `roles`
 - Determina qué puede hacer el usuario
-- Se valida en cada middleware requireRole()
+- Es una **lista**, aunque el usuario tenga un solo rol
+- Se valida en la dependencia `requerir_roles(...)` de cada microservicio
+
+El token se firma con **HS256** y el secreto se lee solo del entorno, con al
+menos 32 caracteres (`MS1_JWT_SECRET_KEY`, `MS2_JWT_SECRET_KEY`, …). No existe
+un valor por defecto en el código: un default conocido permitiría firmar tokens
+válidos.
+
+La **Gateway no valida el JWT**; reenvía la cabecera `Authorization` sin
+inspeccionarla. Cada microservicio la valida con
+`shared.auth.validar_token_acceso`, que no consulta ninguna base de datos.
 
 ---
 

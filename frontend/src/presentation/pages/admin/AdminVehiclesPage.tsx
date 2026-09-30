@@ -41,7 +41,7 @@ export function AdminVehiclesPage() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
             aria-label="Buscar por patente, marca o modelo"
-            className="w-full py-3 pl-11 pr-4 bg-black/40 border border-border-custom rounded-lg text-white text-sm outline-none focus:border-primary-red"
+            className="w-full py-3 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
             />
         </div>
         </div>

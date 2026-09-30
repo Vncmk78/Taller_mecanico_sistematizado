@@ -54,7 +54,7 @@ export function AdminLayout() {
             type="text"
             placeholder="Buscar patente, orden o cliente..."
             aria-label="Buscar patente, orden o cliente"
-            className="py-2.5 px-4 bg-black/40 border-none rounded-lg text-white text-sm outline-none w-[350px] placeholder:text-text-muted"
+            className="py-2.5 px-4 bg-bg-secondary border-none rounded-lg text-text-main text-sm outline-none w-[350px] placeholder:text-text-muted"
           />
         </div>
       }
@@ -62,7 +62,7 @@ export function AdminLayout() {
         <button
           type="button"
           aria-label="Notificaciones"
-          className="text-text-muted hover:text-white transition-colors cursor-pointer bg-transparent border-none p-1"
+          className="text-text-muted hover:text-primary-blue transition-colors cursor-pointer bg-transparent border-none p-1"
         >
           <Bell className="w-5 h-5" />
         </button>

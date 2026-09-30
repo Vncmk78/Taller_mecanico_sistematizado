@@ -30,11 +30,11 @@ export function RoleLayout({
   if (variant === 'topnav') {
     return (
       <div className="min-h-screen flex flex-col animate-fade-in">
-        <header className="flex items-center justify-between px-10 py-4 border-b border-border-custom bg-black/80 backdrop-blur-[10px] sticky top-0 z-50">
+        <header className="flex items-center justify-between px-10 py-4 border-b border-border-custom bg-surface sticky top-0 z-50">
           <div className="flex items-center gap-2.5">
             <AppBrand />
             {badge && (
-              <span className="ml-3 text-xs bg-primary-red/15 text-primary-red px-3 py-1 rounded-full border border-primary-red/40 font-bold">
+              <span className="ml-3 text-xs bg-primary-blue/15 text-primary-blue px-3 py-1 rounded-full border border-primary-blue/40 font-bold">
                 {badge}
               </span>
             )}
@@ -64,7 +64,7 @@ export function RoleLayout({
     <div className="flex min-h-screen">
       <SidebarNav sections={sections} />
 
-      <main className="flex-grow flex flex-col bg-glass-panel h-screen overflow-y-auto backdrop-blur-[8px]">
+      <main className="flex-grow flex flex-col bg-bg-main h-screen overflow-y-auto">
         <TopBar
           left={headerLeft}
           rightPrepend={headerRightPrepend}

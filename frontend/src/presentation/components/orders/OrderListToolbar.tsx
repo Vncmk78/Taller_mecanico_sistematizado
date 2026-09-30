@@ -37,7 +37,7 @@ export function OrderListToolbar({
                     onChange={(e) => onSearchChange(e.target.value)}
                     placeholder={searchPlaceholder}
                     aria-label="Buscar órdenes"
-                    className="w-full py-2.5 pl-11 pr-4 bg-black/40 border border-border-custom rounded-lg text-white text-sm outline-none focus:border-primary-red"
+                    className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
                 />
             </div>
 
@@ -50,7 +50,7 @@ export function OrderListToolbar({
                         onEstadoChange(value === 'all' ? 'all' : Number(value));
                     }}
                     aria-label="Filtrar por estado"
-                    className="bg-black/40 border border-border-custom rounded-lg px-3 py-2.5 text-white text-sm outline-none focus:border-primary-red"
+                    className="bg-surface border border-border-custom rounded-lg px-3 py-2.5 text-text-main text-sm outline-none focus:border-primary-blue"
                 >
                     <option value="all">Todos los estados</option>
                     {codigos.map((codigo) => (

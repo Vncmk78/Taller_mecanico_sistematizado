@@ -58,7 +58,7 @@ export function OrderStatusBadge({
             >
                 <span
                     aria-hidden
-                    className={`h-2 w-2 rounded-full ${estadoDotClasses[estadoCodigo] ?? 'bg-white/40'}`}
+                    className={`h-2 w-2 rounded-full ${estadoDotClasses[estadoCodigo] ?? 'bg-bg-secondary'}`}
                 />
                 {label}
             </span>
@@ -69,7 +69,7 @@ export function OrderStatusBadge({
         <span
             title={label}
             className={`inline-flex items-center rounded-full font-bold border whitespace-nowrap ${sizing} ${
-                statusStyles[estadoCodigo] ?? 'bg-white/10 text-text-muted border-border-custom'
+                statusStyles[estadoCodigo] ?? 'bg-bg-secondary text-text-muted border-border-custom'
             } ${className}`}
         >
             {label}

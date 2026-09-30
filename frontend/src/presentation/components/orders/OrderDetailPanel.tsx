@@ -11,7 +11,7 @@ interface OrderDetailPanelProps {
 
 export function OrderDetailPanel({ order, patente, vehicleLabel }: OrderDetailPanelProps) {
     return (
-        <div className="glass-card p-6">
+        <div className="card p-6">
             <div className="flex justify-between items-center gap-3 mb-6 pb-4 border-b border-border-custom flex-wrap">
                 <h3 className="text-xl font-semibold flex items-center gap-2">
                     <ClipboardList className="w-5 h-5 text-text-muted" />
@@ -25,7 +25,7 @@ export function OrderDetailPanel({ order, patente, vehicleLabel }: OrderDetailPa
                     <span className="text-text-muted text-sm block mb-1">Vehículo</span>
                     <div className="flex items-center gap-2">
                         {patente && (
-                            <span className="bg-white/90 text-black font-mono font-bold text-sm px-2.5 py-1 rounded tracking-wide shrink-0">
+                            <span className="bg-bg-secondary text-text-main font-mono font-bold text-sm px-2.5 py-1 rounded tracking-wide shrink-0">
                                 {patente}
                             </span>
                         )}

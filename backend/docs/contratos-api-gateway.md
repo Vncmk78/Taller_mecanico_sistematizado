@@ -15,8 +15,11 @@ Reglas que se aplican a todos los endpoints:
   Gateway y en el microservicio; si no viene (o es inválida), la Gateway
   genera un UUID y lo devuelve en la respuesta.
 - Errores propios de la Gateway: `RUTA_NO_ENCONTRADA` (404),
-  `MICROSERVICIO_INALCANZABLE` (502) y `ERROR_INTERNO` (500), todos con el
-  cuerpo `{"detail": "...", "error": {"codigo", "estado", "ruta", "request_id"}}`.
+  `MICROSERVICIO_INALCANZABLE` (502), `TIEMPO_AGOTADO` (504),
+  `GATEWAY_SATURADA` (503), `ERROR_MICROSERVICIO` y `ERROR_INTERNO` (500),
+  todos con el cuerpo `{"detail": "...", "error": {"codigo", "estado",
+  "ruta", "request_id"}}`. `GATEWAY_SATURADA` y `ERROR_MICROSERVICIO` son de
+  la Semana 4 (mapeo de errores y cabeceras).
 - Errores de los microservicios: `{"detail": "mensaje"}` con su status code.
   En los `422` (validación de body en MS1/MS2), `detail` es una **lista** de
   errores de FastAPI, no un string:
@@ -24,6 +27,204 @@ Reglas que se aplican a todos los endpoints:
   ```json
   { "detail": [ { "loc": ["body", "email"], "msg": "value is not a valid email address", "type": "value_error" } ] }
   ```
+
+### Errores que vienen de los microservicios
+
+Un 4xx/5xx que responde el microservicio **no es un error de la Gateway**:
+- Si el body es **JSON** (`{"detail": ...}` de FastAPI) se reenvía **tal
+  cual**, con su status code, para que el frontend siga leyendo `detail`.
+- Si el body **no es JSON** (texto plano o HTML, típico de un proxy
+  intermedio) se normaliza al formato común con el código
+  `ERROR_MICROSERVICIO` y el mismo estado. Los `404` y `405` no-JSON usan
+  `RUTA_NO_ENCONTRADA` y `METODO_NO_PERMITIDO` con sus mensajes habituales.
+  `WWW-Authenticate` y `Retry-After` se conservan.
+
+Fallo de red del proxy (no llega ninguna respuesta del microservicio):
+
+| Excepción | Estado | Código |
+|---|---|---|
+| `ConnectError`, `ConnectTimeout` | 502 | `MICROSERVICIO_INALCANZABLE` |
+| `ReadTimeout`, `WriteTimeout` | 504 | `TIEMPO_AGOTADO` |
+| `PoolTimeout` | 503 | `GATEWAY_SATURADA` |
+| Otro `RequestError` | 502 | `MICROSERVICIO_INALCANZABLE` |
+
+### Cabeceras de la respuesta
+
+La Gateway reenvía las cabeceras que manda el microservicio
+(`WWW-Authenticate`, `Content-Disposition`, `Cache-Control`, `Set-Cookie`,
+`Retry-After`, …), excepto las de conexión (*hop-by-hop*), `Content-Length`,
+`Content-Encoding`, `Server`, `Date`, `X-Request-ID` (lo pone la Gateway) y
+las `Access-Control-*` (el CORS lo resuelve la Gateway). Un `Location` que
+apunte a la URL interna del microservicio (por ejemplo la redirección 307 de
+FastAPI por la barra final) se traduce a la URL pública de la Gateway con
+`/api`: `http://localhost:8002/vehiculos` → `https://<gateway>/api/vehiculos`.
+
+## Swagger y OpenAPI (`/docs`)
+
+La fuente interactiva del contrato es <http://localhost:8000/docs> y su versión
+JSON es <http://localhost:8000/openapi.json>. Además de los esquemas, el esquema
+publica **un ejemplo real por body y por respuesta**, para que el frontend y la
+app móvil puedan copiar un payload sin inventarlo.
+
+### Respuestas reutilizables
+
+`components.responses` publica las respuestas que se repiten en todas las
+operaciones, con su cabecera `X-Request-ID` y sus ejemplos:
+
+| Respuesta | Estado | Cuándo se usa |
+|---|---|---|
+| `NoAutenticado` | 401 | Falta el token, expiró o su firma no es válida (documenta `WWW-Authenticate: Bearer`) |
+| `ErrorInterno` | 500 | Error no controlado de la Gateway (`ERROR_INTERNO`) o respuesta no JSON (`ERROR_MICROSERVICIO`) |
+| `ServicioNoDisponible` | 502 | El microservicio no respondió |
+| `GatewaySaturada` | 503 | El pool de conexiones de la Gateway está agotado |
+| `TiempoAgotado` | 504 | El microservicio tardó demasiado |
+
+El `503` y el `504` de cada operación de negocio se referencian con `$ref` a
+`GatewaySaturada` y `TiempoAgotado`. El `401`, el `500` y el `502` se describen en
+línea en cada operación porque no son idénticos en todas: dependen de si el error
+lo genera la Gateway (`ErrorRespuesta`) o el microservicio (`ErrorDetalle`), y el
+OpenAPI publica en cada caso el esquema que corresponde.
+
+### Ejemplos nombrados
+
+`components.examples` guarda los cuerpos reales, referenciables por nombre desde
+`openapi.json`:
+
+| Prefijo | Ejemplos |
+|---|---|
+| `error_*` | Los siete errores de la Gateway: `error_ruta_no_encontrada` (404), `error_metodo_no_permitido` (405), `error_interno_gateway` (500), `error_microservicio` (respuesta no JSON), `error_microservicio_no_disponible` (502), `error_gateway_saturada` (503) y `error_tiempo_agotado` (504) |
+| `detalle_*` | Los errores que responden MS1 y MS2: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados y los dos `422` de validación |
+
+Los mensajes de los errores de la Gateway se importan de `gateway/errores.py`, así
+que el ejemplo no puede divergir del texto que la Gateway responde realmente. Los
+ejemplos de los microservicios usan los `detail` exactos de MS1 y MS2 (por ejemplo
+`"No tienes permiso para realizar esta operación"` en el `403` de vehículos). Los
+ejemplos de órdenes son los de `shared/openapi_ordenes.py` y se conservan sin
+cambios.
+
+Ninguna URL interna (`localhost:8001`, `localhost:8002`, …) ni token real se
+publica en el esquema: el `access_token` de ejemplo es un JWT ficticio que no
+habilita ninguna llamada.
+
+### Cabecera `X-Request-ID` y health checks
+
+Todas las respuestas bajo `/api` declaran la cabecera `X-Request-ID` en el
+OpenAPI, con su descripción y su ejemplo (`abc-123`); es la misma clave que viaja
+en `error.request_id`. Los dos endpoints de salud muestran también sus ejemplos:
+`200` con los cuatro microservicios en `ok` y el `503` con `status: degradado`
+(ver la sección siguiente).
+
+### Verificación
+
+```bash
+python -m pytest tests/test_gateway_openapi.py tests/test_gateway_openapi_ejemplos.py -v
+```
+
+`tests/test_gateway_openapi_ejemplos.py` valida el documento con
+`openapi-spec-validator`, comprueba que **todos** los ejemplos (incluidos los de
+órdenes) cumplen el esquema que los acompaña, que no hay URLs internas ni tokens
+reales y que `gateway/openapi_ejemplos.py` es idempotente. La dependencia de
+desarrollo se instala con `pip install -r requirements-dev.txt`.
+
+## Health checks (`/api/health`)
+
+Públicos (no exigen `Authorization`) y de solo lectura: miden la salud del
+sistema, no son endpoints de negocio.
+
+### GET `/api/health`
+
+Responde la propia Gateway, **sin consultar a los microservicios** (lo usa
+Vercel y no puede depender de que estén arriba). `200` siempre que el proceso
+de la Gateway esté vivo:
+
+```json
+// Response 200
+{ "status": "ok", "servicio": "gateway" }
+```
+
+### GET `/api/health/servicios`
+
+Consulta `/health/db` de los cuatro microservicios en paralelo con un timeout
+de `GATEWAY_HEALTH_TIMEOUT_SECONDS` (2 s por defecto) por servicio. `200` si
+todos responden; `503` si al menos uno no lo está. Toda respuesta trae
+`Cache-Control: no-store`. El body no expone URLs internas.
+
+```json
+// Response 200
+{
+  "status": "ok",
+  "gateway": "ok",
+  "servicios": {
+    "ms1_auth": { "estado": "ok", "latencia_ms": 3 },
+    "ms2_taller": { "estado": "ok", "latencia_ms": 4 },
+    "ms3_presupuestos": { "estado": "ok", "latencia_ms": 2 },
+    "ms4_evidencias": { "estado": "ok", "latencia_ms": 5 }
+  }
+}
+```
+
+```json
+// Response 503
+{
+  "status": "degradado",
+  "gateway": "ok",
+  "servicios": {
+    "ms1_auth": { "estado": "ok", "latencia_ms": 3 },
+    "ms2_taller": { "estado": "ok", "latencia_ms": 4 },
+    "ms3_presupuestos": { "estado": "caido" },
+    "ms4_evidencias": { "estado": "sin_base", "latencia_ms": 6, "codigo_http": 503 }
+  }
+}
+```
+
+Estados por servicio:
+
+- `ok` — respondió `200` a `/health/db` en menos del timeout (`latencia_ms` en
+  milisegundos enteros).
+- `sin_base` — el proceso responde pero su health/base falla; incluye
+  `codigo_http`.
+- `tiempo_agotado` — superó el timeout de 2 s.
+- `caido` — sin conexión (servicio apagado o no arrancado).
+
+## Rutas de Presupuestos y Evidencias
+
+La Gateway decide el destino por el **primer segmento** de la ruta y reenvía
+el resto del camino, el query string y el body tal cual. Por eso MS3 y MS4
+deben publicar sus endpoints bajo sus prefijos propios y **nunca** colgarlos
+bajo `/ordenes/...`: ese prefijo resuelve a MS2.
+
+| Prefijos | Microservicio | Ejemplo |
+|---|---|---|
+| `auth` | MS1 (Autenticación y Usuarios) | `/api/auth/login` → `POST /auth/login` |
+| `vehiculos`, `vehiculo`, `ordenes`, `orden`, `clientes`, `mecanicos` | MS2 (Vehículos y Órdenes) | `/api/ordenes/31/mecanico` → `PUT /ordenes/31/mecanico` |
+| `presupuestos`, `presupuesto`, `repuestos`, `proveedores`, `inventario` | MS3 (Presupuestos) | `/api/presupuestos` → `GET /presupuestos` |
+| `evidencias`, `evidencia` | MS4 (Evidencia Multimedia) | `/api/evidencias?orden_id=31` → `GET /evidencias?orden_id=31` |
+
+Convención que deben respetar los endpoints de la Semana 5:
+
+- **MS4 publica todo bajo `/evidencias`**, por ejemplo `POST /evidencias`
+  (subida de archivos) y `GET /evidencias?orden_id=...` (listado de una
+  orden). **No existe** `GET /ordenes/{id}/evidencias`: esa ruta llegaría a
+  MS2, no a MS4.
+- **MS3 publica bajo sus propios prefijos**, por ejemplo
+  `GET /presupuestos?orden_id=...`. Tampoco se cuelga bajo `/ordenes/...`.
+- El microservicio recibe la ruta sin el prefijo `/api` (p. ej. MS4 recibe
+  `/evidencias`, no `/api/evidencias`).
+
+Nota sobre la subida de archivos: hoy la Gateway lee el body completo en
+memoria antes de reenviarlo y conserva el `Content-Type` con el `boundary`
+del multipart. Para fotos no es problema, pero el límite de tamaño (`413`), el
+modo de subida (streaming desde la Gateway o POST prefirmado directo a MinIO)
+y los timeouts para videos son las tareas pendientes de la Semana 5 (controles
+4.2, 4.3 y 4.5 del
+[checklist de seguridad de evidencias](checklist-seguridad-evidencias.md)).
+
+Deuda registrada (decisión pendiente): existen alias en singular
+(`presupuesto`, `evidencia`, `orden`, `vehiculo`) que reenvían la ruta tal
+cual, de modo que `/api/evidencia/x` llegaría a MS4 como `/evidencia/x`, una
+ruta que ningún servicio expone. Se conservan por compatibilidad con MS2 (los
+usa el equipo) y no se consideran contrato: MS3 y MS4 publican únicamente sus
+prefijos en plural.
 
 ## Relaciones y flujo inicial de MS2
 

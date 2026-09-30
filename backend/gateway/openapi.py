@@ -20,18 +20,60 @@ from gateway.contratos import auth as contratos_auth
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
+from gateway.openapi_ejemplos import agregar_ejemplos_gateway
 from shared.openapi_ordenes import agregar_ejemplos_ordenes
 
 _TITULO = "SGTM — API Gateway"
 _VERSION = "0.1.0"
-_DESCRIPCION = (
-    "Único punto de entrada del backend del SGTM (taller mecánico). "
-    "Documenta los endpoints reales que la Gateway enruta hacia MS1 "
-    "(Autenticación y Usuarios) y MS2 (Vehículos y Órdenes). Los errores "
-    "propios de la Gateway usan el esquema `ErrorRespuesta`; los errores de "
-    "los microservicios pasan sin modificarse. "
-    "La cabecera opcional `X-Request-ID` permite rastrear una petición."
-)
+_DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
+Documenta los endpoints reales que la Gateway enruta hacia MS1 (Autenticación y \
+Usuarios) y MS2 (Vehículos y Órdenes).
+
+## URL base
+
+La URL base es el origen donde esté desplegada la Gateway. Todos los endpoints de \
+negocio cuelgan de `/api` y se reenvían a los microservicios sin modificar el \
+body, el query string ni la cabecera `Authorization`.
+
+## Autenticación
+
+1. `POST /api/auth/register` crea una cuenta con rol Cliente (el rol lo asigna el \
+servidor, nunca el body).
+2. `POST /api/auth/login` devuelve `access_token` y `token_type: bearer`.
+3. Se envía en cada llamada protegida: `Authorization: Bearer <access_token>`.
+
+El botón **Authorize** de Swagger completa esa cabecera por ti. La Gateway no \
+valida el JWT: lo reenvía al microservicio, que responde `401` si falta o expira \
+y `403` si el rol no corresponde. Ante un `401` el frontend debe limpiar la sesión \
+y volver a iniciar sesión; un `403` significa que el usuario está identificado pero \
+no tiene permisos.
+
+## Formato de errores
+
+- Errores de la Gateway: `ErrorRespuesta`, \
+`{"detail": "...", "error": {"codigo", "estado", "ruta", "request_id"}}`.
+- Errores de los microservicios: `ErrorDetalle`, `{"detail": "..."}`. En un `422` \
+de validación, `detail` es una lista de errores de Pydantic.
+
+| Estado | Código de la Gateway | Cuándo ocurre |
+|---|---|---|
+| 404 | `RUTA_NO_ENCONTRADA` | La ruta no existe |
+| 405 | `METODO_NO_PERMITIDO` | El método no existe en esa ruta |
+| 500 | `ERROR_INTERNO` o `ERROR_MICROSERVICIO` | Error no controlado o respuesta no JSON |
+| 502 | `MICROSERVICIO_INALCANZABLE` | El microservicio no respondió |
+| 503 | `GATEWAY_SATURADA` | El pool de conexiones está agotado |
+| 504 | `TIEMPO_AGOTADO` | El microservicio tardó demasiado |
+
+Las respuestas `401`, `500`, `502`, `503` y `504` también están publicadas como \
+respuestas reutilizables en `components.responses`.
+
+## X-Request-ID
+
+Se puede enviar `X-Request-ID` (letras, números y guiones) para rastrear una \
+petición; si no llega o es inválida, la Gateway genera un UUID y lo devuelve en la \
+respuesta. Es la misma clave que aparece en `error.request_id`.
+
+El detalle completo de los contratos está en `docs/contratos-api-gateway.md`."""
 
 _TAGS = [
     {
@@ -157,6 +199,11 @@ def _operacion(
             descripcion_404,
             esquema_404 if esquema_404 is not None else _ref("ErrorRespuesta"),
         ),
+        # El 401 de cada microservicio, el 500 (que puede ser de la Gateway o del
+        # servicio) y el 502 se dejan escritos en línea: `tests/test_gateway_openapi.py`
+        # verifica que esas respuestas distingan el esquema propio del de cada
+        # microservicio. Los 503 y 504 sí son idénticos en todas las operaciones y
+        # se referencian desde `components.responses`.
         "502": _respuesta(
             "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
             _ref("ErrorRespuesta"),
@@ -168,7 +215,19 @@ def _operacion(
             ),
             {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
         ),
+        "503": {"$ref": "#/components/responses/GatewaySaturada"},
+        "504": {"$ref": "#/components/responses/TiempoAgotado"},
     }
+
+    # MS1 y MS2 acompañan el 401 con `WWW-Authenticate: Bearer` y la Gateway lo
+    # reenvía; se documenta en cada operación protegida.
+    if requiere_auth and "401" in errores:
+        errores["401"]["headers"] = {
+            "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {"type": "string", "example": "Bearer"},
+            }
+        }
 
     operacion: dict[str, object] = {
         "tags": [tag],
@@ -587,5 +646,6 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     }
 
     agregar_ejemplos_ordenes(esquema, prefijo="/api")
+    agregar_ejemplos_gateway(esquema)
     app.openapi_schema = esquema
     return esquema

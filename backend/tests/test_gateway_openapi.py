@@ -91,7 +91,7 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
         for ruta, item in esquema["paths"].items()
         for metodo in ("get", "post", "put", "patch", "delete")
         if (operacion := item.get(metodo)) is not None
-        if "/api/" in ruta and ruta not in {"/api/health"}
+        if "/api/" in ruta and not ruta.startswith("/api/health")
     }
 
 
@@ -127,10 +127,11 @@ def test_seguridad_bearer_en_protegidos_y_no_en_publicos(esquema: dict) -> None:
 
 
 def test_health_e_indice_publicos_no_exigen_token(esquema: dict) -> None:
-    # Al no haber seguridad global, / y /api/health quedan públicos: no deben
-    # declarar security ni mostrar candado en Swagger.
+    # Al no haber seguridad global, /, /api/health y /api/health/servicios quedan
+    # públicos: no deben declarar security ni mostrar candado en Swagger.
     assert "security" not in esquema["paths"]["/"]["get"]
     assert "security" not in esquema["paths"]["/api/health"]["get"]
+    assert "security" not in esquema["paths"]["/api/health/servicios"]["get"]
 
 
 def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) -> None:

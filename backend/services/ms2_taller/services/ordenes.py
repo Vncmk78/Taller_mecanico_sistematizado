@@ -48,6 +48,35 @@ class PersistenciaOrdenError(Exception):
     """La operación sobre órdenes no pudo completarse de forma segura."""
 
 
+def registrar_historial_estado(
+    db: Session,
+    *,
+    orden_id: int,
+    estado_anterior: int | None,
+    estado_nuevo: int,
+    actor_usuario_id: int | None,
+    origen: str,
+    observacion: str | None = None,
+) -> HistorialEstado:
+    """Agrega el cambio de estado a la sesión sin confirmar la transacción.
+
+    La base genera la fecha/hora y aplica las restricciones del modelo. La
+    operación que invoca esta función controla flush, commit y rollback para
+    persistir el historial junto con el resto de sus cambios de forma atómica.
+    """
+
+    historial = HistorialEstado(
+        orden_id=orden_id,
+        estado_anterior=estado_anterior,
+        estado_nuevo=estado_nuevo,
+        actor_usuario_id=actor_usuario_id,
+        origen=origen,
+        observacion=observacion,
+    )
+    db.add(historial)
+    return historial
+
+
 def _consulta_orden_para_actualizacion(
     orden_id: int,
 ) -> Select[tuple[OrdenTrabajo]]:
@@ -125,14 +154,13 @@ def crear_orden(
         db.add(orden)
         db.flush()
 
-        db.add(
-            HistorialEstado(
-                orden_id=orden.orden_id,
-                estado_anterior=None,
-                estado_nuevo=estado_inicial,
-                actor_usuario_id=administrador_id,
-                origen="usuario",
-            )
+        registrar_historial_estado(
+            db,
+            orden_id=orden.orden_id,
+            estado_anterior=None,
+            estado_nuevo=estado_inicial,
+            actor_usuario_id=administrador_id,
+            origen="usuario",
         )
         db.flush()
         db.refresh(orden)
@@ -199,14 +227,13 @@ def asignar_mecanico(
                 EventoOrden.PRIMERA_ASIGNACION,
             )
             orden.estado_codigo = estado_nuevo
-            db.add(
-                HistorialEstado(
-                    orden_id=orden.orden_id,
-                    estado_anterior=RECIBIDO,
-                    estado_nuevo=estado_nuevo,
-                    actor_usuario_id=administrador_id,
-                    origen="usuario",
-                )
+            registrar_historial_estado(
+                db,
+                orden_id=orden.orden_id,
+                estado_anterior=RECIBIDO,
+                estado_nuevo=estado_nuevo,
+                actor_usuario_id=administrador_id,
+                origen="usuario",
             )
 
         db.flush()

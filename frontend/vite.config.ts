@@ -25,5 +25,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: false,
+    // La Gateway devuelve fechas con offset -03:00 y la UI las formatea con
+    // toLocaleString('es-CL'). Fijar la zona hace deterministas los tests que
+    // comparan el texto formateado, en vez de depender de la del runner.
+    env: { TZ: 'America/Santiago' },
   },
 })

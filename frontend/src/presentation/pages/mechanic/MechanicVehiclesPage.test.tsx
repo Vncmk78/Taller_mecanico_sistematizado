@@ -27,6 +27,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
       status: 'success',
       error: null,
       isOffline: false,
+      requestId: null,
       fetchVehicles: vi.fn(),
     });
   });
@@ -58,6 +59,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
       status: 'success',
       error: null,
       isOffline: false,
+      requestId: null,
       fetchVehicles: vi.fn(),
     });
 
@@ -72,6 +74,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
       status: 'success',
       error: null,
       isOffline: true,
+      requestId: null,
       fetchVehicles: vi.fn(),
     });
 
@@ -90,6 +93,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
       status: 'success',
       error: null,
       isOffline: false,
+      requestId: null,
       fetchVehicles: vi.fn(),
     });
 
@@ -104,6 +108,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
       status: 'error',
       error: 'El servidor tuvo un problema. Intente más tarde.',
       isOffline: false,
+      requestId: null,
       fetchVehicles: vi.fn(),
     });
 
@@ -120,6 +125,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
       status: 'error',
       error: 'El servidor tuvo un problema. Intente más tarde.',
       isOffline: false,
+      requestId: null,
       fetchVehicles: vi.fn(),
     });
 

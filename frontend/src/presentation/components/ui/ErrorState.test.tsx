@@ -45,4 +45,28 @@ describe('ErrorState', () => {
 
         expect(container.querySelector('[role="alert"]')).toHaveClass('p-10');
     });
+
+    it('muestra la referencia de la petición para poder rastrear el fallo', () => {
+        render(
+            <ErrorState
+                title="No se pudieron cargar los vehículos"
+                message="Ocurrió un error inesperado en la Gateway."
+                requestId="9f1c2b3a-4d5e-6f70-8192-a3b4c5d6e7f8"
+            />
+        );
+
+        expect(screen.getByText('Referencia: 9f1c2b3a-4d5e-6f70-8192-a3b4c5d6e7f8')).toBeInTheDocument();
+    });
+
+    it('omite la referencia cuando el error no trae una', () => {
+        render(
+            <ErrorState
+                title="No se pudieron cargar los vehículos"
+                message="No fue posible consultar los vehículos"
+                requestId={null}
+            />
+        );
+
+        expect(screen.queryByText(/Referencia:/)).not.toBeInTheDocument();
+    });
 });

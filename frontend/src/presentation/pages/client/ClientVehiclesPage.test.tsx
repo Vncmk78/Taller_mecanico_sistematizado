@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { errorAxios, errorInternoGateway, gatewaySaturada } from '@/infrastructure/mocks/payloads.reales';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { ClientVehiclesPage } from './ClientVehiclesPage';
@@ -125,5 +126,67 @@ describe('ClientVehiclesPage: mis vehículos y sus estados', () => {
         fireEvent.click(reintentar);
 
         expect(await screen.findByText('Ford Fiesta')).toBeInTheDocument();
+    });
+});
+
+// Cuerpos literales de la Gateway: el objetivo es que la vista clasifique y
+// muestre lo que el backend envía de verdad, no un error genérico inventado.
+describe('ClientVehiclesPage: clasificación con el cuerpo real de error de la Gateway', () => {
+    beforeEach(() => {
+        useAuthStore.setState({
+            user: {
+                id: CLIENTE_ID,
+                email: 'cliente@ taller.cl',
+                full_name: 'Cliente Prueba',
+                role: 'cliente',
+                is_active: true,
+            },
+        });
+        useVehicleStore.setState({ vehicles: [], status: 'idle', error: null, isOffline: false });
+        vi.clearAllMocks();
+    });
+
+    it('un 500 de la Gateway es un error del servidor, no un falso "no encontrado"', async () => {
+        vi.mocked(vehicleService.getMyVehicles).mockRejectedValue(errorAxios(500, errorInternoGateway));
+
+        renderPage();
+
+        expect(await screen.findByText('No se pudieron cargar sus vehículos')).toBeInTheDocument();
+        expect(screen.getByText('Ocurrió un error inesperado en la Gateway.')).toBeInTheDocument();
+        // Con 500 no hay nada confirmado, así que no se afirma que no existan
+        // vehículos: se ofrece reintentar.
+        expect(screen.queryByText('Aún no tiene vehículos registrados.')).not.toBeInTheDocument();
+    });
+
+    it('muestra el request_id de la Gateway para rastrear el fallo', async () => {
+        vi.mocked(vehicleService.getMyVehicles).mockRejectedValue(errorAxios(500, errorInternoGateway));
+
+        renderPage();
+
+        expect(await screen.findByText(/Referencia: 9f1c2b3a-4d5e-6f70-8192-a3b4c5d6e7f8/)).toBeInTheDocument();
+    });
+
+    it('un 503 se informa como fallo de servicio y muestra el mensaje real de la Gateway', async () => {
+        vi.mocked(vehicleService.getMyVehicles).mockRejectedValue(errorAxios(503, gatewaySaturada));
+
+        renderPage();
+
+        // 503 es indisponibilidad del servicio: se conserva la caché local y se
+        // rotula como aviso de servicio caído, con el texto del backend.
+        expect(await screen.findByText(/La Gateway está ocupada\. Intente más tarde\./)).toBeInTheDocument();
+        expect(screen.getByText(/Mostrando datos disponibles localmente/)).toBeInTheDocument();
+    });
+
+    it('no inventa una referencia cuando el microservicio devuelve el error sin ella', async () => {
+        // Un 500 manejado por MS2 llega como { detail } sin bloque error ni
+        // cabecera X-Request-ID: se muestra el mensaje y nada más.
+        vi.mocked(vehicleService.getMyVehicles).mockRejectedValue(
+            errorAxios(500, { detail: 'No fue posible consultar los vehículos' })
+        );
+
+        renderPage();
+
+        expect(await screen.findByText('No fue posible consultar los vehículos')).toBeInTheDocument();
+        expect(screen.queryByText(/Referencia:/)).not.toBeInTheDocument();
     });
 });

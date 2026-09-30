@@ -21,7 +21,7 @@ export function ClientVehicleDetailPage() {
     const { vehicle, loading, notFound, failed, refetch } = useVehicleDetail(id, (vid) =>
     vehicleService.getVehicleById(vid, clientId)
     );
-    const { isOffline, error } = useVehicleStore();
+    const { isOffline, error, requestId } = useVehicleStore();
 
     if (loading) {
     return <LoadingState message="Cargando ficha del vehículo..." className="p-10" />;
@@ -35,6 +35,7 @@ export function ClientVehicleDetailPage() {
             className="p-10"
             title="No se pudo cargar la ficha del vehículo"
             message={error}
+            requestId={requestId}
             onRetry={refetch}
             action={
             <Link to="/client/vehiculos" className="text-primary-blue text-sm font-medium no-underline hover:underline">
@@ -71,7 +72,7 @@ export function ClientVehicleDetailPage() {
         <ArrowLeft className="w-4 h-4" /> Volver a mis vehículos
         </Link>
 
-        {isOffline && <OfflineBanner message={error} onRetry={refetch} className="mb-6" />}
+        {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
         {/* Error del servidor con copia local en caché: se conserva la ficha y se avisa. */}
         {!isOffline && error && (

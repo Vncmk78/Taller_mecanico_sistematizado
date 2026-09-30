@@ -16,7 +16,7 @@ export function MechanicVehicleDetailPage() {
     const { vehicle, loading, notFound, failed, refetch } = useVehicleDetail(id, (vid) =>
     vehicleService.getVehicleById(vid)
     );
-    const { isOffline, error } = useVehicleStore();
+    const { isOffline, error, requestId } = useVehicleStore();
     // El alcance no se comprueba en el cliente: la Gateway responde 404 al rol
     // Mecánico cuando el vehículo no está entre sus órdenes asignadas, y offline
     // solo se muestra lo que quedó en la caché de esa misma respuesta.
@@ -33,6 +33,7 @@ export function MechanicVehicleDetailPage() {
             className="p-10"
             title="No se pudo cargar la ficha del vehículo"
             message={error}
+            requestId={requestId}
             onRetry={refetch}
             action={
             <Link to="/mechanic/vehiculos" className="text-primary-blue text-sm font-medium no-underline hover:underline">
@@ -68,7 +69,7 @@ export function MechanicVehicleDetailPage() {
         <ArrowLeft className="w-4 h-4" /> Volver a vehículos asignados
         </Link>
 
-        {isOffline && <OfflineBanner message={error} onRetry={refetch} className="mb-6" />}
+        {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
         {/* Error del servidor con copia local en caché: se conserva la ficha y se avisa. */}
         {!isOffline && error && (

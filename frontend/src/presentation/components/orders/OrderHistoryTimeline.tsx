@@ -10,9 +10,9 @@ interface OrderHistoryTimelineProps {
 }
 
 const skeletonRows = [
-    'w-2/3 bg-white/10',
-    'w-5/6 bg-white/10',
-    'w-3/4 bg-white/10',
+    'w-2/3 bg-bg-secondary',
+    'w-5/6 bg-bg-secondary',
+    'w-3/4 bg-bg-secondary',
 ];
 
 /**
@@ -22,7 +22,7 @@ const skeletonRows = [
  */
 export function OrderHistoryTimeline({ entries, loading }: OrderHistoryTimelineProps) {
     return (
-        <section aria-labelledby="order-history-title" className="glass-card p-6">
+        <section aria-labelledby="order-history-title" className="card p-6">
             <h3
                 id="order-history-title"
                 className="text-xl font-semibold flex items-center gap-2 mb-6"
@@ -35,7 +35,7 @@ export function OrderHistoryTimeline({ entries, loading }: OrderHistoryTimelineP
                 <div className="space-y-6 animate-pulse" aria-label="Cargando historial">
                     {skeletonRows.map((width) => (
                         <div key={width} className="flex items-start gap-3">
-                            <span className="h-3.5 w-3.5 rounded-full bg-white/10" aria-hidden />
+                            <span className="h-3.5 w-3.5 rounded-full bg-bg-secondary" aria-hidden />
                             <div className={`h-4 rounded ${width}`} />
                         </div>
                     ))}
@@ -51,8 +51,8 @@ export function OrderHistoryTimeline({ entries, loading }: OrderHistoryTimelineP
                         <div key={entry.id} className="relative pb-6 last:pb-0">
                             <span
                                 aria-hidden
-                                className={`absolute -left-[15px] top-1.5 h-3.5 w-3.5 rounded-full ring-4 ring-black/40 ${
-                                    estadoDotClasses[entry.estadoNuevoCodigo] ?? 'bg-white/40'
+                                className={`absolute -left-[15px] top-1.5 h-3.5 w-3.5 rounded-full ring-4 ring-surface ${
+                                    estadoDotClasses[entry.estadoNuevoCodigo] ?? 'bg-bg-secondary'
                                 }`}
                             />
                             <div className="flex flex-wrap items-center gap-2">
@@ -80,7 +80,7 @@ export function OrderHistoryTimeline({ entries, loading }: OrderHistoryTimelineP
                                 </span>
                             </div>
                             {entry.observacion && (
-                                <p className="flex items-start gap-2 mt-2 rounded-lg bg-white/5 px-4 py-2.5 text-sm text-text-muted">
+                                <p className="flex items-start gap-2 mt-2 rounded-lg bg-bg-secondary px-4 py-2.5 text-sm text-text-muted">
                                     <MessageSquare className="w-4 h-4 shrink-0 mt-0.5" aria-hidden />
                                     {entry.observacion}
                                 </p>

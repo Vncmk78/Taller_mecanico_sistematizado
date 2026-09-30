@@ -7,7 +7,7 @@ interface SidebarNavProps {
 
 export function SidebarNav({ sections }: SidebarNavProps) {
   return (
-    <aside className="w-[280px] bg-glass-sidebar border-r border-border-custom flex flex-col backdrop-blur-[20px] z-10 shrink-0">
+    <aside className="w-[280px] bg-surface border-r border-border-custom flex flex-col z-10 shrink-0">
       <div className="flex items-center gap-2.5 p-7 border-b border-border-custom">
         <AppBrand />
       </div>
@@ -16,7 +16,7 @@ export function SidebarNav({ sections }: SidebarNavProps) {
         {sections.map((section, indice) => (
           <div key={section.title ?? `seccion-${indice}`} className="flex flex-col">
             {section.title && (
-              <div className="text-xs text-gray-500 uppercase font-bold tracking-[1.5px] mx-4 mt-4 mb-2">
+              <div className="text-xs text-text-muted uppercase font-bold tracking-[1.5px] mx-4 mt-4 mb-2">
                 {section.title}
               </div>
             )}

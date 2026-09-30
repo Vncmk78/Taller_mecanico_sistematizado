@@ -11,7 +11,7 @@ export function MechanicDashboardPage() {
         </p>
         <Link
         to="/mechanic/vehiculos"
-        className="inline-flex items-center gap-2 bg-primary-red text-white px-5 py-3 rounded-lg font-bold no-underline"
+        className="inline-flex items-center gap-2 bg-primary-blue text-white px-5 py-3 rounded-lg font-bold no-underline"
         >
         <Car className="w-4 h-4" /> Ver vehículos asignados
         </Link>

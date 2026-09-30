@@ -17,7 +17,7 @@ export function OfflineBanner({ message, onRetry, className = '' }: OfflineBanne
         </span>
         <button
         onClick={onRetry}
-        className="flex items-center gap-1.5 shrink-0 text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-md transition-colors"
+        className="flex items-center gap-1.5 shrink-0 text-primary-blue bg-status-yellow/10 hover:bg-status-yellow/20 transition-colors rounded-md border border-status-yellow/40 hover:border-status-yellow/60 px-3 py-1.5"
         >
         <RefreshCw className="w-3.5 h-3.5" /> Reintentar
         </button>

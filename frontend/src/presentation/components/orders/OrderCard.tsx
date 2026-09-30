@@ -14,7 +14,7 @@ interface OrderCardProps {
 
 export function OrderCard({ order, detailPath, patente, vehicleLabel, mechanicName }: OrderCardProps) {
     return (
-        <div className="glass-card p-0 overflow-hidden flex flex-col">
+        <div className="card p-0 overflow-hidden flex flex-col">
             <div className="p-5 flex-grow flex flex-col">
                 <div className="flex justify-between items-center gap-3 mb-3">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -26,7 +26,7 @@ export function OrderCard({ order, detailPath, patente, vehicleLabel, mechanicNa
 
                 <div className="flex items-center gap-2 mb-1">
                     {patente && (
-                        <span className="bg-white/90 text-black font-mono font-bold text-sm px-2.5 py-0.5 rounded tracking-wide shrink-0">
+                        <span className="bg-bg-secondary text-text-main font-mono font-bold text-sm px-2.5 py-0.5 rounded tracking-wide shrink-0">
                             {patente}
                         </span>
                     )}
@@ -39,7 +39,7 @@ export function OrderCard({ order, detailPath, patente, vehicleLabel, mechanicNa
                 </div>
 
                 {mechanicName && (
-                    <div className="flex items-center gap-2 text-sm bg-white/5 rounded-lg px-3 py-2 mb-4">
+                    <div className="flex items-center gap-2 text-sm bg-bg-secondary rounded-lg px-3 py-2 mb-4">
                         <User className="w-4 h-4 text-text-muted" />
                         <span className="truncate">Mecánico: {mechanicName}</span>
                     </div>
@@ -47,7 +47,7 @@ export function OrderCard({ order, detailPath, patente, vehicleLabel, mechanicNa
 
                 <Link
                     to={detailPath}
-                    className="mt-auto flex items-center justify-center gap-2 bg-white/5 border border-border-custom text-white py-2.5 rounded-lg text-sm hover:bg-white/15 transition-colors no-underline"
+                    className="mt-auto flex items-center justify-center gap-2 bg-surface border border-border-custom text-primary-blue py-2.5 rounded-lg text-sm hover:bg-bg-secondary transition-colors no-underline"
                 >
                     <FileText className="w-4 h-4" />
                     Ver detalle

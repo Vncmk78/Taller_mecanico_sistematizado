@@ -29,8 +29,7 @@ function pageItems(pageCount: number, current: number): Array<number | 'ellipsis
 }
 
 const pageButtonClass = [
-    'px-3 py-1.5 rounded-md text-sm transition-colors',
-    'bg-white/10 hover:bg-white/20',
+    'px-3 py-1.5 rounded-md text-sm transition-colors border border-border-custom bg-surface text-text-main hover:bg-bg-secondary',
     'disabled:opacity-40 disabled:cursor-not-allowed',
 ].join(' ');
 
@@ -67,7 +66,7 @@ export function OrderPagination({
                         value={pageSize}
                         onChange={(e) => onPageSizeChange(Number(e.target.value))}
                         aria-label="Órdenes por página"
-                        className="bg-black/40 border border-border-custom rounded-lg px-3 py-1.5 text-white text-sm outline-none focus:border-primary-red"
+                        className="bg-surface border border-border-custom rounded-lg px-3 py-1.5 text-text-main text-sm outline-none focus:border-primary-blue"
                     >
                         {ORDER_PAGE_SIZES.map((size) => (
                             <option key={size} value={size}>
@@ -102,8 +101,8 @@ export function OrderPagination({
                                 aria-label={`Página ${item}`}
                                 className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
                                     item === page
-                                        ? 'bg-primary-red text-white'
-                                        : 'bg-white/10 hover:bg-white/20'
+                                        ? 'bg-primary-blue text-white'
+                                        : 'bg-surface border border-border-custom hover:bg-bg-secondary'
                                 }`}
                             >
                                 {item}

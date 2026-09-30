@@ -17,7 +17,7 @@ export function OrderStateStepper({ estadoCodigo }: OrderStateStepperProps) {
         .sort((a, b) => a - b);
 
     return (
-        <section aria-labelledby="order-state-stepper-title" className="glass-card p-6">
+        <section aria-labelledby="order-state-stepper-title" className="card p-6">
             <h3
                 id="order-state-stepper-title"
                 className="text-xl font-semibold flex items-center gap-2 mb-6"
@@ -53,10 +53,10 @@ export function OrderStateStepper({ estadoCodigo }: OrderStateStepperProps) {
                                     aria-hidden
                                     className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                                         current
-                                            ? 'bg-primary-red text-white ring-4 ring-primary-red/30'
+                                            ? 'bg-primary-blue text-white ring-4 ring-primary-blue/20'
                                             : reached
                                               ? 'bg-status-green/20 text-status-green'
-                                              : 'bg-white/10 text-text-muted'
+                                              : 'bg-bg-secondary text-text-muted'
                                     }`}
                                 >
                                     {codigo}
@@ -74,7 +74,7 @@ export function OrderStateStepper({ estadoCodigo }: OrderStateStepperProps) {
                             </div>
                             <span
                                 className={`mt-3 text-xs leading-tight whitespace-nowrap ${
-                                    current ? 'text-white font-bold' : 'text-text-muted'
+                                    current ? 'text-primary-blue font-bold' : 'text-text-muted'
                                 }`}
                             >
                                 {ESTADOS_ORDEN[codigo]}

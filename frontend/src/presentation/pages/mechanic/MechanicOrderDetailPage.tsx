@@ -25,7 +25,7 @@ export function MechanicOrderDetailPage() {
         return (
             <div className="p-10 text-text-muted">
                 Orden no encontrada.{' '}
-                <Link to="/mechanic/ordenes" className="text-primary-red">
+                <Link to="/mechanic/ordenes" className="text-primary-blue">
                     Volver a mis órdenes
                 </Link>
             </div>
@@ -36,7 +36,7 @@ export function MechanicOrderDetailPage() {
         <div className="animate-fade-in p-10">
             <Link
                 to="/mechanic/ordenes"
-                className="inline-flex items-center gap-2 text-text-muted hover:text-white mb-6 no-underline"
+                className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
             >
                 <ArrowLeft className="w-4 h-4" /> Volver a mis órdenes
             </Link>

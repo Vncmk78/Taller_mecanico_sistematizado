@@ -23,6 +23,7 @@ gateway/
 ├── errores.py       Formato común de errores + middleware del 500 (dentro de CORS)
 ├── middleware.py    Cabecera X-Request-ID en cada petición
 ├── openapi.py       Reescribe el Swagger con los contratos reales de MS1 y MS2
+├── openapi_ejemplos.py Ejemplos reales, respuestas comunes y X-Request-ID
 ├── contratos/       Copias de los contratos HTTP de MS1 y MS2 (para documentar)
 └── routers/
     ├── health.py    GET /  y  GET /api/health (endpoints propios de la Gateway)
@@ -38,6 +39,15 @@ Vehículos y Órdenes), con sus esquemas, ejemplos y el botón Authorize:
 - `GET /openapi.json` — esquema OpenAPI completo.
 - [`docs/contratos-api-gateway.md`](../docs/contratos-api-gateway.md) — el
   documento que leen el equipo y la app móvil (contratos, ejemplos y pendientes).
+
+`GET /docs` muestra un ejemplo por body y por respuesta, y las respuestas
+reutilizables de `components.responses` (`NoAutenticado`, `ErrorInterno`,
+`ServicioNoDisponible`, `GatewaySaturada` y `TiempoAgotado`). Los ejemplos reales,
+los `X-Request-ID` y los de los health checks se agregan en
+`openapi_ejemplos.py`, que es idempotente y nunca pisa los ejemplos de órdenes de
+`shared/openapi_ordenes.py`. `tests/test_gateway_openapi_ejemplos.py` valida el
+esquema con `openapi-spec-validator` y comprueba que cada ejemplo cumple su
+esquema.
 
 Los contratos viven en `gateway/contratos/` (la Gateway no importa código de
 los microservicios). `tests/test_gateway_openapi.py` compara esas copias con

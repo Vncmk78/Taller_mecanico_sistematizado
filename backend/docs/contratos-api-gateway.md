@@ -59,6 +59,73 @@ apunte a la URL interna del microservicio (por ejemplo la redirección 307 de
 FastAPI por la barra final) se traduce a la URL pública de la Gateway con
 `/api`: `http://localhost:8002/vehiculos` → `https://<gateway>/api/vehiculos`.
 
+## Swagger y OpenAPI (`/docs`)
+
+La fuente interactiva del contrato es <http://localhost:8000/docs> y su versión
+JSON es <http://localhost:8000/openapi.json>. Además de los esquemas, el esquema
+publica **un ejemplo real por body y por respuesta**, para que el frontend y la
+app móvil puedan copiar un payload sin inventarlo.
+
+### Respuestas reutilizables
+
+`components.responses` publica las respuestas que se repiten en todas las
+operaciones, con su cabecera `X-Request-ID` y sus ejemplos:
+
+| Respuesta | Estado | Cuándo se usa |
+|---|---|---|
+| `NoAutenticado` | 401 | Falta el token, expiró o su firma no es válida (documenta `WWW-Authenticate: Bearer`) |
+| `ErrorInterno` | 500 | Error no controlado de la Gateway (`ERROR_INTERNO`) o respuesta no JSON (`ERROR_MICROSERVICIO`) |
+| `ServicioNoDisponible` | 502 | El microservicio no respondió |
+| `GatewaySaturada` | 503 | El pool de conexiones de la Gateway está agotado |
+| `TiempoAgotado` | 504 | El microservicio tardó demasiado |
+
+El `503` y el `504` de cada operación de negocio se referencian con `$ref` a
+`GatewaySaturada` y `TiempoAgotado`. El `401`, el `500` y el `502` se describen en
+línea en cada operación porque no son idénticos en todas: dependen de si el error
+lo genera la Gateway (`ErrorRespuesta`) o el microservicio (`ErrorDetalle`), y el
+OpenAPI publica en cada caso el esquema que corresponde.
+
+### Ejemplos nombrados
+
+`components.examples` guarda los cuerpos reales, referenciables por nombre desde
+`openapi.json`:
+
+| Prefijo | Ejemplos |
+|---|---|
+| `error_*` | Los siete errores de la Gateway: `error_ruta_no_encontrada` (404), `error_metodo_no_permitido` (405), `error_interno_gateway` (500), `error_microservicio` (respuesta no JSON), `error_microservicio_no_disponible` (502), `error_gateway_saturada` (503) y `error_tiempo_agotado` (504) |
+| `detalle_*` | Los errores que responden MS1 y MS2: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados y los dos `422` de validación |
+
+Los mensajes de los errores de la Gateway se importan de `gateway/errores.py`, así
+que el ejemplo no puede divergir del texto que la Gateway responde realmente. Los
+ejemplos de los microservicios usan los `detail` exactos de MS1 y MS2 (por ejemplo
+`"No tienes permiso para realizar esta operación"` en el `403` de vehículos). Los
+ejemplos de órdenes son los de `shared/openapi_ordenes.py` y se conservan sin
+cambios.
+
+Ninguna URL interna (`localhost:8001`, `localhost:8002`, …) ni token real se
+publica en el esquema: el `access_token` de ejemplo es un JWT ficticio que no
+habilita ninguna llamada.
+
+### Cabecera `X-Request-ID` y health checks
+
+Todas las respuestas bajo `/api` declaran la cabecera `X-Request-ID` en el
+OpenAPI, con su descripción y su ejemplo (`abc-123`); es la misma clave que viaja
+en `error.request_id`. Los dos endpoints de salud muestran también sus ejemplos:
+`200` con los cuatro microservicios en `ok` y el `503` con `status: degradado`
+(ver la sección siguiente).
+
+### Verificación
+
+```bash
+python -m pytest tests/test_gateway_openapi.py tests/test_gateway_openapi_ejemplos.py -v
+```
+
+`tests/test_gateway_openapi_ejemplos.py` valida el documento con
+`openapi-spec-validator`, comprueba que **todos** los ejemplos (incluidos los de
+órdenes) cumplen el esquema que los acompaña, que no hay URLs internas ni tokens
+reales y que `gateway/openapi_ejemplos.py` es idempotente. La dependencia de
+desarrollo se instala con `pip install -r requirements-dev.txt`.
+
 ## Health checks (`/api/health`)
 
 Públicos (no exigen `Authorization`) y de solo lectura: miden la salud del

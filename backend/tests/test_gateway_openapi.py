@@ -1,6 +1,6 @@
 """Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 11 endpoints reales de Auth,
+Verifican que `/openapi.json` publica los 14 endpoints reales de Auth,
 Vehículos y Órdenes con sus contratos y seguridad, que el proxy genérico no
 aparece, y que las copias de `gateway/contratos` no se desactualizan respecto
 a los esquemas reales de MS1 y MS2.
@@ -33,6 +33,8 @@ from services.ms2_taller.schemas.vehiculo import (
 )
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
+    CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
+    HistorialEstadoRespuesta as Ms2HistorialEstadoRespuesta,
     OrdenCrear as Ms2OrdenCrear,
     OrdenRespuesta as Ms2OrdenRespuesta,
 )
@@ -45,22 +47,28 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/auth/me", "get"),
     ("/api/vehiculos", "post"),
     ("/api/vehiculos", "get"),
+    ("/api/vehiculos/asignados", "get"),
     ("/api/vehiculos/{vehiculo_id}", "get"),
     ("/api/vehiculos/{vehiculo_id}", "patch"),
     ("/api/ordenes", "post"),
     ("/api/ordenes", "get"),
     ("/api/ordenes/{orden_id}", "get"),
     ("/api/ordenes/{orden_id}/mecanico", "put"),
+    ("/api/ordenes/{orden_id}/historial", "get"),
+    ("/api/ordenes/{orden_id}/estado", "patch"),
 }
 
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
 _PROTEGIDOS = {
     "/api/auth/me",
     "/api/vehiculos",
+    "/api/vehiculos/asignados",
     "/api/vehiculos/{vehiculo_id}",
     "/api/ordenes",
     "/api/ordenes/{orden_id}",
     "/api/ordenes/{orden_id}/mecanico",
+    "/api/ordenes/{orden_id}/historial",
+    "/api/ordenes/{orden_id}/estado",
 }
 
 
@@ -93,7 +101,7 @@ def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["openapi"].startswith("3.")
 
 
-def test_estan_los_11_endpoints_con_sus_metodos(esquema: dict) -> None:
+def test_estan_los_14_endpoints_con_sus_metodos(esquema: dict) -> None:
     operaciones = set(_operaciones_documentadas(esquema))
     assert operaciones == _ENDPOINTS_ESPERADOS
 
@@ -137,6 +145,8 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes", "post"),
         ("/api/ordenes/{orden_id}", "get"),
         ("/api/ordenes/{orden_id}/mecanico", "put"),
+        ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/{orden_id}/estado", "patch"),
     }
     for ruta, metodo in _ENDPOINTS_ESPERADOS:
         respuestas = operaciones[(ruta, metodo)]["responses"]
@@ -186,6 +196,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
             "/api/ordenes/{orden_id}/mecanico",
             "put",
         ): "AsignacionMecanicoActualizar",
+        ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
     }
     for (ruta, metodo), ref in con_cuerpo.items():
         esquema_cuerpo = operaciones[(ruta, metodo)]["requestBody"]["content"][
@@ -195,9 +206,11 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
     for (ruta, metodo) in (
         ("/api/auth/me", "get"),
         ("/api/vehiculos", "get"),
+        ("/api/vehiculos/asignados", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
         ("/api/ordenes", "get"),
         ("/api/ordenes/{orden_id}", "get"),
+        ("/api/ordenes/{orden_id}/historial", "get"),
     ):
         assert "requestBody" not in operaciones[(ruta, metodo)]
 
@@ -223,6 +236,14 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
             Ms2AsignacionMecanicoActualizar,
         ),
         (contratos_ordenes.OrdenRespuesta, Ms2OrdenRespuesta),
+        (
+            contratos_ordenes.CambioEstadoSolicitud,
+            Ms2CambioEstadoSolicitud,
+        ),
+        (
+            contratos_ordenes.HistorialEstadoRespuesta,
+            Ms2HistorialEstadoRespuesta,
+        ),
     ],
 )
 def test_contrato_coincide_con_esquema_real(contrato, real) -> None:
@@ -252,6 +273,8 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "OrdenCrear",
         "AsignacionMecanicoActualizar",
         "OrdenRespuesta",
+        "CambioEstadoSolicitud",
+        "HistorialEstadoRespuesta",
         "ErrorRespuesta",
         "DetalleError",
         "ErrorDetalle",
@@ -288,7 +311,7 @@ def test_contrato_vehiculo_no_inventa_formato_o_rangos(esquema: dict) -> None:
         assert "maximum" not in contrato
 
 
-def test_contrato_ordenes_refleja_flujo_inicial_implementado(esquema: dict) -> None:
+def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     schemas = esquema["components"]["schemas"]
     assert schemas["OrdenCrear"]["additionalProperties"] is False
     assert schemas["OrdenCrear"]["properties"]["vehiculo_id"][
@@ -317,8 +340,24 @@ def test_contrato_ordenes_refleja_flujo_inicial_implementado(esquema: dict) -> N
     assert "reasignación conserva el estado" in descripcion_asignacion
     assert "Entregado y Cancelado" in descripcion_asignacion
 
-    assert "/api/ordenes/{orden_id}/historial" not in paths
-    assert "/api/ordenes/{orden_id}/estado" not in paths
+    cambio = schemas["CambioEstadoSolicitud"]
+    assert cambio["additionalProperties"] is False
+    assert cambio["properties"]["estado_destino"]["exclusiveMinimum"] == 0
+    assert paths["/api/ordenes/{orden_id}/estado"]["patch"]["requestBody"][
+        "content"
+    ]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/CambioEstadoSolicitud"
+    )
+    assert paths["/api/ordenes/{orden_id}/estado"]["patch"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]["$ref"] == "#/components/schemas/OrdenRespuesta"
+
+    assert (
+        paths["/api/ordenes/{orden_id}/historial"]["get"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]["items"]["$ref"]
+        == "#/components/schemas/HistorialEstadoRespuesta"
+    )
 
 
 @pytest.mark.parametrize("aplicacion,prefijo", [(app, "/api"), (ms2_app, "")])

@@ -14,7 +14,9 @@ export function MechanicVehicleDetailPage() {
     vehicleService.getVehicleById(vid)
     );
     const { isOffline, error } = useVehicleStore();
-    const isAssigned = id ? mockAssignedVehicleIds.includes(id) : false;
+    // Online, getVehicleById del rol Mecánico ya responde 404 si el vehículo no
+    // está entre los asignados; el mock solo aplica para el modo offline.
+    const isAssigned = isOffline ? (id ? mockAssignedVehicleIds.includes(id) : false) : true;
 
     if (loading) {
     return <LoadingState message="Cargando ficha del vehículo..." className="p-10" />;
@@ -41,7 +43,10 @@ export function MechanicVehicleDetailPage() {
         {isOffline && <OfflineBanner message={error} onRetry={refetch} className="mb-6" />}
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6">
-        <VehicleInfoPanel vehicle={vehicle} owner={mockOwners[vehicle.clientId]} />
+        <VehicleInfoPanel
+            vehicle={vehicle}
+            owner={vehicle.clientId ? mockOwners[vehicle.clientId] : undefined}
+          />
         <div className="card">
             <h3 className="text-xl font-semibold flex items-center gap-2 mb-4 pb-4 border-b border-border-custom">
             <ClipboardList className="w-5 h-5 text-text-muted" />

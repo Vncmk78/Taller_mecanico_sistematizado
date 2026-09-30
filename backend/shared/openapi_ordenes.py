@@ -55,6 +55,31 @@ def _payload_invalido(campo: str) -> dict:
     }
 
 
+def _completar_errores(
+    respuestas: dict,
+    errores: dict[str, dict[str, dict]],
+) -> None:
+    """Agrega ejemplos documentales a respuestas de error ya declaradas.
+
+    MS2 declara algunos errores solo con description. Completar su cuerpo
+    documental sin reemplazar los esquemas ya publicados.
+    """
+
+    for codigo, ejemplos in errores.items():
+        contenido = respuestas[codigo].setdefault("content", {})
+        media = contenido.setdefault(
+            "application/json",
+            {
+                "schema": {
+                    "type": "object",
+                    "properties": {"detail": {"type": "string"}},
+                    "required": ["detail"],
+                }
+            },
+        )
+        media["examples"] = deepcopy(ejemplos)
+
+
 def agregar_ejemplos_ordenes(esquema: dict, *, prefijo: str = "") -> None:
     """Enriquece únicamente OpenAPI; conserva esquemas y seguridad existentes."""
     contrato = esquema["components"]["schemas"]["OrdenRespuesta"]
@@ -161,18 +186,116 @@ def agregar_ejemplos_ordenes(esquema: dict, *, prefijo: str = "") -> None:
                     {"detail": "No se puede cambiar el mecánico de una orden terminal"},
                 ),
             }
-        for codigo, ejemplos in errores.items():
-            # MS2 declara algunos errores solo con description. Completar su
-            # cuerpo documental sin reemplazar los esquemas ya publicados.
-            contenido = respuestas[codigo].setdefault("content", {})
-            media = contenido.setdefault(
-                "application/json",
-                {
-                    "schema": {
-                        "type": "object",
-                        "properties": {"detail": {"type": "string"}},
-                        "required": ["detail"],
-                    }
+        _completar_errores(respuestas, errores)
+
+    _agregar_ejemplos_historial_y_estado(esquema, prefijo=prefijo)
+
+
+def _agregar_ejemplos_historial_y_estado(esquema: dict, *, prefijo: str) -> None:
+    """Ejemplos de los endpoints agregados: historial consultable y cambio de estado."""
+
+    ruta_historial = f"{prefijo}/ordenes/{{orden_id}}/historial"
+    if ruta_historial in esquema["paths"]:
+        respuestas = esquema["paths"][ruta_historial]["get"]["responses"]
+        respuestas["200"]["content"]["application/json"]["examples"] = deepcopy(
+            {
+                "con_historial": _ejemplo(
+                    "Dos transiciones registradas",
+                    [
+                        {
+                            "historial_id": 41,
+                            "orden_id": 31,
+                            "estado_anterior": 1,
+                            "estado_nuevo": 2,
+                            "actor_usuario_id": 50,
+                            "origen": "usuario",
+                            "fecha_hora": "2026-09-28T11:00:00-03:00",
+                            "observacion": "Inicia evaluación técnica",
+                        },
+                        {
+                            "historial_id": 42,
+                            "orden_id": 31,
+                            "estado_anterior": 2,
+                            "estado_nuevo": 3,
+                            "actor_usuario_id": 50,
+                            "origen": "usuario",
+                            "fecha_hora": "2026-09-28T12:15:00-03:00",
+                            "observacion": None,
+                        },
+                    ],
+                ),
+                "sin_cambios": _ejemplo("Orden sin transiciones", []),
+            }
+        )
+        _completar_errores(
+            respuestas,
+            {
+                "404": {
+                    "recurso_ausente": _ejemplo(
+                        "Orden no encontrada", {"detail": "Orden no encontrada"}
+                    )
+                }
+            },
+        )
+
+    ruta_estado = f"{prefijo}/ordenes/{{orden_id}}/estado"
+    if ruta_estado in esquema["paths"]:
+        respuestas = esquema["paths"][ruta_estado]["patch"]["responses"]
+        respuestas["200"]["content"]["application/json"]["examples"] = deepcopy(
+            {
+                "esperando_diagnostico": _ejemplo(
+                    "Recibido a Esperando diagnóstico", _DIAGNOSTICO
+                )
+            }
+        )
+        _completar_errores(
+            respuestas,
+            {
+                "403": {
+                    "rol_no_autorizado": _ejemplo(
+                        "Usuario sin rol Administrador ni orden asignada",
+                        {
+                            "detail": (
+                                "No tienes permiso para cambiar el estado "
+                                "de esta orden"
+                            )
+                        },
+                    )
                 },
-            )
-            media["examples"] = deepcopy(ejemplos)
+                "404": {
+                    "recurso_ausente": _ejemplo(
+                        "Orden no encontrada", {"detail": "Orden no encontrada"}
+                    )
+                },
+                "409": {
+                    "transicion_no_permitida": _ejemplo(
+                        "Transición no declarada",
+                        {
+                            "detail": (
+                                "Transición no permitida: "
+                                "Recibido -> En reparación"
+                            )
+                        },
+                    ),
+                    "orden_terminal": _ejemplo(
+                        "Orden entregada o cancelada",
+                        {
+                            "detail": (
+                                "El estado Entregado es terminal y no admite "
+                                "transiciones"
+                            )
+                        },
+                    ),
+                },
+                "422": {
+                    "estado_desconocido": _ejemplo(
+                        "Estado de destino desconocido",
+                        {"detail": "Estado de destino desconocido: 999"},
+                    ),
+                    "estado_no_positivo": _ejemplo(
+                        "Estado de destino igual a cero",
+                        _payload_invalido("estado_destino"),
+                    ),
+                },
+            },
+        )

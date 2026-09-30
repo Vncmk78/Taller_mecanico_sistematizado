@@ -102,13 +102,15 @@ autoriza por sí solo endpoints o transiciones futuras.
 
 | Rol efectivo | Vehículos | Órdenes |
 |---|---|---|
-| Administrador | No obtiene acceso global al endpoint de vehículos salvo que la cuenta también tenga rol Cliente y perfil local | Crea órdenes, ve todas y asigna o reasigna mecánicos |
+| Administrador | Consulta cualquiera de los vehículos del taller y puede registrarlos | Crea órdenes, ve todas, asigna o reasigna mecánicos y cambia su estado |
 | Cliente | Registra, lista, consulta y modifica únicamente sus vehículos | Lista y consulta únicamente órdenes asociadas a sus vehículos; no crea órdenes |
-| Mecánico | No existe todavía un endpoint de vehículos asignados | Lista y consulta únicamente órdenes cuyo `mecanico_actual_id` coincide con su usuario |
+| Mecánico | Lista sus vehículos asignados en `/api/vehiculos/asignados` y consulta los asignados a él | Lista, consulta y cambia el estado únicamente de órdenes cuyo `mecanico_actual_id` coincide con su usuario; consulta su historial |
 | Multirol | Acumula los permisos de sus roles | Une los alcances Cliente y Mecánico sin duplicados; si incluye Administrador, conserva visibilidad global |
 
 Una orden inexistente y una orden fuera del alcance del Cliente o Mecánico
 responden el mismo `404`, para no revelar la existencia de recursos ajenos.
+Lo mismo aplica al detalle de vehículos: el Cliente solo ve los propios y el
+Mecánico solo los que tiene asignados.
 
 ## Autenticación (MS1)
 
@@ -277,14 +279,16 @@ un largo funcional ni una combinación de letras y números. `anio` y
 
 ### GET `/api/vehiculos`
 
-Lista los vehículos del cliente autenticado.
+Administrador lista todos los vehículos del taller; Cliente lista los suyos. Un
+usuario con rol Mecánico (aun con perfil Cliente activo, sin rol Cliente) recibe
+`403` y usa `/api/vehiculos/asignados`.
 
 | Atributo | Descripción |
 |---|---|
-| Auth | `Authorization: Bearer <token>` |
+| Auth | `Authorization: Bearer <token>` con rol Cliente o Administrador |
 | Body | — |
 | Respuesta OK | `200` con lista de `VehiculoRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `404` sin perfil Cliente local · `502/500` de infraestructura |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente o Administrador · `404` sin perfil Cliente local (rol Cliente) · `502/500` de infraestructura |
 
 ```json
 // Response 200
@@ -292,17 +296,30 @@ Lista los vehículos del cliente autenticado.
     "anio": 2018, "kilometraje": 45000 } ]
 ```
 
+### GET `/api/vehiculos/asignados`
+
+Lista los vehículos con órdenes de trabajo asignadas al Mecánico autenticado,
+sin duplicados (una misma patente con varias órdenes aparece una sola vez).
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Mecánico |
+| Body | — |
+| Respuesta OK | `200` con lista de `VehiculoRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Mecánico · `502/500` de infraestructura |
+
 ### GET `/api/vehiculos/{vehiculo_id}`
 
-Consulta un vehículo únicamente cuando pertenece al Cliente autenticado. Un
-vehículo ajeno y uno inexistente producen el mismo `404`.
+Devuelve un vehículo según el rol: el Cliente solo los propios, el
+Administrador cualquiera del taller y el Mecánico solo los asignados a él.
+Un vehículo ajeno y uno inexistente producen el mismo `404`.
 
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` |
 | Body | — |
 | Respuesta OK | `200` con `VehiculoRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `404` vehículo inexistente, ajeno o perfil local ausente · `502/500` de infraestructura |
+| Errores | `401` JWT ausente/inválido · `404` inexistente o fuera del alcance del rol · `502/500` de infraestructura |
 
 ### PATCH `/api/vehiculos/{vehiculo_id}`
 
@@ -327,8 +344,8 @@ patente y el propietario no son modificables después del registro.
 ## Órdenes de trabajo (MS2)
 
 Todos los endpoints requieren `Authorization: Bearer <token>`. La respuesta
-`OrdenRespuesta` expone el estado actual y el responsable actual, pero no
-incluye todavía los historiales completos:
+`OrdenRespuesta` expone el estado actual y el responsable actual; los
+historiales se consultan por separado con `GET /api/ordenes/{orden_id}/historial`:
 
 ```json
 {
@@ -435,16 +452,62 @@ reasignaciones.
 existencia, actividad y rol Mecánico, junto con los límites de capacidad por
 mecánico, permanece pendiente de contratos e implementación posteriores.
 
+### GET `/api/ordenes/{orden_id}/historial`
+
+Devuelve los cambios de estado de una orden en orden cronológico, con el actor
+que los registró y su observación. Aplica la misma visibilidad del detalle: una
+orden ajena y una inexistente responden el mismo `404`.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Body | — |
+| Respuesta OK | `200` con lista de `HistorialEstadoRespuesta` |
+| Errores | `401` JWT ausente/inválido · `404` orden inexistente o no visible · `500` consulta · `502` MS2 no disponible |
+
+```json
+// Response 200
+[
+  { "historial_id": 40, "orden_id": 31, "estado_anterior": null, "estado_nuevo": 1,
+    "actor_usuario_id": 99, "origen": "usuario", "fecha_hora": "2026-09-28T10:30:00-03:00",
+    "observacion": null },
+  { "historial_id": 41, "orden_id": 31, "estado_anterior": 1, "estado_nuevo": 2,
+    "actor_usuario_id": 50, "origen": "usuario", "fecha_hora": "2026-09-28T11:00:00-03:00",
+    "observacion": "Inicia evaluación técnica" }
+]
+```
+
+### PATCH `/api/ordenes/{orden_id}/estado`
+
+Cambia el estado de una orden validando rol, catálogo oficial (1 a 8) y la
+transición declarada por el dominio. El Administrador siempre puede ejecutarlo;
+el Mecánico solo sobre las órdenes que tiene asignadas. `Entregado` y
+`Cancelado` son terminales y rechazan cualquier cambio. El estado y el historial
+se actualizan en la misma transacción.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador o mecánico asignado |
+| Body | `{"estado_destino": int positivo, "observacion"?: string no vacío}` |
+| Respuesta OK | `200` con `OrdenRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador ni orden asignada · `404` orden inexistente · `409` transición no permitida o terminal · `422` estado de destino desconocido o body inválido · `500` persistencia · `502` MS2 no disponible |
+
+```json
+// Request
+{ "estado_destino": 2, "observacion": "Inicia evaluación técnica" }
+// Response 200
+{ "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 2,
+  "mecanico_actual_id": 50, "creado_por_id": 99,
+  "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T11:00:00-03:00" }
+```
+
 ## Contratos todavía no publicados
 
 Las siguientes capacidades no tienen un endpoint implementado y no deben ser
-consumidas como parte del contrato de Semana 3:
+consumidas como parte del contrato actual:
 
 | Capacidad | Situación actual |
 |---|---|
-| Historial de una orden | Se persiste internamente, pero no existe `GET /api/ordenes/{orden_id}/historial` |
-| Cambio general de estado | No existe un endpoint; solo la primera asignación realiza la transición implementada |
-| Vehículos asignados a un mecánico | No existe `/api/vehiculos/asignados` |
 | Capacidad y máximo de órdenes activas | Subsistema de una semana posterior |
 | Presupuestos, repuestos e inventario | Los contratos de MS3 se publicarán cuando sus endpoints estén definidos y verificados |
 | Evidencias multimedia | Los contratos de MS4 se publicarán cuando sus endpoints estén definidos y verificados |

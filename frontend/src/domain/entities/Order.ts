@@ -16,6 +16,18 @@ export function ordenStatusLabel(codigo: number): string {
     return ESTADOS_ORDEN[codigo] ?? `Estado ${codigo}`;
 }
 
+// Transiciones accionables por el mecánico en "Actualizar Estados". Son espejo
+// de MS2 (transiciones_orden.py), pero recortadas al avance que la vista puede
+// realizar: la aprobación del presupuesto y la entrega física las gestionan el
+// cliente y el administrador, y cancelar corresponde al cliente. El backend
+// conserva la autoridad final con validar_transicion.
+export const AVANCES_MECANICO: Record<number, number[]> = {
+    1: [2], // Recibido -> Esperando diagnóstico
+    2: [3], // Esperando diagnóstico -> Esperando aprobación de presupuesto
+    4: [5], // Esperando repuestos -> En reparación
+    5: [6], // En reparación -> Listo
+};
+
 // Orden de trabajo. Coincide con el contrato de la API Gateway
 // (OrdenRespuesta); los campos patente/vehiculo/mecanicoNombre son solo de
 // presentación/demo y no vienen del backend.

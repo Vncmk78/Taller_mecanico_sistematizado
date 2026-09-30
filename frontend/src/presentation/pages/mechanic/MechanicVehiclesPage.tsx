@@ -20,15 +20,16 @@ export function MechanicVehiclesPage() {
 
     const assignedVehicles = useMemo(() => {
     const term = search.trim().toLowerCase();
-    // TODO: cuando exista MS2/Gestión de Órdenes, "asignado" vendrá directo
-    // de getAssignedVehicles(); por ahora se filtra contra el mock porque no
-    // hay endpoint real de asignaciones todavía.
-    return vehicles
-        .filter((v) => mockAssignedVehicleIds.includes(v.id))
-        .filter((v) =>
+    // Online, getAssignedVehicles() ya devuelve solo los vehículos de las
+    // órdenes asignadas al mecánico; el filtro por mock es solo para el modo
+    // offline (caché con datos de demo).
+    const base = isOffline
+        ? vehicles.filter((v) => mockAssignedVehicleIds.includes(v.id))
+        : vehicles;
+    return base.filter((v) =>
         term ? [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term)) : true
         );
-    }, [vehicles, search]);
+    }, [vehicles, search, isOffline]);
 
     return (
     <div className="animate-fade-in p-10">
@@ -59,7 +60,7 @@ export function MechanicVehiclesPage() {
             <VehicleCard
                 key={vehicle.id}
                 vehicle={vehicle}
-                ownerName={mockOwners[vehicle.clientId]?.fullName}
+                ownerName={vehicle.clientId ? mockOwners[vehicle.clientId]?.fullName : undefined}
                 detailPath={`/mechanic/vehiculos/${vehicle.id}`}
             />
             ))}

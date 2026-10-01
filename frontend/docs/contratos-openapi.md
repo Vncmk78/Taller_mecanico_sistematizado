@@ -12,9 +12,12 @@ Todas las llamadas salen de la capa de infraestructura `src/infrastructure/api/`
 a través del cliente `src/infrastructure/config/apiClient.ts`, con base
 `VITE_API_URL || '/api'` y cabecera `Authorization: Bearer <jwt>`.
 
-Fecha de verificación: 30 sep 2026 (Sprint 2, Semana 4), segunda revisión tras
-retirar los datos simulados. Verificado contra la implementación real de
-`backend/services/ms1_auth` y `backend/services/ms2_taller`.
+Fecha de verificación: 30 sep 2026 (Sprint 2, Semana 4), tercera revisión tras
+retirar los datos simulados y después de que el backend actualizara sus
+contratos con ejemplos y respuestas comunes. Verificado contra la implementación
+real de `backend/services/ms1_auth` y `backend/services/ms2_taller`, y contra
+`backend/gateway/contratos/`. Las diferencias encontradas están en "Registro de
+discrepancias entre el frontend y el contrato de la API".
 
 ## Inventario de endpoints consumidos
 
@@ -144,7 +147,8 @@ la referencia al archivo del backend del que salió cada uno, y se prueban contr
   vehículo registrado puede venir sin ellos. `VehicleService` los normaliza a `0`
   y `vehicleDisplay.ts` traduce ese `0` a "Sin especificar", para no mostrar
   "Año: 0". Limitación asumida: un vehículo con 0 km reales queda indistinguible
-  de uno sin dato.
+  de uno sin dato. El formulario de registro también los trata como opcionales
+  y los manda en `null` explícito, que es el valor que el contrato declara.
 - `OrdenRespuesta.mecanico_actual_id` y los campos del historial
   (`estado_anterior`, `actor_usuario_id`, `observacion`) pueden llegar en `null` y
   el mapeo los conserva como `null`/`undefined`, sin inventar valores.
@@ -156,14 +160,74 @@ la referencia al archivo del backend del que salió cada uno, y se prueban contr
   `orderDisplay.ts` las formatea con `es-CL`; Vitest corre con
   `TZ: America/Santiago` para que el texto esperado sea estable.
 
-## Desactualizaciones del documento de contrato
+## Registro de discrepancias entre el frontend y el contrato de la API
 
-`backend/docs/contratos-api-gateway.md` sigue figurando `/api/ordenes` como
-"Pendiente (todavía sin endpoints en los microservicios)" y no registra
-`/api/ordenes/{id}/historial`, `/api/ordenes/{id}/estado`, `/api/vehiculos/asignados`
-ni el `cliente_id` de `VehiculoRespuesta`. `ms2_taller` ya los implementa y el
-Swagger de la Gateway los documenta. Correspondería al equipo de backend
-actualizar ese documento.
+Auditoría punto por punto de lo que el frontend exige, consume o asume contra lo
+que la Gateway y los microservicios declaran y responden. Cada fila está cerrada
+con la evidencia del archivo del backend que la demuestra.
+
+| # | Dónde | Qué exigía o asumía el frontend | Qué declara el contrato | Impacto | Estado |
+|---|---|---|---|---|---|
+| D1 | `ClientVehicleFormPage.tsx` | `patent` con patrón `/^[A-Za-z]{4}-\d{2}$/` | `patente: str` con `min_length=1` y **sin** `pattern` (`gateway/contratos/vehiculos.py`, `ms2_taller/schemas/vehiculo.py`; el test de MS2 afirma `assert "pattern" not in patente`) | La UI rechazaba el propio ejemplo del contrato (`AB1234`) | **Resuelta** |
+| D2 | `ClientVehicleFormPage.tsx` | `marca`/`modelo` sin longitud máxima | `marca`/`modelo` con `min_length=1, max_length=60` | La UI aceptaba texto de más de 60 caracteres y el backend respondía `422` | **Resuelta** |
+| D3 | `ClientVehicleFormPage.tsx` | `anio` y `kilometraje` obligatorios, con rangos inventados (año 1980–actual+1, km 0–999999) | `anio`/`kilometraje` son `int \| None = None` y **no declaran cotas** | No se podía registrar un vehículo sin año ni km, y datos válidos (año 1995, 1.500.000 km) quedaban fuera de la UI | **Resuelta** |
+| D4 | Este documento | Que `backend/docs/contratos-api-gateway.md` estaba desactualizado | Ese documento ya registra `/api/vehiculos/asignados`, `/api/ordenes/{id}/historial`, `PATCH /api/ordenes/{id}/estado` y el `cliente_id` de la respuesta de vehículo | El registro del frontend afirmaba una deuda que ya no existía | **Resuelta** |
+
+Cómo se cerró cada una:
+
+- **D1**: el formulario ahora valida `patent` con `min(1)` y su `placeholder` pasó
+  de `ABCD-12` a `AB1234`. Se sigue normalizando a mayúsculas al enviar. Fijado en
+  `ClientVehicleFormPage.test.tsx`.
+- **D2**: `marca` y `modelo` ahora tienen `.max(60)`, igual que el backend. El
+  `422` real que recibía el usuario por texto largo quedó como fixture
+  (`textoVehiculoDemasiadoLargo` en `payloads.reales.ts`) y como prueba en
+  `errors.test.ts`.
+- **D3**: `anio` y `kilometraje` son opcionales en el formulario (etiquetados
+  "(opcional)") y viajan como `null` explícito, que es lo que acepta el
+  contrato; `CreateVehicleInput` los tipa `number | null`. Se conserva el
+  rechazo de un valor no numérico o negativo, que sí es un dato inválido, pero
+  se eliminaron los topes que el contrato nunca declaró.
+- **D4**: la sección "Desactualizaciones del documento de contrato" se reemplazó
+  por el estado real verificado del documento del backend.
+
+### Controles verificados sin discrepancia
+
+Se revisaron también los puntos donde el frontend depende del contrato y **no**
+hay diferencias:
+
+- **Errores de la Gateway**: `ErrorRespuesta` conserva `detail` como string de
+  primer nivel precisamente para que el frontend lo muestre
+  (`gateway/esquemas.py`), acompañado de `error.{codigo, estado, ruta,
+  request_id}`. Es lo que leen `getApiErrorMessage`, `getApiErrorRequestId` y
+  `getApiErrorCode`.
+- **Endpoints**: los tres que el frontend consume y el contrato había dejado
+  fuera de la documentación existen y responden lo que el mapeo espera
+  (`/vehiculos/asignados`, `/ordenes/{id}/historial`, `/ordenes/{id}/estado`).
+- **`PATCH /api/ordenes/{id}/estado`**: devuelve la `OrdenRespuesta` completa,
+  que es lo que el frontend da por hecho al mapear la respuesta.
+- **Cuerpo del cambio de estado**: `{ estado_destino, observacion }` coincide con
+  `CambioEstadoSolicitud`. La observación vacía se omite en vez de enviarse como
+  `""`, que violaría su `min_length=1`.
+- **`extra="forbid"`** en los cuerpos de creación: el frontend envía
+  exactamente los campos declarados y nunca `cliente_id` (el propietario lo
+  resuelve la Gateway desde el JWT).
+
+### Pendiente de decisión (backend, no se modificó)
+
+Estas no se tocan desde el frontend porque son del contrato y del dominio:
+
+1. **El contrato no acota `anio` ni `kilometraje`.** Acepta cualquier entero,
+   así que admite valores sin sentido (año 0, kilometraje negativo). La regla
+   correcta sería declarar `ge`/`le` en `gateway/contratos/vehiculos.py`;
+   mientras tanto el formulario los manda sin rango, alineado con lo que el
+   servidor acepta.
+2. **`origen` del historial es `str` y no un conjunto cerrado** en el contrato,
+   aunque el dominio solo admite `usuario` o `sistema` y el frontend castea a esa
+   unión sin validar. Cerrarlo en el contrato evitaría que un valor nuevo llegue
+   a la interfaz sin avisar.
+3. **`origen: 'sistema' → actor_usuario_id` en `null`** es una coherencia que hoy
+   solo garantiza la base (`ms2_taller/models/historial_estado.py`). El frontend
+   conserva los tres campos tal cual llegan, sin inventar valores.
 
 ## Decisiones de la revisión (alcance frontend)
 
@@ -177,15 +241,21 @@ actualizar ese documento.
   backend (`src/infrastructure/mocks/payloads.reales.ts`), no contra payloads
   inventados en el test.
 
-## Desajuste detectado: formato de patente
+## Histórico: desajuste del formato de patente (resuelto)
 
-El formulario de registro de vehículo valida la patente con
-`/^[A-Za-z]{4}-\d{2}$/` (por ejemplo `ABCD-12`), pero el backend solo exige
-`min_length=1` y su propio test afirma que el contrato **no** define un patrón
+Este desajuste se detectó al revisar los contratos y **ya no está**: queda
+registrado para que no se reintroduzca.
+
+El formulario de registro exigía la patente con `/^[A-Za-z]{4}-\d{2}$/` (por
+ejemplo `ABCD-12`), pero el backend solo exige `min_length=1` y su propio test
+afirma que el contrato **no** define un patrón
 (`backend/tests/test_vehiculos_api.py`: `assert "pattern" not in patente`). El
-ejemplo real de la Gateway usa `AB1234`, un formato que el formulario rechaza.
+ejemplo real de la Gateway usa `AB1234`, un formato que el formulario rechazaba,
+así que la UI era más restrictiva que el servidor.
 
-Consecuencia: la UI es más restrictiva que el servidor y puede impedir registrar
-vehículos que el backend aceptaría. No se modificó la validación porque es una
-decisión de producto (si el negocio exige el formato chileno o se acepta el que
-envíe el backend); queda anotado para resolverlo con el equipo.
+Se resolvió alineando el formulario con el contrato: la patente se valida con
+`min(1)` y su `placeholder` es ahora `AB1234`. La decisión de producto que
+quedaba pendiente —si el negocio exige el formato chileno o se acepta el que
+envíe el backend— se resolvió a favor del contrato, que es la autoridad: si en
+algún momento se quiere exigir un formato, corresponde declararlo en el backend
+y no solo en el formulario. Ver "Registro de discrepancias", fila D1.

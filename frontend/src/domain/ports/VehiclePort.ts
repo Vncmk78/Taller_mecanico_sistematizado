@@ -4,8 +4,10 @@ export interface CreateVehicleInput {
     patent: string;
     brand: string;
     model: string;
-    year: number;
-    mileage: number;
+    /** Opcional en el contrato (`anio`: int | None). `null` = sin dato. */
+    year: number | null;
+    /** Opcional en el contrato (`kilometraje`: int | None). `null` = sin dato. */
+    mileage: number | null;
 }
 
 export interface VehiclePort {

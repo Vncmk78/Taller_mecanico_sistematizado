@@ -445,3 +445,44 @@ para resolverla con el equipo.
 | `npm run lint` | 0 errores, 0 warnings |
 | `npx vitest run` | 341 tests en 54 archivos, todos verdes (antes 286 en 51) |
 | `npm run build` | Compila; queda el aviso preexistente de chunk > 500 kB |
+
+## Discrepancias entre el frontend y el contrato de la API (2026-09-30)
+
+Se auditó una por una las suposiciones del frontend contra la Gateway, los
+contratos de `backend/gateway/contratos/` y los esquemas reales de MS1 y MS2.
+El registro completo, con la evidencia de cada archivo del backend, quedó en
+`frontend/docs/contratos-openapi.md`, sección "Registro de discrepancias entre el
+frontend y el contrato de la API".
+
+| # | Discrepancia | Impacto | Estado |
+| --- | --- | --- | --- |
+| D1 | El formulario exigía patente `ABCD-12`; el contrato solo pide `min_length=1`, sin patrón | La UI rechazaba el ejemplo del propio backend (`AB1234`) | Resuelta |
+| D2 | El formulario no ponía tope a marca y modelo; el contrato exige `max_length=60` | La UI aceptaba texto largo y el backend respondía `422` | Resuelta |
+| D3 | El formulario exigía año y kilometraje con rangos inventados; el contrato los declara `int \| None` sin cotas | No se podía registrar un vehículo sin esos datos, y valores válidos (año 1995, 1.500.000 km) quedaban fuera | Resuelta |
+| D4 | Este repo afirmaba que `backend/docs/contratos-api-gateway.md` estaba desactualizado | Ya no lo estaba: la dependencia de backend lo había actualizado | Resuelta |
+
+Cambios:
+
+- La patente se valida con `min(1)` y su `placeholder` es `AB1234`, alineado con
+  el contrato, que es la autoridad.
+- `marca` y `modelo` tienen ahora `.max(60)`, como el backend. El `422` real que
+  recibía el usuario por texto largo quedó como fixture
+  (`textoVehiculoDemasiadoLargo`) y como prueba en `errors.test.ts`.
+- Año y kilometraje son opcionales en el formulario y viajan como `null`
+  explícito, el valor que el contrato declara. Se eliminaron los topes que el
+  contrato nunca declaró, pero se conserva el rechazo de un valor no numérico o
+  negativo.
+- Se corrigió la sección que reportaba como deuda un documento del backend que
+  ya estaba al día.
+
+Queda anotado para el equipo de backend, sin tocarlo desde el frontend: el
+contrato no acota `anio` ni `kilometraje` (debería declarar `ge`/`le`), y el
+`origen` del historial es un `str` abierto cuando el dominio solo admite
+`usuario` o `sistema`.
+
+| Verificación | Resultado |
+| --- | --- |
+| `npx tsc --noEmit -p tsconfig.json` | Sin errores |
+| `npm run lint` | 0 errores, 0 warnings |
+| `npx vitest run` | 347 tests en 54 archivos, todos verdes (antes 341) |
+| `npm run build` | Compila; queda el aviso preexistente de chunk > 500 kB |

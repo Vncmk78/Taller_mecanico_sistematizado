@@ -218,6 +218,23 @@ export const validacionPydantic = {
     ],
 };
 
+/**
+ * El 422 que el backend devuelve si `marca` o `modelo` superan los 60
+ * caracteres que declara el contrato (gateway/contratos/vehiculos.py:52-63 y
+ * ms2_taller/schemas/vehiculo.py:20-21). Se conserva como prueba de por qué el
+ * formulario valida ese mismo tope: sin él, la UI aceptaba el texto largo y el
+ * servidor lo rechazaba.
+ */
+export const textoVehiculoDemasiadoLargo = {
+    detail: [
+        {
+            loc: ['body', 'marca'],
+            msg: 'String should have at most 60 characters',
+            type: 'string_too_long',
+        },
+    ],
+};
+
 // ---------------------------------------------------------------------------
 // Errores con forma de Axios
 // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ import {
     sinPermiso,
     sinRespuesta as sinRespuestaReal,
     tiempoAgotado,
+    textoVehiculoDemasiadoLargo,
     tokenInvalido,
     validacionPydantic,
 } from '@/infrastructure/mocks/payloads.reales';
@@ -166,6 +167,14 @@ describe('getApiErrorMessage: mensajes reales de los microservicios', () => {
     it('usa el primer msg de la lista de validación de FastAPI', () => {
         expect(getApiErrorMessage(errorAxios(422, validacionPydantic))).toBe(
             'String should have at least 1 character'
+        );
+    });
+
+    it('muestra el 422 de texto demasiado largo, que el formulario ahora evita', () => {
+        // Es el rechazo que recibía el usuario si escribía más de 60 caracteres
+        // en marca o modelo: el backend lo cortaba aunque la UI lo aceptara.
+        expect(getApiErrorMessage(errorAxios(422, textoVehiculoDemasiadoLargo))).toBe(
+            'String should have at most 60 characters'
         );
     });
 

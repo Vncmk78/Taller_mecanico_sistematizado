@@ -56,6 +56,8 @@ class VehicleService implements VehiclePort {
     }
 
     async createVehicle(input: CreateVehicleInput): Promise<Vehicle> {
+    // `anio` y `kilometraje` se envían tal cual, incluso en null: es lo que
+    // declara el contrato (`int | None = None`) y no un campo omitido.
     const { data } = await apiClient.post<VehiculoApi>('/vehiculos', {
         patente: input.patent,
         marca: input.brand,

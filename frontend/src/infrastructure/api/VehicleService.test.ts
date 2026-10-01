@@ -107,6 +107,29 @@ describe('VehicleService: contrato HTTP de MS2 (vehículos)', () => {
     expect(created.id).toBe('7');
     expect(created.clientId).toBe('4');
   });
+
+  it('createVehicle envía anio y kilometraje en null cuando el contrato los deja sin dato', async () => {
+    // `anio` y `kilometraje` son `int | None = None`: el null explícito es lo que
+    // el backend espera para un vehículo registrado sin esos datos, y no un
+    // campo omitido ni un 0 inventado.
+    vi.mocked(apiClient.post).mockResolvedValue({ data: vehiculoApi });
+
+    await vehicleService.createVehicle({
+      patent: 'CD5678',
+      brand: 'Hyundai',
+      model: 'Accent',
+      year: null,
+      mileage: null,
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith('/vehiculos', {
+      patente: 'CD5678',
+      marca: 'Hyundai',
+      modelo: 'Accent',
+      anio: null,
+      kilometraje: null,
+    });
+  });
 });
 
 // Esta sección no usa payloads inventados: son los cuerpos literales que la

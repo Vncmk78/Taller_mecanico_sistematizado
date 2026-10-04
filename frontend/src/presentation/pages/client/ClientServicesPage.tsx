@@ -81,7 +81,7 @@ export function ClientServicesPage() {
         );
 
     return (
-        <div className="animate-fade-in">
+        <div className="p-10 animate-fade-in">
             <div className="mb-6">
                 <h2 className="text-3xl font-bold mb-1">Estado del Servicio</h2>
                 <p className="text-text-muted">Seguimiento en tiempo real del estado de sus servicios en el taller</p>

@@ -36,7 +36,7 @@ export function ClientVehiclesPage() {
     const justRegistered = Boolean((location.state as { justRegistered?: boolean } | null)?.justRegistered);
 
     return (
-    <div className="animate-fade-in">
+    <div className="p-10 animate-fade-in">
         <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
         <div>
             <h2 className="text-3xl font-bold mb-1">Mis Vehículos</h2>

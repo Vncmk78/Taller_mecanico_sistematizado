@@ -47,6 +47,17 @@ y arquitectura hexagonal.
   intentaba abrir (mantiene el `state.from`).
 - Pantalla de carga mientras se verifica la sesión.
 
+### Tarea 5 — Implementar vistas del cliente para consultar vehículos y servicios
+- **Estado del Servicio** (`/client/servicios`): vista funcional de consulta de
+  los servicios del cliente con su estado en tiempo real. Agrupa las órdenes en
+  *Requieren su atención* (presupuesto por aprobar, estado 3), *En proceso*
+  y *Finalizados*, usando la API de órdenes de MS2 con fallback local.
+  Componente `ServiceCard` para cada servicio con acceso al detalle de la orden
+  y la ficha del vehículo.
+- **Ficha técnica del vehículo** (`/client/vehiculos/:id`): el historial de
+  órdenes del vehículo ahora se consulta de las órdenes del cliente (con su
+  estado y fecha de actualización) y enlaza al detalle de cada orden.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -60,9 +71,10 @@ El mapa completo de rutas está documentado en
 | `/admin/vehiculos` y `/admin/vehiculos/:id` | Catálogo y ficha del vehículo | Funcional |
 | `/admin/ordenes`, `/clientes`, `/inventario`, `/distribuidores` | Secciones admin | Placeholder "Estructura en construcción" |
 | `/client` | Portal Cliente (dashboard) | Funcional (solo rol cliente) |
-| `/client/vehiculos` (+ `/nuevo`, `/:id`) | Mis vehículos y registro | Funcional |
+| `/client/vehiculos` (+ `/nuevo`, `/:id`) | Mis vehículos, registro y ficha con historial de órdenes | Funcional |
 | `/client/agendar` | Agendar mantención | Provisional "Próximamente" |
-| `/client/servicios`, `/presupuestos` | Secciones cliente | Placeholder |
+| `/client/servicios` | Estado del Servicio (consulta de servicios) | Funcional |
+| `/client/ordenes` (+ `/:id`), `/client/presupuestos` | Órdenes del cliente / Presupuestos | Funcional / Placeholder |
 | `/mechanic` | Portal Mecánico (dashboard) | Funcional (solo rol mecánico) |
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |

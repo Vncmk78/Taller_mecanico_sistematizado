@@ -11,26 +11,33 @@ import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useOrderListFilters } from '@/presentation/hooks/useOrderListFilters';
+import { filterOrdersByMechanic, filterVehiclesByOrders } from '@/presentation/utils/mechanicScope';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { orderService } from '@/infrastructure/api/OrderService';
+import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 export function MechanicOrdersPage() {
     const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
-    const vehicles = useVehicleStore((s) => s.vehicles);
+    const { vehicles: allVehicles, fetchVehicles } = useVehicleStore();
+    // Identidad real de la sesión (usuario_id de MS1), la misma que usa la Gateway
+    // para filtrar y la que permite acotar la caché compartida entre portales.
+    const mechanicId = useAuthStore((s) => s.user?.id);
 
     const loadOrders = () => fetchOrders(() => orderService.getOrders());
 
     useEffect(() => {
         loadOrders();
+        // Sin los vehículos asignados, ordenPatente/orderVehicleLabel no pueden
+        // resolver patente ni modelo y la lista cae al identificador interno.
+        fetchVehicles(() => vehicleService.getAssignedVehicles());
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Online la Gateway ya devuelve solo las órdenes asignadas al mecánico
-    // autenticado; la caché conserva esa misma respuesta, así que offline no
-    // hace falta volver a filtrar por identidad.
-    const myOrders = orders;
+    const myOrders = filterOrdersByMechanic(orders, mechanicId);
+    const vehicles = filterVehiclesByOrders(allVehicles, myOrders);
 
     const {
         search,
@@ -48,7 +55,12 @@ export function MechanicOrdersPage() {
         rangeStart,
         rangeEnd,
     } = useOrderListFilters(myOrders, (o) =>
-        [o.id, orderPatente(o, vehicles) ?? '', orderVehicleLabel(o, vehicles)].join(' ')
+        [
+            o.id,
+            orderPatente(o, vehicles) ?? '',
+            orderVehicleLabel(o, vehicles),
+            ordenStatusLabel(o.estadoCodigo),
+        ].join(' ')
     );
 
     // El store solo marca isOffline ante fallos de transporte: un error HTTP del
@@ -71,7 +83,6 @@ export function MechanicOrdersPage() {
                 onSearchChange={setSearch}
                 estadoCodigo={estadoCodigo}
                 onEstadoChange={setEstadoCodigo}
-                searchPlaceholder="Buscar por n° de orden o patente..."
             />
 
             {isOffline && <OfflineBanner message={error} onRetry={loadOrders} requestId={requestId} className="mb-6" />}

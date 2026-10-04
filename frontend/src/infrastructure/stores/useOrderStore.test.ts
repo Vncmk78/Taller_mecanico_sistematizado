@@ -115,4 +115,25 @@ describe('useOrderStore: caché y estados del listado/detalle de órdenes', () =
         expect(result.failed).toBe(true);
         expect(result.order).toBeNull();
     });
+
+    // La caché es compartida entre los tres portales, así que reset() es la vía
+    // por la que useAuthStore la purga al cerrar o descartar la sesión.
+    it('reset vacía la caché y devuelve los estados a su valor inicial', () => {
+        useOrderStore.setState({
+            orders: [base],
+            status: 'error',
+            error: 'Gateway saturada',
+            isOffline: true,
+            requestId: 'req-9',
+        });
+
+        useOrderStore.getState().reset();
+
+        const state = useOrderStore.getState();
+        expect(state.orders).toEqual([]);
+        expect(state.status).toBe('idle');
+        expect(state.error).toBeNull();
+        expect(state.isOffline).toBe(false);
+        expect(state.requestId).toBeNull();
+    });
 });

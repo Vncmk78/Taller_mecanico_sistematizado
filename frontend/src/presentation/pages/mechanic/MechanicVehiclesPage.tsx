@@ -8,28 +8,40 @@ import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { filterOrdersByMechanic, filterVehiclesByOrders } from '@/presentation/utils/mechanicScope';
 
 export function MechanicVehiclesPage() {
     const [search, setSearch] = useState('');
     const { vehicles, status, error, isOffline, requestId, fetchVehicles } = useVehicleStore();
+    const orders = useOrderStore((s) => s.orders);
+    const fetchOrders = useOrderStore((s) => s.fetchOrders);
+    const mechanicId = useAuthStore((s) => s.user?.id);
 
     const loadVehicles = () => fetchVehicles(() => vehicleService.getAssignedVehicles());
 
     useEffect(() => {
     loadVehicles();
+    // Las órdenes permiten acotar la caché compartida al mecánico autenticado:
+    // sin ellas no se puede saber qué vehículos son suyos.
+    fetchOrders(() => orderService.getOrders());
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const assignedVehicles = useMemo(() => {
     const term = search.trim().toLowerCase();
     // Online, getAssignedVehicles() ya devuelve solo los vehículos de las
-    // órdenes asignadas al mecánico; la caché conserva esa misma respuesta,
-    // así que offline no hace falta volver a filtrar por identidad.
-    return vehicles.filter((v) =>
+    // órdenes asignadas al mecánico. El acotado por órdenes es la segunda
+    // barrera: online no descarta nada y offline evita que se vean los
+    // vehículos que otro portal dejó en la caché compartida.
+    const myOrders = filterOrdersByMechanic(orders, mechanicId);
+    return filterVehiclesByOrders(vehicles, myOrders).filter((v) =>
         term ? [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term)) : true
-        );
-    }, [vehicles, search]);
+    );
+    }, [vehicles, orders, mechanicId, search]);
 
     // El store solo marca isOffline ante fallos de transporte: un error HTTP del
     // servidor se muestra aparte para no rotularlo como "sin conexión".

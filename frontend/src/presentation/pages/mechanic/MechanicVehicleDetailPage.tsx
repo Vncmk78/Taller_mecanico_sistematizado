@@ -89,7 +89,8 @@ export function MechanicVehicleDetailPage() {
             Historial de Órdenes
             </h3>
             <p className="text-text-muted text-sm">
-            El historial completo se integrará junto con la Gestión de Órdenes (próxima misión).
+            MS2 no expone un historial de órdenes por vehículo. Podés consultarlo desde
+            Mis Órdenes, filtrando por la patente de este vehículo.
             </p>
         </div>
         </div>

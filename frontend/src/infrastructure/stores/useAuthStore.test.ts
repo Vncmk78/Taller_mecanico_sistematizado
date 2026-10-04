@@ -3,6 +3,8 @@ import type { AuthResponse, User } from '@/domain/entities/User';
 import { authService } from '@/infrastructure/api/AuthService';
 import { getToken } from '@/infrastructure/config/tokenStorage';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
+import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 vi.mock('@/infrastructure/api/AuthService', () => ({
   authService: {
@@ -138,5 +140,62 @@ describe('useAuthStore: flujo funcional de autenticación', () => {
     expect(getToken()).toBeNull();
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  // Las cachés de órdenes y vehículos son compartidas entre portales y viven en
+  // memoria, así que sin esta purga el siguiente usuario de la sesión en el mismo
+  // navegador heredaría los datos del anterior.
+  describe('purga de las cachés compartidas', () => {
+    beforeEach(() => {
+      useOrderStore.setState({
+        orders: [
+          {
+            id: '1',
+            vehicleId: '1',
+            ingresoId: 1,
+            estadoCodigo: 5,
+            mecanicoActualId: '1',
+            creadoPorId: '1',
+            creadoEn: '2026-09-01T10:00:00',
+            actualizadoEn: '2026-09-05T16:30:00',
+          },
+        ],
+        status: 'success',
+      });
+      useVehicleStore.setState({
+        vehicles: [
+          { id: '1', patent: 'ABCD-12', brand: 'Ford', model: 'Fiesta', year: 2018, mileage: 1, clientId: 'c1' },
+        ],
+        status: 'success',
+        error: 'error previo',
+        isOffline: true,
+        requestId: 'req-1',
+      });
+    });
+
+    it('logout vacía las cachés de órdenes y vehículos', () => {
+      useAuthStore.getState().logout();
+
+      expect(useOrderStore.getState().orders).toEqual([]);
+      expect(useVehicleStore.getState().vehicles).toEqual([]);
+    });
+
+    it('clearSession también vacía las cachés compartidas', () => {
+      useAuthStore.getState().clearSession();
+
+      expect(useOrderStore.getState().orders).toEqual([]);
+      expect(useVehicleStore.getState().vehicles).toEqual([]);
+    });
+
+    it('la purga devuelve los estados de carga a su valor inicial', () => {
+      useAuthStore.getState().logout();
+
+      expect(useOrderStore.getState().status).toBe('idle');
+      expect(useOrderStore.getState().error).toBeNull();
+      expect(useVehicleStore.getState().status).toBe('idle');
+      expect(useVehicleStore.getState().error).toBeNull();
+      expect(useVehicleStore.getState().isOffline).toBe(false);
+      expect(useVehicleStore.getState().requestId).toBeNull();
+    });
   });
 });

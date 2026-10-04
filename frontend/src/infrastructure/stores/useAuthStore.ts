@@ -2,6 +2,19 @@ import { create } from 'zustand';
 import type { User } from '@/domain/entities/User';
 import { getToken, removeToken, setToken } from '../config/tokenStorage';
 import { authService } from '../api/AuthService';
+import { useOrderStore } from './useOrderStore';
+import { useVehicleStore } from './useVehicleStore';
+
+/**
+ * Las cachés de órdenes y vehículos viven en memoria y son compartidas entre los
+ * tres portales, así que sobreviven a un cambio de sesión en el mismo navegador.
+ * Se vacían al cerrar sesión para que el siguiente usuario no herede los datos
+ * del anterior.
+ */
+function purgeSharedCaches(): void {
+  useOrderStore.getState().reset();
+  useVehicleStore.getState().reset();
+}
 
 interface AuthState {
   user: User | null;
@@ -44,6 +57,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: () => {
     removeToken();
+    purgeSharedCaches();
     set({ user: null, token: null, isAuthenticated: false });
   },
 
@@ -81,6 +95,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearSession: () => {
     removeToken();
+    purgeSharedCaches();
     set({ user: null, token: null, isAuthenticated: false });
   },
 }));

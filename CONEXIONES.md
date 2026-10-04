@@ -486,3 +486,67 @@ contrato no acota `anio` ni `kilometraje` (debería declarar `ge`/`le`), y el
 | `npm run lint` | 0 errores, 0 warnings |
 | `npx vitest run` | 347 tests en 54 archivos, todos verdes (antes 341) |
 | `npm run build` | Compila; queda el aviso preexistente de chunk > 500 kB |
+
+## Vista web del mecánico y sus órdenes asignadas (2026-10-04)
+
+El portal `/mechanic` ya tenía las vistas de órdenes, detalle y avance de estado,
+pero la misión pedía cerrar los huecos que quedaban. Se auditing cada vista contra
+los endpoints reales de MS2 antes de tocar nada.
+
+### Bugs encontrados
+
+- **Los vehículos nunca se cargaban** en `/mechanic/ordenes` ni en
+  `/mechanic/estados`: ambas páginas leían `useVehicleStore` pero ninguna llamaba
+  `fetchVehicles`. Como la caché es solo en memoria, entrar directo a la ruta o
+  refrescar dejaba la lista siempre en el fallback `Vehículo N°<id>`, sin patente ni
+  modelo. El backend sí entregaba todo lo necesario:
+  `listar_vehiculos_para_mecanico` (`services/vehiculos.py`) filtra por
+  `mecanico_actual_id` **sin filtro de estado**, así que un solo
+  `GET /vehiculos/asignados` etiqueta el 100% de las órdenes del mecánico.
+- **La búsqueda por estado no funcionaba** en `/mechanic/ordenes`: el texto
+  buscable armaba el hash sin `ordenStatusLabel`, que `AdminOrdersPage` y
+  `ClientOrdersPage` sí incluyen.
+- **Fuga de datos entre sesiones**: `logout()` y `clearSession()` solo limpiaban la
+  sesión de auth, no las cachés de órdenes y vehículos, que son compartidas entre
+  los tres portales y usan `mergeById`. Como `MechanicVehiclesPage` filtraba la
+  lista completa de `vehicles` solo por texto de búsqueda, un mecánico que
+  entrara en el mismo navegador tras una sesión de admin vería los vehículos
+  cacheados del admin. Los comentarios del código afirmaban lo contrario.
+
+### Cambios
+
+- Las cuatro vistas del portal cargan sus vehículos asignados y reutilizan los
+  helpers `orderVehicleLabel`/`orderPatente`.
+- `/mechanic/estados` suma búsqueda, filtro por estado y paginación (reusando
+  `useOrderListFilters`, `OrderListToolbar` y `OrderPagination`), y separa en un
+  bloque **Órdenes cerradas** las que no tienen ningún avance del mecánico, en vez
+  de mostrarles un selector sin opciones.
+- El avance de estado pide confirmación con `ConfirmDialog` (componente que
+  existía sin uso) y confirma el éxito con un toast.
+- Nuevo sistema de toast (`ToastProvider` + `Toast`) montado en `App.tsx`, para
+  los tres portales.
+- `/mechanic` pasa de un texto que decía "se implementará en una próxima misión" a
+  un panel con cuatro indicadores (órdenes asignadas, activas, esperan tu avance y
+  vehículos asignados) más el desglose por estado. Se calculan en el cliente porque
+  `GET /api/ordenes` devuelve la colección completa sin filtros ni paginación.
+- Doble barrera de alcance: además de la Gateway, las vistas comparan contra
+  `user.id`. Es válido porque `mecanicoActualId` y `user.id` son ambos el
+  `usuario_id` de MS1 (lo usa `_filtro_visibilidad` en MS2). La lógica quedó en
+  `mechanicScope.ts`. Y `logout`/`clearSession` ahora purgan las cachés
+  compartidas.
+- Se eliminaron `/mechanic/historial` (con su enlace de menú) y las páginas
+  `MechanicHistoryPage.tsx` y `MechanicPortalPage.tsx`, que eran código muerto.
+  No hay endpoint de historial por mecánico: MS2 solo expone
+  `GET /api/ordenes/{id}/historial`, y el historial ya se consulta completo en
+  `/mechanic/ordenes/:id`.
+
+Se ajustaron los tests que fijaban el comportamiento anterior ("no filtrar por
+identidad") y se añadieron los del panel, del toast, del alcance por mecánico y de
+la purga de cachés.
+
+| Verificación | Resultado |
+| --- | --- |
+| `npx tsc --noEmit -p tsconfig.json` | Sin errores |
+| `npm run lint` | 0 errores, 0 warnings |
+| `npx vitest run` | 380 tests en 133 archivos, todos verdes (antes 347) |
+| `npm run build` | Compila; queda el aviso preexistente de chunk > 500 kB |

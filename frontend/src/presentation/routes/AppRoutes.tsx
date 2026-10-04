@@ -27,7 +27,6 @@ import { MechanicVehicleDetailPage } from '@/presentation/pages/mechanic/Mechani
 import { MechanicOrdersPage } from '@/presentation/pages/mechanic/MechanicOrdersPage';
 import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicOrderDetailPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
-import { MechanicHistoryPage } from '@/presentation/pages/mechanic/MechanicHistoryPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
 import { PublicOnlyRoute } from '@/presentation/components/auth/PublicOnlyRoute';
 
@@ -96,7 +95,6 @@ export function AppRoutes() {
         <Route path="ordenes" element={<MechanicOrdersPage />} />
         <Route path="ordenes/:id" element={<MechanicOrderDetailPage />} />
         <Route path="estados" element={<MechanicStatusPage />} />
-        <Route path="historial" element={<MechanicHistoryPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -43,12 +43,12 @@ Roles del sistema: `administrador`, `cliente`, `mecanico`.
 │   └── /client/presupuestos  → Presupuestos
 │
 └── /mechanic  (solo mecanico, MechanicLayout/RoleLayout sidebar)
-    ├── /mechanic             → Dashboard (índice)
+    ├── /mechanic             → Panel (índice)
     ├── /mechanic/vehiculos   → Vehículos asignados
     ├── /mechanic/vehiculos/:id → Detalle del vehículo
     ├── /mechanic/ordenes     → Mis Órdenes
-    ├── /mechanic/estados     → Actualizar Estados
-    └── /mechanic/historial   → Actividades
+    ├── /mechanic/ordenes/:id → Detalle de la orden
+    └── /mechanic/estados     → Actualizar Estados
 
 * (cualquier otra ruta)      → / (fallback)
 ```
@@ -100,12 +100,12 @@ Layout: `MechanicLayout` → `RoleLayout` (variante `sidebar`). Aplica
 
 | Ruta | Componente | Estado |
 | --- | --- | --- |
-| `/mechanic` | `MechanicDashboardPage` | Funcional |
+| `/mechanic` | `MechanicDashboardPage` | Funcional (indicadores calculados en el cliente) |
 | `/mechanic/vehiculos` | `MechanicVehiclesPage` | Funcional |
 | `/mechanic/vehiculos/:id` | `MechanicVehicleDetailPage` | Funcional |
-| `/mechanic/ordenes` | `MechanicOrdersPage` | Placeholder |
-| `/mechanic/estados` | `MechanicStatusPage` | Placeholder |
-| `/mechanic/historial` | `MechanicHistoryPage` | Placeholder |
+| `/mechanic/ordenes` | `MechanicOrdersPage` | Funcional |
+| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional |
+| `/mechanic/estados` | `MechanicStatusPage` | Funcional (avance de estado con confirmación) |
 
 ## Menús por rol
 
@@ -121,7 +121,7 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
 - *Mi Portal* (`/client`), *Mis Vehículos* (`/client/vehiculos`), *Agendar Mantención* (`/client/agendar`), *Estado del Servicio* (`/client/servicios`), *Presupuestos* (`/client/presupuestos`).
 
 **Mecánico** (sidebar):
-- *Mi Panel* (`/mechanic`), *Mis Órdenes* (`/mechanic/ordenes`), *Actualizar Estados* (`/mechanic/estados`), *Actividades* (`/mechanic/historial`), *Vehículos Asignados* (`/mechanic/vehiculos`).
+- *Mi Panel* (`/mechanic`), *Mis Órdenes* (`/mechanic/ordenes`), *Actualizar Estados* (`/mechanic/estados`), *Vehículos Asignados* (`/mechanic/vehiculos`).
 
 ## Reglas de navegación
 
@@ -134,9 +134,17 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
 ## Notas
 
 - Las vistas de vehículos (`/admin/vehiculos*`, `/client/vehiculos*`,
-  `/mechanic/vehiculos*`) consumen `useVehicleStore`: usan datos mock mientras
-  el servicio de vehículos (MS2 vía Gateway) no esté disponible.
-- `ClientPortalPage.tsx` y `MechanicPortalPage.tsx` son páginas heredadas que
-  ya no tienen rutas asociadas (candidatas a eliminar).
+  `/mechanic/vehiculos*`) consumen `useVehicleStore`, que se alimenta solo de
+  respuestas reales de la Gateway (MS2). Los datos mock viven únicamente en los
+  tests (`infrastructure/mocks/`).
+- `/mechanic/historial` se eliminó: no existe endpoint de historial por mecánico
+  (MS2 solo expone `GET /api/ordenes/{id}/historial`) y el historial completo ya
+  se consulta en `/mechanic/ordenes/:id`.
+- `MechanicHistoryPage.tsx` y `MechanicPortalPage.tsx` se eliminaron por ser
+  código muerto (sin rutas asociadas). `ClientPortalPage.tsx` sigue huérfana.
+- El portal del mecánico acota sus datos en dos barreras: la Gateway ya devuelve
+  solo lo asignado al mecánico, y las vistas comparan contra `user.id`
+  (`mechanicScope.ts`). Además `logout`/`clearSession` purgan las cachés
+  compartidas de órdenes y vehículos.
 - Las rutas de vehículos y sus componentes los aportó el resto del equipo y se
   integraron en la promoción a `main` (commit de merge `ea2b439`).

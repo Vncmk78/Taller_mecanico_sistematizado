@@ -23,6 +23,12 @@ interface VehicleState extends AsyncStatus {
     fetchVehicleById: (id: string, loader: (id: string) => Promise<Vehicle>) => Promise<FetchVehicleResult>;
     patentExists: (patent: string) => boolean;
     addVehicle: (input: CreateVehicleInput, clientId: string) => Promise<Vehicle>;
+    /**
+     * Vacía la caché y vuelve al estado inicial. Se invoca al cerrar sesión: la
+     * caché es compartida entre portales y sin esto el siguiente usuario que
+     * iniciara sesión en el mismo navegador vería los vehículos del anterior.
+     */
+    reset: () => void;
 }
 
 // Caché en memoria compartida entre portales, inicialmente vacía: solo contiene
@@ -68,4 +74,6 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
         }));
         return vehiculo;
     },
+
+    reset: () => set({ vehicles: [], ...initialAsyncStatus }),
 }));

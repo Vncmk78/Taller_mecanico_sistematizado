@@ -119,6 +119,18 @@ describe('LoginPage: flujo funcional de inicio de sesión', () => {
     expect(await screen.findByTestId('home-client-vehiculos')).toBeInTheDocument();
   });
 
+  it('ignora un from de otro portal y va al panel del rol que inició sesión', async () => {
+    // El usuario intentó entrar a /client/vehiculos sin sesión, pero quien
+    // inicia sesión es un administrador: no debe caer en 403 sino ir a /admin.
+    vi.mocked(authService.login).mockResolvedValue(authResponse(adminUser));
+    renderLogin({ pathname: '/login', state: { from: '/client/vehiculos' } });
+
+    await completarLogin('admin@taller.cl', 'AdminPrueba123!');
+
+    expect(await screen.findByTestId('home-admin')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-client-vehiculos')).not.toBeInTheDocument();
+  });
+
   it('muestra el detalle de la API y permanece en /login con credenciales inválidas', async () => {
     const error = new AxiosError(
       'Request failed with status code 401',

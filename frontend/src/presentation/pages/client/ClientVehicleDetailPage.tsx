@@ -92,7 +92,7 @@ export function ClientVehicleDetailPage() {
     const ordersServerError = ordersStatus === 'error';
 
     return (
-        <div className="animate-fade-in">
+        <div className="p-10 animate-fade-in">
             <Link
                 to="/client/vehiculos"
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"

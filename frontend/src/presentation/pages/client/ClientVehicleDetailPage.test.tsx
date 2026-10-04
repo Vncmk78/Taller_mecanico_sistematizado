@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { Order } from '@/domain/entities/Order';
 import type { Vehicle } from '@/domain/entities/Vehicle';
+import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { ClientVehicleDetailPage } from './ClientVehicleDetailPage';
 
@@ -14,6 +17,15 @@ vi.mock('@/infrastructure/api/VehicleService', () => ({
         getAssignedVehicles: vi.fn(),
         getVehicleById: vi.fn(),
         createVehicle: vi.fn(),
+    },
+}));
+
+vi.mock('@/infrastructure/api/OrderService', () => ({
+    orderService: {
+        getOrders: vi.fn(),
+        getOrderById: vi.fn(),
+        getOrderHistory: vi.fn(),
+        cambiarEstado: vi.fn(),
     },
 }));
 
@@ -38,6 +50,28 @@ const deOtro: Vehicle = {
     year: 2021,
     mileage: 20000,
     clientId: 'c2',
+};
+
+const ordenDelVehiculo: Order = {
+    id: '101',
+    vehicleId: '1',
+    ingresoId: 1,
+    estadoCodigo: 3,
+    mecanicoActualId: null,
+    creadoPorId: CLIENTE_ID,
+    creadoEn: '2026-09-19T15:00:00.000Z',
+    actualizadoEn: '2026-09-20T10:00:00.000Z',
+};
+
+const ordenDeOtroVehiculo: Order = {
+    id: '102',
+    vehicleId: '2',
+    ingresoId: 2,
+    estadoCodigo: 5,
+    mecanicoActualId: null,
+    creadoPorId: 'c2',
+    creadoEn: '2026-09-18T15:00:00.000Z',
+    actualizadoEn: '2026-09-19T10:00:00.000Z',
 };
 
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
@@ -65,6 +99,8 @@ describe('ClientVehicleDetailPage: ficha de un vehículo propio', () => {
             },
         });
         useVehicleStore.setState({ vehicles: [], status: 'idle', error: null, isOffline: false });
+        useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
+        vi.mocked(orderService.getOrders).mockResolvedValue([]);
         vi.clearAllMocks();
     });
 
@@ -116,5 +152,34 @@ describe('ClientVehicleDetailPage: ficha de un vehículo propio', () => {
         expect(
             screen.getByRole('link', { name: 'Volver a mis vehículos' })
         ).toHaveAttribute('href', '/client/vehiculos');
+    });
+
+    it('lista solo las órdenes del vehículo consultado en el historial', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(mio);
+        vi.mocked(orderService.getOrders).mockResolvedValue([
+            ordenDelVehiculo,
+            ordenDeOtroVehiculo,
+        ]);
+
+        renderPage('1');
+
+        const linkOrdenPropia = await screen.findByRole('link', {
+            name: /Orden n° 101 · Ford Fiesta/,
+        });
+        expect(linkOrdenPropia).toHaveAttribute('href', '/client/ordenes/101');
+        expect(screen.getByText('Actualizada el', { exact: false })).toBeInTheDocument();
+        expect(screen.getByText('1 orden')).toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: /Orden n° 102/ })).not.toBeInTheDocument();
+    });
+
+    it('muestra mensaje de historial vacío cuando no hay órdenes', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(mio);
+        vi.mocked(orderService.getOrders).mockResolvedValue([]);
+
+        renderPage('1');
+
+        expect(
+            await screen.findByText('Este vehículo aún no tiene órdenes de trabajo registradas.')
+        ).toBeInTheDocument();
     });
 });

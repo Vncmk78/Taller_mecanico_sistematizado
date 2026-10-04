@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Mail, Lock, Eye, EyeOff, Settings, Wrench } from 'lucide-react';
+import type { UserRole } from '@/domain/entities/User';
 import { Button } from '@/presentation/components/ui/Button';
 import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
@@ -28,6 +29,14 @@ export function LoginPage() {
 
   const from = (location.state as { from?: string } | null)?.from;
 
+  const targetAfterLogin = (role: UserRole | undefined, requested?: string): string => {
+    const home = getHomePath(role);
+    // `from` puede ser una ruta de otro portal (p. ej. se intentó entrar a
+    // /client sin sesión y ahora inicia sesión un administrador). Si el destino
+    // pedido no pertenece al portal del rol que entró, se va al panel del rol.
+    return requested && home !== '/login' && requested.startsWith(home) ? requested : home;
+  };
+
   const {
     register,
     handleSubmit,
@@ -40,7 +49,7 @@ export function LoginPage() {
     setErrorMessage(null);
     try {
       const user = await login(data.email, data.password);
-      navigate(from ?? getHomePath(user.role), { replace: true });
+      navigate(targetAfterLogin(user.role, from), { replace: true });
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error, 'Credenciales incorrectas'));
     }

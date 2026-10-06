@@ -36,27 +36,32 @@ export function RoleLayout({
         >
           Saltar al contenido principal
         </a>
-        <header className="flex items-center justify-between px-10 py-4 border-b border-border-custom bg-surface sticky top-0 z-50">
-          <div className="flex items-center gap-2.5">
+        <header className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-10 py-4 border-b border-border-custom bg-surface sticky top-0 z-50">
+          <div className="flex items-center gap-2.5 shrink-0">
             <AppBrand />
             {badge && (
-              <span className="ml-3 text-xs bg-primary-blue/15 text-primary-blue px-3 py-1 rounded-full border border-primary-blue/40 font-bold">
+              <span className="hidden sm:inline-flex ml-3 text-xs bg-primary-blue/15 text-primary-blue px-3 py-1 rounded-full border border-primary-blue/40 font-bold">
                 {badge}
               </span>
             )}
           </div>
 
-          <nav aria-label="Navegación principal" className="flex gap-2">
+          <nav
+            aria-label="Navegación principal"
+            className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 justify-start xl:justify-center overflow-x-auto"
+          >
             {sections.flatMap((section) => section.items).map((item) => (
               <AppNavLink key={item.to} variant="topnav" {...item} />
             ))}
           </nav>
 
-          <UserMenu
-            userName={userName}
-            subtitle={userSubtitle}
-            onLogout={onLogout}
-          />
+          <div className="shrink-0">
+            <UserMenu
+              userName={userName}
+              subtitle={userSubtitle}
+              onLogout={onLogout}
+            />
+          </div>
         </header>
 
         <main id="contenido-principal" tabIndex={-1} className="flex-grow focus:outline-none">

@@ -4,6 +4,7 @@
     GET  /presupuestos?orden_id=&desde=&limite=                listar / buscar por orden
     GET  /presupuestos/{presupuesto_id}                        detalle con sus versiones
     GET  /presupuestos/{presupuesto_id}/versiones/{n}          una versión
+    POST /presupuestos/{presupuesto_id}/versiones              nueva versión (sin sobrescribir)
     PUT  /presupuestos/{presupuesto_id}/versiones/{n}/items    reemplazar ítems (solo borrador)
     POST /presupuestos/{presupuesto_id}/versiones/{n}/envio    enviar al cliente (Administrador)
     POST /presupuestos/{presupuesto_id}/versiones/{n}/decision aprobar / rechazar (Cliente dueño)
@@ -37,6 +38,7 @@ from services.ms3_presupuestos.persistencia.repositorios import LIMITE_MAXIMO
 from services.ms3_presupuestos.schemas.presupuesto import (
     DecisionEntrada,
     ItemsVersion,
+    NuevaVersion,
     PaginaPresupuestos,
     PresupuestoCrear,
     PresupuestoDetalle,
@@ -182,6 +184,41 @@ def version(
     return casos.a_version_detalle(
         casos.obtener_version(uow, presupuesto_id, numero, solo_enviadas=True)
     )
+
+
+# ---------------------------------------------------------- nueva versión --
+
+@router.post(
+    "/{presupuesto_id}/versiones",
+    response_model=PresupuestoDetalle,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear la versión siguiente sin sobrescribir las anteriores",
+    description=(
+        "Corrige una versión enviada o propone una modificación tras una aprobación. "
+        "Copia los ítems de la última versión (o de `copiar_de`) salvo que se envíen "
+        "`items`. Las versiones previas quedan intactas en el historial."
+    ),
+    responses={
+        **_ERRORES_COMUNES,
+        **_NO_EXISTE,
+        status.HTTP_409_CONFLICT: {
+            "description": "Ya hay un borrador abierto o el servicio fue cancelado"
+        },
+        422: {"description": "Ítems inválidos o repuesto inexistente"},
+    },
+)
+def crear_version(
+    body: NuevaVersion | None = None,
+    presupuesto_id: int = IdPresupuesto,
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal_del_taller),
+) -> PresupuestoDetalle:
+    body = body or NuevaVersion()
+    casos.crear_version(
+        uow, presupuesto_id=presupuesto_id, creado_por_id=principal.usuario_id,
+        items=body.items, copiar_de=body.copiar_de,
+    )
+    return casos.a_detalle(casos.obtener_presupuesto(uow, presupuesto_id))
 
 
 # --------------------------------------------------------- editar borrador --

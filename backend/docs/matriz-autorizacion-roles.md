@@ -141,6 +141,7 @@ Detalles que condicionan la matriz:
 | Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ | ✅ |
 | Listar / buscar por orden (`GET /presupuestos?orden_id=`) | ✅ solo su orden y con `orden_id` | ✅ | ✅ |
 | Detalle y versión (`GET /presupuestos/{id}`, `/versiones/{n}`) | ✅ solo sus órdenes, sin borradores | ✅ | ✅ |
+| Crear la versión siguiente (`POST /presupuestos/{id}/versiones`) | ❌ 403 | ✅ | ✅ |
 | Reemplazar ítems de una versión en borrador (`PUT .../versiones/{n}/items`) | ❌ 403 | ✅ | ✅ |
 | Enviar la versión al cliente (`POST .../versiones/{n}/envio`) | ❌ 403 | ❌ 403 | ✅ |
 | Aprobar o rechazar (`POST .../versiones/{n}/decision`) | ✅ solo dueño | ❌ 403 | ❌ 403 |

@@ -3,6 +3,7 @@
 - crear_presupuesto: presupuesto lógico de una orden + versión 1 en borrador.
 - listar_presupuestos / obtener_presupuesto / obtener_version: consultas.
 - reemplazar_items: edita los ítems de una versión mientras es borrador.
+- crear_version: versión siguiente sin sobrescribir las anteriores.
 - enviar_version: congela la versión y la deja lista para el cliente.
 - decidir_version: registra la aprobación o el rechazo del cliente.
 
@@ -12,8 +13,8 @@ responder 409/422 con mensajes claros.
 
 Enviar y decidir son operaciones TRANSACCIONALES: bloquean el presupuesto
 (SELECT ... FOR UPDATE), validan, escriben y confirman todo junto; si algo
-falla no queda nada a medias. Crear nuevas versiones a partir de una enviada
-es la tarea "Reglas de creación de versiones sin sobrescribir".
+falla no queda nada a medias. Crear una versión también: bloquea el
+presupuesto para que dos peticiones simultáneas no creen dos "versión 3".
 """
 from __future__ import annotations
 
@@ -84,6 +85,71 @@ def reemplazar_items(
         version.items.extend(_construir_items(uow, items))
         uow.sesion.flush()
     return version
+
+
+def crear_version(
+    uow: UnidadDeTrabajo,
+    *,
+    presupuesto_id: int,
+    creado_por_id: int,
+    items: Sequence[ItemEntrada] | None = None,
+    copiar_de: int | None = None,
+) -> VersionPresupuesto:
+    """Agrega la versión `n + 1` en borrador. Las versiones previas no se tocan.
+
+    Reglas (§4.3):
+    - Solo puede haber UN borrador abierto: si la última versión sigue en
+      borrador, se edita esa (409).
+    - Si el primer presupuesto fue rechazado (servicio cancelado), no hay más
+      versiones: una nueva atención inicia otra orden y otro presupuesto (409).
+    - Una corrección de una versión enviada sin decisión la REEMPLAZA: el
+      cliente ya no puede decidir sobre la anterior (queda en el historial).
+    - Tras una aprobación, la nueva versión es una MODIFICACIÓN
+      (es_modificacion = true): mientras no se apruebe, manda la vigente.
+    - Los ítems se copian como filas nuevas; jamás se mueven ni se editan
+      los de otra versión (además lo impiden los triggers de 0003_ms3).
+    """
+    with uow.transaccion():
+        presupuesto = uow.presupuestos.obtener_para_actualizar(presupuesto_id)
+        ultima = presupuesto.versiones[-1]
+        if not ultima.enviada:
+            raise ConflictoDeDatos(
+                f"La versión {ultima.numero} sigue en borrador; modifique esa versión "
+                "en lugar de crear otra"
+            )
+        vigente = presupuesto.version_vigente
+        decision = ultima.decision
+        if vigente is None and decision is not None and decision.decision == "rechazado":
+            raise ConflictoDeDatos(
+                "El cliente rechazó el presupuesto y el servicio quedó cancelado; "
+                "una nueva atención genera una nueva orden con su propio presupuesto"
+            )
+
+        if items is not None:
+            nuevos_items = _construir_items(uow, items)
+        else:
+            base = (uow.presupuestos.version(presupuesto_id, copiar_de)
+                    if copiar_de is not None else ultima)
+            nuevos_items = [_copiar_item(i) for i in sorted(base.items, key=lambda i: i.item_id)]
+
+        nueva = VersionPresupuesto(
+            numero=presupuesto.siguiente_numero,
+            creado_por_id=creado_por_id,
+            es_modificacion=vigente is not None,
+        )
+        nueva.items = nuevos_items
+        presupuesto.versiones.append(nueva)
+        uow.sesion.flush()
+    return nueva
+
+
+def _copiar_item(item: ItemPresupuesto) -> ItemPresupuesto:
+    """Fila NUEVA con los mismos datos (la original queda intacta en su versión)."""
+    return ItemPresupuesto(
+        tipo=item.tipo, descripcion=item.descripcion, cantidad=item.cantidad,
+        precio_unitario=item.precio_unitario, repuesto_id=item.repuesto_id,
+        repuesto=item.repuesto,
+    )
 
 
 def _construir_items(uow: UnidadDeTrabajo, items: Iterable[ItemEntrada]) -> list[ItemPresupuesto]:

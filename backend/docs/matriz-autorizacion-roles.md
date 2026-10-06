@@ -17,7 +17,7 @@ algo, manda esta matriz.
 | Gateway | 8000 | Enrutado `/api/*` | Enrutado, **no autoriza** |
 | MS1 | 8001 | Autenticación y usuarios | Endpoints de negocio implementados |
 | MS2 | 8002 | Vehículos y órdenes de trabajo | Endpoints implementados |
-| MS3 | 8003 | Presupuestos, repuestos, proveedores, inventario | **Sin endpoints** |
+| MS3 | 8003 | Presupuestos, repuestos, proveedores, inventario | Endpoints iniciales de `/presupuestos` |
 | MS4 | 8004 | Evidencias multimedia | **Sin endpoints de negocio** |
 
 La Gateway **no valida el JWT**: se limita a reenviar la petición. Toda decisión de
@@ -31,7 +31,7 @@ autorización ocurre en el microservicio que atiende la ruta.
 | `backend/shared/auth.py` → `NombreRol` | `cliente`, `mecanico`, `administrador`. No existe `role` en singular |
 | `services/ms2_taller/services/ordenes.py` → `_filtro_visibilidad` | La visibilidad de órdenes por rol, con soporte multirol |
 | `services/ms2_taller/dependencies.py` → `resolver_cliente_actual` | El guard de vehículos: exige rol Cliente y perfil local |
-| `services/ms3_presupuestos/dependencies.py` → `requerir_roles` | Guard reutilizable de "al menos uno de estos roles" (aún sin usar) |
+| `services/ms3_presupuestos/dependencies.py` → `requerir_roles` | Guard de "al menos uno de estos roles"; lo usa `routers/presupuestos.py` (Mecánico o Administrador) |
 | `services/ms4_evidencias/dependencies.py` → `obtener_principal_actual` | Valida el token en MS4 (lista, sin endpoints que la usen) |
 | [`modelo-evidencias.md`](modelo-evidencias.md) §Reglas de visibilidad | La visibilidad de evidencias por rol, en detalle |
 | [`maquina-estados-ordenes.md`](maquina-estados-ordenes.md) | Los ocho estados y sus transiciones |
@@ -138,12 +138,21 @@ Detalles que condicionan la matriz:
 
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
-| Cualquier endpoint de negocio | — | — | — |
+| Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ | ✅ |
+| Listar / buscar por orden (`GET /presupuestos?orden_id=`) | ❌ 403 | ✅ | ✅ |
+| Detalle y versión (`GET /presupuestos/{id}`, `/versiones/{n}`) | ❌ 403 | ✅ | ✅ |
+| Reemplazar ítems de una versión en borrador (`PUT .../versiones/{n}/items`) | ❌ 403 | ✅ | ✅ |
+| Repuestos, proveedores, inventario | — | — | — |
 
-MS3 **no tiene routers**. `requerir_roles(NombreRol.ADMINISTRADOR)` ya existe en
-`services/ms3_presupuestos/dependencies.py:56` y es el guard previsto para cuando se
-definan los endpoints, pero hoy ningún endpoint lo usa. La matriz no autoriza
-ninguna ruta de MS3.
+- El guard es `requerir_roles(NombreRol.MECANICO, NombreRol.ADMINISTRADOR)`
+  (`services/ms3_presupuestos/routers/presupuestos.py`).
+- El **cliente** aún no consulta ni decide: MS3 no puede comprobar por sí solo que
+  la orden es suya (la propiedad vive en MS2, §8). Se habilitará junto con el envío
+  y la decisión del presupuesto.
+- Pendiente: limitar al mecánico a las órdenes que tiene asignadas (dato de MS2).
+- Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
+  con triggers (`0003_ms3`).
+- Repuestos, proveedores e inventario siguen sin routers.
 
 ### 4.5 Evidencias multimedia (MS4)
 

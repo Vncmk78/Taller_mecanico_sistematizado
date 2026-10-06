@@ -1,9 +1,10 @@
 import { useEffect, useMemo, type ReactElement } from 'react';
-import { ClipboardList } from 'lucide-react';
+import { AlertTriangle, ClipboardList, RefreshCw } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
 import { ServiceCard } from '@/presentation/components/orders/ServiceCard';
 import { OrderListSkeleton } from '@/presentation/components/orders/OrderListSkeleton';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Button } from '@/presentation/components/ui/Button';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
@@ -87,10 +88,25 @@ export function ClientServicesPage() {
                 <p className="text-text-muted">Seguimiento en tiempo real del estado de sus servicios en el taller</p>
             </div>
 
-            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} className="mb-6" />}
+            {isOffline && groups.total > 0 && (
+                <OfflineBanner message={error} onRetry={loadOrders} className="mb-6" />
+            )}
 
             {status === 'loading' ? (
                 <OrderListSkeleton count={2} />
+            ) : isOffline && groups.total === 0 ? (
+                <div className="card p-14 text-center">
+                    <span className="flex items-center justify-center w-14 h-14 rounded-full bg-status-red/10 text-status-red mx-auto mb-4">
+                        <AlertTriangle className="w-6 h-6" aria-hidden />
+                    </span>
+                    <p className="text-text-main text-lg font-semibold mb-2">
+                        No se pudieron cargar los servicios
+                    </p>
+                    <p className="text-text-muted text-sm max-w-md mx-auto mb-6">{error}</p>
+                    <Button variant="primary" onClick={loadOrders} className="inline-flex items-center gap-2">
+                        <RefreshCw className="w-4 h-4" aria-hidden /> Reintentar
+                    </Button>
+                </div>
             ) : (
                 <>
                     {renderGroup('Requieren su atención', groups.attention, true)}

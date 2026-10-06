@@ -101,4 +101,14 @@ describe('ClientServicesPage: estado del servicio (consulta de servicios)', () =
         expect(screen.getByText('Servicio n° 101')).toBeInTheDocument();
         expect(screen.queryByText('Servicio n° 102')).not.toBeInTheDocument();
     });
+
+    it('muestra estado de error, no el vacío, cuando falla la carga sin datos en caché', async () => {
+        vi.mocked(orderService.getOrders).mockRejectedValue(axiosNetworkError);
+
+        renderPage();
+
+        expect(await screen.findByText('No se pudieron cargar los servicios')).toBeInTheDocument();
+        expect(screen.getByText('Reintentar')).toBeInTheDocument();
+        expect(screen.queryByText('Aún no tiene servicios en el taller')).not.toBeInTheDocument();
+    });
 });

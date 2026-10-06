@@ -45,6 +45,8 @@ function orden(id: string, vehicleId: string, estadoCodigo: number): Order {
     };
 }
 
+const axiosNetworkError = { isAxiosError: true };
+
 function renderPage() {
     return render(
         <MemoryRouter initialEntries={['/client/vehiculos/1']}>
@@ -94,5 +96,34 @@ describe('ClientVehicleDetailPage: ficha del vehículo con historial de órdenes
         expect(
             await screen.findByText('Este vehículo aún no tiene órdenes de trabajo registradas.')
         ).toBeInTheDocument();
+    });
+
+    it('muestra estado de error cuando falla la carga del vehículo sin caché', async () => {
+        useVehicleStore.setState({ vehicles: [], status: 'idle', error: null, isOffline: false });
+        vi.mocked(vehicleService.getVehicleById).mockRejectedValue(axiosNetworkError);
+
+        renderPage();
+
+        expect(
+            await screen.findByText('No se pudieron cargar los datos del vehículo')
+        ).toBeInTheDocument();
+        expect(screen.getByText('Reintentar')).toBeInTheDocument();
+        expect(
+            screen.queryByText(/Vehículo no encontrado o no pertenece a su cuenta/)
+        ).not.toBeInTheDocument();
+    });
+
+    it('muestra estado de error en el historial cuando no se pueden cargar las órdenes', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(vehiculo);
+        vi.mocked(orderService.getOrders).mockRejectedValue(axiosNetworkError);
+
+        renderPage();
+
+        expect(
+            await screen.findByText('No se pudieron cargar las órdenes del vehículo.')
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByText('Este vehículo aún no tiene órdenes de trabajo registradas.')
+        ).not.toBeInTheDocument();
     });
 });

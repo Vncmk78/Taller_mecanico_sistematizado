@@ -64,7 +64,7 @@ export function ClientServicesPage() {
                     {title}
                     <span className="text-sm font-normal text-text-muted">({items.length})</span>
                 </h3>
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     {items.map((order) => (
                         <ServiceCard
                             key={order.id}
@@ -82,7 +82,7 @@ export function ClientServicesPage() {
         );
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
             <div className="mb-6">
                 <h2 className="text-3xl font-bold mb-1">Estado del Servicio</h2>
                 <p className="text-text-muted">Seguimiento en tiempo real del estado de sus servicios en el taller</p>
@@ -95,7 +95,7 @@ export function ClientServicesPage() {
             {status === 'loading' ? (
                 <OrderListSkeleton count={2} />
             ) : isOffline && groups.total === 0 ? (
-                <div className="card p-14 text-center">
+                <div className="card p-8 sm:p-14 text-center">
                     <span className="flex items-center justify-center w-14 h-14 rounded-full bg-status-red/10 text-status-red mx-auto mb-4">
                         <AlertTriangle className="w-6 h-6" aria-hidden />
                     </span>
@@ -114,7 +114,7 @@ export function ClientServicesPage() {
                     {renderGroup('Finalizados', groups.finished)}
 
                     {groups.total === 0 && (
-                        <div className="card p-14 text-center">
+                        <div className="card p-8 sm:p-14 text-center">
                             <ClipboardList className="w-12 h-12 text-text-muted mx-auto mb-4" aria-hidden />
                             <p className="text-text-muted text-lg mb-2">Aún no tiene servicios en el taller</p>
                             <p className="text-text-muted text-sm">

@@ -55,8 +55,8 @@ export function ClientVehicleDetailPage() {
     // es un error de carga, no un "no encontrado" confirmado por el backend.
     if (vehicleError && (!vehicle || vehicle.clientId !== clientId)) {
         return (
-            <div className="p-10 animate-fade-in">
-                <div className="card p-14 text-center">
+            <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
+                <div className="card p-8 sm:p-14 text-center">
                     <span className="flex items-center justify-center w-14 h-14 rounded-full bg-status-red/10 text-status-red mx-auto mb-4">
                         <AlertTriangle className="w-6 h-6" aria-hidden />
                     </span>
@@ -75,8 +75,8 @@ export function ClientVehicleDetailPage() {
     // Ownership check: aunque el vehículo exista en caché, no es tuyo si el clientId no calza.
     if (!vehicle || notFound || vehicle.clientId !== clientId) {
         return (
-            <div className="p-10 animate-fade-in">
-                <div className="card p-14 text-center">
+            <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
+                <div className="card p-8 sm:p-14 text-center">
                     <span className="flex items-center justify-center w-14 h-14 rounded-full bg-bg-secondary text-text-muted mx-auto mb-4">
                         <SearchX className="w-6 h-6" aria-hidden />
                     </span>
@@ -98,7 +98,7 @@ export function ClientVehicleDetailPage() {
     }
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
             <Link
                 to="/client/vehiculos"
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"

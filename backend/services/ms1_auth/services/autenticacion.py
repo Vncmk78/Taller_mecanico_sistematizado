@@ -114,6 +114,42 @@ def buscar_usuario_activo_por_id(db: Session, usuario_id: int) -> Usuario | None
         ) from exc
 
 
+def listar_usuarios(db: Session) -> list[Usuario]:
+    """Consulta todas las cuentas de MS1, activas y desactivadas.
+
+    A diferencia de `buscar_usuario_activo_por_id` no filtra por `activo`: el
+    administrador necesita ver también las cuentas desactivadas. Los roles
+    vienen ya cargados, así que serializar la lista no dispara una consulta
+    adicional por cada usuario.
+    """
+
+    try:
+        return list(
+            db.scalars(_consulta_usuario_completo().order_by(Usuario.usuario_id))
+        )
+    except SQLAlchemyError as exc:
+        raise PersistenciaAutenticacionError(
+            "No fue posible consultar los usuarios"
+        ) from exc
+
+
+def buscar_usuario_por_id(db: Session, *, usuario_id: int) -> Usuario:
+    """Consulta una cuenta concreta por su identificador, activa o no."""
+
+    try:
+        usuario = db.scalar(
+            _consulta_usuario_completo().where(Usuario.usuario_id == usuario_id)
+        )
+    except SQLAlchemyError as exc:
+        raise PersistenciaAutenticacionError(
+            "No fue posible consultar el usuario"
+        ) from exc
+
+    if usuario is None:
+        raise UsuarioNoEncontradoError("El usuario no existe")
+    return usuario
+
+
 def asignar_rol_restringido(
     db: Session,
     *,

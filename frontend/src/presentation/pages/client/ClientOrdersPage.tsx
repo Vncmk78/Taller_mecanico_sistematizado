@@ -1,24 +1,25 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
+import { ClipboardList } from 'lucide-react';
 import { ordenStatusLabel } from '@/domain/entities/Order';
 import { OrderCard } from '@/presentation/components/orders/OrderCard';
 import { OrderListSkeleton } from '@/presentation/components/orders/OrderListSkeleton';
 import { OrderListToolbar } from '@/presentation/components/orders/OrderListToolbar';
 import { OrderPagination } from '@/presentation/components/orders/OrderPagination';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Alert } from '@/presentation/components/ui/Alert';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
+import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useOrderListFilters } from '@/presentation/hooks/useOrderListFilters';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { orderService } from '@/infrastructure/api/OrderService';
-import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
-import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 export function ClientOrdersPage() {
-    const user = useAuthStore((s) => s.user);
-    const { orders, status, error, isOffline, fetchOrders } = useOrderStore();
+    const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
 
-    const clientId = user?.id ?? CURRENT_CLIENT_ID;
     const loadOrders = () => fetchOrders(() => orderService.getOrders());
 
     useEffect(() => {
@@ -26,13 +27,10 @@ export function ClientOrdersPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const myOrders = useMemo(() => {
-        if (!isOffline) return orders;
-        const myVehicleIds = new Set(
-            vehicles.filter((v) => v.clientId === clientId).map((v) => v.id)
-        );
-        return orders.filter((o) => myVehicleIds.has(o.vehicleId));
-    }, [orders, isOffline, vehicles, clientId]);
+    // Online la Gateway ya devuelve solo las órdenes del cliente autenticado; la
+    // caché conserva esa misma respuesta, así que offline no hace falta volver
+    // a filtrar por identidad.
+    const myOrders = orders;
 
     const {
         search,
@@ -55,8 +53,17 @@ export function ClientOrdersPage() {
         )
     );
 
+    // El store solo marca isOffline ante fallos de transporte: un error HTTP del
+    // servidor se muestra aparte para no rotularlo como "sin conexión".
+    const isServerError = status === 'error' && !isOffline;
+    const emptyTitle = search.trim()
+        ? `No se encontraron órdenes para "${search}".`
+        : estadoCodigo !== 'all'
+          ? `No hay órdenes en el estado "${ordenStatusLabel(estadoCodigo)}".`
+          : 'Aún no tiene órdenes de trabajo registradas.';
+
     return (
-        <div className="animate-fade-in">
+        <div className="p-10 animate-fade-in">
             <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
                 <div>
                     <h2 className="text-3xl font-bold mb-1">Mis Órdenes</h2>
@@ -72,10 +79,23 @@ export function ClientOrdersPage() {
                 onEstadoChange={setEstadoCodigo}
             />
 
-            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} className="mb-6" />}
+            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} requestId={requestId} className="mb-6" />}
+
+            {isServerError && filteredOrders.length > 0 && (
+                <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={loadOrders} />}>
+                    {error ?? 'No se pudieron cargar sus órdenes.'} Se muestran los últimos datos disponibles.
+                </Alert>
+            )}
 
             {status === 'loading' ? (
                 <OrderListSkeleton count={2} />
+            ) : isServerError && filteredOrders.length === 0 ? (
+                <ErrorState
+                    title="No se pudieron cargar sus órdenes"
+                    message={error}
+                    requestId={requestId}
+                    onRetry={loadOrders}
+                />
             ) : (
                 <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -90,13 +110,15 @@ export function ClientOrdersPage() {
                             />
                         ))}
                         {filteredOrders.length === 0 && (
-                            <p className="text-text-muted col-span-full text-center py-10">
-                                {search
-                                    ? `No se encontraron órdenes para "${search}".`
-                                    : estadoCodigo !== 'all'
-                                      ? `No hay órdenes en el estado "${ordenStatusLabel(estadoCodigo)}".`
-                                      : 'Aún no tiene órdenes de trabajo registradas.'}
-                            </p>
+                            <EmptyState
+                                icon={ClipboardList}
+                                title={emptyTitle}
+                                description={
+                                    search.trim() || estadoCodigo !== 'all'
+                                        ? 'Pruebe con otro término de búsqueda o estado.'
+                                        : 'Las órdenes que se creen para sus vehículos aparecerán aquí.'
+                                }
+                            />
                         )}
                     </div>
 

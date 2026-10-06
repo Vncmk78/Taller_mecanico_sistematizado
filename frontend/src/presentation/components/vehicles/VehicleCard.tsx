@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Car, User, FileText } from 'lucide-react';
 import type { Vehicle } from '@/domain/entities/Vehicle';
+import { vehicleMileageLabel, vehicleYearLabel } from '@/presentation/utils/vehicleDisplay';
 
 interface VehicleCardProps {
     vehicle: Vehicle;
@@ -23,9 +24,9 @@ export function VehicleCard({ vehicle, detailPath, ownerName }: VehicleCardProps
             {vehicle.patent}
             </span>
         </div>
-        <div className="text-sm text-text-main mb-1">Año: {vehicle.year}</div>
+        <div className="text-sm text-text-main mb-1">Año: {vehicleYearLabel(vehicle.year)}</div>
         <div className="text-sm text-text-muted mb-4">
-            Km registrado: {vehicle.mileage.toLocaleString('es-CL')} km
+            Km registrado: {vehicleMileageLabel(vehicle.mileage)}
         </div>
         {ownerName && (
             <div className="flex items-center gap-2 text-sm bg-bg-secondary rounded-lg px-3 py-2 mb-4">

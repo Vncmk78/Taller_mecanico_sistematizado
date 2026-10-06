@@ -20,7 +20,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error capturado por ErrorBoundary:', error, errorInfo);
+    // Se registra solo el nombre, el mensaje y la pila de componentes: volcar
+    // el objeto `error` completo imprimiría en la consola del navegador el
+    // `config.headers.Authorization` de un AxiosError, es decir, el token de
+    // acceso en claro. La consola es lo que se ve al compartir pantalla.
+    console.error(
+      'Error capturado por ErrorBoundary:',
+      `${error?.name ?? 'Error'}: ${error?.message ?? 'sin mensaje'}`,
+      errorInfo.componentStack,
+    );
   }
 
   handleReload = () => {

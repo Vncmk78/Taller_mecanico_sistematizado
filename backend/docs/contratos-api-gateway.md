@@ -15,8 +15,11 @@ Reglas que se aplican a todos los endpoints:
   Gateway y en el microservicio; si no viene (o es inválida), la Gateway
   genera un UUID y lo devuelve en la respuesta.
 - Errores propios de la Gateway: `RUTA_NO_ENCONTRADA` (404),
-  `MICROSERVICIO_INALCANZABLE` (502) y `ERROR_INTERNO` (500), todos con el
-  cuerpo `{"detail": "...", "error": {"codigo", "estado", "ruta", "request_id"}}`.
+  `MICROSERVICIO_INALCANZABLE` (502), `TIEMPO_AGOTADO` (504),
+  `GATEWAY_SATURADA` (503), `ERROR_MICROSERVICIO` y `ERROR_INTERNO` (500),
+  todos con el cuerpo `{"detail": "...", "error": {"codigo", "estado",
+  "ruta", "request_id"}}`. `GATEWAY_SATURADA` y `ERROR_MICROSERVICIO` son de
+  la Semana 4 (mapeo de errores y cabeceras).
 - Errores de los microservicios: `{"detail": "mensaje"}` con su status code.
   En los `422` (validación de body en MS1/MS2), `detail` es una **lista** de
   errores de FastAPI, no un string:
@@ -24,6 +27,204 @@ Reglas que se aplican a todos los endpoints:
   ```json
   { "detail": [ { "loc": ["body", "email"], "msg": "value is not a valid email address", "type": "value_error" } ] }
   ```
+
+### Errores que vienen de los microservicios
+
+Un 4xx/5xx que responde el microservicio **no es un error de la Gateway**:
+- Si el body es **JSON** (`{"detail": ...}` de FastAPI) se reenvía **tal
+  cual**, con su status code, para que el frontend siga leyendo `detail`.
+- Si el body **no es JSON** (texto plano o HTML, típico de un proxy
+  intermedio) se normaliza al formato común con el código
+  `ERROR_MICROSERVICIO` y el mismo estado. Los `404` y `405` no-JSON usan
+  `RUTA_NO_ENCONTRADA` y `METODO_NO_PERMITIDO` con sus mensajes habituales.
+  `WWW-Authenticate` y `Retry-After` se conservan.
+
+Fallo de red del proxy (no llega ninguna respuesta del microservicio):
+
+| Excepción | Estado | Código |
+|---|---|---|
+| `ConnectError`, `ConnectTimeout` | 502 | `MICROSERVICIO_INALCANZABLE` |
+| `ReadTimeout`, `WriteTimeout` | 504 | `TIEMPO_AGOTADO` |
+| `PoolTimeout` | 503 | `GATEWAY_SATURADA` |
+| Otro `RequestError` | 502 | `MICROSERVICIO_INALCANZABLE` |
+
+### Cabeceras de la respuesta
+
+La Gateway reenvía las cabeceras que manda el microservicio
+(`WWW-Authenticate`, `Content-Disposition`, `Cache-Control`, `Set-Cookie`,
+`Retry-After`, …), excepto las de conexión (*hop-by-hop*), `Content-Length`,
+`Content-Encoding`, `Server`, `Date`, `X-Request-ID` (lo pone la Gateway) y
+las `Access-Control-*` (el CORS lo resuelve la Gateway). Un `Location` que
+apunte a la URL interna del microservicio (por ejemplo la redirección 307 de
+FastAPI por la barra final) se traduce a la URL pública de la Gateway con
+`/api`: `http://localhost:8002/vehiculos` → `https://<gateway>/api/vehiculos`.
+
+## Swagger y OpenAPI (`/docs`)
+
+La fuente interactiva del contrato es <http://localhost:8000/docs> y su versión
+JSON es <http://localhost:8000/openapi.json>. Además de los esquemas, el esquema
+publica **un ejemplo real por body y por respuesta**, para que el frontend y la
+app móvil puedan copiar un payload sin inventarlo.
+
+### Respuestas reutilizables
+
+`components.responses` publica las respuestas que se repiten en todas las
+operaciones, con su cabecera `X-Request-ID` y sus ejemplos:
+
+| Respuesta | Estado | Cuándo se usa |
+|---|---|---|
+| `NoAutenticado` | 401 | Falta el token, expiró o su firma no es válida (documenta `WWW-Authenticate: Bearer`) |
+| `ErrorInterno` | 500 | Error no controlado de la Gateway (`ERROR_INTERNO`) o respuesta no JSON (`ERROR_MICROSERVICIO`) |
+| `ServicioNoDisponible` | 502 | El microservicio no respondió |
+| `GatewaySaturada` | 503 | El pool de conexiones de la Gateway está agotado |
+| `TiempoAgotado` | 504 | El microservicio tardó demasiado |
+
+El `503` y el `504` de cada operación de negocio se referencian con `$ref` a
+`GatewaySaturada` y `TiempoAgotado`. El `401`, el `500` y el `502` se describen en
+línea en cada operación porque no son idénticos en todas: dependen de si el error
+lo genera la Gateway (`ErrorRespuesta`) o el microservicio (`ErrorDetalle`), y el
+OpenAPI publica en cada caso el esquema que corresponde.
+
+### Ejemplos nombrados
+
+`components.examples` guarda los cuerpos reales, referenciables por nombre desde
+`openapi.json`:
+
+| Prefijo | Ejemplos |
+|---|---|
+| `error_*` | Los siete errores de la Gateway: `error_ruta_no_encontrada` (404), `error_metodo_no_permitido` (405), `error_interno_gateway` (500), `error_microservicio` (respuesta no JSON), `error_microservicio_no_disponible` (502), `error_gateway_saturada` (503) y `error_tiempo_agotado` (504) |
+| `detalle_*` | Los errores que responden MS1 y MS2: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados y los dos `422` de validación |
+
+Los mensajes de los errores de la Gateway se importan de `gateway/errores.py`, así
+que el ejemplo no puede divergir del texto que la Gateway responde realmente. Los
+ejemplos de los microservicios usan los `detail` exactos de MS1 y MS2 (por ejemplo
+`"No tienes permiso para realizar esta operación"` en el `403` de vehículos). Los
+ejemplos de órdenes son los de `shared/openapi_ordenes.py` y se conservan sin
+cambios.
+
+Ninguna URL interna (`localhost:8001`, `localhost:8002`, …) ni token real se
+publica en el esquema: el `access_token` de ejemplo es un JWT ficticio que no
+habilita ninguna llamada.
+
+### Cabecera `X-Request-ID` y health checks
+
+Todas las respuestas bajo `/api` declaran la cabecera `X-Request-ID` en el
+OpenAPI, con su descripción y su ejemplo (`abc-123`); es la misma clave que viaja
+en `error.request_id`. Los dos endpoints de salud muestran también sus ejemplos:
+`200` con los cuatro microservicios en `ok` y el `503` con `status: degradado`
+(ver la sección siguiente).
+
+### Verificación
+
+```bash
+python -m pytest tests/test_gateway_openapi.py tests/test_gateway_openapi_ejemplos.py -v
+```
+
+`tests/test_gateway_openapi_ejemplos.py` valida el documento con
+`openapi-spec-validator`, comprueba que **todos** los ejemplos (incluidos los de
+órdenes) cumplen el esquema que los acompaña, que no hay URLs internas ni tokens
+reales y que `gateway/openapi_ejemplos.py` es idempotente. La dependencia de
+desarrollo se instala con `pip install -r requirements-dev.txt`.
+
+## Health checks (`/api/health`)
+
+Públicos (no exigen `Authorization`) y de solo lectura: miden la salud del
+sistema, no son endpoints de negocio.
+
+### GET `/api/health`
+
+Responde la propia Gateway, **sin consultar a los microservicios** (lo usa
+Vercel y no puede depender de que estén arriba). `200` siempre que el proceso
+de la Gateway esté vivo:
+
+```json
+// Response 200
+{ "status": "ok", "servicio": "gateway" }
+```
+
+### GET `/api/health/servicios`
+
+Consulta `/health/db` de los cuatro microservicios en paralelo con un timeout
+de `GATEWAY_HEALTH_TIMEOUT_SECONDS` (2 s por defecto) por servicio. `200` si
+todos responden; `503` si al menos uno no lo está. Toda respuesta trae
+`Cache-Control: no-store`. El body no expone URLs internas.
+
+```json
+// Response 200
+{
+  "status": "ok",
+  "gateway": "ok",
+  "servicios": {
+    "ms1_auth": { "estado": "ok", "latencia_ms": 3 },
+    "ms2_taller": { "estado": "ok", "latencia_ms": 4 },
+    "ms3_presupuestos": { "estado": "ok", "latencia_ms": 2 },
+    "ms4_evidencias": { "estado": "ok", "latencia_ms": 5 }
+  }
+}
+```
+
+```json
+// Response 503
+{
+  "status": "degradado",
+  "gateway": "ok",
+  "servicios": {
+    "ms1_auth": { "estado": "ok", "latencia_ms": 3 },
+    "ms2_taller": { "estado": "ok", "latencia_ms": 4 },
+    "ms3_presupuestos": { "estado": "caido" },
+    "ms4_evidencias": { "estado": "sin_base", "latencia_ms": 6, "codigo_http": 503 }
+  }
+}
+```
+
+Estados por servicio:
+
+- `ok` — respondió `200` a `/health/db` en menos del timeout (`latencia_ms` en
+  milisegundos enteros).
+- `sin_base` — el proceso responde pero su health/base falla; incluye
+  `codigo_http`.
+- `tiempo_agotado` — superó el timeout de 2 s.
+- `caido` — sin conexión (servicio apagado o no arrancado).
+
+## Rutas de Presupuestos y Evidencias
+
+La Gateway decide el destino por el **primer segmento** de la ruta y reenvía
+el resto del camino, el query string y el body tal cual. Por eso MS3 y MS4
+deben publicar sus endpoints bajo sus prefijos propios y **nunca** colgarlos
+bajo `/ordenes/...`: ese prefijo resuelve a MS2.
+
+| Prefijos | Microservicio | Ejemplo |
+|---|---|---|
+| `auth` | MS1 (Autenticación y Usuarios) | `/api/auth/login` → `POST /auth/login` |
+| `vehiculos`, `vehiculo`, `ordenes`, `orden`, `clientes`, `mecanicos` | MS2 (Vehículos y Órdenes) | `/api/ordenes/31/mecanico` → `PUT /ordenes/31/mecanico` |
+| `presupuestos`, `presupuesto`, `repuestos`, `proveedores`, `inventario` | MS3 (Presupuestos) | `/api/presupuestos` → `GET /presupuestos` |
+| `evidencias`, `evidencia` | MS4 (Evidencia Multimedia) | `/api/evidencias?orden_id=31` → `GET /evidencias?orden_id=31` |
+
+Convención que deben respetar los endpoints de la Semana 5:
+
+- **MS4 publica todo bajo `/evidencias`**, por ejemplo `POST /evidencias`
+  (subida de archivos) y `GET /evidencias?orden_id=...` (listado de una
+  orden). **No existe** `GET /ordenes/{id}/evidencias`: esa ruta llegaría a
+  MS2, no a MS4.
+- **MS3 publica bajo sus propios prefijos**, por ejemplo
+  `GET /presupuestos?orden_id=...`. Tampoco se cuelga bajo `/ordenes/...`.
+- El microservicio recibe la ruta sin el prefijo `/api` (p. ej. MS4 recibe
+  `/evidencias`, no `/api/evidencias`).
+
+Nota sobre la subida de archivos: hoy la Gateway lee el body completo en
+memoria antes de reenviarlo y conserva el `Content-Type` con el `boundary`
+del multipart. Para fotos no es problema, pero el límite de tamaño (`413`), el
+modo de subida (streaming desde la Gateway o POST prefirmado directo a MinIO)
+y los timeouts para videos son las tareas pendientes de la Semana 5 (controles
+4.2, 4.3 y 4.5 del
+[checklist de seguridad de evidencias](checklist-seguridad-evidencias.md)).
+
+Deuda registrada (decisión pendiente): existen alias en singular
+(`presupuesto`, `evidencia`, `orden`, `vehiculo`) que reenvían la ruta tal
+cual, de modo que `/api/evidencia/x` llegaría a MS4 como `/evidencia/x`, una
+ruta que ningún servicio expone. Se conservan por compatibilidad con MS2 (los
+usa el equipo) y no se consideran contrato: MS3 y MS4 publican únicamente sus
+prefijos en plural.
 
 ## Relaciones y flujo inicial de MS2
 
@@ -102,13 +303,15 @@ autoriza por sí solo endpoints o transiciones futuras.
 
 | Rol efectivo | Vehículos | Órdenes |
 |---|---|---|
-| Administrador | No obtiene acceso global al endpoint de vehículos salvo que la cuenta también tenga rol Cliente y perfil local | Crea órdenes, ve todas y asigna o reasigna mecánicos |
+| Administrador | Consulta cualquiera de los vehículos del taller y puede registrarlos | Crea órdenes, ve todas, asigna o reasigna mecánicos y cambia su estado |
 | Cliente | Registra, lista, consulta y modifica únicamente sus vehículos | Lista y consulta únicamente órdenes asociadas a sus vehículos; no crea órdenes |
-| Mecánico | No existe todavía un endpoint de vehículos asignados | Lista y consulta únicamente órdenes cuyo `mecanico_actual_id` coincide con su usuario |
+| Mecánico | Lista sus vehículos asignados en `/api/vehiculos/asignados` y consulta los asignados a él | Lista, consulta y cambia el estado únicamente de órdenes cuyo `mecanico_actual_id` coincide con su usuario; consulta su historial |
 | Multirol | Acumula los permisos de sus roles | Une los alcances Cliente y Mecánico sin duplicados; si incluye Administrador, conserva visibilidad global |
 
 Una orden inexistente y una orden fuera del alcance del Cliente o Mecánico
 responden el mismo `404`, para no revelar la existencia de recursos ajenos.
+Lo mismo aplica al detalle de vehículos: el Cliente solo ve los propios y el
+Mecánico solo los que tiene asignados.
 
 ## Autenticación (MS1)
 
@@ -168,6 +371,83 @@ Devuelve el usuario identificado por el token.
   "roles": ["cliente"], "is_active": true }
 ```
 
+### El JWT: claims, validación y quién las aplica
+
+Esta sección es la **fuente de verdad** del token de acceso. La implementación
+que la garantiza es [`shared/auth.py`](../shared/auth.py), un módulo puro sin
+FastAPI, SQLAlchemy ni conexión a base de datos, pensado para que todos los
+microservicios compartan exactamente el mismo contrato. Si este documento y el
+código discrepan, el código es la referencia: no se reimplementa la validación
+en otro lado.
+
+#### Claims emitidos
+
+`POST /api/auth/login` entrega un JWT firmado con **HS256** que contiene
+exactamente tres claims:
+
+| Claim | Tipo | Obligatorio | Contenido |
+|---|---|---|---|
+| `sub` | `string` | Sí | El `usuario_id` de MS1 como texto **entero positivo** (`"7"`, nunca `"usr_7"`) |
+| `roles` | `list[string]` | Sí | Lista **no vacía y sin duplicados** con los roles del usuario, ordenada alfabéticamente |
+| `exp` | `number` | Sí | Vencimiento en epoch seconds (por defecto 60 minutos, `MS1_JWT_EXPIRE_MINUTES`) |
+
+Los valores de `roles` solo pueden ser `cliente`, `mecanico` o `administrador`
+(enum `NombreRol`). Cualquier otro valor hace que el token sea rechazado.
+
+Deliberadamente **no** viajan `email`, `role` (singular), `nombre` ni `iat`: la
+identidad se resuelve siempre contra la base de MS1 o MS2 en el momento de la
+petición, de modo que un token no queda obsoleto si el usuario cambia de correo,
+nombre o roles mientras el token sigue vigente. El correo y el nombre completos
+se obtienen en `GET /api/auth/me`.
+
+> **Atención al integrarse con otros módulos:** el claim es `roles` y es una
+> **lista**, aunque el usuario tenga un único rol. Un cliente que lea
+> `payload.role` (singular) o que asuma un string en lugar de un array obtendrá
+> `undefined` y denegará el acceso a usuarios legítimos.
+
+#### Quién valida el token
+
+**La Gateway no valida el JWT.** Reenvía la cabecera `Authorization` al
+microservicio destino sin inspeccionarla, y por eso no lee ni necesita el secreto
+de firma. Cada microservicio valida por su cuenta, y lo hace siempre con
+`shared.auth.validar_token_acceso`, que:
+
+- exige `sub` y `exp` presentes (`require_sub`, `require_exp`);
+- rechaza firmas inválidas y tokens expirados con el mismo error `401`;
+- devuelve un `PrincipalAutenticado` con `usuario_id: int` y
+  `roles: frozenset[NombreRol]`, sin tocar la base de datos;
+- no acepta un `sub` no numérico, una `roles` vacía, con duplicados o con un rol
+  desconocido.
+
+La ventaja de este diseño es que la Gateway no puede falsificar una identidad ni
+filtrar el token, y que el secreto de cada microservicio se mantiene en su
+propio prefijo de variables (`MS1_JWT_SECRET_KEY`, `MS2_JWT_SECRET_KEY`, …).
+
+El secreto es obligatorio, se lee solo del entorno y debe tener **al menos 32
+caracteres**: `shared/auth.py` lanza `ConfiguracionJWTError` en el arranque si
+falta, es corto o si el algoritmo no es `HS256`. No debe existir un valor por
+defecto en el código, porque un default conocido permitiría firmar tokens
+válidos.
+
+#### Errores de autenticación y autorización
+
+| Situación | Respuesta |
+|---|---|
+| Sin cabecera `Authorization`, o con un esquema distinto de `Bearer` | `401` + `WWW-Authenticate: Bearer` |
+| Token con firma inválida, expirado, o con `sub`/`roles` mal formados | `401` + `WWW-Authenticate: Bearer` |
+| Token válido, pero el usuario ya no existe o está inactivo | `401` |
+| Token válido, pero el principal no tiene ninguno de los roles exigidos | `403` |
+| Recurso inexistente **o** ajeno al principal | `404` (se usa el mismo código para no revelar la existencia de recursos de otros) |
+
+La distinción `401` / `403` es parte del contrato: `401` significa "identifícate
+otra vez" y `403` significa "identificado, pero no te corresponde". Un cliente
+que limpie la sesión ante un `401` debe ignorar los `403` y puede mostrar un
+mensaje de permisos.
+
+Para obtener las tres identidades de prueba (Cliente, Mecánico y
+Administrador) existe `scripts/seed_usuarios_prueba.py`; el registro público solo
+puede crear clientes, porque los roles se asignan en el servidor.
+
 ## Vehículos (MS2)
 
 Todas requieren `Authorization: Bearer <token>` con rol Cliente y un perfil
@@ -200,14 +480,16 @@ un largo funcional ni una combinación de letras y números. `anio` y
 
 ### GET `/api/vehiculos`
 
-Lista los vehículos del cliente autenticado.
+Administrador lista todos los vehículos del taller; Cliente lista los suyos. Un
+usuario con rol Mecánico (aun con perfil Cliente activo, sin rol Cliente) recibe
+`403` y usa `/api/vehiculos/asignados`.
 
 | Atributo | Descripción |
 |---|---|
-| Auth | `Authorization: Bearer <token>` |
+| Auth | `Authorization: Bearer <token>` con rol Cliente o Administrador |
 | Body | — |
 | Respuesta OK | `200` con lista de `VehiculoRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `404` sin perfil Cliente local · `502/500` de infraestructura |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente o Administrador · `404` sin perfil Cliente local (rol Cliente) · `502/500` de infraestructura |
 
 ```json
 // Response 200
@@ -215,17 +497,30 @@ Lista los vehículos del cliente autenticado.
     "anio": 2018, "kilometraje": 45000 } ]
 ```
 
+### GET `/api/vehiculos/asignados`
+
+Lista los vehículos con órdenes de trabajo asignadas al Mecánico autenticado,
+sin duplicados (una misma patente con varias órdenes aparece una sola vez).
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Mecánico |
+| Body | — |
+| Respuesta OK | `200` con lista de `VehiculoRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Mecánico · `502/500` de infraestructura |
+
 ### GET `/api/vehiculos/{vehiculo_id}`
 
-Consulta un vehículo únicamente cuando pertenece al Cliente autenticado. Un
-vehículo ajeno y uno inexistente producen el mismo `404`.
+Devuelve un vehículo según el rol: el Cliente solo los propios, el
+Administrador cualquiera del taller y el Mecánico solo los asignados a él.
+Un vehículo ajeno y uno inexistente producen el mismo `404`.
 
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` |
 | Body | — |
 | Respuesta OK | `200` con `VehiculoRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `404` vehículo inexistente, ajeno o perfil local ausente · `502/500` de infraestructura |
+| Errores | `401` JWT ausente/inválido · `404` inexistente o fuera del alcance del rol · `502/500` de infraestructura |
 
 ### PATCH `/api/vehiculos/{vehiculo_id}`
 
@@ -250,8 +545,8 @@ patente y el propietario no son modificables después del registro.
 ## Órdenes de trabajo (MS2)
 
 Todos los endpoints requieren `Authorization: Bearer <token>`. La respuesta
-`OrdenRespuesta` expone el estado actual y el responsable actual, pero no
-incluye todavía los historiales completos:
+`OrdenRespuesta` expone el estado actual y el responsable actual; los
+historiales se consultan por separado con `GET /api/ordenes/{orden_id}/historial`:
 
 ```json
 {
@@ -358,16 +653,62 @@ reasignaciones.
 existencia, actividad y rol Mecánico, junto con los límites de capacidad por
 mecánico, permanece pendiente de contratos e implementación posteriores.
 
+### GET `/api/ordenes/{orden_id}/historial`
+
+Devuelve los cambios de estado de una orden en orden cronológico, con el actor
+que los registró y su observación. Aplica la misma visibilidad del detalle: una
+orden ajena y una inexistente responden el mismo `404`.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Body | — |
+| Respuesta OK | `200` con lista de `HistorialEstadoRespuesta` |
+| Errores | `401` JWT ausente/inválido · `404` orden inexistente o no visible · `500` consulta · `502` MS2 no disponible |
+
+```json
+// Response 200
+[
+  { "historial_id": 40, "orden_id": 31, "estado_anterior": null, "estado_nuevo": 1,
+    "actor_usuario_id": 99, "origen": "usuario", "fecha_hora": "2026-09-28T10:30:00-03:00",
+    "observacion": null },
+  { "historial_id": 41, "orden_id": 31, "estado_anterior": 1, "estado_nuevo": 2,
+    "actor_usuario_id": 50, "origen": "usuario", "fecha_hora": "2026-09-28T11:00:00-03:00",
+    "observacion": "Inicia evaluación técnica" }
+]
+```
+
+### PATCH `/api/ordenes/{orden_id}/estado`
+
+Cambia el estado de una orden validando rol, catálogo oficial (1 a 8) y la
+transición declarada por el dominio. El Administrador siempre puede ejecutarlo;
+el Mecánico solo sobre las órdenes que tiene asignadas. `Entregado` y
+`Cancelado` son terminales y rechazan cualquier cambio. El estado y el historial
+se actualizan en la misma transacción.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador o mecánico asignado |
+| Body | `{"estado_destino": int positivo, "observacion"?: string no vacío}` |
+| Respuesta OK | `200` con `OrdenRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador ni orden asignada · `404` orden inexistente · `409` transición no permitida o terminal · `422` estado de destino desconocido o body inválido · `500` persistencia · `502` MS2 no disponible |
+
+```json
+// Request
+{ "estado_destino": 2, "observacion": "Inicia evaluación técnica" }
+// Response 200
+{ "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 2,
+  "mecanico_actual_id": 50, "creado_por_id": 99,
+  "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T11:00:00-03:00" }
+```
+
 ## Contratos todavía no publicados
 
 Las siguientes capacidades no tienen un endpoint implementado y no deben ser
-consumidas como parte del contrato de Semana 3:
+consumidas como parte del contrato actual:
 
 | Capacidad | Situación actual |
 |---|---|
-| Historial de una orden | Se persiste internamente, pero no existe `GET /api/ordenes/{orden_id}/historial` |
-| Cambio general de estado | No existe un endpoint; solo la primera asignación realiza la transición implementada |
-| Vehículos asignados a un mecánico | No existe `/api/vehiculos/asignados` |
 | Capacidad y máximo de órdenes activas | Subsistema de una semana posterior |
 | Presupuestos, repuestos e inventario | Los contratos de MS3 se publicarán cuando sus endpoints estén definidos y verificados |
 | Evidencias multimedia | Los contratos de MS4 se publicarán cuando sus endpoints estén definidos y verificados |

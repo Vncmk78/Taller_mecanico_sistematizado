@@ -8,4 +8,10 @@ export interface OrderPort {
     getOrderById(id: string): Promise<Order>;
     /** Historial de cambios de estado de una orden (el servidor filtra por rol). */
     getOrderHistory(ordenId: string): Promise<OrderHistoryEntry[]>;
+    /** Cambia el estado de una orden (PATCH /ordenes/{id}/estado). */
+    cambiarEstado(
+        ordenId: string,
+        estadoDestino: number,
+        observacion?: string
+    ): Promise<Order>;
 }

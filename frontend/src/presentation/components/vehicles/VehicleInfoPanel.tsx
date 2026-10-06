@@ -1,13 +1,18 @@
-import { Car, Mail, Phone, User } from 'lucide-react';
+import { Car, User } from 'lucide-react';
 import type { Vehicle } from '@/domain/entities/Vehicle';
-import type { VehicleOwner } from '@/domain/ports/VehiclePort';
+import { vehicleMileageLabel, vehicleYearLabel } from '@/presentation/utils/vehicleDisplay';
 
 interface VehicleInfoPanelProps {
     vehicle: Vehicle;
-    owner?: VehicleOwner;
+    /**
+     * Identificación del propietario tal como la entrega la Gateway. MS2 no
+     * expone nombre, correo ni teléfono del Cliente, así que la vista muestra
+     * el identificador real (p. ej. "Cliente #7") en lugar de datos simulados.
+     */
+    ownerLabel?: string;
 }
 
-export function VehicleInfoPanel({ vehicle, owner }: VehicleInfoPanelProps) {
+export function VehicleInfoPanel({ vehicle, ownerLabel }: VehicleInfoPanelProps) {
     return (
     <div className="card">
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-border-custom">
@@ -22,27 +27,19 @@ export function VehicleInfoPanel({ vehicle, owner }: VehicleInfoPanelProps) {
         <div className="grid grid-cols-2 gap-4 mb-6">
         <div>
             <span className="text-text-muted text-sm block mb-1">Año</span>
-            <span className="text-lg font-medium">{vehicle.year}</span>
+            <span className="text-lg font-medium">{vehicleYearLabel(vehicle.year)}</span>
         </div>
         <div>
             <span className="text-text-muted text-sm block mb-1">Kilometraje registrado</span>
-            <span className="text-lg font-medium">{vehicle.mileage.toLocaleString('es-CL')} km</span>
+            <span className="text-lg font-medium">{vehicleMileageLabel(vehicle.mileage)}</span>
         </div>
         </div>
-        {owner && (
+        {ownerLabel && (
         <div className="border-t border-border-custom pt-4">
             <span className="text-text-muted text-sm block mb-2">Propietario</span>
-            <div className="flex items-center gap-2 text-sm mb-1">
-            <User className="w-4 h-4 text-text-muted" /> {owner.fullName}
+            <div className="flex items-center gap-2 text-sm">
+            <User className="w-4 h-4 text-text-muted" /> {ownerLabel}
             </div>
-            <div className="flex items-center gap-2 text-sm text-text-muted mb-1">
-            <Mail className="w-4 h-4" /> {owner.email}
-            </div>
-            {owner.phone && (
-            <div className="flex items-center gap-2 text-sm text-text-muted">
-                <Phone className="w-4 h-4" /> {owner.phone}
-            </div>
-            )}
         </div>
         )}
     </div>

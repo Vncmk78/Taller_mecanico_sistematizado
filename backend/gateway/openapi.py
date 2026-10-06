@@ -3,12 +3,12 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los 11 endpoints reales que enruta la Gateway hacia MS1 (Autenticación) y MS2
+los 14 endpoints reales que enruta la Gateway hacia MS1 (Autenticación) y MS2
 (Vehículos y Órdenes), con sus esquemas (`gateway/contratos`), la seguridad
 `bearerAuth` y el formato común de errores de la Gateway (`gateway.esquemas`).
 
-Los endpoints todavía no implementados (presupuestos, evidencias, historial
-consultable y cambio general de estado) no se publican como contratos.
+Los endpoints todavía no implementados (presupuestos, evidencias e integración
+con facturación) no se publican como contratos.
 """
 from __future__ import annotations
 
@@ -20,18 +20,60 @@ from gateway.contratos import auth as contratos_auth
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
+from gateway.openapi_ejemplos import agregar_ejemplos_gateway
 from shared.openapi_ordenes import agregar_ejemplos_ordenes
 
 _TITULO = "SGTM — API Gateway"
 _VERSION = "0.1.0"
-_DESCRIPCION = (
-    "Único punto de entrada del backend del SGTM (taller mecánico). "
-    "Documenta los endpoints reales que la Gateway enruta hacia MS1 "
-    "(Autenticación y Usuarios) y MS2 (Vehículos y Órdenes). Los errores "
-    "propios de la Gateway usan el esquema `ErrorRespuesta`; los errores de "
-    "los microservicios pasan sin modificarse. "
-    "La cabecera opcional `X-Request-ID` permite rastrear una petición."
-)
+_DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
+Documenta los endpoints reales que la Gateway enruta hacia MS1 (Autenticación y \
+Usuarios) y MS2 (Vehículos y Órdenes).
+
+## URL base
+
+La URL base es el origen donde esté desplegada la Gateway. Todos los endpoints de \
+negocio cuelgan de `/api` y se reenvían a los microservicios sin modificar el \
+body, el query string ni la cabecera `Authorization`.
+
+## Autenticación
+
+1. `POST /api/auth/register` crea una cuenta con rol Cliente (el rol lo asigna el \
+servidor, nunca el body).
+2. `POST /api/auth/login` devuelve `access_token` y `token_type: bearer`.
+3. Se envía en cada llamada protegida: `Authorization: Bearer <access_token>`.
+
+El botón **Authorize** de Swagger completa esa cabecera por ti. La Gateway no \
+valida el JWT: lo reenvía al microservicio, que responde `401` si falta o expira \
+y `403` si el rol no corresponde. Ante un `401` el frontend debe limpiar la sesión \
+y volver a iniciar sesión; un `403` significa que el usuario está identificado pero \
+no tiene permisos.
+
+## Formato de errores
+
+- Errores de la Gateway: `ErrorRespuesta`, \
+`{"detail": "...", "error": {"codigo", "estado", "ruta", "request_id"}}`.
+- Errores de los microservicios: `ErrorDetalle`, `{"detail": "..."}`. En un `422` \
+de validación, `detail` es una lista de errores de Pydantic.
+
+| Estado | Código de la Gateway | Cuándo ocurre |
+|---|---|---|
+| 404 | `RUTA_NO_ENCONTRADA` | La ruta no existe |
+| 405 | `METODO_NO_PERMITIDO` | El método no existe en esa ruta |
+| 500 | `ERROR_INTERNO` o `ERROR_MICROSERVICIO` | Error no controlado o respuesta no JSON |
+| 502 | `MICROSERVICIO_INALCANZABLE` | El microservicio no respondió |
+| 503 | `GATEWAY_SATURADA` | El pool de conexiones está agotado |
+| 504 | `TIEMPO_AGOTADO` | El microservicio tardó demasiado |
+
+Las respuestas `401`, `500`, `502`, `503` y `504` también están publicadas como \
+respuestas reutilizables en `components.responses`.
+
+## X-Request-ID
+
+Se puede enviar `X-Request-ID` (letras, números y guiones) para rastrear una \
+petición; si no llega o es inválida, la Gateway genera un UUID y lo devuelve en la \
+respuesta. Es la misma clave que aparece en `error.request_id`.
+
+El detalle completo de los contratos está en `docs/contratos-api-gateway.md`."""
 
 _TAGS = [
     {
@@ -40,11 +82,16 @@ _TAGS = [
     },
     {
         "name": "Vehículos",
-        "description": "Registro, consulta y actualización de vehículos (MS2).",
+        "description": (
+            "Registro, consulta por rol y actualización de vehículos (MS2)."
+        ),
     },
     {
         "name": "Órdenes",
-        "description": "Creación, consulta y asignación inicial de órdenes (MS2).",
+        "description": (
+            "Creación, consulta, historial, cambio de estado y asignación "
+            "inicial de órdenes (MS2)."
+        ),
     },
     {
         "name": "Gateway",
@@ -66,6 +113,8 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         contratos_ordenes.AsignacionMecanicoActualizar,
     ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
+    ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
+    ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
 ]
 
 _PARAMETRO_X_REQUEST_ID: dict[str, object] = {
@@ -150,6 +199,11 @@ def _operacion(
             descripcion_404,
             esquema_404 if esquema_404 is not None else _ref("ErrorRespuesta"),
         ),
+        # El 401 de cada microservicio, el 500 (que puede ser de la Gateway o del
+        # servicio) y el 502 se dejan escritos en línea: `tests/test_gateway_openapi.py`
+        # verifica que esas respuestas distingan el esquema propio del de cada
+        # microservicio. Los 503 y 504 sí son idénticos en todas las operaciones y
+        # se referencian desde `components.responses`.
         "502": _respuesta(
             "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
             _ref("ErrorRespuesta"),
@@ -161,7 +215,19 @@ def _operacion(
             ),
             {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
         ),
+        "503": {"$ref": "#/components/responses/GatewaySaturada"},
+        "504": {"$ref": "#/components/responses/TiempoAgotado"},
     }
+
+    # MS1 y MS2 acompañan el 401 con `WWW-Authenticate: Bearer` y la Gateway lo
+    # reenvía; se documenta en cada operación protegida.
+    if requiere_auth and "401" in errores:
+        errores["401"]["headers"] = {
+            "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {"type": "string", "example": "Bearer"},
+            }
+        }
 
     operacion: dict[str, object] = {
         "tags": [tag],
@@ -266,7 +332,11 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
             "get": _operacion(
                 tag="Vehículos",
                 resumen="Listar vehículos",
-                descripcion="Lista los vehículos registrados del cliente autenticado.",
+                descripcion=(
+                    "Administrador lista todos los vehículos del taller; "
+                    "Cliente lista los suyos. Un Mecánico recibe 403 y usa "
+                    "/api/vehiculos/asignados."
+                ),
                 operation_id="listar_vehiculos",
                 cuerpo=None,
                 respuestas_ok={
@@ -277,32 +347,57 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
-                    "403": "Se requiere rol Cliente",
+                    "403": "Se requiere rol Cliente o Administrador",
                 },
                 requiere_auth=True,
                 descripcion_404="No existe el perfil Cliente local en MS2.",
                 esquema_404=error_404_recurso,
             ),
         },
+        "/api/vehiculos/asignados": {
+            "get": _operacion(
+                tag="Vehículos",
+                resumen="Listar vehículos asignados al mecánico",
+                descripcion=(
+                    "Solo un Mecánico lista los vehículos con órdenes de "
+                    "trabajo que tiene asignadas."
+                ),
+                operation_id="listar_vehiculos_asignados",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Lista de vehículos asignados (sin duplicados).",
+                        {"type": "array", "items": _ref("VehiculoRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Mecánico",
+                },
+                requiere_auth=True,
+            ),
+        },
         "/api/vehiculos/{vehiculo_id}": {
             "get": _operacion(
                 tag="Vehículos",
                 resumen="Consultar un vehículo",
-                descripcion="Devuelve un vehículo del cliente autenticado.",
+                descripcion=(
+                    "Devuelve un vehículo según el rol: Cliente solo el propio, "
+                    "Administrador cualquiera del taller y Mecánico solo los "
+                    "que tiene asignados."
+                ),
                 operation_id="consultar_vehiculo",
                 cuerpo=None,
                 respuestas_ok={
                     "200": _respuesta("Vehículo encontrado.", _ref("VehiculoRespuesta"))
                 },
-                errores_ms={
-                    "401": "JWT ausente o inválido",
-                    "403": "Se requiere rol Cliente",
-                },
+                errores_ms={"401": "JWT ausente o inválido"},
                 requiere_auth=True,
                 con_vehiculo_id=True,
                 descripcion_404=(
-                    "No encontrado. Si el vehículo no existe, el microservicio "
-                    "responde {'detail': 'Vehículo no encontrado'}."
+                    "No encontrado. Si el vehículo no existe o no está entre "
+                    "los accesibles por el rol, el microservicio responde "
+                    "{'detail': 'Vehículo no encontrado'}."
                 ),
                 esquema_404=error_404_recurso,
             ),
@@ -428,6 +523,65 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             )
         },
+        "/api/ordenes/{orden_id}/historial": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar el historial de estados de una orden",
+                descripcion=(
+                    "Devuelve los cambios de estado de una orden, en orden "
+                    "cronológico, con el actor que los registró y su "
+                    "observación. Aplica la misma visibilidad del detalle: una "
+                    "orden inexistente o ajena responde 404."
+                ),
+                operation_id="consultar_historial_orden",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Historial de estados.",
+                        {
+                            "type": "array",
+                            "items": _ref("HistorialEstadoRespuesta"),
+                        },
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de orden inválido",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/estado": {
+            "patch": _operacion(
+                tag="Órdenes",
+                resumen="Cambiar el estado de una orden",
+                descripcion=(
+                    "Cambia el estado validando rol, catálogo oficial y "
+                    "transición declarada por el dominio. Administrador siempre; "
+                    "Mecánico solo en órdenes que tiene asignadas. Una orden "
+                    "Entregada o Cancelada es terminal y rechaza cualquier "
+                    "cambio. Registra el historial en la misma transacción."
+                ),
+                operation_id="cambiar_estado_orden",
+                cuerpo="CambioEstadoSolicitud",
+                respuestas_ok={
+                    "200": _respuesta("Orden con su nuevo estado.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador o ser el mecánico asignado",
+                    "409": "Transición no permitida o terminal",
+                    "422": "Estado de destino desconocido o datos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
     }
 
 
@@ -463,7 +617,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 11 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 14 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:
@@ -492,5 +646,6 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     }
 
     agregar_ejemplos_ordenes(esquema, prefijo="/api")
+    agregar_ejemplos_gateway(esquema)
     app.openapi_schema = esquema
     return esquema

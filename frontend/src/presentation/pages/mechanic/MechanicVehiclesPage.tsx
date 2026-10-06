@@ -1,34 +1,51 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Car, Search } from 'lucide-react';
 import { VehicleCard } from '@/presentation/components/vehicles/VehicleCard';
 import { VehicleListSkeleton } from '@/presentation/components/vehicles/VehicleListSkeleton';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Alert } from '@/presentation/components/ui/Alert';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
+import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { mockAssignedVehicleIds, mockOwners } from '@/infrastructure/mocks/vehicles.mock';
+import { filterOrdersByMechanic, filterVehiclesByOrders } from '@/presentation/utils/mechanicScope';
 
 export function MechanicVehiclesPage() {
     const [search, setSearch] = useState('');
-    const { vehicles, status, error, isOffline, fetchVehicles } = useVehicleStore();
+    const { vehicles, status, error, isOffline, requestId, fetchVehicles } = useVehicleStore();
+    const orders = useOrderStore((s) => s.orders);
+    const fetchOrders = useOrderStore((s) => s.fetchOrders);
+    const mechanicId = useAuthStore((s) => s.user?.id);
 
     const loadVehicles = () => fetchVehicles(() => vehicleService.getAssignedVehicles());
 
     useEffect(() => {
     loadVehicles();
+    // Las órdenes permiten acotar la caché compartida al mecánico autenticado:
+    // sin ellas no se puede saber qué vehículos son suyos.
+    fetchOrders(() => orderService.getOrders());
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const assignedVehicles = useMemo(() => {
     const term = search.trim().toLowerCase();
-    // TODO: cuando exista MS2/Gestión de Órdenes, "asignado" vendrá directo
-    // de getAssignedVehicles(); por ahora se filtra contra el mock porque no
-    // hay endpoint real de asignaciones todavía.
-    return vehicles
-        .filter((v) => mockAssignedVehicleIds.includes(v.id))
-        .filter((v) =>
+    // Online, getAssignedVehicles() ya devuelve solo los vehículos de las
+    // órdenes asignadas al mecánico. El acotado por órdenes es la segunda
+    // barrera: online no descarta nada y offline evita que se vean los
+    // vehículos que otro portal dejó en la caché compartida.
+    const myOrders = filterOrdersByMechanic(orders, mechanicId);
+    return filterVehiclesByOrders(vehicles, myOrders).filter((v) =>
         term ? [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term)) : true
-        );
-    }, [vehicles, search]);
+    );
+    }, [vehicles, orders, mechanicId, search]);
+
+    // El store solo marca isOffline ante fallos de transporte: un error HTTP del
+    // servidor se muestra aparte para no rotularlo como "sin conexión".
+    const isServerError = status === 'error' && !isOffline;
 
     return (
     <div className="animate-fade-in p-10">
@@ -49,26 +66,47 @@ export function MechanicVehiclesPage() {
         />
         </div>
 
-        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} className="mb-6" />}
+        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} requestId={requestId} className="mb-6" />}
+
+        {isServerError && assignedVehicles.length > 0 && (
+        <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={loadVehicles} />}>
+            {error ?? 'No se pudieron cargar los vehículos.'} Se muestran los últimos datos disponibles.
+        </Alert>
+        )}
 
         {status === 'loading' ? (
         <VehicleListSkeleton count={3} />
+        ) : isServerError && assignedVehicles.length === 0 ? (
+        <ErrorState
+            title="No se pudieron cargar los vehículos"
+            message={error}
+            requestId={requestId}
+            onRetry={loadVehicles}
+        />
         ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {assignedVehicles.map((vehicle) => (
             <VehicleCard
                 key={vehicle.id}
                 vehicle={vehicle}
-                ownerName={mockOwners[vehicle.clientId]?.fullName}
+                ownerName={vehicle.clientId ? `Cliente #${vehicle.clientId}` : undefined}
                 detailPath={`/mechanic/vehiculos/${vehicle.id}`}
             />
             ))}
             {assignedVehicles.length === 0 && (
-            <p className="text-text-muted col-span-full text-center py-10">
-                {search
-                ? `No se encontraron vehículos para "${search}".`
-                : 'No tiene vehículos asignados por el momento.'}
-            </p>
+            <EmptyState
+                icon={Car}
+                title={
+                    search.trim()
+                        ? `No se encontraron vehículos para "${search}".`
+                        : 'No tiene vehículos asignados por el momento.'
+                }
+                description={
+                    search.trim()
+                        ? 'Pruebe con otra patente, marca o modelo.'
+                        : 'Los vehículos de las órdenes que se le asignen aparecerán aquí.'
+                }
+            />
             )}
         </div>
         )}

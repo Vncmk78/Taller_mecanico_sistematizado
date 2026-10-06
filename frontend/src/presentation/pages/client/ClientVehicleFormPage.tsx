@@ -10,29 +10,42 @@ import { GlassCard } from '@/presentation/components/ui/GlassCard';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
-import { isConflictError } from '@/infrastructure/api/errors';
-import { CURRENT_CLIENT_ID } from '@/infrastructure/mocks/vehicles.mock';
+import { getApiErrorMessage, getApiErrorRequestId, isConflictError } from '@/infrastructure/api/errors';
 
-const PATENT_REGEX = /^[A-Za-z]{4}-\d{2}$/;
-const currentYear = new Date().getFullYear();
+// Límite que sí declara el backend para marca y modelo
+// (VehiculoCrear: min_length=1, max_length=60 en MS2).
+const MAX_TEXTO_VEHICULO = 60;
 
-const vehicleSchema = z.object({
-    patent: z
+/**
+ * Año y kilometraje son opcionales en el contrato (`anio`/`kilometraje`:
+ * `int | None = None`) y no declaran cotas, así que el formulario acepta el
+ * campo vacío. Los topes que se exigían antes (año >= 1980, <= año actual + 1,
+ * kilometraje <= 999999) no están en el contrato y quedaban registrados como
+ * discrepancia. Solo se mantiene el rechazo de lo que no es un entero
+ * negativo, que sí es un dato inválido.
+ */
+const enteroOpcional = (mensaje: string) =>
+    z
     .string()
     .trim()
-    .regex(PATENT_REGEX, 'Formato inválido. Use 4 letras y 2 números, ej: ABCD-12'),
-    brand: z.string().trim().min(2, 'Ingrese la marca'),
-    model: z.string().trim().min(1, 'Ingrese el modelo'),
-    year: z.coerce
-    .number({ invalid_type_error: 'Ingrese un año válido' })
-    .int()
-    .min(1980, 'Ingrese un año válido')
-    .max(currentYear + 1, `El año no puede ser mayor a ${currentYear + 1}`),
-    mileage: z.coerce
-    .number({ invalid_type_error: 'Ingrese un kilometraje válido' })
-    .int()
-    .min(0, 'El kilometraje no puede ser negativo')
-    .max(999999, 'Verifique el kilometraje ingresado'),
+    .refine((valor) => valor === '' || /^\d+$/.test(valor), mensaje);
+
+// La patente no lleva formato: el backend solo exige `min_length=1` y su propio
+// ejemplo es "AB1234".
+const vehicleSchema = z.object({
+    patent: z.string().trim().min(1, 'Ingrese la patente'),
+    brand: z
+    .string()
+    .trim()
+    .min(1, 'Ingrese la marca')
+    .max(MAX_TEXTO_VEHICULO, `La marca no puede superar ${MAX_TEXTO_VEHICULO} caracteres`),
+    model: z
+    .string()
+    .trim()
+    .min(1, 'Ingrese el modelo')
+    .max(MAX_TEXTO_VEHICULO, `El modelo no puede superar ${MAX_TEXTO_VEHICULO} caracteres`),
+    year: enteroOpcional('Ingrese un año válido'),
+    mileage: enteroOpcional('Ingrese un kilometraje válido'),
 });
 
 type VehicleForm = z.infer<typeof vehicleSchema>;
@@ -42,6 +55,9 @@ export function ClientVehicleFormPage() {
     const user = useAuthStore((s) => s.user);
     const { patentExists, addVehicle } = useVehicleStore();
     const [submitError, setSubmitError] = useState<string | null>(null);
+    // Referencia de la Gateway para que el usuario pueda pedir ayuda con este
+    // registro concreto si el error viene de un 500/502/503/504.
+    const [submitRequestId, setSubmitRequestId] = useState<string | null>(null);
 
     const {
     register,
@@ -50,11 +66,21 @@ export function ClientVehicleFormPage() {
     formState: { errors, isSubmitting },
     } = useForm<VehicleForm>({ resolver: zodResolver(vehicleSchema) });
 
-    const clientId = user?.id ?? CURRENT_CLIENT_ID;
+    // Identidad real de la sesión (usuario_id de MS1): la Gateway asigna el
+    // cliente desde el JWT y este id se usa para la ficha recién creada.
+    const clientId = user?.id;
 
     const onSubmit = async (data: VehicleForm) => {
+    if (!clientId) return;
     setSubmitError(null);
+    setSubmitRequestId(null);
     const patent = data.patent.toUpperCase();
+
+    // Los campos opcionales viajan como null, que es lo que el contrato acepta
+    // (`anio`/`kilometraje`: int | None). El backend los trata como ausentes y
+    // la ficha se muestra como "Sin especificar".
+    const year = data.year === '' ? null : Number(data.year);
+    const mileage = data.mileage === '' ? null : Number(data.mileage);
 
     if (patentExists(patent)) {
         setError('patent', { message: 'Ya existe un vehículo registrado con esa patente.' });
@@ -62,19 +88,23 @@ export function ClientVehicleFormPage() {
     }
 
     try {
-        await addVehicle({ ...data, patent }, clientId);
+        await addVehicle({ patent, brand: data.brand, model: data.model, year, mileage }, clientId);
         navigate('/client/vehiculos', { state: { justRegistered: true } });
     } catch (error) {
+        // El backend es la autoridad: si la patente ya existe responde 409 con
+        // su propio mensaje, y se muestra ese texto en vez de uno inventado
+        // aquí, para que el motivo del rechazo sea el que dio el servidor.
         if (isConflictError(error)) {
-        setError('patent', { message: 'Ya existe un vehículo registrado con esa patente.' });
+        setError('patent', { message: getApiErrorMessage(error) });
         } else {
-        setSubmitError('No pudimos registrar el vehículo. Intente nuevamente.');
+        setSubmitError(getApiErrorMessage(error, 'No pudimos registrar el vehículo. Intente nuevamente.'));
+        setSubmitRequestId(getApiErrorRequestId(error));
         }
     }
     };
 
     return (
-    <div className="animate-fade-in flex justify-center">
+    <div className="p-10 animate-fade-in flex justify-center">
         <GlassCard className="w-full max-w-[600px] p-10">
         <h2 className="text-2xl font-bold mb-2 text-center flex items-center justify-center gap-3">
             <Car className="w-6 h-6 text-primary-orange" /> Registrar Nuevo Vehículo
@@ -86,7 +116,7 @@ export function ClientVehicleFormPage() {
         <form onSubmit={handleSubmit(onSubmit)} noValidate>
             <Input
             label="Patente"
-            placeholder="ABCD-12"
+            placeholder="AB1234"
             icon={<Hash className="w-5 h-5" />}
             error={errors.patent?.message}
             {...register('patent')}
@@ -106,14 +136,14 @@ export function ClientVehicleFormPage() {
             />
             <div className="grid grid-cols-2 gap-4">
             <Input
-                label="Año"
+                label="Año (opcional)"
                 type="number"
                 icon={<Calendar className="w-5 h-5" />}
                 error={errors.year?.message}
                 {...register('year')}
             />
             <Input
-                label="Kilometraje actual"
+                label="Kilometraje actual (opcional)"
                 type="number"
                 icon={<Gauge className="w-5 h-5" />}
                 error={errors.mileage?.message}
@@ -124,6 +154,9 @@ export function ClientVehicleFormPage() {
             {submitError && (
             <Alert tone="error" className="mb-4 justify-center">
               {submitError}
+              {submitRequestId && (
+                <span className="block mt-1 font-mono text-xs opacity-80">Referencia: {submitRequestId}</span>
+              )}
             </Alert>
             )}
 

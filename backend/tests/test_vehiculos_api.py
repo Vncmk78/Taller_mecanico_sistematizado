@@ -16,7 +16,15 @@ from sqlalchemy.pool import StaticPool
 from services.ms2_taller.config import settings
 from services.ms2_taller.db import get_db
 from services.ms2_taller.main import app
-from services.ms2_taller.models import Base, Cliente, Vehiculo
+from services.ms2_taller.models import (
+    Base,
+    Cliente,
+    EstadoOrden,
+    IngresoVehiculo,
+    OrdenTrabajo,
+    Vehiculo,
+)
+from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN
 from shared.auth import NombreRol, crear_token_acceso
 
 DATOS_VEHICULO = {
@@ -49,6 +57,14 @@ def db_ms2() -> Generator[Session, None, None]:
     Base.metadata.create_all(engine)
     fabrica = sessionmaker(bind=engine, expire_on_commit=False)
     sesion = fabrica()
+    # El catálogo es referencia compartida; las órdenes hacen FK a él.
+    sesion.add_all(
+        [
+            EstadoOrden(estado_codigo=codigo, nombre=nombre)
+            for codigo, nombre in ESTADOS_ORDEN.items()
+        ]
+    )
+    sesion.commit()
     try:
         yield sesion
     finally:
@@ -121,11 +137,42 @@ def test_cliente_es_permitido(api_ms2: TestClient, db_ms2: Session):
     assert respuesta.status_code == 200
 
 
-@pytest.mark.parametrize("rol", [NombreRol.MECANICO, NombreRol.ADMINISTRADOR])
-def test_usuario_sin_rol_cliente_recibe_403(api_ms2: TestClient, rol: NombreRol):
+@pytest.mark.parametrize("rol", [NombreRol.MECANICO])
+def test_mecanico_sin_rol_cliente_recibe_403(api_ms2: TestClient, rol: NombreRol):
     respuesta = api_ms2.get("/vehiculos", headers=_headers_para(1, rol))
 
     assert respuesta.status_code == 403
+
+
+def test_administrador_ve_todos_los_vehiculos(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente_a = _crear_cliente(db_ms2, usuario_id=1)
+    cliente_b = _crear_cliente(db_ms2, usuario_id=2)
+    vehiculo_a = _crear_vehiculo(db_ms2, cliente_a)
+    vehiculo_b = _crear_vehiculo(db_ms2, cliente_b, patente="ZZZZ99")
+
+    respuesta = api_ms2.get(
+        "/vehiculos",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert [vehiculo["vehiculo_id"] for vehiculo in respuesta.json()] == [
+        vehiculo_a.vehiculo_id,
+        vehiculo_b.vehiculo_id,
+    ]
+
+
+def test_administrador_sin_vehiculos_devuelve_200(api_ms2: TestClient):
+    respuesta = api_ms2.get(
+        "/vehiculos",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == []
 
 
 def test_usuario_multirol_con_cliente_es_permitido(
@@ -369,13 +416,125 @@ def test_get_individual_sin_token_devuelve_401(api_ms2: TestClient):
     assert respuesta.status_code == 401
 
 
-def test_get_individual_sin_rol_cliente_devuelve_403(api_ms2: TestClient):
+def test_get_individual_mecanico_no_asignado_devuelve_404(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    _crear_vehiculo(db_ms2, cliente)
+
     respuesta = api_ms2.get(
         "/vehiculos/1",
-        headers=_headers_para(1, NombreRol.MECANICO),
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Vehículo no encontrado"}
+
+
+def test_get_individual_administrador_devuelve_cualquier_vehiculo(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente_b = _crear_cliente(db_ms2, usuario_id=2)
+    vehiculo_b = _crear_vehiculo(db_ms2, cliente_b)
+
+    respuesta = api_ms2.get(
+        f"/vehiculos/{vehiculo_b.vehiculo_id}",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["vehiculo_id"] == vehiculo_b.vehiculo_id
+
+
+def test_get_individual_mecanico_asignado_devuelve_vehiculo(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+    _asignar_vehiculo_a_mecanico(db_ms2, vehiculo, mecanico_usuario_id=50)
+
+    respuesta = api_ms2.get(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["vehiculo_id"] == vehiculo.vehiculo_id
+
+
+def test_asignados_devuelve_vehiculos_con_ordenes_del_mecanico(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente_a = _crear_cliente(db_ms2, usuario_id=1)
+    cliente_b = _crear_cliente(db_ms2, usuario_id=2)
+    asignado = _crear_vehiculo(db_ms2, cliente_a)
+    _crear_vehiculo(db_ms2, cliente_b, patente="ZZZZ99")
+    _asignar_vehiculo_a_mecanico(db_ms2, asignado, mecanico_usuario_id=50)
+
+    respuesta = api_ms2.get(
+        "/vehiculos/asignados",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200
+    assert [vehiculo["vehiculo_id"] for vehiculo in respuesta.json()] == [
+        asignado.vehiculo_id
+    ]
+
+
+def test_asignados_no_duplica_vehiculos_con_varias_ordenes(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+    _asignar_vehiculo_a_mecanico(db_ms2, vehiculo, mecanico_usuario_id=50)
+    _asignar_vehiculo_a_mecanico(db_ms2, vehiculo, mecanico_usuario_id=50)
+
+    respuesta = api_ms2.get(
+        "/vehiculos/asignados",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200
+    assert [vehiculo["vehiculo_id"] for vehiculo in respuesta.json()] == [
+        vehiculo.vehiculo_id
+    ]
+
+
+def test_asignados_sin_ordenes_devuelve_200_vacio(api_ms2: TestClient):
+    respuesta = api_ms2.get(
+        "/vehiculos/asignados",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == []
+
+
+@pytest.mark.parametrize("rol", [NombreRol.CLIENTE, NombreRol.ADMINISTRADOR])
+def test_asignados_requiere_rol_mecanico(
+    api_ms2: TestClient,
+    rol: NombreRol,
+):
+    respuesta = api_ms2.get(
+        "/vehiculos/asignados",
+        headers=_headers_para(1, rol),
     )
 
     assert respuesta.status_code == 403
+    assert respuesta.json() == {"detail": "Se requiere rol Mecánico"}
+
+
+def test_asignados_sin_token_devuelve_401(api_ms2: TestClient):
+    respuesta = api_ms2.get("/vehiculos/asignados")
+
+    assert respuesta.status_code == 401
+    assert respuesta.headers["www-authenticate"] == "Bearer"
 
 
 def test_patch_actualiza_un_solo_campo(api_ms2: TestClient, db_ms2: Session):
@@ -411,6 +570,7 @@ def test_patch_actualiza_varios_campos(api_ms2: TestClient, db_ms2: Session):
     assert respuesta.status_code == 200
     assert respuesta.json() == {
         "vehiculo_id": vehiculo.vehiculo_id,
+        "cliente_id": vehiculo.cliente_id,
         "patente": DATOS_VEHICULO["patente"],
         "marca": "Honda",
         "modelo": "Civic",
@@ -761,6 +921,27 @@ def _crear_vehiculo(db: Session, cliente: Cliente, **cambios: object) -> Vehicul
     db.commit()
     db.refresh(vehiculo)
     return vehiculo
+
+
+def _asignar_vehiculo_a_mecanico(
+    db: Session,
+    vehiculo: Vehiculo,
+    *,
+    mecanico_usuario_id: int,
+) -> OrdenTrabajo:
+    ingreso = IngresoVehiculo(vehiculo_id=vehiculo.vehiculo_id, registrado_por_id=99)
+    db.add(ingreso)
+    db.flush()
+    orden = OrdenTrabajo(
+        vehiculo_id=vehiculo.vehiculo_id,
+        ingreso_id=ingreso.ingreso_id,
+        mecanico_actual_id=mecanico_usuario_id,
+        creado_por_id=99,
+    )
+    db.add(orden)
+    db.commit()
+    db.refresh(orden)
+    return orden
 
 
 def _headers_para(usuario_id: int, *roles: NombreRol) -> dict[str, str]:

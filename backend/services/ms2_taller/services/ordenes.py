@@ -17,10 +17,13 @@ from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
 from services.ms2_taller.domain.transiciones_orden import (
+    EstadoOrdenDesconocidoError,
     EventoOrden,
+    TransicionOrdenNoPermitidaError,
     TransicionOrdenTerminalError,
     resolver_transicion,
     validar_estado_no_terminal,
+    validar_transicion,
 )
 from services.ms2_taller.models.cliente import Cliente
 from services.ms2_taller.models.estado_orden import RECIBIDO
@@ -46,6 +49,18 @@ class OrdenTerminalError(Exception):
 
 class PersistenciaOrdenError(Exception):
     """La operación sobre órdenes no pudo completarse de forma segura."""
+
+
+class OrdenEstadoInvalidoError(Exception):
+    """El estado de destino no pertenece al catálogo oficial de estados."""
+
+
+class OrdenTransicionNoPermitidaError(Exception):
+    """La transición solicitada no está permitida o la orden es terminal."""
+
+
+class OrdenEstadoNoAutorizadoError(Exception):
+    """La identidad autenticada no puede cambiar el estado de la orden."""
 
 
 def registrar_historial_estado(
@@ -290,6 +305,109 @@ def obtener_orden_visible(
     if orden is None:
         raise OrdenNoEncontradaError("Orden no encontrada")
     return orden
+
+
+def obtener_historial_orden(
+    db: Session,
+    principal: PrincipalAutenticado,
+    orden_id: int,
+) -> list[HistorialEstado]:
+    """Devuelve el historial cronológico de una orden visible al principal.
+
+    Aplica la misma autorización por recurso del detalle: una orden inexistente
+    o ajena responde el mismo error de recurso ausente.
+    """
+
+    obtener_orden_visible(db, principal, orden_id)
+    try:
+        consulta = (
+            select(HistorialEstado)
+            .where(HistorialEstado.orden_id == orden_id)
+            # El orden por id desempata filas con la misma fecha_hora.
+            .order_by(HistorialEstado.fecha_hora, HistorialEstado.historial_id)
+        )
+        return list(db.scalars(consulta).all())
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible consultar el historial de la orden"
+        ) from exc
+
+
+def cambiar_estado_orden(
+    db: Session,
+    *,
+    orden_id: int,
+    estado_destino: int,
+    principal: PrincipalAutenticado,
+    observacion: str | None = None,
+) -> OrdenTrabajo:
+    """Cambia el estado de una orden validando rol, catálogo y transición.
+
+    El lock de la orden se conserva hasta el commit o rollback, de modo que una
+    operación concurrente observa el estado confirmado por la anterior. Dentro
+    de la misma transacción se actualiza ``estado_codigo`` y se registra el
+    historial con el actor autenticado y ``origen="usuario"``.
+    """
+
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        if not _puede_cambiar_estado(orden, principal):
+            raise OrdenEstadoNoAutorizadoError(
+                "No tienes permiso para cambiar el estado de esta orden"
+            )
+
+        try:
+            validar_transicion(orden.estado_codigo, estado_destino)
+        except EstadoOrdenDesconocidoError as exc:
+            raise OrdenEstadoInvalidoError(str(exc)) from exc
+        except TransicionOrdenNoPermitidaError as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        estado_anterior = orden.estado_codigo
+        orden.estado_codigo = estado_destino
+        registrar_historial_estado(
+            db,
+            orden_id=orden.orden_id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=estado_destino,
+            actor_usuario_id=principal.usuario_id,
+            origen="usuario",
+            observacion=observacion,
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (
+        OrdenNoEncontradaError,
+        OrdenEstadoNoAutorizadoError,
+        OrdenEstadoInvalidoError,
+        OrdenTransicionNoPermitidaError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible cambiar el estado de la orden"
+        ) from exc
+
+
+def _puede_cambiar_estado(
+    orden: OrdenTrabajo,
+    principal: PrincipalAutenticado,
+) -> bool:
+    """El Administrador o el Mecánico asignado pueden mover el estado."""
+
+    if NombreRol.ADMINISTRADOR in principal.roles:
+        return True
+    return (
+        NombreRol.MECANICO in principal.roles
+        and orden.mecanico_actual_id == principal.usuario_id
+    )
 
 
 def _filtro_visibilidad(

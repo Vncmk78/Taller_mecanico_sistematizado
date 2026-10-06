@@ -150,6 +150,24 @@ class RepositorioPresupuestos(RepositorioBase[Presupuesto]):
         """Presupuesto de una orden (MS2) con sus versiones (selectin)."""
         return self.sesion.scalar(select(Presupuesto).where(Presupuesto.orden_id == orden_id))
 
+    def obtener_para_actualizar(self, presupuesto_id: int) -> Presupuesto:
+        """Lee el presupuesto con SELECT ... FOR UPDATE.
+
+        Serializa las operaciones que cambian su estado (enviar, decidir): si dos
+        peticiones llegan a la vez, la segunda espera a que la primera confirme
+        y ve el resultado (no se registran dos decisiones ni dos envíos).
+        """
+        consulta = (
+            select(Presupuesto)
+            .where(Presupuesto.presupuesto_id == presupuesto_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        presupuesto = self.sesion.scalar(consulta)
+        if presupuesto is None:
+            raise RecursoNoEncontrado(f"Presupuesto {presupuesto_id} no existe")
+        return presupuesto
+
     def buscar(
         self, *, orden_id: int | None = None, desde: int = 0, limite: int = 50
     ) -> Sequence[Presupuesto]:

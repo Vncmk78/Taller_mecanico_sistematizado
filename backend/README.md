@@ -160,9 +160,18 @@ reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
 | `GET /presupuestos?orden_id=&desde=&limite=` | Lista paginada (más recientes primero) o el de una orden |
 | `GET /presupuestos/{id}` | Detalle con todas las versiones, ítems, totales y decisión |
 | `GET /presupuestos/{id}/versiones/{n}` | Una versión |
+| `POST /presupuestos/{id}/versiones` | Crea la versión siguiente **sin tocar las anteriores**: copia los ítems de la última (o de `{"copiar_de": n}`) o usa `{"items": [...]}` |
 | `PUT /presupuestos/{id}/versiones/{n}/items` | Reemplaza los ítems de un borrador (`409` si ya fue enviada) |
 | `POST /presupuestos/{id}/versiones/{n}/envio` | **Administrador**: envía la última versión (con ítems y precios); queda congelada |
 | `POST /presupuestos/{id}/versiones/{n}/decision` | **Cliente dueño**: `{"decision": "aprobado"}` o `{"decision": "rechazado", "motivo": "...", "confirmar_cancelacion": true}` |
+
+Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
+la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
+nueva versión es una modificación (`es_modificacion`) y, mientras no se apruebe,
+sigue vigente la última aprobada; solo puede haber un borrador abierto (`409`);
+si el primer presupuesto fue rechazado (servicio cancelado) no se crean más
+versiones (`409`). Las versiones anteriores, sus ítems y decisiones nunca se
+modifican: la base lo impide además con los triggers de `0003_ms3`.
 
 Envío y decisión son **transaccionales**: bloquean el presupuesto (`SELECT ... FOR UPDATE`),
 validan y escriben todo junto; si algo falla no queda nada a medias. Responden

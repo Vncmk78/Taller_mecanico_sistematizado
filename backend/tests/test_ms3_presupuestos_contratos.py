@@ -16,6 +16,7 @@ from services.ms3_presupuestos.main import app
 from services.ms3_presupuestos.schemas.presupuesto import (
     DecisionEntrada,
     ItemEntrada,
+    NuevaVersion,
     PresupuestoCrear,
 )
 from shared.auth import NombreRol, crear_token_acceso
@@ -26,6 +27,7 @@ RUTAS = {
     ("get", "/presupuestos/{presupuesto_id}"),
     ("get", "/presupuestos/{presupuesto_id}/versiones/{numero}"),
     ("put", "/presupuestos/{presupuesto_id}/versiones/{numero}/items"),
+    ("post", "/presupuestos/{presupuesto_id}/versiones"),
     ("post", "/presupuestos/{presupuesto_id}/versiones/{numero}/envio"),
     ("post", "/presupuestos/{presupuesto_id}/versiones/{numero}/decision"),
 }
@@ -49,6 +51,7 @@ def _token(*roles: NombreRol) -> dict[str, str]:
 
 @pytest.mark.parametrize(("roles", "ruta", "cuerpo"), [
     ((NombreRol.CLIENTE,), "/presupuestos", {"orden_id": 1}),
+    ((NombreRol.CLIENTE,), "/presupuestos/1/versiones", None),
     ((NombreRol.CLIENTE,), "/presupuestos/1/versiones/1/envio", None),
     ((NombreRol.MECANICO,), "/presupuestos/1/versiones/1/envio", None),
     ((NombreRol.ADMINISTRADOR,), "/presupuestos/1/versiones/1/decision", {"decision": "aprobado"}),
@@ -57,6 +60,14 @@ def _token(*roles: NombreRol) -> dict[str, str]:
 def test_rol_no_permitido_recibe_403_antes_de_tocar_la_base(roles, ruta, cuerpo) -> None:
     with TestClient(app) as cliente:
         assert cliente.post(ruta, json=cuerpo, headers=_token(*roles)).status_code == 403
+
+
+def test_nueva_version_admite_items_o_copia_pero_no_ambos() -> None:
+    assert NuevaVersion().items is None and NuevaVersion(copiar_de=1).copiar_de == 1
+    with pytest.raises(ValidationError):
+        NuevaVersion(items=[], copiar_de=1)
+    with pytest.raises(ValidationError):
+        NuevaVersion(copiar_de=0)
 
 
 def test_decision_de_rechazo_exige_motivo() -> None:

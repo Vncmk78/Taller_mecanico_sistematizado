@@ -25,6 +25,7 @@ from services.ms3_presupuestos.models import (
     Presupuesto,
     Proveedor,
     Repuesto,
+    VersionPresupuesto,
 )
 from services.ms3_presupuestos.persistencia.errores import RecursoNoEncontrado
 
@@ -148,3 +149,38 @@ class RepositorioPresupuestos(RepositorioBase[Presupuesto]):
     def de_orden(self, orden_id: int) -> Presupuesto | None:
         """Presupuesto de una orden (MS2) con sus versiones (selectin)."""
         return self.sesion.scalar(select(Presupuesto).where(Presupuesto.orden_id == orden_id))
+
+    def buscar(
+        self, *, orden_id: int | None = None, desde: int = 0, limite: int = 50
+    ) -> Sequence[Presupuesto]:
+        """Lista paginada (más recientes primero), opcionalmente de una orden."""
+        limite = max(1, min(limite, LIMITE_MAXIMO))
+        consulta = select(Presupuesto)
+        if orden_id is not None:
+            consulta = consulta.where(Presupuesto.orden_id == orden_id)
+        consulta = (
+            consulta.order_by(Presupuesto.presupuesto_id.desc())
+            .offset(max(desde, 0))
+            .limit(limite)
+        )
+        return self.sesion.scalars(consulta).all()
+
+    def contar_busqueda(self, *, orden_id: int | None = None) -> int:
+        consulta = select(func.count()).select_from(Presupuesto)
+        if orden_id is not None:
+            consulta = consulta.where(Presupuesto.orden_id == orden_id)
+        return self.sesion.scalar(consulta) or 0
+
+    def version(self, presupuesto_id: int, numero: int) -> VersionPresupuesto:
+        """Versión `numero` de un presupuesto; RecursoNoEncontrado (404) si no existe."""
+        encontrada = self.sesion.scalar(
+            select(VersionPresupuesto).where(
+                VersionPresupuesto.presupuesto_id == presupuesto_id,
+                VersionPresupuesto.numero == numero,
+            )
+        )
+        if encontrada is None:
+            raise RecursoNoEncontrado(
+                f"El presupuesto {presupuesto_id} no tiene versión {numero}"
+            )
+        return encontrada

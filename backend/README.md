@@ -148,6 +148,33 @@ def crear(body: ProveedorCrear, uow: UnidadDeTrabajo = Depends(obtener_unidad_de
     return registrar_proveedor(uow, body.nombre, body.contacto)   # 409 si el nombre ya existe
 ```
 
+### Endpoints iniciales de presupuestos (MS3)
+
+Requieren JWT con rol Mecánico o Administrador (cliente → 403 por ahora).
+Por la Gateway se llaman con prefijo `/api`.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /presupuestos` | Crea el presupuesto de una orden con su versión 1 en borrador (`409` si la orden ya tiene) |
+| `GET /presupuestos?orden_id=&desde=&limite=` | Lista paginada (más recientes primero) o el de una orden |
+| `GET /presupuestos/{id}` | Detalle con todas las versiones, ítems, totales y decisión |
+| `GET /presupuestos/{id}/versiones/{n}` | Una versión |
+| `PUT /presupuestos/{id}/versiones/{n}/items` | Reemplaza los ítems de un borrador (`409` si ya fue enviada) |
+
+```json
+POST /presupuestos
+{"orden_id": 1, "items": [
+  {"tipo": "repuesto", "repuesto_id": 1, "descripcion": "Pastillas", "cantidad": "1", "precio_unitario": "38990"},
+  {"tipo": "mano_de_obra", "descripcion": "Cambio de pastillas", "cantidad": "1.5", "precio_unitario": "20000"}
+]}
+```
+
+Montos y cantidades se devuelven como texto decimal (`"68990.00"`). Cada versión
+informa su `estado` (`borrador`, `enviada`, `aprobada`, `rechazada`) y el
+presupuesto su `version_vigente` (última aprobada). Capas: `routers/presupuestos.py`
+→ `services/presupuestos.py` (una transacción por caso de uso) →
+`persistencia/` (repositorio + unidad de trabajo) → modelos ORM.
+
 ### Aislamiento de la base de MS3
 
 MS3 solo conoce su base (`MS3_DATABASE_URL`). Las órdenes (MS2) y los usuarios

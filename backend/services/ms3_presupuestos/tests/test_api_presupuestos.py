@@ -224,7 +224,14 @@ def test_version_aprobada_no_se_edita_409(
     ("get", "/presupuestos/1"), ("get", "/presupuestos/1/versiones/1"),
     ("put", "/presupuestos/1/versiones/1/items"),
 ])
-def test_sin_token_401_y_cliente_403(api: TestClient, metodo: str, ruta: str) -> None:
+def test_sin_token_responde_401(api: TestClient, metodo: str, ruta: str) -> None:
     cuerpo = {"orden_id": 1, "items": []} if metodo != "get" else None
     assert api.request(metodo, ruta, json=cuerpo).status_code == 401
+
+
+@pytest.mark.parametrize(("metodo", "ruta"), [
+    ("post", "/presupuestos"), ("put", "/presupuestos/1/versiones/1/items"),
+])
+def test_cliente_no_crea_ni_edita_403(api: TestClient, metodo: str, ruta: str) -> None:
+    cuerpo = {"orden_id": 1, "items": []}
     assert api.request(metodo, ruta, json=cuerpo, headers=CLIENTE).status_code == 403

@@ -63,6 +63,24 @@ class PresupuestoCrear(ItemsVersion):
     items: list[ItemEntrada] = Field(default_factory=list, max_length=MAX_ITEMS_POR_VERSION)
 
 
+class DecisionEntrada(BaseModel):
+    """Decisión del cliente sobre la versión enviada (§4.3)."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    decision: Literal["aprobado", "rechazado"]
+    motivo: str | None = Field(default=None, max_length=1000)
+    # Antes de la primera aprobación, rechazar = rechazar el servicio y la
+    # orden se cancela: el cliente debe confirmarlo explícitamente.
+    confirmar_cancelacion: bool = False
+
+    @model_validator(mode="after")
+    def _rechazo_con_motivo(self) -> "DecisionEntrada":
+        if self.decision == "rechazado" and not self.motivo:
+            raise ValueError("Todo rechazo exige un motivo")
+        return self
+
+
 # ------------------------------------------------------------------- salida --
 
 class ItemSalida(BaseModel):
@@ -123,3 +141,26 @@ class PaginaPresupuestos(BaseModel):
     desde: int
     limite: int
     presupuestos: list[PresupuestoResumen]
+
+
+EfectoOrden = Literal["esperando_aprobacion", "en_reparacion", "esperando_repuestos", "cancelado"]
+
+
+class RepuestoFaltante(BaseModel):
+    repuesto_id: int
+    nombre: str
+    requerido: Decimal
+    disponible: int
+
+
+class ResultadoOperacion(BaseModel):
+    """Resultado de enviar o decidir: el presupuesto y lo que implica para la orden.
+
+    MS3 no cambia el estado de la orden (vive en MS2, §8): informa el efecto
+    que corresponde según §4.2 para que se aplique en MS2. `null` = la orden
+    no cambia (p. ej. envío o rechazo de una modificación posterior).
+    """
+
+    presupuesto: PresupuestoDetalle
+    efecto_en_orden: EfectoOrden | None
+    repuestos_faltantes: list[RepuestoFaltante] = []

@@ -148,10 +148,11 @@ def crear(body: ProveedorCrear, uow: UnidadDeTrabajo = Depends(obtener_unidad_de
     return registrar_proveedor(uow, body.nombre, body.contacto)   # 409 si el nombre ya existe
 ```
 
-### Endpoints iniciales de presupuestos (MS3)
+### Endpoints de presupuestos (MS3)
 
-Requieren JWT con rol Mecánico o Administrador (cliente → 403 por ahora).
-Por la Gateway se llaman con prefijo `/api`.
+Requieren JWT. Por la Gateway se llaman con prefijo `/api`. El cliente solo ve
+presupuestos de **sus** órdenes (MS3 lo confirma con `GET {MS3_MS2_URL}/ordenes/{id}`
+reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
 
 | Método y ruta | Qué hace |
 |---|---|
@@ -160,6 +161,21 @@ Por la Gateway se llaman con prefijo `/api`.
 | `GET /presupuestos/{id}` | Detalle con todas las versiones, ítems, totales y decisión |
 | `GET /presupuestos/{id}/versiones/{n}` | Una versión |
 | `PUT /presupuestos/{id}/versiones/{n}/items` | Reemplaza los ítems de un borrador (`409` si ya fue enviada) |
+| `POST /presupuestos/{id}/versiones/{n}/envio` | **Administrador**: envía la última versión (con ítems y precios); queda congelada |
+| `POST /presupuestos/{id}/versiones/{n}/decision` | **Cliente dueño**: `{"decision": "aprobado"}` o `{"decision": "rechazado", "motivo": "...", "confirmar_cancelacion": true}` |
+
+Envío y decisión son **transaccionales**: bloquean el presupuesto (`SELECT ... FOR UPDATE`),
+validan y escriben todo junto; si algo falla no queda nada a medias. Responden
+`efecto_en_orden`, lo que corresponde aplicar a la orden en MS2 (§4.2):
+
+| Operación | `efecto_en_orden` |
+|---|---|
+| Primer envío | `esperando_aprobacion` |
+| Envío de una modificación posterior a una aprobación | `null` (la orden no cambia) |
+| Aprobar con stock suficiente | `en_reparacion` |
+| Aprobar con stock insuficiente | `esperando_repuestos` (+ `repuestos_faltantes`) |
+| Rechazar antes de la primera aprobación (exige `confirmar_cancelacion`) | `cancelado` |
+| Rechazar una modificación | `null` (sigue vigente la última aprobada) |
 
 ```json
 POST /presupuestos

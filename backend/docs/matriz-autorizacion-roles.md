@@ -139,16 +139,19 @@ Detalles que condicionan la matriz:
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
 | Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ | ✅ |
-| Listar / buscar por orden (`GET /presupuestos?orden_id=`) | ❌ 403 | ✅ | ✅ |
-| Detalle y versión (`GET /presupuestos/{id}`, `/versiones/{n}`) | ❌ 403 | ✅ | ✅ |
+| Listar / buscar por orden (`GET /presupuestos?orden_id=`) | ✅ solo su orden y con `orden_id` | ✅ | ✅ |
+| Detalle y versión (`GET /presupuestos/{id}`, `/versiones/{n}`) | ✅ solo sus órdenes, sin borradores | ✅ | ✅ |
 | Reemplazar ítems de una versión en borrador (`PUT .../versiones/{n}/items`) | ❌ 403 | ✅ | ✅ |
+| Enviar la versión al cliente (`POST .../versiones/{n}/envio`) | ❌ 403 | ❌ 403 | ✅ |
+| Aprobar o rechazar (`POST .../versiones/{n}/decision`) | ✅ solo dueño | ❌ 403 | ❌ 403 |
 | Repuestos, proveedores, inventario | — | — | — |
 
-- El guard es `requerir_roles(NombreRol.MECANICO, NombreRol.ADMINISTRADOR)`
-  (`services/ms3_presupuestos/routers/presupuestos.py`).
-- El **cliente** aún no consulta ni decide: MS3 no puede comprobar por sí solo que
-  la orden es suya (la propiedad vive en MS2, §8). Se habilitará junto con el envío
-  y la decisión del presupuesto.
+- Guards en `services/ms3_presupuestos/routers/presupuestos.py` (`requerir_roles`).
+- **Propiedad del cliente:** MS3 no conoce al dueño del vehículo (§8). Llama a
+  `GET {MS3_MS2_URL}/ordenes/{orden_id}` con el JWT del cliente: si MS2 no se la
+  muestra, MS3 responde `404` (sin revelar si el presupuesto existe); si MS2 no
+  responde, `503`. Implementación: `services/ms3_presupuestos/integracion_ms2.py`.
+- El cliente no ve versiones en borrador: para él no existen (`404`).
 - Pendiente: limitar al mecánico a las órdenes que tiene asignadas (dato de MS2).
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).

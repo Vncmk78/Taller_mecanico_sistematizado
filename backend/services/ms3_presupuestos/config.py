@@ -31,5 +31,11 @@ class Settings(ServiceSettings):
     JWT_SECRET_KEY: SecretStr = Field(min_length=32)
     JWT_ALGORITHM: Literal["HS256"] = "HS256"
 
+    # MS2 (órdenes): MS3 le pregunta si una orden es visible para quien llama
+    # (p. ej. si el cliente es su dueño) reenviando su mismo JWT. Es la única
+    # forma de validar la referencia lógica orden_id sin compartir base (§8).
+    MS2_URL: str = "http://localhost:8002"
+    MS2_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
+
 
 settings = Settings()

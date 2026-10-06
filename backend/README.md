@@ -148,6 +148,58 @@ def crear(body: ProveedorCrear, uow: UnidadDeTrabajo = Depends(obtener_unidad_de
     return registrar_proveedor(uow, body.nombre, body.contacto)   # 409 si el nombre ya existe
 ```
 
+### Endpoints de presupuestos (MS3)
+
+Requieren JWT. Por la Gateway se llaman con prefijo `/api`. El cliente solo ve
+presupuestos de **sus** órdenes (MS3 lo confirma con `GET {MS3_MS2_URL}/ordenes/{id}`
+reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /presupuestos` | Crea el presupuesto de una orden con su versión 1 en borrador (`409` si la orden ya tiene) |
+| `GET /presupuestos?orden_id=&desde=&limite=` | Lista paginada (más recientes primero) o el de una orden |
+| `GET /presupuestos/{id}` | Detalle con todas las versiones, ítems, totales y decisión |
+| `GET /presupuestos/{id}/versiones/{n}` | Una versión |
+| `POST /presupuestos/{id}/versiones` | Crea la versión siguiente **sin tocar las anteriores**: copia los ítems de la última (o de `{"copiar_de": n}`) o usa `{"items": [...]}` |
+| `PUT /presupuestos/{id}/versiones/{n}/items` | Reemplaza los ítems de un borrador (`409` si ya fue enviada) |
+| `POST /presupuestos/{id}/versiones/{n}/envio` | **Administrador**: envía la última versión (con ítems y precios); queda congelada |
+| `POST /presupuestos/{id}/versiones/{n}/decision` | **Cliente dueño**: `{"decision": "aprobado"}` o `{"decision": "rechazado", "motivo": "...", "confirmar_cancelacion": true}` |
+
+Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
+la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
+nueva versión es una modificación (`es_modificacion`) y, mientras no se apruebe,
+sigue vigente la última aprobada; solo puede haber un borrador abierto (`409`);
+si el primer presupuesto fue rechazado (servicio cancelado) no se crean más
+versiones (`409`). Las versiones anteriores, sus ítems y decisiones nunca se
+modifican: la base lo impide además con los triggers de `0003_ms3`.
+
+Envío y decisión son **transaccionales**: bloquean el presupuesto (`SELECT ... FOR UPDATE`),
+validan y escriben todo junto; si algo falla no queda nada a medias. Responden
+`efecto_en_orden`, lo que corresponde aplicar a la orden en MS2 (§4.2):
+
+| Operación | `efecto_en_orden` |
+|---|---|
+| Primer envío | `esperando_aprobacion` |
+| Envío de una modificación posterior a una aprobación | `null` (la orden no cambia) |
+| Aprobar con stock suficiente | `en_reparacion` |
+| Aprobar con stock insuficiente | `esperando_repuestos` (+ `repuestos_faltantes`) |
+| Rechazar antes de la primera aprobación (exige `confirmar_cancelacion`) | `cancelado` |
+| Rechazar una modificación | `null` (sigue vigente la última aprobada) |
+
+```json
+POST /presupuestos
+{"orden_id": 1, "items": [
+  {"tipo": "repuesto", "repuesto_id": 1, "descripcion": "Pastillas", "cantidad": "1", "precio_unitario": "38990"},
+  {"tipo": "mano_de_obra", "descripcion": "Cambio de pastillas", "cantidad": "1.5", "precio_unitario": "20000"}
+]}
+```
+
+Montos y cantidades se devuelven como texto decimal (`"68990.00"`). Cada versión
+informa su `estado` (`borrador`, `enviada`, `aprobada`, `rechazada`) y el
+presupuesto su `version_vigente` (última aprobada). Capas: `routers/presupuestos.py`
+→ `services/presupuestos.py` (una transacción por caso de uso) →
+`persistencia/` (repositorio + unidad de trabajo) → modelos ORM.
+
 ### Aislamiento de la base de MS3
 
 MS3 solo conoce su base (`MS3_DATABASE_URL`). Las órdenes (MS2) y los usuarios

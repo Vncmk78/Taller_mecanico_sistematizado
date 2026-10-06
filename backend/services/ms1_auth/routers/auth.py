@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session
 
 from services.ms1_auth.config import settings
 from services.ms1_auth.db import get_db
-from services.ms1_auth.dependencies import obtener_usuario_actual
+from services.ms1_auth.dependencies import obtener_usuario_actual, requerir_roles
 from services.ms1_auth.models.usuario import Usuario
 from services.ms1_auth.schemas.auth import (
     LoginSolicitud,
     RegistroClienteSolicitud,
+    RolAsignarSolicitud,
     TokenRespuesta,
     UsuarioRespuesta,
 )
@@ -20,11 +21,14 @@ from services.ms1_auth.services.autenticacion import (
     CorreoRegistradoError,
     CredencialesInvalidasError,
     PersistenciaAutenticacionError,
+    UsuarioNoEncontradoError,
+    asignar_rol_restringido,
     autenticar_usuario,
     registrar_cliente,
+    retirar_rol_restringido,
     roles_del_usuario,
 )
-from shared.auth import crear_token_acceso
+from shared.auth import NombreRol, PrincipalAutenticado, crear_token_acceso
 
 router_auth = APIRouter(prefix="/auth", tags=["autenticación y usuarios"])
 
@@ -107,6 +111,81 @@ def consultar_usuario_actual(
     usuario: Usuario = Depends(obtener_usuario_actual),
 ) -> UsuarioRespuesta:
     return _serializar_usuario(usuario)
+
+
+@router_auth.post(
+    "/usuarios/{usuario_id}/roles",
+    response_model=UsuarioRespuesta,
+    summary="Asignar un rol restringido a un usuario",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_404_NOT_FOUND: {"description": "El usuario no existe"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def asignar_rol_a_usuario(
+    usuario_id: int,
+    body: RolAsignarSolicitud,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(
+        requerir_roles(NombreRol.ADMINISTRADOR)
+    ),
+) -> UsuarioRespuesta:
+    try:
+        usuario = asignar_rol_restringido(
+            db,
+            usuario_id=usuario_id,
+            rol=body.rol,
+            administrador_id=principal.usuario_id,
+        )
+        return _serializar_usuario(usuario)
+    except UsuarioNoEncontradoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    except (ConfiguracionRolesError, PersistenciaAutenticacionError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible asignar el rol",
+        ) from exc
+
+
+@router_auth.delete(
+    "/usuarios/{usuario_id}/roles/{rol}",
+    response_model=UsuarioRespuesta,
+    summary="Retirar un rol restringido a un usuario",
+    dependencies=[Depends(requerir_roles(NombreRol.ADMINISTRADOR))],
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_404_NOT_FOUND: {"description": "El usuario no existe"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def retirar_rol_de_usuario(
+    usuario_id: int,
+    rol: NombreRol,
+    db: Session = Depends(get_db),
+) -> UsuarioRespuesta:
+    try:
+        usuario = retirar_rol_restringido(
+            db, usuario_id=usuario_id, rol=rol
+        )
+        return _serializar_usuario(usuario)
+    except UsuarioNoEncontradoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    except (ConfiguracionRolesError, PersistenciaAutenticacionError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible retirar el rol",
+        ) from exc
 
 
 def _serializar_usuario(usuario: Usuario) -> UsuarioRespuesta:

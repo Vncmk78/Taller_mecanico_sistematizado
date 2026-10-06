@@ -63,6 +63,26 @@ class PresupuestoCrear(ItemsVersion):
     items: list[ItemEntrada] = Field(default_factory=list, max_length=MAX_ITEMS_POR_VERSION)
 
 
+class NuevaVersion(BaseModel):
+    """Crea la versión siguiente SIN tocar las anteriores (§4.3).
+
+    - Sin `items`: copia los ítems de la versión `copiar_de` (por defecto la
+      última) como filas nuevas; el mecánico/administrador luego los ajusta.
+    - Con `items`: la nueva versión parte con esa lista.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ItemEntrada] | None = Field(default=None, max_length=MAX_ITEMS_POR_VERSION)
+    copiar_de: int | None = Field(default=None, ge=1, description="Número de versión a copiar")
+
+    @model_validator(mode="after")
+    def _items_o_copia(self) -> "NuevaVersion":
+        if self.items is not None and self.copiar_de is not None:
+            raise ValueError("Indique items o copiar_de, no ambos")
+        return self
+
+
 class DecisionEntrada(BaseModel):
     """Decisión del cliente sobre la versión enviada (§4.3)."""
 

@@ -15,12 +15,12 @@ interface VehicleInfoPanelProps {
 export function VehicleInfoPanel({ vehicle, ownerLabel }: VehicleInfoPanelProps) {
     return (
     <div className="card">
-        <div className="flex justify-between items-center mb-6 pb-4 border-b border-border-custom">
-        <h3 className="text-xl font-semibold flex items-center gap-2">
-            <Car className="w-5 h-5 text-text-muted" />
-            {vehicle.brand} {vehicle.model}
+        <div className="flex justify-between items-center gap-2 flex-wrap mb-6 pb-4 border-b border-border-custom">
+        <h3 className="text-xl font-semibold flex items-center gap-2 min-w-0">
+            <Car className="w-5 h-5 text-text-muted shrink-0" />
+            <span className="truncate">{vehicle.brand} {vehicle.model}</span>
         </h3>
-        <span className="bg-bg-secondary text-text-main font-mono font-bold px-3 py-1.5 rounded tracking-wide">
+        <span className="bg-bg-secondary text-text-main font-mono font-bold px-3 py-1.5 rounded tracking-wide shrink-0">
             {vehicle.patent}
         </span>
         </div>

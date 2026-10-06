@@ -12,7 +12,7 @@ export function UserMenu({ userName, subtitle, onLogout, prepend }: UserMenuProp
   return (
     <div className="flex items-center gap-3">
       {prepend}
-      <div className="text-right">
+      <div className="hidden sm:block text-right">
         <div className="text-sm font-bold">{userName}</div>
         <div className="text-xs text-text-muted">{subtitle}</div>
       </div>
@@ -20,7 +20,7 @@ export function UserMenu({ userName, subtitle, onLogout, prepend }: UserMenuProp
         type="button"
         aria-label="Cerrar sesión"
         onClick={onLogout}
-        className="ml-5 text-primary-orange cursor-pointer text-lg bg-transparent border-none hover:text-primary-orange-hover transition-colors"
+        className="ml-2 sm:ml-5 text-primary-orange cursor-pointer text-lg bg-transparent border-none hover:text-primary-orange-hover transition-colors"
         title="Cerrar Sesión"
       >
         <LogOut className="w-5 h-5" />

@@ -602,9 +602,32 @@ $env:MS3_ORM_TEST_DATABASE_URL="postgresql+psycopg://taller:taller@localhost:543
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Resultado: **486 passed, 2 skipped** (los 2 restantes requieren MinIO:
-`docker compose up -d minio minio_init`). Antes: 427 passed, 61 skipped
-(por tiempos de conexión a 5434/5435). Se pasó de 574 s a 54 s.
+Resultado: **488 passed, 0 skipped** (54 s). Incluye MinIO; antes de tenerlo eran
+486/2 y con la suite original 427/61 (por tiempos de conexión a 5434/5435).
+
+### MinIO (MS4) con Docker Desktop
+
+El `docker-compose` de MS4 usa `cgr.dev/chainguard/minio` (servidor) y
+`quay.io/minio/mc` (cliente `minio_init`); este último ahora responde **401
+UNAUTHORIZED** en los pulls (el repo/tag ya no se sirve sin auth). Workaround
+verificado (2026-10-07):
+
+```
+docker volume create minio_data
+docker run -d --name sgtm_minio `
+  -e MINIO_ROOT_USER=admin-local -e MINIO_ROOT_PASSWORD=cambia-esta-clave-local `
+  -p 9000:9000 -p 9001:9001 `
+  -v minio_data:/data -v "$PWD\minio:/config:ro" `
+  cgr.dev/chainguard/minio@sha256:999718c09ef5d2ac888aa97ffd628a67ba8be2d64d6eea9e719d1f58cd59e204 `
+  server /data --console-address ":9001"
+```
+
+El binario `mc` viene incluido en la imagen de Chainguard (lo usa su healthcheck),
+así que el setup de `minio_init` se replica con `docker exec sgtm_minio mc
+--config-dir /tmp/mc-live ...`: alias `sgtm`, bucket `evidencias` privado, usuario
+`ms4-evidencias`, y la política `politica-ms4` desde `/config/politica-ms4.json`
+(montada en ro). Verificado con `mc admin user info` (PolicyName: politica-ms4) y
+con la suite: `test_ms4_minio_integracion` y `test_ms4_recepcion_minio` en verde.
 
 ### B2: ciclo completo contra el stack real (Gateway 8000, MS1 8001, MS2 8002)
 

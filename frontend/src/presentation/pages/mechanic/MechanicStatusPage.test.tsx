@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
+import {
+    cambioEstadoBodyInvalido,
+    errorAxios,
+    estadoTerminalNoTransicionable,
+    ordenNoEncontrada,
+    sinPermisoCambiarEstado,
+    transicionNoPermitida,
+} from '@/infrastructure/mocks/payloads.reales';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
@@ -58,6 +65,21 @@ function renderPage() {
             </ToastProvider>
         </MemoryRouter>
     );
+}
+
+/** Recorre el camino completo de un avance: selector, botón y confirmación. */
+async function avanzarA(ordenId: string, destino: string, observacion?: string) {
+    fireEvent.change(screen.getByLabelText(`Siguiente estado de la orden ${ordenId}`), {
+        target: { value: destino },
+    });
+    if (observacion !== undefined) {
+        fireEvent.change(screen.getByLabelText(`Observación de la orden ${ordenId}`), {
+            target: { value: observacion },
+        });
+    }
+    fireEvent.click(screen.getByRole('button', { name: /Confirmar avance/ }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Avanzar estado' }));
 }
 
 describe('MechanicStatusPage: actualización de estados de las órdenes', () => {
@@ -198,33 +220,17 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
 
     it('muestra el detalle del error del backend (409) en la tarjeta', async () => {
         vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
-        const error = new AxiosError(
-            'Request failed with status code 409',
-            AxiosError.ERR_BAD_RESPONSE,
-            undefined,
-            undefined,
-            {
-                status: 409,
-                statusText: 'Conflict',
-                headers: {},
-                config: {} as InternalAxiosRequestConfig,
-                data: { detail: 'Transición no permitida: En reparación -> Listo' },
-            }
+        vi.mocked(orderService.cambiarEstado).mockRejectedValue(
+            errorAxios(409, transicionNoPermitida)
         );
-        vi.mocked(orderService.cambiarEstado).mockRejectedValue(error);
 
         renderPage();
         await screen.findByText('Orden n° 101');
 
-        fireEvent.change(screen.getByLabelText('Siguiente estado de la orden 101'), {
-            target: { value: '6' },
-        });
-        fireEvent.click(screen.getByRole('button', { name: /Confirmar avance/ }));
-        await screen.findByRole('dialog');
-        fireEvent.click(screen.getByRole('button', { name: 'Avanzar estado' }));
+        await avanzarA('101', '6');
 
         expect(await screen.findByRole('alert')).toHaveTextContent(
-            'Transición no permitida: En reparación -> Listo'
+            'Transición no permitida: Recibido -> En reparación'
         );
     });
 
@@ -261,5 +267,252 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         expect(await screen.findByText(/No se pudo conectar con el servidor/)).toBeInTheDocument();
         expect(screen.getByText('Orden n° 101')).toBeInTheDocument();
         expect(screen.queryByText('Orden n° 102')).not.toBeInTheDocument();
+    });
+
+    it('no muestra una orden asignada a otro mecánico aunque la caché la traiga', async () => {
+        useOrderStore.setState({ orders: [ordEnReparacion, ordDeOtro], status: 'success' });
+        vi.mocked(orderService.getOrders).mockResolvedValue([]);
+
+        renderPage();
+
+        expect(await screen.findByText('Orden n° 101')).toBeInTheDocument();
+        expect(screen.queryByText('Orden n° 102')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Siguiente estado de la orden 102')).not.toBeInTheDocument();
+    });
+
+    // La vista promete al mecánico que cualquier opción del selector será
+    // aceptada por MS2. Estos pares son los 10 que validar_transicion admite
+    // (ms2_taller/domain/transiciones_orden.py:70-111).
+    describe('matriz de estados: qué ofrece el selector en cada uno', () => {
+        const ESPERADOS: Record<number, string[]> = {
+            1: ['Esperando diagnóstico'],
+            2: ['Esperando aprobación de presupuesto'],
+            3: [],
+            4: ['En reparación'],
+            5: ['Listo'],
+            6: [],
+            7: [],
+            8: [],
+        };
+
+        it.each(Object.entries(ESPERADOS).map(([estado, destinos]) => [Number(estado), destinos]))(
+            'en el estado %i ofrece exactamente %j',
+            async (estado, destinos) => {
+                useOrderStore.setState({ orders: [orden('101', estado)], status: 'success' });
+                vi.mocked(orderService.getOrders).mockResolvedValue([]);
+
+                renderPage();
+
+                await screen.findByText('Orden n° 101');
+                const selector = screen.queryByLabelText('Siguiente estado de la orden 101');
+                if (destinos.length === 0) {
+                    // Sin avance posible: la orden va al bloque de cerradas, sin selector.
+                    expect(selector).not.toBeInTheDocument();
+                    expect(
+                        screen.getByText('No hay avances disponibles para el mecánico en este estado.')
+                    ).toBeInTheDocument();
+                    return;
+                }
+
+                expect(selector).not.toBeNull();
+                const opciones = within(selector as HTMLElement)
+                    .getAllByRole('option')
+                    .map((o) => o.textContent);
+                // La primera opción es el placeholder "Seleccionar...".
+                expect(opciones.slice(1)).toEqual(destinos);
+            }
+        );
+
+        it('lleva al bloque de cerradas las cuatro órdenes sin avance, en cualquier página', async () => {
+            useOrderStore.setState({
+                orders: [orden('301', 3), orden('302', 6), orden('303', 7), orden('304', 8)],
+                status: 'success',
+            });
+            vi.mocked(orderService.getOrders).mockResolvedValue([]);
+
+            renderPage();
+
+            expect(await screen.findByText('Órdenes cerradas')).toBeInTheDocument();
+            for (const id of ['301', '302', '303', '304']) {
+                expect(screen.getByText(`Orden n° ${id}`)).toBeInTheDocument();
+                expect(screen.queryByLabelText(`Siguiente estado de la orden ${id}`)).not.toBeInTheDocument();
+            }
+        });
+    });
+
+    // Los cuatro avances declarados en AVANCES_MECANICO, y no solo el 5->6 que
+    // ya cubría la suite.
+    describe('avances permitidos por el mecánico', () => {
+        it.each([
+            [1, 2, 'Esperando diagnóstico'],
+            [2, 3, 'Esperando aprobación de presupuesto'],
+            [4, 5, 'En reparación'],
+            [5, 6, 'Listo'],
+        ])('avanza de %i a %i ("%s") con su observación', async (origen, destino, etiqueta) => {
+            vi.mocked(orderService.getOrders).mockResolvedValue([orden('101', origen)]);
+            vi.mocked(orderService.cambiarEstado).mockResolvedValue({
+                ...orden('101', origen),
+                estadoCodigo: destino,
+            });
+
+            renderPage();
+            await screen.findByText('Orden n° 101');
+
+            await avanzarA('101', String(destino), 'Trabajo terminado');
+
+            await waitFor(() =>
+                expect(orderService.cambiarEstado).toHaveBeenCalledWith(
+                    '101',
+                    destino,
+                    'Trabajo terminado'
+                )
+            );
+            expect(await screen.findByText(new RegExp(`Orden n° 101 actualizada a ${etiqueta}`))).toBeInTheDocument();
+        });
+    });
+
+    describe('rechazos del backend al avanzar', () => {
+        it('muestra el 403 cuando la orden ya no es del mecánico (fue reasignada)', async () => {
+            vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+            vi.mocked(orderService.cambiarEstado).mockRejectedValue(
+                errorAxios(403, sinPermisoCambiarEstado)
+            );
+
+            renderPage();
+            await screen.findByText('Orden n° 101');
+
+            await avanzarA('101', '6');
+
+            // La autorización se valida antes que la transición, así que el
+            // backend responde 403 y no 409 aunque el par 5->6 sea válido.
+            expect(await screen.findByRole('alert')).toHaveTextContent(
+                'No tienes permiso para cambiar el estado de esta orden'
+            );
+        });
+
+        it('muestra el 409 de estado terminal si el servidor discrepa del estado en caché', async () => {
+            vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+            vi.mocked(orderService.cambiarEstado).mockRejectedValue(
+                errorAxios(409, estadoTerminalNoTransicionable)
+            );
+
+            renderPage();
+            await screen.findByText('Orden n° 101');
+
+            await avanzarA('101', '6');
+
+            expect(await screen.findByRole('alert')).toHaveTextContent(
+                'El estado Entregado es terminal y no admite transiciones'
+            );
+        });
+
+        it('muestra el 404 si la orden ya no existe', async () => {
+            vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+            vi.mocked(orderService.cambiarEstado).mockRejectedValue(
+                errorAxios(404, ordenNoEncontrada)
+            );
+
+            renderPage();
+            await screen.findByText('Orden n° 101');
+
+            await avanzarA('101', '6');
+
+            expect(await screen.findByRole('alert')).toHaveTextContent('Orden no encontrada');
+        });
+
+        it('traduce el 422 de FastAPI cuando el detail llega como lista', async () => {
+            vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+            vi.mocked(orderService.cambiarEstado).mockRejectedValue(
+                errorAxios(422, cambioEstadoBodyInvalido)
+            );
+
+            renderPage();
+            await screen.findByText('Orden n° 101');
+
+            await avanzarA('101', '6');
+
+            expect(await screen.findByRole('alert')).toHaveTextContent(
+                'Input should be greater than 0'
+            );
+        });
+
+        it('deja el selector con el valor elegido para poder reintentar sin recargar', async () => {
+            vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+            vi.mocked(orderService.cambiarEstado)
+                .mockRejectedValueOnce(errorAxios(409, transicionNoPermitida))
+                .mockResolvedValueOnce({ ...ordEnReparacion, estadoCodigo: 6 });
+
+            renderPage();
+            await screen.findByText('Orden n° 101');
+
+            await avanzarA('101', '6', 'Reintento');
+
+            // El fallo cierra el diálogo pero conserva la selección.
+            await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+            expect(screen.getByRole('alert')).toBeInTheDocument();
+            expect(screen.getByLabelText('Siguiente estado de la orden 101')).toHaveValue('6');
+            expect(screen.getByLabelText('Observación de la orden 101')).toHaveValue('Reintento');
+
+            await avanzarA('101', '6', 'Reintento');
+
+            await waitFor(() =>
+                expect(orderService.cambiarEstado).toHaveBeenCalledTimes(2)
+            );
+            expect(await screen.findByText(/Orden n° 101 actualizada a Listo/)).toBeInTheDocument();
+            expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        });
+
+        it('no despacha dos veces si el mecánico confirma mientras la petición sigue en vuelo', async () => {
+            vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+            // Promesa pendiente: la llamada queda en vuelo durante la aserción.
+            let resolver: (o: Order) => void = () => {};
+            vi.mocked(orderService.cambiarEstado).mockReturnValue(
+                new Promise<Order>((resolve) => {
+                    resolver = resolve;
+                })
+            );
+
+            renderPage();
+            await screen.findByText('Orden n° 101');
+
+            fireEvent.change(screen.getByLabelText('Siguiente estado de la orden 101'), {
+                target: { value: '6' },
+            });
+            fireEvent.click(screen.getByRole('button', { name: /Confirmar avance/ }));
+            const confirmar = await screen.findByRole('button', { name: 'Avanzar estado' });
+
+            fireEvent.click(confirmar);
+
+            // Con isLoading el botón cambia a "Cargando..." y queda deshabilitado,
+            // así que un segundo clic no genera otra llamada.
+            const enVuelo = await screen.findByRole('button', { name: /Cargando/ });
+            expect(enVuelo).toBeDisabled();
+            fireEvent.click(enVuelo);
+
+            expect(orderService.cambiarEstado).toHaveBeenCalledTimes(1);
+
+            resolver({ ...ordEnReparacion, estadoCodigo: 6 });
+            expect(await screen.findByText(/Orden n° 101 actualizada a Listo/)).toBeInTheDocument();
+        });
+    });
+
+    it('tras avanzar, la orden queda en Listo y pasa al bloque de cerradas', async () => {
+        vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+        vi.mocked(orderService.cambiarEstado).mockResolvedValue({
+            ...ordEnReparacion,
+            estadoCodigo: 6,
+        });
+
+        renderPage();
+        await screen.findByText('Orden n° 101');
+        expect(screen.getByLabelText('Siguiente estado de la orden 101')).toBeInTheDocument();
+
+        await avanzarA('101', '6');
+
+        // El 6 no tiene avance del mecánico, así que la orden sale de la lista
+        // accionable: la caché se actualizó y la vista lo refleja.
+        expect(await screen.findByText('Órdenes cerradas')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Siguiente estado de la orden 101')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Listo').length).toBeGreaterThan(0);
     });
 });

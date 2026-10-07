@@ -655,16 +655,27 @@ mecánico, permanece pendiente de contratos e implementación posteriores.
 
 ### GET `/api/ordenes/{orden_id}/historial`
 
-Devuelve los cambios de estado de una orden en orden cronológico, con el actor
-que los registró y su observación. Aplica la misma visibilidad del detalle: una
-orden ajena y una inexistente responden el mismo `404`.
+Devuelve el historial completo de estados con el actor, origen y observación.
+Reutiliza la visibilidad del detalle: Administrador ve todas las órdenes,
+Cliente las de sus vehículos y Mecánico las actualmente asignadas; multirol
+combina los alcances. Una orden ajena y una inexistente responden el mismo `404`.
+
+Ordena por `fecha_hora ASC` y, si coinciden las fechas, por `historial_id ASC`.
+Incluye el registro inicial (`estado_anterior=null`). Una orden visible sin
+registros devuelve `[]`; la consulta no crea ni modifica datos.
+
+Cada registro contiene `historial_id`, `orden_id`, `estado_anterior` (código o
+`null`), `estado_nuevo` (código), `actor_usuario_id` (referencia lógica a MS1 o
+`null` para origen `sistema`), `fecha_hora`, `origen` (`usuario` o `sistema`) y
+`observacion` (texto o `null`). El actor es quien originó el cambio, no
+necesariamente el mecánico asignado. No se consultan nombres en MS1.
 
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` |
 | Body | — |
 | Respuesta OK | `200` con lista de `HistorialEstadoRespuesta` |
-| Errores | `401` JWT ausente/inválido · `404` orden inexistente o no visible · `500` consulta · `502` MS2 no disponible |
+| Errores | `401` JWT ausente/inválido · `404` orden inexistente o no visible · `422` identificador inválido · `500` consulta · `502` MS2 no disponible |
 
 ```json
 // Response 200

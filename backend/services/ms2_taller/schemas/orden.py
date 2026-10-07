@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,6 +61,6 @@ class HistorialEstadoRespuesta(BaseModel):
     estado_anterior: int | None
     estado_nuevo: int
     actor_usuario_id: int | None
-    origen: str
+    origen: Literal["usuario", "sistema"]
     fecha_hora: datetime
     observacion: str | None

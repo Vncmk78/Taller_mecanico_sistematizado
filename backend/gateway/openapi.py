@@ -528,10 +528,12 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 tag="Órdenes",
                 resumen="Consultar el historial de estados de una orden",
                 descripcion=(
-                    "Devuelve los cambios de estado de una orden, en orden "
-                    "cronológico, con el actor que los registró y su "
-                    "observación. Aplica la misma visibilidad del detalle: una "
-                    "orden inexistente o ajena responde 404."
+                    "Devuelve todos los registros por fecha/hora e identificador "
+                    "ascendente, con el actor, origen y observación. Aplica la "
+                    "misma visibilidad del detalle: Administrador ve todas; "
+                    "Cliente sus vehículos; Mecánico sus órdenes asignadas; "
+                    "multirol combina los alcances. Una orden inexistente o "
+                    "ajena responde 404; una visible sin registros devuelve []."
                 ),
                 operation_id="consultar_historial_orden",
                 cuerpo=None,

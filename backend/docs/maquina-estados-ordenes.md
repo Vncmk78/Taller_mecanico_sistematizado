@@ -9,9 +9,10 @@ dominio tiene ocho estados estables y pocas transiciones respaldadas por la
 Sistematización final, por lo que una librería externa de máquinas de estados no
 aportaría una ventaja proporcional.
 
-Este estudio no implementa el flujo general ni crea endpoints de cambio de
-estado. La única transición productiva ya disponible es la primera asignación de
-INT-33: `Recibido → Esperando diagnóstico`.
+En `Develop` ya existe un endpoint genérico para cambiar el estado: valida que
+el par estado actual/destino esté permitido y registra el cambio en el historial
+de MS2. Esto no ejecuta por sí solo todas las precondiciones de negocio ni
+coordina los efectos de presupuesto o inventario entre MS2 y MS3.
 
 ## 1. Fuentes y alcance
 
@@ -126,18 +127,20 @@ historial y transacciones entre límites de servicio.
 
 ### 3.4 Reglas de transición y efectos externos
 
-La validación del cambio de estado debe estar separada de sus efectos externos.
-MS2 es responsable de decidir si la transición recibida está permitida para la
-orden, actualizar `OrdenTrabajo.estado_codigo` y escribir `HistorialEstado`.
+La validación estructural del cambio de estado está separada de sus efectos
+externos. MS2 valida la transición, actualiza `OrdenTrabajo.estado_codigo` y
+escribe `HistorialEstado` en una transacción local. El endpoint genérico actual
+no comprueba por sí mismo decisiones de presupuesto, disponibilidad de stock ni
+otras precondiciones que pertenecen a servicios externos.
 
 Notificaciones, decisiones de presupuesto, reservas o movimientos de inventario
 y otras acciones de servicios externos no deben ocultarse dentro del validador.
-Esos efectos se producen mediante los contratos del servicio propietario y no
-deben provocar que MS2 confirme un estado si falla su persistencia local.
+MS3, por ejemplo, puede informar el efecto que corresponde a una decisión de
+presupuesto; actualmente no lo publica como evento ni coordina automáticamente
+el cambio de estado en MS2.
 
-Los contratos, eventos, reintentos e idempotencia para coordinar cambios entre
-MS2 y MS3 están **PENDIENTES DE DEFINICIÓN**. Esta tarea no inventa endpoints ni
-una transacción distribuida.
+Los contratos de coordinación entre MS2 y MS3, los reintentos, la idempotencia
+y el manejo de fallos distribuidos están **PENDIENTES DE DEFINICIÓN**.
 
 ### 3.5 Historial, actor y atomicidad
 
@@ -152,17 +155,51 @@ Toda transición confirmada debe producir exactamente una nueva fila de
 - `observacion` cuando corresponda.
 
 El cambio de `OrdenTrabajo.estado_codigo` y el alta del historial pertenecen a la
-misma transacción local de MS2. Antes de validar se debe bloquear la orden para
-actualización, siguiendo el patrón `SELECT ... FOR UPDATE` ya usado por la
-asignación. Un error en la actualización o en el historial exige rollback total:
-no puede quedar el estado sin trazabilidad ni una historia que no corresponda al
-estado vigente.
+misma transacción local de MS2. La asignación también guarda sus cambios y su
+historial dentro de la transacción local. Un error en la actualización o en el
+historial exige rollback total: no puede quedar el estado sin trazabilidad ni
+una historia que no corresponda al estado vigente.
 
 Los datos de presupuesto o inventario pertenecen a otra base y no forman parte de
-la transacción local de MS2. El contrato futuro debe entregar evidencia suficiente
-del evento sin crear FK físicas ni acceso directo a tablas de MS3.
+la transacción local de MS2. No existe una transacción única que abarque MS2 y
+MS3 ni acceso directo entre sus bases.
 
-### 3.6 Estados terminales
+### 3.6 Trazabilidad, auditoría y eventos de dominio
+
+En los cambios iniciados por una persona, el actor se obtiene del usuario
+autenticado por JWT. `HistorialEstado` conserva `estado_anterior`,
+`estado_nuevo`, `actor_usuario_id`, `origen`, `fecha_hora` y `observacion`.
+Si el origen es `usuario`, el actor es obligatorio; si es `sistema`, el actor
+queda vacío. `HistorialAsignacion` conserva el mecánico anterior y nuevo, el
+administrador responsable, la fecha/hora y la observación. Los IDs de usuario
+apuntan lógicamente a MS1: no hay claves foráneas físicas entre bases de
+microservicios.
+
+Estos términos describen cosas relacionadas, pero distintas:
+
+- **Historial:** registros persistidos de hechos anteriores, como cambios de
+  estado o asignaciones.
+- **Auditoría:** datos que permiten saber qué cambió, quién lo hizo, cuándo y,
+  cuando corresponde, por qué.
+- **Trazabilidad:** capacidad de relacionar esos registros con la orden y seguir
+  su recorrido. `X-Request-ID` aporta correlación técnica entre una solicitud y
+  los servicios que la reciben; no reemplaza el historial de dominio.
+- **Evento de dominio:** hecho ocurrido en el negocio que puede ser comunicado a
+  otros componentes para que reaccionen.
+
+`EventoOrden` es un `StrEnum` que identifica hechos y sirve como clave para que
+`resolver_transicion()` encuentre el destino permitido. No es actualmente un
+evento publicado, no se persiste como evento independiente y no tiene
+suscriptores ni handlers de dominio.
+
+El proyecto no cuenta actualmente con event bus, outbox, broker,
+publishers/consumers ni mensajería asíncrona entre microservicios. La comunicación
+existente entre servicios es principalmente HTTP síncrona. Cada microservicio
+garantiza atomicidad dentro de su propia base; la coordinación MS2–MS3, incluida
+la idempotencia, los reintentos y el manejo de fallos distribuidos, sigue
+pendiente de definición.
+
+### 3.7 Estados terminales
 
 `Entregado` y `Cancelado` no tienen transiciones salientes. El validador debe
 rechazar cualquier intento de cambio desde ellos antes de ejecutar efectos. Una

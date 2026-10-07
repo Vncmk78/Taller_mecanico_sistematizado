@@ -91,6 +91,22 @@ y arquitectura hexagonal.
   - **Panel del cliente** (`/client`): saluda con `full_name` del autenticado.
   - **Layout topnav**: muestra la identidad (nombre/email) del usuario de sesión.
 
+### Tarea 9 — Implementar detalle de estado y seguimiento del servicio
+- **`/client/ordenes/:id`** (reutilizado por "Ver detalle" en Estado del Servicio):
+  complementa el panel de la orden con el seguimiento completo del servicio:
+  - **Ciclo de estados** (stepper) con el estado actual destacado (`aria-current`).
+  - **Historial de cambios** con fechas, responsable y observaciones
+    (`GET /api/ordenes/{id}/historial` vía `orderService.getOrderHistory`, con caché
+    en `useOrderHistoryStore`).
+  - Estados robustos: *loading*, **404 real** ("Orden no encontrada." con regreso a
+    mis órdenes) y **error de servidor / sin conexión**, que ya no se disfraza de
+    "no encontrada" y ofrece Reintentar. Sin conexión conserva el detalle y el
+    seguimiento desde la caché compartida mostrando el banner offline.
+- Padding responsive (`p-5 sm:p-8 lg:p-10`) consistente con el resto del portal.
+- Pruebas nuevas en `ClientServiceTracking.test.tsx` (estado actual + historial,
+  404 vs 500, offline con caché y error con caché) sin modificar los tests de
+  detalle ya existentes.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -107,7 +123,8 @@ El mapa completo de rutas está documentado en
 | `/client/vehiculos` (+ `/nuevo`, `/:id`) | Mis vehículos, registro y ficha con historial de órdenes | Funcional |
 | `/client/agendar` | Agendar mantención | Provisional "Próximamente" |
 | `/client/servicios` | Estado del Servicio (consulta de servicios) | Funcional |
-| `/client/ordenes` (+ `/:id`), `/client/presupuestos` | Órdenes del cliente / Presupuestos | Funcional / Placeholder |
+| `/client/ordenes` (+ `/:id`) | Órdenes del cliente y detalle de estado y seguimiento | Funcional |
+| `/client/presupuestos` | Presupuestos | Placeholder |
 | `/mechanic` | Portal Mecánico (dashboard) | Funcional (solo rol mecánico) |
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |

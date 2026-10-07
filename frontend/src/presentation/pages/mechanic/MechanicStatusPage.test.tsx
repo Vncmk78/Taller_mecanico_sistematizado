@@ -515,4 +515,39 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         expect(screen.queryByLabelText('Siguiente estado de la orden 101')).not.toBeInTheDocument();
         expect(screen.getAllByText('Listo').length).toBeGreaterThan(0);
     });
+
+    it('no muestra el selector ni el botón si la sesión no tiene rol de mecánico', async () => {
+        useAuthStore.setState({
+            user: {
+                id: MECANICO_ID,
+                email: 'cliente@taller.cl',
+                full_name: 'Cliente Prueba',
+                role: 'cliente',
+                is_active: true,
+            },
+        });
+        vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+
+        renderPage();
+
+        // La orden aparece (el filtro de lista casa por id) pero sin acciones:
+        // la validación por tarjeta antecede al selector y al botón.
+        expect(await screen.findByText('Orden n° 101')).toBeInTheDocument();
+        expect(screen.getByText('Solo el mecánico asignado puede actualizar esta orden.')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Siguiente estado de la orden 101')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Confirmar avance/ })).not.toBeInTheDocument();
+    });
+
+    it('ni el rol mecánico puede actuar sobre una orden de otro mecánico', async () => {
+        // La caché compartida trae una orden con asignación ajena; el filtro de
+        // lista ya la descarta, y la validación por tarjeta asegura que las
+        // accionables siempre tengan permiso y asignación en el render.
+        vi.mocked(orderService.getOrders).mockResolvedValue([ordDeOtro]);
+
+        renderPage();
+
+        expect(await screen.findByText('No tiene órdenes asignadas por el momento.')).toBeInTheDocument();
+        expect(screen.queryByText('Solo el mecánico asignado puede actualizar esta orden.')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Siguiente estado de la orden 102')).not.toBeInTheDocument();
+    });
 });

@@ -200,6 +200,23 @@ presupuesto su `version_vigente` (última aprobada). Capas: `routers/presupuesto
 → `services/presupuestos.py` (una transacción por caso de uso) →
 `persistencia/` (repositorio + unidad de trabajo) → modelos ORM.
 
+### Pruebas de rollback y consistencia de presupuestos (MS3)
+
+`services/ms3_presupuestos/tests/test_rollback_consistencia.py` (requiere
+PostgreSQL migrado; se omite si no hay base):
+
+- **Rollback por operación:** provoca un fallo en mitad de crear, editar,
+  crear versión, enviar y decidir (después de que ya se escribió algo) y compara
+  la "foto" de la base antes y después con SQL directo: debe ser idéntica, y la
+  sesión debe seguir usable.
+- **Concurrencia real:** dos o tres peticiones simultáneas con conexiones y
+  commits propios (dos decisiones, tres nuevas versiones, editar y enviar a la
+  vez): solo una gana, las demás reciben `409`. Corre en un esquema temporal
+  `prueba_concurrencia_*` que se migra y se borra al terminar.
+
+Si se quita el `FOR UPDATE` de `RepositorioPresupuestos.obtener_para_actualizar`,
+fallan las tres pruebas de concurrencia.
+
 ### Aislamiento de la base de MS3
 
 MS3 solo conoce su base (`MS3_DATABASE_URL`). Las órdenes (MS2) y los usuarios

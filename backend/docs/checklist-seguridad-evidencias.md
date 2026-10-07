@@ -201,15 +201,25 @@ verifica** · **cuándo** se implementa (tarea del plan).
 - [ ] **4.1 HTTPS en producción** para toda subida y descarga.
   - Cuándo: Semana 11 — despliegue.
 
-- [ ] **4.2 Límite de tamaño en la Gateway.** La Gateway rechaza con `413`
+- [x] **4.2 Límite de tamaño en la Gateway.** La Gateway rechaza con `413`
   bodies mayores al máximo de MS4 antes de reenviarlos.
   - Cuándo: Semana 5 — *Integrar operaciones multimedia mediante API
     Gateway*.
+  - ✅ Implementado: `GATEWAY_MAX_BODY_BYTES` (1 MiB, prefijos JSON) y
+    `GATEWAY_MAX_BODY_ARCHIVOS_BYTES` (12 MiB, `evidencias`, multipart con
+    foto de hasta 10 MB) en `gateway/config.py`. El proxy de `gateway/routers/
+    proxy.py` responde 413 (`CUERPO_DEMASIADO_GRANDE`, mensaje genérico sin
+    revelar el límite) antes de leer el body o llamar al microservicio
+    (`Content-Length` mayor al límite, o corte en el streaming si no hay
+    `Content-Length`); `Content-Length` inválida → 400.
+  - ✅ Pruebas: `tests/test_gateway_evidencias.py` (413 sin llamar a MS4,
+    JSON > 1 MiB, body exacto al límite, chunked, límites configurables y
+    punta a punta Gateway → MS4).
 
-- [ ] **4.3 ⚠ Riesgo conocido: la Gateway carga el body completo en
-  memoria.** El proxy actual hace `await request.body()` y reenvía el
+- [x] **4.3 ⚠ Riesgo conocido: la Gateway carga el body completo en
+  memoria.** El proxy hacía `await request.body()` y reenvía el
   contenido de una sola vez. Para fotos no es problema, pero un video de
-  100 MB por petición puede agotar la memoria del servidor.
+  100 MB por petición pudo agotar la memoria del servidor.
   - Opciones a evaluar: (a) reenvío en *streaming* desde la Gateway a MS4;
     (b) subida directa del cliente a MinIO con **URL prefirmada de subida**
     que entrega MS4 (el archivo no pasa por la Gateway).
@@ -218,14 +228,24 @@ verifica** · **cuándo** se implementa (tarea del plan).
   - ✅ Decidido en `estudio-almacenamiento-objetos.md` (sección 6): fotos
     vía Gateway y MS4; videos con POST prefirmado directo a MinIO y
     confirmación, sin pasar por la Gateway.
+  - ⚠ Riesgo acotado (Semana 5): no hay *streaming* hacia MS4 (ver nota en
+    `proxy()`); la Gateway carga el multipart en memoria pero nunca más del
+    límite de 12 MiB del control 4.2. Los videos no entran por la Gateway:
+    van por el flujo C (POST prefirmado, Semana 6+).
 
 - [ ] **4.4 Límite de frecuencia.** Máximo de subidas por usuario y minuto
   (por ejemplo 20), para evitar abuso.
   - Cuándo: Semana 10 — tratamiento de errores de la Gateway.
 
 - [ ] **4.5 Timeouts adecuados.** El timeout de la Gateway hacia MS4 debe
-  permitir subir un video del tamaño máximo sin cortar la conexión.
+  permitir subir un archivo sin cortar la conexión.
   - Cuándo: Semana 5 y Semana 10.
+  - ✅ Semana 5: `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` (60 s) para `evidencias`
+    en read/write (`timeout_para`), suficiente para una foto de hasta 10 MB
+    en local; el read/write de los prefijos JSON sigue en 15 s.
+  - Revisiones: los videos hoy van por flujo C (no por la Gateway), así que
+    no comprometen estos timeouts; revisar los valores al tratar timeouts en
+    Semana 10.
 
 ## 5. Auditoría y ciclo de vida
 

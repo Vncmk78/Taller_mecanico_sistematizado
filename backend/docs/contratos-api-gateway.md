@@ -16,10 +16,17 @@ Reglas que se aplican a todos los endpoints:
   genera un UUID y lo devuelve en la respuesta.
 - Errores propios de la Gateway: `RUTA_NO_ENCONTRADA` (404),
   `MICROSERVICIO_INALCANZABLE` (502), `TIEMPO_AGOTADO` (504),
-  `GATEWAY_SATURADA` (503), `ERROR_MICROSERVICIO` y `ERROR_INTERNO` (500),
-  todos con el cuerpo `{"detail": "...", "error": {"codigo", "estado",
-  "ruta", "request_id"}}`. `GATEWAY_SATURADA` y `ERROR_MICROSERVICIO` son de
-  la Semana 4 (mapeo de errores y cabeceras).
+  `GATEWAY_SATURADA` (503), `CUERPO_DEMASIADO_GRANDE` (413),
+  `ERROR_MICROSERVICIO` y `ERROR_INTERNO` (500), todos con el cuerpo
+  `{"detail": "...", "error": {"codigo", "estado", "ruta", "request_id"}}`.
+  `GATEWAY_SATURADA`, `ERROR_MICROSERVICIO` y `CUERPO_DEMASIADO_GRANDE` son de
+  la Semana 4/5 (mapeo de errores, cabeceras y límites de body).
+- Límites de body por prefijo (checklist 4.2): la Gateway rechaza con `413`
+  (`CUERPO_DEMASIADO_GRANDE`, mensaje genérico) los bodies mayores al límite
+  del prefijo **antes de leerlos o llamar al microservicio**. El `prefijo`
+  `evidencias` admite hasta 12 MiB (multipart con foto de hasta 10 MB); el
+  resto de los prefijos (JSON de MS1/MS2/MS3) admite hasta 1 MiB. Un
+  `Content-Length` no numérica responde `400` (`ERROR_HTTP`).
 - Errores de los microservicios: `{"detail": "mensaje"}` con su status code.
   En los `422` (validación de body en MS1/MS2), `detail` es una **lista** de
   errores de FastAPI, no un string:
@@ -211,13 +218,15 @@ Convención que deben respetar los endpoints de la Semana 5:
 - El microservicio recibe la ruta sin el prefijo `/api` (p. ej. MS4 recibe
   `/evidencias`, no `/api/evidencias`).
 
-Nota sobre la subida de archivos: hoy la Gateway lee el body completo en
-memoria antes de reenviarlo y conserva el `Content-Type` con el `boundary`
-del multipart. Para fotos no es problema, pero el límite de tamaño (`413`), el
-modo de subida (streaming desde la Gateway o POST prefirmado directo a MinIO)
-y los timeouts para videos son las tareas pendientes de la Semana 5 (controles
-4.2, 4.3 y 4.5 del
-[checklist de seguridad de evidencias](checklist-seguridad-evidencias.md)).
+Nota sobre la subida de archivos: la Gateway conserva el `Content-Type` con el
+`boundary` del multipart y aplica un límite de tamaño de body por prefijo
+(checklist 4.2): 1 MiB para los prefijos JSON y 12 MiB para `evidencias` (foto
+de hasta 10 MB + margen del multipart). Superarlo responde `413
+CUERPO_DEMASIADO_GRANDE` sin llamar al microservicio. No hay streaming hacia
+MS4 (riesgo 4.3 acotado por ese límite): los videos usan el flujo C (POST
+prefirmado directo a MinIO, Semana 6+). Detalle en
+[checklist-seguridad-evidencias.md](checklist-seguridad-evidencias.md) (4.2,
+4.3 y 4.5) y `estudio-almacenamiento-objetos.md` (sección 6).
 
 Deuda registrada (decisión pendiente): existen alias en singular
 (`presupuesto`, `evidencia`, `orden`, `vehiculo`) que reenvían la ruta tal

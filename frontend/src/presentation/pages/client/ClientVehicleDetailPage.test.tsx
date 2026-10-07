@@ -182,4 +182,19 @@ describe('ClientVehicleDetailPage: ficha de un vehículo propio', () => {
             await screen.findByText('Este vehículo aún no tiene órdenes de trabajo registradas.')
         ).toBeInTheDocument();
     });
+
+    it('muestra un error reintentable en el historial cuando no se pueden cargar las órdenes', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(mio);
+        vi.mocked(orderService.getOrders).mockRejectedValue(axios500);
+
+        renderPage('1');
+
+        expect(
+            await screen.findByText('El servidor tuvo un problema. Intente más tarde.')
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+        expect(
+            screen.queryByText('Este vehículo aún no tiene órdenes de trabajo registradas.')
+        ).not.toBeInTheDocument();
+    });
 });

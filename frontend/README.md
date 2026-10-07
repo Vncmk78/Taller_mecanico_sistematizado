@@ -58,6 +58,28 @@ y arquitectura hexagonal.
   órdenes del vehículo ahora se consulta de las órdenes del cliente (con su
   estado y fecha de actualización) y enlaza al detalle de cada orden.
 
+### Tarea 6 — Implementar estados vacío, carga y error en las vistas del cliente
+- **Estado del Servicio** (`/client/servicios`): estados de carga
+  (`OrderListSkeleton`), vacío (sin servicios registrados), *offline con caché*
+  (banner + datos locales) y **error sin datos en caché** (bloque con mensaje y
+  botón *Reintentar*).
+- **Ficha técnica del vehículo** (`/client/vehiculos/:id`): estados de carga,
+  vehículo no encontrado o ajeno, **error al cargar los datos del vehículo**
+  (distinto de "no encontrado", con reintento) y **error al cargar el historial
+  de órdenes** (con reintento), además del banner *offline* con datos de caché.
+
+### Tarea 7 — Revisar comportamiento responsive de las vistas implementadas
+- **Portal Cliente (topnav)**: navegación con scroll horizontal en pantallas
+  angostas, badge y datos del usuario plegados en móvil, y padding del header
+  reducido en breakpoints chicos.
+- **Estado del Servicio** (`/client/servicios`): columnas de tarjetas que pasan a
+  1 columna en móvil (`sm:grid-cols-2`), padding del contenedor y de los estados
+  vacío/error adaptado (`p-5 sm:p-8 lg:p-10` / `p-8 sm:p-14`).
+- **Ficha técnica del vehículo** (`/client/vehiculos/:id`): el detalle apila la
+  ficha bajo el historial en pantallas menores a `lg`, con el mismo padding
+  adaptado; `VehicleInfoPanel` permite envolver título/patente y `ServiceCard`
+  mantiene el badge fijo frente al título truncado.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en

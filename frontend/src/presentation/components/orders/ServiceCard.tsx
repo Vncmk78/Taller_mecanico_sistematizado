@@ -36,7 +36,7 @@ export function ServiceCard({
                         <Wrench className="w-5 h-5 text-text-muted shrink-0" aria-hidden />
                         <span className="truncate">Servicio n° {order.id}</span>
                     </h3>
-                    <OrderStatusBadge estadoCodigo={order.estadoCodigo} />
+                    <OrderStatusBadge estadoCodigo={order.estadoCodigo} className="shrink-0" />
                 </div>
 
                 <div className="flex items-center gap-2">

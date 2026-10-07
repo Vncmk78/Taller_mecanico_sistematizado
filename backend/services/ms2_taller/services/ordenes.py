@@ -292,6 +292,28 @@ def obtener_orden_visible(
     return orden
 
 
+def listar_historial_estados(
+    db: Session,
+    principal: PrincipalAutenticado,
+    orden_id: int,
+) -> list[HistorialEstado]:
+    """Consulta la historia completa solo después de autorizar la orden."""
+
+    obtener_orden_visible(db, principal, orden_id)
+    try:
+        consulta = (
+            select(HistorialEstado)
+            .where(HistorialEstado.orden_id == orden_id)
+            .order_by(HistorialEstado.fecha_hora, HistorialEstado.historial_id)
+        )
+        return list(db.scalars(consulta).all())
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible consultar el historial de la orden"
+        ) from exc
+
+
 def _filtro_visibilidad(
     principal: PrincipalAutenticado,
 ) -> ColumnElement[bool] | None:

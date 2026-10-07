@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,3 +38,18 @@ class OrdenRespuesta(BaseModel):
     creado_por_id: int
     creado_en: datetime
     actualizado_en: datetime
+
+
+class HistorialEstadoRespuesta(BaseModel):
+    """Registro de auditoría de un cambio de estado de una orden."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    historial_id: int
+    orden_id: int
+    estado_anterior: int | None
+    estado_nuevo: int
+    actor_usuario_id: int | None
+    fecha_hora: datetime
+    origen: Literal["usuario", "sistema"]
+    observacion: str | None

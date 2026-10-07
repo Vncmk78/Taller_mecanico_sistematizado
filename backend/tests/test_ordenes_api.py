@@ -506,6 +506,201 @@ def test_get_detalle_inexistente_devuelve_el_mismo_404(
     assert respuesta.json() == {"detail": "Orden no encontrada"}
 
 
+
+def test_historial_completo_campos_cronologia_y_aislamiento(
+    api_ordenes: TestClient, db_ordenes: Session, monkeypatch: pytest.MonkeyPatch,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    otra = _crear_orden(db_ordenes, usuario_cliente=20)
+    fecha = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    db_ordenes.add_all([
+        HistorialEstado(
+            historial_id=5, orden_id=orden.orden_id,
+            estado_anterior=2, estado_nuevo=3, actor_usuario_id=99,
+            origen="usuario", fecha_hora=fecha + timedelta(hours=1),
+            observacion="Presupuesto enviado",
+        ),
+        HistorialEstado(
+            historial_id=20, orden_id=orden.orden_id,
+            estado_anterior=1, estado_nuevo=2, actor_usuario_id=None,
+            origen="sistema", fecha_hora=fecha, observacion=None,
+        ),
+        HistorialEstado(
+            historial_id=10, orden_id=orden.orden_id,
+            estado_anterior=None, estado_nuevo=RECIBIDO, actor_usuario_id=99,
+            origen="usuario", fecha_hora=fecha, observacion=None,
+        ),
+        HistorialEstado(
+            historial_id=40, orden_id=otra.orden_id,
+            estado_anterior=None, estado_nuevo=RECIBIDO, actor_usuario_id=99,
+            origen="usuario", fecha_hora=fecha, observacion=None,
+        ),
+    ])
+    db_ordenes.commit()
+
+    def impedir_commit():
+        pytest.fail("La consulta no debe hacer commit")
+
+    monkeypatch.setattr(db_ordenes, "commit", impedir_commit)
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/historial",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 200
+    registros = respuesta.json()
+    assert [r["historial_id"] for r in registros] == [10, 20, 5]
+    campos = {
+        "historial_id", "orden_id", "estado_anterior", "estado_nuevo",
+        "actor_usuario_id", "fecha_hora", "origen", "observacion",
+    }
+    for registro in registros:
+        assert set(registro) == campos
+        assert registro["orden_id"] == orden.orden_id
+        datetime.fromisoformat(registro["fecha_hora"])
+    assert registros[0]["estado_anterior"] is None
+    assert registros[0]["estado_nuevo"] == RECIBIDO
+    assert registros[0]["actor_usuario_id"] == 99
+    assert registros[0]["origen"] == "usuario"
+    assert registros[0]["observacion"] is None
+    assert registros[1]["actor_usuario_id"] is None
+    assert registros[1]["origen"] == "sistema"
+    assert registros[1]["observacion"] is None
+    assert registros[2]["estado_anterior"] == 2
+    assert registros[2]["estado_nuevo"] == 3
+    assert registros[2]["observacion"] == "Presupuesto enviado"
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 4
+    assert not db_ordenes.new and not db_ordenes.dirty and not db_ordenes.deleted
+
+
+def test_historial_incluye_creacion_y_primera_asignacion(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+    creada = api_ordenes.post(
+        "/ordenes", json={"vehiculo_id": vehiculo.vehiculo_id}, headers=headers,
+    )
+    assert creada.status_code == 201
+    orden_id = creada.json()["orden_id"]
+    asignada = api_ordenes.put(
+        f"/ordenes/{orden_id}/mecanico", json={"mecanico_id": 50}, headers=headers,
+    )
+    assert asignada.status_code == 200
+    respuesta = api_ordenes.get(f"/ordenes/{orden_id}/historial", headers=headers)
+    assert respuesta.status_code == 200
+    assert [(r["estado_anterior"], r["estado_nuevo"]) for r in respuesta.json()] == [
+        (None, 1), (1, 2),
+    ]
+    assert all(r["actor_usuario_id"] == 99 for r in respuesta.json())
+
+
+@pytest.mark.parametrize(
+    "usuario_id,roles",
+    [
+        (99, (NombreRol.ADMINISTRADOR,)),
+        (10, (NombreRol.CLIENTE,)),
+        (50, (NombreRol.MECANICO,)),
+        (10, (NombreRol.CLIENTE, NombreRol.MECANICO)),
+        (50, (NombreRol.CLIENTE, NombreRol.MECANICO)),
+        (99, (NombreRol.ADMINISTRADOR, NombreRol.MECANICO)),
+    ],
+)
+def test_historial_visible_por_rol_y_multirol(
+    api_ordenes: TestClient, db_ordenes: Session,
+    usuario_id: int, roles: tuple[NombreRol, ...],
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+    db_ordenes.add(HistorialEstado(
+        orden_id=orden.orden_id, estado_anterior=None, estado_nuevo=RECIBIDO,
+        actor_usuario_id=99, origen="usuario",
+    ))
+    db_ordenes.commit()
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/historial",
+        headers=_headers_para(usuario_id, *roles),
+    )
+    assert respuesta.status_code == 200
+    assert len(respuesta.json()) == 1
+    assert respuesta.json()[0]["orden_id"] == orden.orden_id
+
+
+@pytest.mark.parametrize("rol", [NombreRol.CLIENTE, NombreRol.MECANICO])
+def test_historial_ajeno_e_inexistente_devuelven_mismo_404(
+    api_ordenes: TestClient, db_ordenes: Session, rol: NombreRol,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+    headers = _headers_para(20, rol)
+    ajena = api_ordenes.get(f"/ordenes/{orden.orden_id}/historial", headers=headers)
+    inexistente = api_ordenes.get("/ordenes/99999/historial", headers=headers)
+    assert ajena.status_code == inexistente.status_code == 404
+    assert ajena.json() == inexistente.json() == {"detail": "Orden no encontrada"}
+
+
+def test_historial_inexistente_para_administrador_devuelve_404(api_ordenes: TestClient):
+    respuesta = api_ordenes.get(
+        "/ordenes/99999/historial", headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Orden no encontrada"}
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer token-invalido"}])
+def test_historial_requiere_jwt(api_ordenes: TestClient, headers: dict[str, str]):
+    respuesta = api_ordenes.get("/ordenes/1/historial", headers=headers)
+    assert respuesta.status_code == 401
+
+
+def test_historial_orden_visible_sin_registros_devuelve_lista_vacia(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/historial",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 200
+    assert respuesta.json() == []
+
+
+def test_historial_identificador_invalido_devuelve_422(api_ordenes: TestClient):
+    respuesta = api_ordenes.get(
+        "/ordenes/no-es-entero/historial",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 422
+
+
+@pytest.mark.parametrize("fallar_visibilidad", [False, True])
+def test_historial_error_consulta_devuelve_500_y_rollback(
+    api_ordenes: TestClient, db_ordenes: Session,
+    monkeypatch: pytest.MonkeyPatch, fallar_visibilidad: bool,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    rollbacks = []
+    rollback_real = db_ordenes.rollback
+
+    def registrar_rollback():
+        rollbacks.append(True)
+        rollback_real()
+
+    def fallar_consulta(*args, **kwargs):
+        raise SQLAlchemyError("fallo simulado de consulta")
+
+    monkeypatch.setattr(db_ordenes, "rollback", registrar_rollback)
+    monkeypatch.setattr(
+        db_ordenes, "scalar" if fallar_visibilidad else "scalars", fallar_consulta,
+    )
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/historial",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 500
+    assert respuesta.json() == {
+        "detail": "No fue posible consultar el historial de la orden",
+    }
+    assert len(rollbacks) == 1
+
+
 def _crear_vehiculo(db: Session, usuario_cliente: int) -> Vehiculo:
     cliente = db.scalar(select(Cliente).where(Cliente.usuario_id == usuario_cliente))
     if cliente is None:

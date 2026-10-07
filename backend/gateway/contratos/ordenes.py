@@ -7,6 +7,7 @@ OpenAPI comparan sus campos y obligatoriedad con los esquemas reales de MS2.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -96,3 +97,16 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime = Field(
         description="Fecha y hora de la última actualización de la orden."
     )
+
+
+class HistorialEstadoRespuesta(BaseModel):
+    """Registro de auditoría de un cambio de estado de una orden."""
+
+    historial_id: int
+    orden_id: int
+    estado_anterior: int | None
+    estado_nuevo: int
+    actor_usuario_id: int | None
+    fecha_hora: datetime
+    origen: Literal["usuario", "sistema"]
+    observacion: str | None

@@ -251,7 +251,8 @@ patente y el propietario no son modificables después del registro.
 
 Todos los endpoints requieren `Authorization: Bearer <token>`. La respuesta
 `OrdenRespuesta` expone el estado actual y el responsable actual, pero no
-incluye todavía los historiales completos:
+incluye los historiales completos; el historial de estados se consulta mediante
+su endpoint específico:
 
 ```json
 {
@@ -318,6 +319,30 @@ Una orden ajena y una inexistente se responden de manera indistinguible.
 | Respuesta OK | `200` con `OrdenRespuesta` |
 | Errores | `401` JWT ausente/inválido · `404` orden inexistente o no visible · `500` consulta · `502` MS2 no disponible |
 
+### GET `/api/ordenes/{orden_id}/historial`
+
+Devuelve el historial completo de estados de una orden visible. Reutiliza la
+visibilidad del detalle: Administrador ve todas las órdenes, Cliente las de sus
+vehículos y Mecánico las actualmente asignadas; multirol combina los alcances.
+Una orden ajena y una inexistente devuelven el mismo `404`.
+
+Los registros se ordenan por `fecha_hora ASC` y, si coinciden las fechas, por
+`historial_id ASC`. Incluye el registro inicial (`estado_anterior=null`). Una
+orden visible sin registros devuelve `[]`; la consulta no crea ni modifica datos.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Body | — |
+| Respuesta OK | `200` con lista de `HistorialEstadoRespuesta` |
+| Errores | `401` JWT ausente/inválido · `404` orden inexistente o no visible · `422` identificador inválido · `500` consulta · `502` MS2 no disponible |
+
+Cada registro contiene `historial_id`, `orden_id`, `estado_anterior` (código o
+`null`), `estado_nuevo` (código), `actor_usuario_id` (referencia lógica a MS1 o
+`null` para origen `sistema`), `fecha_hora`, `origen` (`usuario` o `sistema`) y
+`observacion` (texto o `null`). El actor identifica quién originó el cambio,
+no necesariamente al mecánico asignado. No se consultan nombres en MS1.
+
 ### PUT `/api/ordenes/{orden_id}/mecanico`
 
 Asigna o reasigna el responsable actual. Solo un Administrador puede ejecutar
@@ -365,7 +390,6 @@ consumidas como parte del contrato de Semana 3:
 
 | Capacidad | Situación actual |
 |---|---|
-| Historial de una orden | Se persiste internamente, pero no existe `GET /api/ordenes/{orden_id}/historial` |
 | Cambio general de estado | No existe un endpoint; solo la primera asignación realiza la transición implementada |
 | Vehículos asignados a un mecánico | No existe `/api/vehiculos/asignados` |
 | Capacidad y máximo de órdenes activas | Subsistema de una semana posterior |

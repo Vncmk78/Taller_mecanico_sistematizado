@@ -66,6 +66,7 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         contratos_ordenes.AsignacionMecanicoActualizar,
     ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
+    ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
 ]
 
 _PARAMETRO_X_REQUEST_ID: dict[str, object] = {
@@ -400,6 +401,35 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             )
         },
+        "/api/ordenes/{orden_id}/historial": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar el historial de estados de una orden visible",
+                descripcion=(
+                    "Devuelve todos los registros por fecha/hora e identificador "
+                    "ascendente. Aplica la misma visibilidad del detalle: "
+                    "Administrador ve todas, Cliente sus vehículos y Mecánico "
+                    "sus órdenes asignadas; multirol combina los alcances. "
+                    "Una orden visible sin registros devuelve una lista vacía."
+                ),
+                operation_id="consultar_historial_estados",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Historial de estados de la orden.",
+                        {"type": "array", "items": _ref("HistorialEstadoRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de orden inválido",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            )
+        },
         "/api/ordenes/{orden_id}/mecanico": {
             "put": _operacion(
                 tag="Órdenes",
@@ -463,7 +493,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 11 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:

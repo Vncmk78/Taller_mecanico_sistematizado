@@ -1,6 +1,6 @@
 """Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 11 endpoints reales de Auth,
+Verifican que `/openapi.json` publica los endpoints reales de Auth,
 Vehículos y Órdenes con sus contratos y seguridad, que el proxy genérico no
 aparece, y que las copias de `gateway/contratos` no se desactualizan respecto
 a los esquemas reales de MS1 y MS2.
@@ -33,6 +33,7 @@ from services.ms2_taller.schemas.vehiculo import (
 )
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
+    HistorialEstadoRespuesta as Ms2HistorialEstadoRespuesta,
     OrdenCrear as Ms2OrdenCrear,
     OrdenRespuesta as Ms2OrdenRespuesta,
 )
@@ -50,6 +51,7 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes", "post"),
     ("/api/ordenes", "get"),
     ("/api/ordenes/{orden_id}", "get"),
+    ("/api/ordenes/{orden_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/mecanico", "put"),
 }
 
@@ -60,6 +62,7 @@ _PROTEGIDOS = {
     "/api/vehiculos/{vehiculo_id}",
     "/api/ordenes",
     "/api/ordenes/{orden_id}",
+    "/api/ordenes/{orden_id}/historial",
     "/api/ordenes/{orden_id}/mecanico",
 }
 
@@ -93,7 +96,7 @@ def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["openapi"].startswith("3.")
 
 
-def test_estan_los_11_endpoints_con_sus_metodos(esquema: dict) -> None:
+def test_estan_los_endpoints_con_sus_metodos(esquema: dict) -> None:
     operaciones = set(_operaciones_documentadas(esquema))
     assert operaciones == _ENDPOINTS_ESPERADOS
 
@@ -136,6 +139,7 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/vehiculos/{vehiculo_id}", "patch"),
         ("/api/ordenes", "post"),
         ("/api/ordenes/{orden_id}", "get"),
+        ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/mecanico", "put"),
     }
     for ruta, metodo in _ENDPOINTS_ESPERADOS:
@@ -223,6 +227,7 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
             Ms2AsignacionMecanicoActualizar,
         ),
         (contratos_ordenes.OrdenRespuesta, Ms2OrdenRespuesta),
+        (contratos_ordenes.HistorialEstadoRespuesta, Ms2HistorialEstadoRespuesta),
     ],
 )
 def test_contrato_coincide_con_esquema_real(contrato, real) -> None:
@@ -252,6 +257,7 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "OrdenCrear",
         "AsignacionMecanicoActualizar",
         "OrdenRespuesta",
+        "HistorialEstadoRespuesta",
         "ErrorRespuesta",
         "DetalleError",
         "ErrorDetalle",
@@ -317,7 +323,7 @@ def test_contrato_ordenes_refleja_flujo_inicial_implementado(esquema: dict) -> N
     assert "reasignación conserva el estado" in descripcion_asignacion
     assert "Entregado y Cancelado" in descripcion_asignacion
 
-    assert "/api/ordenes/{orden_id}/historial" not in paths
+    assert "/api/ordenes/{orden_id}/historial" in paths
     assert "/api/ordenes/{orden_id}/estado" not in paths
 
 
@@ -418,3 +424,21 @@ def test_ejemplos_errores_coinciden_con_respuestas_reales_ms2(
                     "content"
                 ]["application/json"]["examples"][nombre]["value"]
                 assert respuesta.json() == ejemplo
+
+
+def test_contrato_historial_coincide_en_tipos_y_nulabilidad() -> None:
+    gateway_schema = contratos_ordenes.HistorialEstadoRespuesta.model_json_schema()
+    ms2_schema = Ms2HistorialEstadoRespuesta.model_json_schema()
+    assert gateway_schema == ms2_schema
+
+
+@pytest.mark.parametrize("aplicacion,prefijo", [(app, "/api"), (ms2_app, "")])
+def test_openapi_historial_publica_lista_protegida_y_errores(aplicacion, prefijo) -> None:
+    esquema = aplicacion.openapi()
+    operacion = esquema["paths"][f"{prefijo}/ordenes/{{orden_id}}/historial"]["get"]
+    assert operacion["security"]
+    assert "requestBody" not in operacion
+    respuesta = operacion["responses"]["200"]["content"]["application/json"]["schema"]
+    assert respuesta["type"] == "array"
+    assert respuesta["items"] == {"$ref": "#/components/schemas/HistorialEstadoRespuesta"}
+    assert {"200", "401", "404", "422", "500"} <= set(operacion["responses"])

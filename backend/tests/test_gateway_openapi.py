@@ -458,3 +458,34 @@ def test_ejemplos_errores_coinciden_con_respuestas_reales_ms2(
                     "content"
                 ]["application/json"]["examples"][nombre]["value"]
                 assert respuesta.json() == ejemplo
+
+
+@pytest.mark.parametrize("aplicacion,prefijo", [(app, "/api"), (ms2_app, "")])
+def test_openapi_historial_publica_lista_protegida_y_errores(aplicacion, prefijo) -> None:
+    esquema = aplicacion.openapi()
+    operacion = esquema["paths"][f"{prefijo}/ordenes/{{orden_id}}/historial"]["get"]
+    assert operacion["security"]
+    assert "requestBody" not in operacion
+    respuesta = operacion["responses"]["200"]["content"]["application/json"]["schema"]
+    assert respuesta["type"] == "array"
+    assert respuesta["items"] == {"$ref": "#/components/schemas/HistorialEstadoRespuesta"}
+    assert {"200", "401", "404", "422", "500"} <= set(operacion["responses"])
+
+
+
+def test_contrato_historial_coincide_en_tipos_y_nulabilidad() -> None:
+    def tipos(valor):
+        if isinstance(valor, dict):
+            return {
+                clave: tipos(contenido) for clave, contenido in valor.items()
+                if clave not in {"title", "description", "examples"}
+            }
+        if isinstance(valor, list):
+            return [tipos(item) for item in valor]
+        return valor
+
+    gateway_schema = contratos_ordenes.HistorialEstadoRespuesta.model_json_schema()
+    ms2_schema = Ms2HistorialEstadoRespuesta.model_json_schema()
+    assert set(gateway_schema["required"]) == set(ms2_schema["required"])
+    assert tipos(gateway_schema["properties"]) == tipos(ms2_schema["properties"])
+    assert gateway_schema["properties"]["origen"]["enum"] == ["usuario", "sistema"]

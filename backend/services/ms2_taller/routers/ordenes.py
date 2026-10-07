@@ -134,6 +134,10 @@ def consultar_orden(
     "/{orden_id}/historial",
     response_model=list[HistorialEstadoRespuesta],
     summary="Consultar el historial de estados de una orden",
+    description=(
+        "Devuelve todos los registros por fecha/hora e identificador ascendente. "
+        "Aplica la misma visibilidad del detalle; sin registros devuelve []."
+    ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},

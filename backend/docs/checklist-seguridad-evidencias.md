@@ -140,12 +140,23 @@ verifica** · **cuándo** se implementa (tarea del plan).
   permanente ni la URL interna del almacenamiento.
   - Verificación: la URL deja de funcionar pasado el tiempo de expiración.
   - Cuándo: Semana 5.
+  - Diseño definido en `estudio-urls-firmadas.md` (decisiones D1–D8) e
+    implementado en `crear_cliente_s3_publico` / `generar_url_descarga`
+    (`services/almacenamiento.py`), probado offline en
+    `tests/test_ms4_url_firmada.py` y contra MinIO en
+    `tests/test_ms4_minio_integracion.py`. El endpoint que expone estas URLs es
+    parte del control (Semana 5).
 
 - [ ] **3.4 Cabeceras de descarga seguras.** `Content-Type` definido por el
   servidor (el validado en 1.2), `X-Content-Type-Options: nosniff` y
   `Content-Disposition` con el nombre limpio.
   - Por qué: impide que el navegador interprete el archivo como otra cosa.
   - Cuándo: Semana 5.
+  - Diseño en `estudio-urls-firmadas.md` (§4): `ResponseContentType` y
+    `ResponseContentDisposition` viajan **firmados** en la URL
+    (`generar_url_descarga`) y `content_disposition_attachment` sanea el nombre
+    (ASCII + `filename*` UTF-8). `nosniff` no es forzable por parámetros de S3:
+    riesgo aceptado y documentado; la mitigación es `attachment`.
 
 - [ ] **3.5 IDs no adivinables.** Las evidencias se identifican hacia afuera
   con UUID, no con un entero correlativo (`/evidencias/1`, `/2`, …).

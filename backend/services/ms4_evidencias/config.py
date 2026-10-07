@@ -36,6 +36,15 @@ class Settings(ServiceSettings):
     S3_REGION: str = "us-east-1"
     S3_SECURE: bool = False
 
+    # Endpoint público con el que se firman las URLs de descarga. La firma
+    # SigV4 incluye el Host, así que una URL firmada contra el endpoint interno
+    # (http://minio:9000) no sirve fuera de esa red. Si se deja vacío se usa
+    # S3_ENDPOINT (válido en desarrollo local, donde ambos hosts coinciden).
+    S3_PUBLIC_ENDPOINT: str | None = None
+
+    # Vigencia de la URL prefirmada de descarga, en segundos (checklist 3.3).
+    URL_DESCARGA_TTL_SECONDS: int = Field(default=300, ge=30, le=3600)
+
     # MS4 valida nuevamente el JWT sin consultar la base de datos de MS1.
     # Con HS256 debe recibir el mismo secreto configurado en el emisor (MS1).
     JWT_SECRET_KEY: SecretStr = Field(min_length=32)

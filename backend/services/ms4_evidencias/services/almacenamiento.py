@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import unicodedata
+import uuid
 from urllib.parse import quote
 
 import boto3
@@ -102,13 +103,49 @@ def calcular_sha256_y_tamano(archivo) -> tuple[str, int]:
     return digest.hexdigest(), tamano
 
 
-def subir_objeto(cliente: object, bucket: str, clave: str, archivo, content_type: str) -> None:
-    """Sube el archivo a MinIO/S3 con multipart desde 8 MiB (decisión 3)."""
+def metadatos_objeto(
+    evidencia_id: uuid.UUID,
+    orden_id: int,
+    sha256: str,
+    autor_usuario_id: int,
+) -> dict[str, str]:
+    """Metadatos ASCII que viajan en `x-amz-meta-*` del objeto.
+
+    Solo datos que ayudan a soportar/auditar sin abrir la BD: el id de la
+    evidencia, la orden, el SHA-256 y el autor. NUNCA se incluye el nombre
+    original, correo ni datos personales (S3 expone estos metadatos a quien
+    tenga la clave); los datos íntegros solo viven en la BD (tabla Metadatos).
+    """
+    return {
+        "evidencia-id": evidencia_id.hex,
+        "orden-id": str(orden_id),
+        "sha256": sha256,
+        "autor-id": str(autor_usuario_id),
+    }
+
+
+def subir_objeto(
+    cliente: object,
+    bucket: str,
+    clave: str,
+    archivo,
+    content_type: str,
+    metadatos: dict[str, str] | None = None,
+) -> None:
+    """Sube el archivo a MinIO/S3 con multipart desde 8 MiB (decisión 3).
+
+    Si `metadatos` se entrega, se guardan como `x-amz-meta-*` junto al objeto
+    (atributo "Metadata" de ExtraArgs). Parámetro opcional al final para no
+    romper llamadas existentes.
+    """
+    extra_args: dict = {"ContentType": content_type}
+    if metadatos:
+        extra_args["Metadata"] = dict(metadatos)
     cliente.upload_fileobj(
         archivo,
         bucket,
         clave,
-        ExtraArgs={"ContentType": content_type},
+        ExtraArgs=extra_args,
         Config=UPLOAD_TRANSFER,
     )
 

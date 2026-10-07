@@ -128,11 +128,14 @@ orden, diseñado para no dejar residuos:
    el SHA-256 y el tamaño** leyendo en bloques de 1 MiB; al terminar deja el
    archivo al inicio.
 2. **Archivo de 0 bytes se rechaza** (`EvidenciaInvalidaError`) antes de subir.
-3. **Genera la clave** `ordenes/{orden_id}/{uuid}.{ext}` — la extensión sale del
-   content_type, nunca del nombre original (checklist 1.4 y 2.5).
+3. **Genera el `evidencia_id`** (`uuid4`) y, a partir de él, **la clave**
+   `ordenes/{orden_id}/{evidencia_id_hex}.{ext}` — el UUID de la fila y el de la
+   clave son el mismo; la extensión sale del content_type, nunca del nombre
+   original (checklist 1.4 y 2.5). Ver "Convención de claves de objeto".
 4. **Sube a MinIO** con `subir_objeto` (multipart desde 8 MiB, decisión 3 del
-   estudio de almacenamiento). Si MinIO falla, se propaga y **no se crea
-   ninguna fila**.
+   estudio de almacenamiento), incluyendo los `x-amz-meta-*` de soporte
+   (evidencia-id, orden-id, sha256, autor-id) — nunca nombre original ni datos
+   personales. Si MinIO falla, se propaga y **no se crea ninguna fila**.
 5. **Inserta la fila** con estado `confirmada`, `confirmada_en` y `sha256` y
    hace commit. `visible_cliente` solo se escribe si vino en la entrada; si no,
    rige el default por contexto del modelo.
@@ -141,6 +144,71 @@ orden, diseñado para no dejar residuos:
 
 Los metadatos que vienen del JWT/cabeceras (autor, `request_id`) no forman
 parte del body: los resuelve el endpoint que llama a este servicio.
+
+## Convención de claves de objeto
+
+La clave es la única cadena pública (viaja en URLs y logs), así que sigue un
+patrón fijo y autocontenido:
+
+```text
+ordenes/{orden_id}/{evidencia_id_hex}.{ext}
+```
+
+- **`orden_id`**: entero positivo, sin ceros a la izquierda (el segmento no
+  puede empezar con `0`). Nunca es parte de ninguna consulta a la BD.
+- **`evidencia_id_hex`**: el id de la evidencia (UUID) en hex (32 caracteres).
+  La fila y el objeto comparten el mismo UUID, lo que permite trazabilidad
+  certa y, en la limpieza de huérfanos (Semana 6), reconstruir los objetos de
+  una orden con un solo prefijo `ordenes/{orden_id}/`.
+- **`ext`**: extensión derivada **del content_type** (mapa `_EXT_POR_CONTENT_TYPE`:
+  `image/jpeg → jpg`, `image/png → png`, `image/webp → webp`, `image/heic → heic`,
+  `image/gif → gif`, `video/mp4 → mp4`, `video/webm → webm`, `video/quicktime → mov`,
+  `video/x-msvideo → avi`, `video/mpeg → mpeg`); tipos fuera del mapa van a `.bin`.
+  Nunca se copia la extensión ni el nombre que manda el usuario.
+
+Patrón exacto (en `PATRON_CLAVE_OBJETO` de `services/evidencias.py`):
+
+```regex
+^ordenes/[1-9][0-9]*/[0-9a-f]{32}\.[a-z0-9]{2,5}$
+```
+
+Reglas:
+
+1. **Inmutable**: la clave no cambia nunca tras la recepción (es UNIQUE y es
+   el identificador del objeto en MinIO).
+2. **Sin datos personales**: no hay nombre del usuario, patente, correo ni
+   nombre de archivo del cliente.
+3. **Solo ASCII**: `[a-z0-9./]` como mucho; nada de espacios ni caracteres a
+   codificar.
+4. **Validable desde afuera**: `es_clave_valida(clave)` rechaza cualquier
+   desviación (segmentos `..`, prefijos distintos, uuid de otra longitud,
+   mayúsculas, extensión fuera de `[a-z0-9]{2,5}`, ceros a la izquierda).
+
+### Metadatos: dónde vive cada dato
+
+El nombre "metadatos" agrupa datos con **destinos distintos**: algunos viven
+solo en la BD, otros viajan junto al objeto en S3 (`x-amz-meta-*`, visibles a
+quien tenga la clave), y algunos no se guardan en ningún lado (solo en el
+`Content-Disposition` de la descarga).
+
+| Dato | BD (`evidencia`) | Objeto (`x-amz-meta-*`) | Nunca se guarda |
+|---|---|---|---|
+| `evidencia_id` | `evidencia_id` (PK UUID) | `evidencia-id` | |
+| `orden_id` | `orden_id` | `orden-id` | |
+| `autor_usuario_id` | `autor_usuario_id` | `autor-id` | |
+| `sha256` | `sha256` (al confirmar) | `sha256` | |
+| `content_type` | `content_type` | — (va en `ContentType` del objeto) | |
+| `tamano_bytes` | `tamano_bytes` | | |
+| `contexto` | `contexto` | | |
+| estado, visibilidad, fechas | columnas del modelo | | |
+| `request_id` (Gateway) | `request_id` (normalizado) | | |
+| nombre original | `nombre_original` (solo para mostrar) | | **nunca en el objeto** |
+| correo, contraseña, datos personales | | | **nunca en ningún lado** |
+
+Regla: el objeto **solo** lleva lo mínimo para soportar/auditar sin abrir la
+BD (`evidencia-id`, `orden-id`, `sha256`, `autor-id`); los datos íntegros de la
+evidencia viven en la BD, que es la única superficie controlada. `metadatos_objeto`
+genera ese dict y se inyecta en `subir_objeto(..., metadatos=...)`.
 
 ## Relación con los requisitos funcionales
 
@@ -174,3 +242,15 @@ parte del body: los resuelve el endpoint que llama a este servicio.
   ninguna fila;
 - `listar_por_orden` filtra por visibilidad según la vista, y
   `presupuesto_tiene_evidencia` implementa la regla de RF18.
+
+`tests/test_ms4_convencion_metadatos.py` (reutiliza `FakeS3`/`sesion` de
+`test_ms4_recepcion.py`, ahora registrando `Metadata`):
+- la clave cumple `PATRON_CLAVE_OBJETO` y su UUID es el `evidencia_id` de la fila;
+- dos recepciones de la misma orden no comparten clave pero sí prefijo;
+- `generar_clave_objeto` rechaza ordenes `0`/negativas y acepta `evidencia_id`;
+- el objeto guardado lleva `evidencia-id`, `orden-id`, `sha256` y `autor-id`,
+  y **nunca** nombre original ni datos personales (todo ASCII);
+- `normalizar_request_id` conserva IDs válidos y descarta espacios, caracteres
+  raros y valores de más de 64 caracteres; la fila guarda el valor normalizado;
+- `es_clave_valida` rechaza `..`, prefijos ajenos, uuid malformado, ceros a la
+  izquierda, mayúsculas y extensiones fuera del patrón.

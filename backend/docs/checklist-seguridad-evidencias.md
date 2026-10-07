@@ -61,8 +61,11 @@ verifica** · **cuándo** se implementa (tarea del plan).
     metadatos*.
   - ✅ Implementado en `generar_clave_objeto` (UUID + extensión desde el
     content_type) y `nombre_limpio` (basename de lo guardado como metadato);
-    verificado en `tests/test_ms4_recepcion.py`. La validación del *contenido*
-    (1.2) y del tamaño máximo (1.3) es Semana 6.
+    verificado en `tests/test_ms4_recepcion.py`. El UUID de la clave es el
+    mismo `evidencia_id` de la fila y se valida contra el patrón
+    `PATRON_CLAVE_OBJETO`/`es_clave_valida` (convención de claves);
+    verificado en `tests/test_ms4_convencion_metadatos.py`. La validación del
+    *contenido* (1.2) y del tamaño máximo (1.3) es Semana 6.
 
 - [ ] **1.5 Eliminar metadatos EXIF de las fotos.** Se quitan GPS, modelo
   del teléfono y fecha original antes de guardar.
@@ -112,8 +115,13 @@ verifica** · **cuándo** se implementa (tarea del plan).
   datos personales en la ruta (ni patente, ni nombre, ni email).
   - Cuándo: Semana 3.
   - ✅ Implementado en `generar_clave_objeto`: la extensión sale del
-    content_type y nunca del nombre enviado; verificado en
-    `tests/test_ms4_recepcion.py`.
+    content_type y nunca del nombre enviado; el patrón completo
+    (`^ordenes/[1-9][0-9]*/[0-9a-f]{32}\.[a-z0-9]{2,5}$`) está en
+    `PATRON_CLAVE_OBJETO` y cualquier clave externa se valida con
+    `es_clave_valida`; verificado en `tests/test_ms4_recepcion.py` y
+    `tests/test_ms4_convencion_metadatos.py` (incluye que el UUID de la clave
+    es el `evidencia_id` de la fila y rechaza `..`, prefijos ajenos, ceros a
+    la izquierda y extensiones fuera del patrón).
 
 ## 3. Acceso y visibilidad
 
@@ -158,9 +166,15 @@ verifica** · **cuándo** se implementa (tarea del plan).
     (ASCII + `filename*` UTF-8). `nosniff` no es forzable por parámetros de S3:
     riesgo aceptado y documentado; la mitigación es `attachment`.
 
-- [ ] **3.5 IDs no adivinables.** Las evidencias se identifican hacia afuera
+- [x] **3.5 IDs no adivinables.** Las evidencias se identifican hacia afuera
   con UUID, no con un entero correlativo (`/evidencias/1`, `/2`, …).
   - Cuándo: Semana 3 — modelo de metadatos.
+  - ✅ El modelo usa `evidencia_id` UUID como PK (`models/evidencia.py`) y la
+    clave pública del objeto reutiliza ese mismo UUID (convención de claves,
+    control 2.5): lo que se expone en URLs y logs no es correlativo y no
+    filtra volumen. Verificado en `tests/test_ms4_modelo_evidencia.py` y
+    `tests/test_ms4_convencion_metadatos.py`. Los endpoints que exponen ese id
+    al cliente llegan con la subida/consulta (Semana 5).
 
 ## 4. Transporte y API Gateway
 

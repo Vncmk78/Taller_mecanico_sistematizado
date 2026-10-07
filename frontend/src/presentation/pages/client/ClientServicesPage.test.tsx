@@ -84,7 +84,13 @@ describe('ClientServicesPage: estado del servicio (consulta de servicios)', () =
         expect(screen.getByTitle('Esperando aprobación de presupuesto')).toBeInTheDocument();
         expect(screen.getByTitle('Recibido')).toBeInTheDocument();
         expect(screen.getByTitle('Entregado')).toBeInTheDocument();
-        expect(screen.getAllByRole('link', { name: 'Ver detalle' })).toHaveLength(3);
+        const links = screen.getAllByRole('link', { name: 'Ver detalle' });
+        expect(links).toHaveLength(3);
+        expect(links.map((link) => link.getAttribute('href'))).toEqual([
+            '/client/ordenes/101',
+            '/client/ordenes/102',
+            '/client/ordenes/103',
+        ]);
     });
 
     it('muestra el mensaje vacío cuando el cliente no tiene servicios', async () => {

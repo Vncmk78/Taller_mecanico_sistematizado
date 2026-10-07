@@ -157,8 +157,14 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
     );
 }
 
+interface ClosedOrderCardProps {
+    order: Order;
+    patente?: string;
+    vehicleLabel?: string | null;
+}
+
 /** Orden que ya no tiene ningún avance del mecánico: la cierra el cliente o el administrador. */
-function ClosedOrderCard({ order, patente, vehicleLabel }: OrderAdvanceCardProps) {
+function ClosedOrderCard({ order, patente, vehicleLabel }: ClosedOrderCardProps) {
     return (
     <div className="card p-6 opacity-80">
         <div className="flex justify-between items-start gap-3 flex-wrap">

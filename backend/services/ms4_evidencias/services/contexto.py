@@ -7,7 +7,8 @@ El autor de la evidencia (`autor_usuario_id`) no viene en el body: lo entrega
 el endpoint a partir del principal autenticado (`PrincipalAutenticado` de
 `shared.auth`). Ese principal expone el id del usuario en el atributo
 `usuario_id`, así que el servicio recibe `principal.usuario_id`, no un campo
-del cliente. El endpoint que conecte esto llegará en la Semana 6.
+del cliente. Eso ya está implementado: es parte de la tarea 'Implementar
+subida y consulta de archivos' (Semana 5).
 """
 from __future__ import annotations
 

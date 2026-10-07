@@ -231,6 +231,34 @@ def listar_por_orden(db: Session, orden_id: int, *, vista_cliente: bool) -> list
     return list(db.scalars(consulta))
 
 
+def buscar_por_id(db: Session, evidencia_id: uuid.UUID) -> Evidencia | None:
+    """Evidencia por su UUID, o `None` si no existe."""
+    return db.get(Evidencia, evidencia_id)
+
+
+def es_visible_para(
+    evidencia: Evidencia, *, vista_cliente: bool, es_admin: bool
+) -> bool:
+    """Regla de visibilidad de detalle/descarga, espejo de `listar_por_orden`.
+
+    - Administrador: ve todo, incluidas las eliminadas (auditoría).
+    - Eliminada lógicamente: solo la ve el administrador.
+    - Vista cliente: los tres filtros acumulativos (`visible_cliente = true`,
+      `estado = confirmada`, `eliminada_en IS NULL`).
+    - Resto (personal): todas las no eliminadas, cualquier estado.
+    """
+    if es_admin:
+        return True
+    if evidencia.eliminada_en is not None:
+        return False
+    if vista_cliente:
+        return (
+            evidencia.visible_cliente
+            and evidencia.estado == EstadoEvidencia.CONFIRMADA
+        )
+    return True
+
+
 def presupuesto_tiene_evidencia(db: Session, presupuesto_id: int) -> bool:
     """RF18: el presupuesto tiene al menos una evidencia confirmada y vigente.
 

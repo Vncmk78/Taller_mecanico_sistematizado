@@ -125,10 +125,15 @@ verifica** · **cuándo** se implementa (tarea del plan).
 
 ## 3. Acceso y visibilidad
 
-- [ ] **3.1 Quién puede subir.** Solo usuarios con rol **mecánico** o
+- [x] **3.1 Quién puede subir.** Solo usuarios con rol **mecánico** o
   **administrador** (validado con el JWT de MS1). Un cliente que intente
   subir recibe `403`.
   - Cuándo: Semana 5 — *Implementar subida y consulta de archivos*.
+  - ✅ Implementado: `puede_subir` en `services/permisos.py`; el guard
+    `_personal_que_subira` del POST `/evidencias` resuelve el `403` como
+    dependencia, **antes** de leer el archivo multipart. Verificado en
+    `tests/test_ms4_api_evidencias.py` (201 mecánico/administrador, 403
+    cliente sin filas ni objetos, 401 sin token).
 
 - [x] **3.2 Quién puede ver.** El cliente solo ve evidencias de **sus**
   órdenes. La propiedad de la orden se verifica consultando a MS2; nunca se
@@ -141,9 +146,13 @@ verifica** · **cuándo** se implementa (tarea del plan).
     `docs/modelo-evidencias.md` (reglas de visibilidad por rol, filtro
     `visible_cliente = true AND estado = 'confirmada' AND eliminada_en IS NULL`
     y defaults por contexto, validados en `tests/test_ms4_modelo_evidencia.py`).
-    La implementación del endpoint (404 vs 403 vía consulta a MS2) es Semana 5.
+    Los endpoints aplican el filtro por rol (Semana 5) con `404` por no
+    enumeración en detalle/descarga (`tests/test_ms4_api_evidencias.py`). La
+    verificación de la **propiedad de la orden contra MS2** (404 vs 403) queda
+    para la tarea *Validar autorización y visibilidad*; hoy la decisión es solo
+    por rol.
 
-- [ ] **3.3 Descarga con URL prefirmada de corta duración.** MS4 entrega una
+- [x] **3.3 Descarga con URL prefirmada de corta duración.** MS4 entrega una
   URL firmada de MinIO que expira en **5 minutos**; nunca un enlace
   permanente ni la URL interna del almacenamiento.
   - Verificación: la URL deja de funcionar pasado el tiempo de expiración.
@@ -152,10 +161,15 @@ verifica** · **cuándo** se implementa (tarea del plan).
     implementado en `crear_cliente_s3_publico` / `generar_url_descarga`
     (`services/almacenamiento.py`), probado offline en
     `tests/test_ms4_url_firmada.py` y contra MinIO en
-    `tests/test_ms4_minio_integracion.py`. El endpoint que expone estas URLs es
-    parte del control (Semana 5).
+    `tests/test_ms4_minio_integracion.py`.
+  - ✅ Endpoint implementado: `GET /evidencias/{id}/descarga` firma con el
+    cliente público (`S3_PUBLIC_ENDPOINT`) y `expira_en =
+    URL_DESCARGA_TTL_SECONDS` (300 s por defecto); la respuesta es solo
+    `{"url", "expira_en"}` y la clave de S3 nunca sale como campo.
+    Verificado en `tests/test_ms4_api_evidencias.py` (host público,
+    `X-Amz-Expires=300`, sin `clave_objeto`).
 
-- [ ] **3.4 Cabeceras de descarga seguras.** `Content-Type` definido por el
+- [x] **3.4 Cabeceras de descarga seguras.** `Content-Type` definido por el
   servidor (el validado en 1.2), `X-Content-Type-Options: nosniff` y
   `Content-Disposition` con el nombre limpio.
   - Por qué: impide que el navegador interprete el archivo como otra cosa.
@@ -165,6 +179,9 @@ verifica** · **cuándo** se implementa (tarea del plan).
     (`generar_url_descarga`) y `content_disposition_attachment` sanea el nombre
     (ASCII + `filename*` UTF-8). `nosniff` no es forzable por parámetros de S3:
     riesgo aceptado y documentado; la mitigación es `attachment`.
+  - ✅ Endpoint implementado: la respuesta de descarga lleva
+    `X-Content-Type-Options: nosniff` y `Cache-Control: no-store`.
+    Verificado en `tests/test_ms4_api_evidencias.py`.
 
 - [x] **3.5 IDs no adivinables.** Las evidencias se identifican hacia afuera
   con UUID, no con un entero correlativo (`/evidencias/1`, `/2`, …).

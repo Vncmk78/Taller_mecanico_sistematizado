@@ -18,7 +18,7 @@ algo, manda esta matriz.
 | MS1 | 8001 | Autenticación y usuarios | Endpoints de negocio implementados |
 | MS2 | 8002 | Vehículos y órdenes de trabajo | Endpoints implementados |
 | MS3 | 8003 | Presupuestos, repuestos, proveedores, inventario | Endpoints iniciales de `/presupuestos` |
-| MS4 | 8004 | Evidencias multimedia | **Sin endpoints de negocio** |
+| MS4 | 8004 | Evidencias multimedia | Endpoints de recepción y consulta implementados |
 
 La Gateway **no valida el JWT**: se limita a reenviar la petición. Toda decisión de
 autorización ocurre en el microservicio que atiende la ruta.
@@ -162,13 +162,24 @@ Detalles que condicionan la matriz:
 
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
-| Recepción (subir) | 📐 | 📐 ⚠️ solo de órdenes que atiende | 📐 ✅ |
-| Consulta | 📐 ⚠️ las visibles para cliente | 📐 ⚠️ las de órdenes que atiende | 📐 ✅ todas, incluidas eliminadas |
+| Recepción (subir) | ❌ 403 | ⚠️ solo de órdenes que atiende | ✅ |
+| Consulta | ⚠️ las visibles para cliente | ⚠️ las de órdenes que atiende | ✅ todas las no eliminadas; por detalle, incluidas las eliminadas |
 | Cambiar `visible_cliente` | 📐 ❌ | 📐 ⚠️ salvo contexto `presupuesto` | 📐 ✅ |
 | Eliminar | 📐 ❌ | 📐 ⚠️ solo las propias | 📐 ✅ |
 
-Todas las capacidades de MS4 están marcadas 📐: **la regla está definida, el
-endpoint no existe**. El detalle vigente está en
+Implementado en la Semana 5 (`routers/evidencias.py`, controles 3.1, 3.3 y 3.4):
+la subida (`POST /evidencias`) exige rol **Mecánico o Administrador** y el
+`403` se resuelve antes de leer el archivo; la consulta aplica los tres filtros
+acumulativos del cliente (`visible_cliente = true`, `estado = confirmada`,
+`eliminada_en IS NULL`) cuando el rol más amplio del solicitante es `cliente`, y
+solo responde `404` por no enumeración en detalle/descarga (cliente y mecánico
+no pueden saber si una evidencia oculta o eliminada existe). Aún pendiente
+(tarea *Validar autorización y visibilidad*): confirmar contra MS2 que la orden
+existe y pertenece al solicitante y limitar al mecánico a las órdenes que
+atiende; hoy la decisión es solo por rol. Cambiar `visible_cliente` y eliminar
+siguen sin endpoint (📐).
+
+El detalle vigente está en
 [`modelo-evidencias.md`](modelo-evidencias.md) §Reglas de visibilidad, que esta
 matriz no sustituye:
 

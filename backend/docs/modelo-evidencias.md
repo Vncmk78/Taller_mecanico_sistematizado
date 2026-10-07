@@ -4,7 +4,8 @@ Semana 3 · Bastián Liempi · Taller de Integración II (Grupo 10)
 
 Define el modelo `Evidencia` (metadatos) de fotos y videos de orden, las reglas
 de visibilidad que usarán las consultas y el flujo de recepción (A) que lo
-puebla. **Aquí no hay endpoints**: la subida y consulta por HTTP es tarea aparte.
+puebla. Los endpoints HTTP que lo usan están en `routers/evidencias.py`
+(subida, listado, detalle y descarga, Semana 5).
 
 El archivo vive en MinIO/S3; en PostgreSQL solo van los **metadatos**. Fuentes:
 lámina 04-mer-erd (recuadro "BD MS4"), Sistematización final §4.3, §4.4, §8, y
@@ -222,6 +223,35 @@ genera ese dict y se inyecta en `subir_objeto(..., metadatos=...)`.
   `reparacion`, y en que la evidencia de presupuesto siempre es visible para
   el cliente que lo aprueba (regla 7).
 
+## Endpoints de MS4 (Semana 5)
+
+`routers/evidencias.py` (APIRouter con prefijo `/evidencias`, registrado en
+`main.py`). Todos exigen JWT válido (`obtener_principal_actual`).
+
+| Método y ruta | Rol | Respuestas |
+|---|---|---|
+| `POST /evidencias` (multipart: archivo + `orden_id`, `contexto`, `presupuesto_id`?, `visible_cliente`?) | Mecánico, Administrador | `201 EvidenciaLeida` · `401` · `403` · `422` · `503` |
+| `GET /evidencias?orden_id=` | Cualquier autenticado | `200 [EvidenciaLeida]` · `401` · `422` |
+| `GET /evidencias/{evidencia_id}` | Cualquier autenticado | `200 EvidenciaLeida` · `401` · `404` |
+| `GET /evidencias/{evidencia_id}/descarga` | Cualquier autenticado | `200 UrlDescarga` · `401` · `404` · `503` |
+
+Detalles:
+
+- `EvidenciaLeida` expone los metadatos de lectura y **nunca** `clave_objeto` ni
+  `sha256`; `UrlDescarga` es solo `{"url", "expira_en"}` y la clave de S3 solo
+  puede aparecer dentro de la URL firmada.
+- Descarga: URL prefirmada del cliente público (`S3_PUBLIC_ENDPOINT`) que
+  expira en `URL_DESCARGA_TTL_SECONDS` (por defecto 300 s) y firma
+  `response-content-type` + `response-content-disposition`; la respuesta lleva
+  `Cache-Control: no-store` y `X-Content-Type-Options: nosniff` (3.3 y 3.4).
+- Errores: `403` solo en la subida (el cliente no sube; control 3.1); `404` por
+  no enumeración en detalle/descarga (la evidencia oculta "no existe");
+  `503` solo si el almacenamiento de objetos no responde; `422` para la reglas
+  de entrada (formato de archivo, contexto, reglas 6/7 de presupuesto).
+- Pendiente (tarea *Validar autorización y visibilidad*): validar contra MS2
+  que la orden existe y pertenece al solicitante, y filtrar al mecánico por las
+  órdenes que atiende. Hoy la decisión es solo por rol.
+
 ## Pruebas
 
 `tests/test_ms4_modelo_evidencia.py` (SQLite en memoria con `create_all`):
@@ -254,3 +284,7 @@ genera ese dict y se inyecta en `subir_objeto(..., metadatos=...)`.
   raros y valores de más de 64 caracteres; la fila guarda el valor normalizado;
 - `es_clave_valida` rechaza `..`, prefijos ajenos, uuid malformado, ceros a la
   izquierda, mayúsculas y extensiones fuera del patrón.
+
+`tests/test_ms4_api_evidencias.py` (TestClient + SQLite en memoria + FakeS3 +
+cliente S3 público real que firma offline) cubre los contratos HTTP de los
+endpoints de la tabla anterior (controles 3.1, 3.3 y 3.4).

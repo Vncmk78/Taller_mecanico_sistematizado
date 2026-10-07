@@ -16,6 +16,10 @@ class CorreoRegistradoError(Exception):
     """El correo ya pertenece a una cuenta."""
 
 
+class UsuarioNoEncontradoError(Exception):
+    """El usuario objetivo no existe en MS1."""
+
+
 class CredencialesInvalidasError(Exception):
     """El correo, la contraseña o el estado de la cuenta no permiten ingresar."""
 
@@ -110,6 +114,118 @@ def buscar_usuario_activo_por_id(db: Session, usuario_id: int) -> Usuario | None
         ) from exc
 
 
+def listar_usuarios(db: Session) -> list[Usuario]:
+    """Consulta todas las cuentas de MS1, activas y desactivadas.
+
+    A diferencia de `buscar_usuario_activo_por_id` no filtra por `activo`: el
+    administrador necesita ver también las cuentas desactivadas. Los roles
+    vienen ya cargados, así que serializar la lista no dispara una consulta
+    adicional por cada usuario.
+    """
+
+    try:
+        return list(
+            db.scalars(_consulta_usuario_completo().order_by(Usuario.usuario_id))
+        )
+    except SQLAlchemyError as exc:
+        raise PersistenciaAutenticacionError(
+            "No fue posible consultar los usuarios"
+        ) from exc
+
+
+def buscar_usuario_por_id(db: Session, *, usuario_id: int) -> Usuario:
+    """Consulta una cuenta concreta por su identificador, activa o no."""
+
+    try:
+        usuario = db.scalar(
+            _consulta_usuario_completo().where(Usuario.usuario_id == usuario_id)
+        )
+    except SQLAlchemyError as exc:
+        raise PersistenciaAutenticacionError(
+            "No fue posible consultar el usuario"
+        ) from exc
+
+    if usuario is None:
+        raise UsuarioNoEncontradoError("El usuario no existe")
+    return usuario
+
+
+def asignar_rol_restringido(
+    db: Session,
+    *,
+    usuario_id: int,
+    rol: NombreRol,
+    administrador_id: int,
+) -> Usuario:
+    """Agrega un rol restringido a una cuenta existente. Idempotente.
+
+    Repetir el mismo rol no duplica la asignación: la clave primaria compuesta
+    (usuario_id, rol_id) lo impide y aquí se devuelve el estado sin error.
+    """
+
+    try:
+        usuario = db.scalar(
+            _consulta_usuario_completo().where(Usuario.usuario_id == usuario_id)
+        )
+        if usuario is None:
+            raise UsuarioNoEncontradoError("El usuario no existe")
+
+        registro_rol = db.scalar(select(Rol).where(Rol.nombre == rol.value))
+        if registro_rol is None:
+            raise ConfiguracionRolesError("El rol no está configurado")
+
+        ya_asignado = any(
+            asignacion.rol_id == registro_rol.rol_id for asignacion in usuario.roles
+        )
+        if not ya_asignado:
+            usuario.roles.append(
+                UsuarioRol(rol=registro_rol, asignado_por_id=administrador_id)
+            )
+            db.commit()
+        return _recargar_usuario(db, usuario_id)
+    except (UsuarioNoEncontradoError, ConfiguracionRolesError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaAutenticacionError("No fue posible asignar el rol") from exc
+
+
+def retirar_rol_restringido(
+    db: Session,
+    *,
+    usuario_id: int,
+    rol: NombreRol,
+) -> Usuario:
+    """Quita un rol restringido a una cuenta existente. Idempotente."""
+
+    try:
+        usuario = db.scalar(
+            _consulta_usuario_completo().where(Usuario.usuario_id == usuario_id)
+        )
+        if usuario is None:
+            raise UsuarioNoEncontradoError("El usuario no existe")
+
+        asignacion = next(
+            (
+                item
+                for item in usuario.roles
+                if item.rol is not None and item.rol.nombre == rol.value
+            ),
+            None,
+        )
+        if asignacion is not None:
+            usuario.roles.remove(asignacion)
+            db.commit()
+        return _recargar_usuario(db, usuario_id)
+    except UsuarioNoEncontradoError:
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaAutenticacionError("No fue posible retirar el rol") from exc
+
+
 def roles_del_usuario(usuario: Usuario) -> frozenset[NombreRol]:
     """Obtiene y valida todos los roles ORM asociados a una cuenta."""
 
@@ -120,6 +236,17 @@ def roles_del_usuario(usuario: Usuario) -> frozenset[NombreRol]:
     if not roles:
         raise ConfiguracionRolesError("El usuario no posee roles")
     return roles
+
+
+def _recargar_usuario(db: Session, usuario_id: int) -> Usuario:
+    """Relee la cuenta con sus roles ya cargados tras confirmar la escritura."""
+
+    usuario = db.scalar(
+        _consulta_usuario_completo().where(Usuario.usuario_id == usuario_id)
+    )
+    if usuario is None:  # pragma: no cover - la cuenta existe tras el commit
+        raise UsuarioNoEncontradoError("El usuario no existe")
+    return usuario
 
 
 def _consulta_usuario_completo():

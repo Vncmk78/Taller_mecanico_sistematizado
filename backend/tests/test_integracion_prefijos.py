@@ -48,6 +48,7 @@ from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as app_ms2
 from services.ms2_taller.models import Cliente
 from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN, EstadoOrden
+from services.ms3_presupuestos.config import settings as ms3_settings
 from services.ms3_presupuestos.db import Base as BaseMS3
 from services.ms3_presupuestos.db import get_db as get_db_ms3
 from services.ms3_presupuestos.main import app as app_ms3
@@ -183,6 +184,7 @@ def ecosistema(monkeypatch: pytest.MonkeyPatch):
     # Clave JWT compartida: MS2 y MS4 validan el token que emite MS1.
     clave_ms1 = ms1_settings.JWT_SECRET_KEY
     monkeypatch.setattr(ms2_settings, "JWT_SECRET_KEY", clave_ms1)
+    monkeypatch.setattr(ms3_settings, "JWT_SECRET_KEY", clave_ms1)
     monkeypatch.setattr(ms4_settings, "JWT_SECRET_KEY", clave_ms1)
 
     # Cliente HTTPX de la Gateway: cada URL base de gateway.config monta el
@@ -424,11 +426,26 @@ def test_token_alterado_devuelve_401(ecosistema):
 
 
 # ---------------------------------------------------------------------------
-# MS3 / MS4 — prefijos sin endpoints de negocio aún (Semana 5)
+# MS3 / MS4 — /presupuestos ya tiene endpoints (Semana 5); el resto aún no
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("prefijo", ["presupuestos", "repuestos"])
+def test_presupuestos_llega_a_ms3_con_y_sin_token(ecosistema):
+    gw, sesion_ms1, _ = ecosistema
+
+    sin_token = gw.get("/api/presupuestos")
+    assert sin_token.status_code == 401
+    assert sin_token.headers["www-authenticate"] == "Bearer"
+    assert ultima_llamada() == ("ms3_presupuestos", "GET", "/presupuestos")
+
+    correo, clave, nombre = ADMINISTRADOR
+    token = crear_administrador(sesion_ms1, gw, correo, clave, nombre)
+    respuesta = gw.get("/api/presupuestos", headers=autorizacion(token))
+    assert respuesta.status_code == 200
+    assert respuesta.json() == {"total": 0, "desde": 0, "limite": 50, "presupuestos": []}
+
+
+@pytest.mark.parametrize("prefijo", ["repuestos", "proveedores", "inventario"])
 def test_ms3_responde_404_propio_por_cada_prefijo(ecosistema, prefijo):
     gw, _, _ = ecosistema
 
@@ -528,11 +545,12 @@ def _verificar_ms2(gw: TestClient, sesion_ms1: Session, sesion_ms2: Session) -> 
 
 
 def _verificar_ms3(gw: TestClient, sesion_ms1: Session, sesion_ms2: Session) -> None:
-    """MS3: solo él responde el 404 FastAPI propio (sin clave "error")."""
-    respuesta = gw.get("/api/presupuestos")
-    assert respuesta.status_code == 404
-    assert respuesta.json() == {"detail": "Not Found"}
-    assert "error" not in respuesta.json()
+    """MS3: solo él responde la página de presupuestos (total/desde/limite)."""
+    correo, clave, nombre = ADMINISTRADOR
+    token = crear_administrador(sesion_ms1, gw, correo, clave, nombre)
+    respuesta = gw.get("/api/presupuestos", headers=autorizacion(token))
+    assert respuesta.status_code == 200
+    assert set(respuesta.json()) == {"total", "desde", "limite", "presupuestos"}
     assert ultima_llamada() == ("ms3_presupuestos", "GET", "/presupuestos")
 
 
@@ -560,8 +578,8 @@ def test_cada_servicio_produce_algo_que_solo_el_genera(
     """Una petición proxied responde algo que SOLO ese microservicio produce.
 
     MS1 → el perfil del usuario autenticado; MS2 → el vehículo recién creado
-    (201 + patente); MS3 y MS4 → su 404 FastAPI propio, sin la clave "error"
-    de la Gateway.
+    (201 + patente); MS3 → su página de presupuestos; MS4 → su 404 FastAPI
+    propio, sin la clave "error" de la Gateway.
     """
     gw, sesion_ms1, sesion_ms2 = ecosistema
     verificador(gw, sesion_ms1, sesion_ms2)

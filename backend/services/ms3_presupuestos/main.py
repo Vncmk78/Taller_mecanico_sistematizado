@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
+from services.ms3_presupuestos.integracion_ms2 import ServicioOrdenesNoDisponible
 from services.ms3_presupuestos.persistencia import ErrorDePersistencia
 from services.ms3_presupuestos.routers import ROUTERS
 
@@ -32,7 +33,7 @@ app = FastAPI(
     version="0.1.0",
     openapi_tags=[
         {"name": "health", "description": "Healthchecks del servicio (proceso y base)."},
-        {"name": "presupuestos", "description": "Presupuestos versionados y decisión del cliente (en desarrollo)."},
+        {"name": "presupuestos", "description": "Presupuesto único por orden: versiones, ítems, envío y decisión del cliente."},
         {"name": "repuestos", "description": "Catálogo de repuestos y stock (en desarrollo)."},
         {"name": "proveedores", "description": "Proveedores de repuestos (en desarrollo)."},
         {"name": "inventario", "description": "Movimientos de inventario y umbrales (en desarrollo)."},
@@ -50,6 +51,15 @@ def _error_de_persistencia(_: Request, exc: ErrorDePersistencia) -> JSONResponse
     Nunca devuelve SQL ni parámetros: solo el mensaje pensado para el cliente.
     """
     return JSONResponse(status_code=exc.codigo_http, content={"detail": exc.mensaje})
+
+
+@app.exception_handler(ServicioOrdenesNoDisponible)
+def _ms2_no_disponible(_: Request, __: ServicioOrdenesNoDisponible) -> JSONResponse:
+    """MS2 no respondió: no se puede confirmar que la orden sea del usuario."""
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "No fue posible validar la orden con el servicio de órdenes"},
+    )
 
 
 @app.get("/health", tags=["health"])

@@ -24,6 +24,18 @@ class LoginSolicitud(BaseModel):
     password: str
 
 
+class RolAsignarSolicitud(BaseModel):
+    """Asignación de un rol restringido a un usuario existente.
+
+    El rol se tipa como `NombreRol`, así que un valor desconocido produce `422`
+    sin llegar al caso de uso.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    rol: NombreRol
+
+
 class UsuarioRespuesta(BaseModel):
     id: int
     email: str

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
+import type { User } from '@/domain/entities/User';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
@@ -50,6 +51,15 @@ const deOtro: Vehicle = {
     year: 2021,
     mileage: 20000,
     clientId: 'c2',
+};
+
+// Sesión de un cliente distinto al dueño del vehículo 1 (que es el cliente demo).
+const otroCliente: User = {
+    id: 'cliente-otro',
+    email: 'otro@taller.cl',
+    full_name: 'Otro Cliente',
+    role: 'cliente',
+    is_active: true,
 };
 
 const ordenDelVehiculo: Order = {
@@ -181,5 +191,40 @@ describe('ClientVehicleDetailPage: ficha de un vehículo propio', () => {
         expect(
             await screen.findByText('Este vehículo aún no tiene órdenes de trabajo registradas.')
         ).toBeInTheDocument();
+    });
+
+    it('muestra un error reintentable en el historial cuando no se pueden cargar las órdenes', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(mio);
+        vi.mocked(orderService.getOrders).mockRejectedValue(axios500);
+
+        renderPage('1');
+
+        expect(
+            await screen.findByText('El servidor tuvo un problema. Intente más tarde.')
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+        expect(
+            screen.queryByText('Este vehículo aún no tiene órdenes de trabajo registradas.')
+        ).not.toBeInTheDocument();
+    });
+
+    it('el control de pertenencia usa la identidad de la sesión, no un id fijo', async () => {
+        useAuthStore.setState({
+            user: otroCliente,
+            token: 'token-otro',
+            isAuthenticated: true,
+            isLoading: false,
+            isInitializing: false,
+        });
+        useVehicleStore.setState({ vehicles: [mio], status: 'idle', error: null, isOffline: false });
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(mio);
+
+        renderPage('1');
+
+        expect(
+            await screen.findByText('Vehículo no encontrado o no pertenece a su cuenta.')
+        ).toBeInTheDocument();
+        // Aunque el demo (c1) sería "dueño", la sesión es de otro cliente: no se ve la placa.
+        expect(screen.queryByText('ABCD-12')).not.toBeInTheDocument();
     });
 });

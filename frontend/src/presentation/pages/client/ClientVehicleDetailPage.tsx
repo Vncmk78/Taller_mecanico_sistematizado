@@ -57,7 +57,7 @@ export function ClientVehicleDetailPage() {
     // lugar de un "no encontrado" que no es cierto.
     if (failed) {
         return (
-            <ErrorState
+<ErrorState
                 className="p-10"
                 title="No se pudo cargar la ficha del vehículo"
                 message={error}
@@ -75,7 +75,7 @@ export function ClientVehicleDetailPage() {
     // Ownership check: aunque el vehículo exista en caché, no es tuyo si el clientId no calza.
     if (!vehicle || notFound || vehicle.clientId !== clientId) {
         return (
-            <EmptyState
+<EmptyState
                 className="p-10"
                 icon={SearchX}
                 title="Vehículo no encontrado o no pertenece a su cuenta."
@@ -92,7 +92,7 @@ export function ClientVehicleDetailPage() {
     const ordersServerError = ordersStatus === 'error';
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
             <Link
                 to="/client/vehiculos"
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"

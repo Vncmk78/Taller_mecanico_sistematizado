@@ -12,9 +12,8 @@ siguiente:
 - `es_administrador`: el Administrador ve todo, incluidas las eliminadas
   (auditoría, matriz §4.5).
 
-La verificación de que la orden existe y le pertenece al solicitante (contra
-MS2) es de la tarea "Validar autorización y visibilidad": hasta entonces estas
-funciones deciden solo por rol.
+La pertenencia de la orden al solicitante no se decide aquí: la valida MS2 vía
+`integracion_ms2.py` (mismo contrato de MS3). Estas funciones solo deciden por rol.
 """
 from __future__ import annotations
 

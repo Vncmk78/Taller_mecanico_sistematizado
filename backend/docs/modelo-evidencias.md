@@ -86,6 +86,9 @@ La lista de `content_type` permitidos (`image/jpeg`, `image/png`, `image/webp`,
 | Mecánico | Todas las confirmadas y no eliminadas de las órdenes que atiende | Subir, cambiar `visible_cliente` (salvo contexto presupuesto), eliminar las propias |
 | Administrador | Todo, incluidas las eliminadas (auditoría) | Todo |
 
+El alcance por orden ("sus órdenes" / "las que atiende") lo decide MS2: ver
+[Verificación de acceso con MS2](#verificación-de-acceso-con-ms2).
+
 **Valor por defecto de `visible_cliente` según contexto:**
 
 | Contexto | `visible_cliente` por defecto |
@@ -223,6 +226,48 @@ genera ese dict y se inyecta en `subir_objeto(..., metadatos=...)`.
   `reparacion`, y en que la evidencia de presupuesto siempre es visible para
   el cliente que lo aprueba (regla 7).
 
+## Verificación de acceso con MS2
+
+MS4 guarda `orden_id` como referencia lógica (§8): no sabe si el cliente es el
+dueño del vehículo ni qué mecánico atiende la orden. Para aplicar la visibilidad
+de la matriz §4.5, MS4 pregunta a MS2 si la orden es visible para quien llama
+llamando a `GET {MS2_URL}/ordenes/{orden_id}` con el **MISMO JWT** del
+solicitante (`services/integracion_ms2.py`, mismo contrato que MS3). MS2 aplica
+su propio `_filtro_visibilidad` por rol:
+
+```text
+Cliente / Mecánico            MS4                              MS2
+     │  (su JWT)               │                                │
+     │── GET /evidencias ─────►│── GET /ordenes/{id} + Bearer ──►│
+     │                         │◄── 200 (visible para él) ───────│
+     │◄── 200 / 404 / 503 ─────│◄── 404/403 (ajena o inexistente)│
+
+       200  → la orden es de ese cliente o la atiende el mecánico → MS4 sigue
+       404 / 403 → OrdenNoVisible  → MS4 responde 404
+       otro código / sin conexión / timeout → ServicioOrdenesNoDisponible → 503
+```
+
+Cómo se aplica por endpoint:
+
+- **Subir (`POST`)** y **listar (`GET ?orden_id=`)** exigen la orden visible para
+  todos los roles: se valida contra MS2 antes de continuar (`404 "Orden no
+  encontrada"` o `503 "El servicio de órdenes no está disponible"`). En la
+  subida la validación ocurre **antes** de subir a MinIO: un 404/503 no deja ni
+  objeto ni fila.
+- **Detalle y descarga**: la evidencia inexistente responde
+  `404 "Evidencia no encontrada"`. Para quien no es administrador se valida la
+  orden contra MS2 **antes** del filtro de visibilidad: si MS2 responde 404/403,
+  la evidencia "no existe" (el mismo 404 que un UUID inexistente, no enumera).
+  El **Administrador no consulta MS2** (auditoría: ve todo, incluidas las
+  eliminadas) y la decisión termina solo en `es_visible_para`.
+- El JWT se reenvía tal como llegó y **nunca** se loguea; MS2 aplica su
+  visibilidad por rol, incluida la unión multirol (matriz §3.1).
+
+Implementado en `routers/evidencias.py` (helper `_exigir_orden_accesible`, vía
+las dependencias `obtener_token_bearer` y `obtener_verificador_ordenes`) y
+probado con un `FakeVerificador` en `tests/test_ms4_autorizacion_evidencias.py`;
+`VerificadorOrdenesHttp` se prueba en unidad con `httpx` simulado.
+
 ## Endpoints de MS4 (Semana 5)
 
 `routers/evidencias.py` (APIRouter con prefijo `/evidencias`, registrado en
@@ -230,9 +275,9 @@ genera ese dict y se inyecta en `subir_objeto(..., metadatos=...)`.
 
 | Método y ruta | Rol | Respuestas |
 |---|---|---|
-| `POST /evidencias` (multipart: archivo + `orden_id`, `contexto`, `presupuesto_id`?, `visible_cliente`?) | Mecánico, Administrador | `201 EvidenciaLeida` · `401` · `403` · `422` · `503` |
-| `GET /evidencias?orden_id=` | Cualquier autenticado | `200 [EvidenciaLeida]` · `401` · `422` |
-| `GET /evidencias/{evidencia_id}` | Cualquier autenticado | `200 EvidenciaLeida` · `401` · `404` |
+| `POST /evidencias` (multipart: archivo + `orden_id`, `contexto`, `presupuesto_id`?, `visible_cliente`?) | Mecánico, Administrador | `201 EvidenciaLeida` · `401` · `403` · `404` · `422` · `503` |
+| `GET /evidencias?orden_id=` | Cualquier autenticado | `200 [EvidenciaLeida]` · `401` · `404` · `422` · `503` |
+| `GET /evidencias/{evidencia_id}` | Cualquier autenticado | `200 EvidenciaLeida` · `401` · `404` · `503` |
 | `GET /evidencias/{evidencia_id}/descarga` | Cualquier autenticado | `200 UrlDescarga` · `401` · `404` · `503` |
 
 Detalles:
@@ -245,12 +290,11 @@ Detalles:
   `response-content-type` + `response-content-disposition`; la respuesta lleva
   `Cache-Control: no-store` y `X-Content-Type-Options: nosniff` (3.3 y 3.4).
 - Errores: `403` solo en la subida (el cliente no sube; control 3.1); `404` por
-  no enumeración en detalle/descarga (la evidencia oculta "no existe");
-  `503` solo si el almacenamiento de objetos no responde; `422` para la reglas
-  de entrada (formato de archivo, contexto, reglas 6/7 de presupuesto).
-- Pendiente (tarea *Validar autorización y visibilidad*): validar contra MS2
-  que la orden existe y pertenece al solicitante, y filtrar al mecánico por las
-  órdenes que atiende. Hoy la decisión es solo por rol.
+  no enumeración (orden ajena en subir/listar → "Orden no encontrada"; evidencia
+  oculta o ajena en detalle/descarga → "Evidencia no encontrada", igual que una
+  inexistente); `503` si MS2 no responde o el almacenamiento de objetos falla;
+  `422` para las reglas de entrada (formato de archivo, contexto, reglas 6/7 de
+  presupuesto). Ver "Verificación de acceso con MS2".
 
 ## Pruebas
 
@@ -287,4 +331,15 @@ Detalles:
 
 `tests/test_ms4_api_evidencias.py` (TestClient + SQLite en memoria + FakeS3 +
 cliente S3 público real que firma offline) cubre los contratos HTTP de los
-endpoints de la tabla anterior (controles 3.1, 3.3 y 3.4).
+endpoints de la tabla anterior, con un verificador de MS2 que permite todo
+(controles 3.1, 3.3 y 3.4).
+
+`tests/test_ms4_autorizacion_evidencias.py` (TestClient + `FakeVerificador` de
+MS2) cubre la verificación contra MS2 por rol: cliente dueño/ajeno en listado
+(200 vs 404 "Orden no encontrada"), mecánico asignado/no asignado en subida
+(201 vs 404 sin filas ni objetos), cliente que no sube sin llamar a MS2, el
+404 idéntico entre evidencia ajena e inexistente, administrador con eliminadas
+en el listado y sin consultar MS2 en detalle/descarga, multirol cliente+mecánico
+por unión, MS2 caído → 503 en los cuatro endpoints, y la unidad de
+`VerificadorOrdenesHttp` con `httpx` simulado (reenvía el JWT, 403/404 →
+`OrdenNoVisible`, errores/timeouts → `ServicioOrdenesNoDisponible`).

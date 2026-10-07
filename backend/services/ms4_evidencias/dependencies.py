@@ -43,6 +43,15 @@ def obtener_principal_actual(
         raise _error_no_autenticado("Token inválido o expirado") from exc
 
 
+def obtener_token_bearer(
+    credenciales: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    """JWT tal como llegó: MS4 lo reenvía a MS2 para validar la orden (§8)."""
+    if credenciales is None:
+        raise _error_no_autenticado("No se proporcionó un token de acceso")
+    return credenciales.credentials
+
+
 def _error_no_autenticado(detalle: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,6 +74,7 @@ def obtener_s3_publico() -> object:
 
 __all__ = [
     "obtener_principal_actual",
+    "obtener_token_bearer",
     "obtener_s3",
     "obtener_s3_publico",
 ]

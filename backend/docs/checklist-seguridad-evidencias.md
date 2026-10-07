@@ -142,15 +142,18 @@ verifica** · **cuándo** se implementa (tarea del plan).
     recibe `404` (no `403`, para no revelar que existe).
   - Cuándo: Semana 3 — *Definir modelo de metadatos, contexto y visibilidad*;
     implementación en Semana 5.
-  - ✅ **Diseño** definido en `models/evidencia.py` y
-    `docs/modelo-evidencias.md` (reglas de visibilidad por rol, filtro
-    `visible_cliente = true AND estado = 'confirmada' AND eliminada_en IS NULL`
-    y defaults por contexto, validados en `tests/test_ms4_modelo_evidencia.py`).
-    Los endpoints aplican el filtro por rol (Semana 5) con `404` por no
-    enumeración en detalle/descarga (`tests/test_ms4_api_evidencias.py`). La
-    verificación de la **propiedad de la orden contra MS2** (404 vs 403) queda
-    para la tarea *Validar autorización y visibilidad*; hoy la decisión es solo
-    por rol.
+  - ✅ **Implementado.** El filtro por rol vive en `models/evidencia.py` /
+    `services/evidencias.py` (`visible_cliente = true AND estado = 'confirmada'
+    AND eliminada_en IS NULL` para el cliente, `incluir_eliminadas` para el
+    administrador) y **la pertenencia de la orden se valida contra MS2** en
+    `services/integracion_ms2.py` (mismo contrato que MS3): MS4 reenvía el MISMO
+    JWT a `GET {MS2_URL}/ordenes/{orden_id}`; 200 → sigue, 404/403 → 404 (orden
+    ajena en subir/listar; evidencia ajena en detalle/descarga con el **mismo
+    body que una inexistente**, sin enumerar), MS2 caído → 503. El administrador
+    no consulta MS2 en detalle/descarga (auditoría). Verificado en
+    `tests/test_ms4_autorizacion_evidencias.py` (cliente dueño/ajeno, mecánico
+    asignado/no asignado, 404 idéntico a UUID inexistente, MS2 caído, unidad de
+    `VerificadorOrdenesHttp`) y `tests/test_ms4_api_evidencias.py`.
 
 - [x] **3.3 Descarga con URL prefirmada de corta duración.** MS4 entrega una
   URL firmada de MinIO que expira en **5 minutos**; nunca un enlace

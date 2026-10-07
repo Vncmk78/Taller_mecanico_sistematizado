@@ -30,6 +30,7 @@ from sqlalchemy.pool import StaticPool
 from services.ms4_evidencias.config import Settings, settings
 from services.ms4_evidencias.db import get_db
 from services.ms4_evidencias.dependencies import obtener_s3, obtener_s3_publico
+from services.ms4_evidencias.integracion_ms2 import obtener_verificador_ordenes
 from services.ms4_evidencias.main import app
 from services.ms4_evidencias.models import Base
 from services.ms4_evidencias.models.evidencia import (
@@ -77,6 +78,14 @@ class FakeS3SubidaFallida(FakeS3):
         return super().upload_fileobj(
             fileobj, bucket, clave, ExtraArgs=ExtraArgs, Config=Config
         )
+
+
+class VerificadorPermiteTodo:
+    """Falso MS2 que acepta cualquier orden: los tests de aquí no prueban la
+    verificación (esa es tarea de test_ms4_autorizacion_evidencias.py)."""
+
+    def verificar_acceso(self, orden_id: int, token: str) -> None:
+        return None
 
 
 def _crear_settings_publico() -> Settings:
@@ -134,6 +143,7 @@ def api(
     app.dependency_overrides[get_db] = reemplazar_db
     app.dependency_overrides[obtener_s3] = lambda: s3
     app.dependency_overrides[obtener_s3_publico] = lambda: s3_publico
+    app.dependency_overrides[obtener_verificador_ordenes] = lambda: VerificadorPermiteTodo()
     with TestClient(app) as cliente:
         yield cliente
     app.dependency_overrides.clear()
@@ -349,6 +359,7 @@ def test_si_el_almacenamiento_falla_responde_503_sin_filas(
     app.dependency_overrides[get_db] = reemplazar_db
     app.dependency_overrides[obtener_s3] = reemplazar_s3
     app.dependency_overrides[obtener_s3_publico] = lambda: s3_publico
+    app.dependency_overrides[obtener_verificador_ordenes] = lambda: VerificadorPermiteTodo()
     try:
         with TestClient(app) as cliente:
             respuesta = _subir(cliente, _token(7, NombreRol.MECANICO))
@@ -376,6 +387,7 @@ def test_s3_upload_failed_error_responde_503_sin_filas_ni_detalles(
     app.dependency_overrides[get_db] = reemplazar_db
     app.dependency_overrides[obtener_s3] = reemplazar_s3
     app.dependency_overrides[obtener_s3_publico] = lambda: s3_publico
+    app.dependency_overrides[obtener_verificador_ordenes] = lambda: VerificadorPermiteTodo()
     try:
         with TestClient(app) as cliente:
             respuesta = _subir(cliente, _token(7, NombreRol.MECANICO))
@@ -434,11 +446,8 @@ def test_listado_aplica_los_filtros_de_visibilidad_por_rol(
         headers={"Authorization": f"Bearer {_token(1, NombreRol.ADMINISTRADOR)}"},
     )
     assert admin.status_code == 200
-    # El listado excluye las eliminadas para todos (listar_por_orden); el
-    # acceso del administrador a las eliminadas es por detalle (auditoría).
-    assert len(admin.json()) == sum(
-        1 for e in escenario if e.eliminada_en is None
-    )
+    # El administrador ve todas, incluidas las eliminadas (auditoría, §4.5).
+    assert len(admin.json()) == len(escenario)
 
 
 def test_listado_sin_orden_id_responde_422(api: TestClient) -> None:

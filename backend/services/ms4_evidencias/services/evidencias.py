@@ -211,17 +211,20 @@ def recibir_evidencia(
     return evidencia
 
 
-def listar_por_orden(db: Session, orden_id: int, *, vista_cliente: bool) -> list[Evidencia]:
+def listar_por_orden(
+    db: Session, orden_id: int, *, vista_cliente: bool, incluir_eliminadas: bool = False
+) -> list[Evidencia]:
     """Evidencias de una orden, filtradas según quien consulta.
 
     Cliente: solo `visible_cliente = true`, `estado = confirmada` y no eliminadas.
-    Otros roles (mecánico/admin): todas las no eliminadas.
+    Otros roles (mecánico): todas las no eliminadas.
+    Admin (`incluir_eliminadas=True`): todas, incluidas las eliminadas
+    (auditoría, matriz §4.5).
     Ordena por `creada_en`.
     """
-    consulta = select(Evidencia).where(
-        Evidencia.orden_id == orden_id,
-        Evidencia.eliminada_en.is_(None),
-    )
+    consulta = select(Evidencia).where(Evidencia.orden_id == orden_id)
+    if not incluir_eliminadas:
+        consulta = consulta.where(Evidencia.eliminada_en.is_(None))
     if vista_cliente:
         consulta = consulta.where(
             Evidencia.visible_cliente.is_(True),

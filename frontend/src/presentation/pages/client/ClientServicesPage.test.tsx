@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
+import type { User } from '@/domain/entities/User';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import { orderService } from '@/infrastructure/api/OrderService';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { ClientServicesPage } from './ClientServicesPage';
@@ -35,6 +37,15 @@ function servicio(id: string, estadoCodigo: number, vehicleId: string, patente: 
 const vehiculoC1: Vehicle = { id: '1', patent: 'ABCD-12', brand: 'Ford', model: 'Fiesta', year: 2018, mileage: 0, clientId: 'c1' };
 const vehiculoAjeno: Vehicle = { id: '2', patent: 'EFGH-34', brand: 'Nissan', model: 'Kicks', year: 2021, mileage: 0, clientId: 'c2' };
 
+// Cliente 2 (c2): dueño del vehículo 2 (EFGH-34).
+const clienteC2: User = {
+    id: 'c2',
+    email: 'cliente2@taller.cl',
+    full_name: 'Cliente Dos',
+    role: 'cliente',
+    is_active: true,
+};
+
 const axiosNetworkError = { isAxiosError: true };
 
 function renderPage() {
@@ -47,6 +58,7 @@ function renderPage() {
 
 describe('ClientServicesPage: estado del servicio (consulta de servicios)', () => {
     beforeEach(() => {
+        useAuthStore.setState({ user: null, token: null, isAuthenticated: false, isLoading: false, isInitializing: false });
         useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
         useVehicleStore.setState({ vehicles: [vehiculoC1, vehiculoAjeno], status: 'idle', error: null, isOffline: false });
         vi.clearAllMocks();
@@ -110,5 +122,27 @@ describe('ClientServicesPage: estado del servicio (consulta de servicios)', () =
         expect(await screen.findByText('No se pudieron cargar los servicios')).toBeInTheDocument();
         expect(screen.getByText('Reintentar')).toBeInTheDocument();
         expect(screen.queryByText('Aún no tiene servicios en el taller')).not.toBeInTheDocument();
+    });
+
+    it('offline filtra los servicios según el cliente autenticado, no el demo', async () => {
+        useAuthStore.setState({ user: clienteC2, token: 'token-c2', isAuthenticated: true, isLoading: false, isInitializing: false });
+        useOrderStore.setState({
+            orders: [
+                servicio('101', 5, '1', 'ABCD-12'),
+                servicio('102', 5, '2', 'EFGH-34'),
+            ],
+            status: 'idle',
+            error: null,
+            isOffline: true,
+        });
+        vi.mocked(orderService.getOrders).mockRejectedValue(axiosNetworkError);
+
+        renderPage();
+
+        expect(
+            await screen.findByText(/No se pudo conectar con el servidor/)
+        ).toBeInTheDocument();
+        expect(screen.getByText('Servicio n° 102')).toBeInTheDocument();
+        expect(screen.queryByText('Servicio n° 101')).not.toBeInTheDocument();
     });
 });

@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
+import type { User } from '@/domain/entities/User';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { orderService } from '@/infrastructure/api/OrderService';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { ClientVehicleDetailPage } from './ClientVehicleDetailPage';
@@ -29,6 +31,18 @@ vi.mock('@/infrastructure/api/OrderService', () => ({
 
 // El vehículo 1 pertenece al cliente demo c1; los vehículos 2 y 6, no.
 const vehiculo: Vehicle = { id: '1', patent: 'ABCD-12', brand: 'Ford', model: 'Fiesta', year: 2018, mileage: 85120, clientId: 'c1' };
+
+// Vehículo con el mismo id consultado (1), pero perteneciente a otro cliente (c2).
+const vehiculoAjeno: Vehicle = { id: '1', patent: 'EFGH-34', brand: 'Nissan', model: 'Kicks', year: 2021, mileage: 32500, clientId: 'c2' };
+
+// Sesión de un cliente distinto al demo: no es dueño del vehículo 1 (c1).
+const otroCliente: User = {
+    id: 'cliente-otro',
+    email: 'otro@taller.cl',
+    full_name: 'Otro Cliente',
+    role: 'cliente',
+    is_active: true,
+};
 
 function orden(id: string, vehicleId: string, estadoCodigo: number): Order {
     return {
@@ -59,6 +73,7 @@ function renderPage() {
 
 describe('ClientVehicleDetailPage: ficha del vehículo con historial de órdenes', () => {
     beforeEach(() => {
+        useAuthStore.setState({ user: null, token: null, isAuthenticated: false, isLoading: false, isInitializing: false });
         useVehicleStore.setState({ vehicles: [vehiculo], status: 'idle', error: null, isOffline: false });
         useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
         vi.clearAllMocks();
@@ -125,5 +140,34 @@ describe('ClientVehicleDetailPage: ficha del vehículo con historial de órdenes
         expect(
             screen.queryByText('Este vehículo aún no tiene órdenes de trabajo registradas.')
         ).not.toBeInTheDocument();
+    });
+
+    it('oculta la ficha de un vehículo que pertenece a otro cliente', async () => {
+        useVehicleStore.setState({ vehicles: [vehiculoAjeno], status: 'idle', error: null, isOffline: false });
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(vehiculoAjeno);
+        vi.mocked(orderService.getOrders).mockResolvedValue([]);
+
+        renderPage();
+
+        expect(
+            await screen.findByText('Vehículo no encontrado o no pertenece a su cuenta.')
+        ).toBeInTheDocument();
+        expect(screen.queryByText('Nissan Kicks')).not.toBeInTheDocument();
+        expect(screen.queryByText('EFGH-34')).not.toBeInTheDocument();
+    });
+
+    it('el control de pertenencia usa la identidad de la sesión, no el cliente demo', async () => {
+        useAuthStore.setState({ user: otroCliente, token: 'token-otro', isAuthenticated: true, isLoading: false, isInitializing: false });
+        useVehicleStore.setState({ vehicles: [vehiculo], status: 'idle', error: null, isOffline: false });
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(vehiculo);
+        vi.mocked(orderService.getOrders).mockResolvedValue([]);
+
+        renderPage();
+
+        expect(
+            await screen.findByText('Vehículo no encontrado o no pertenece a su cuenta.')
+        ).toBeInTheDocument();
+        // Aunque el demo (c1) sería "dueño", la sesión es de otro cliente: no se ve la placa.
+        expect(screen.queryByText('ABCD-12')).not.toBeInTheDocument();
     });
 });

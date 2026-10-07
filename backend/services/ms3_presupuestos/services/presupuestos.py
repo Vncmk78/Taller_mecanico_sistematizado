@@ -73,8 +73,11 @@ def reemplazar_items(
 ) -> VersionPresupuesto:
     """Reemplaza todos los ítems de una versión que sigue en borrador."""
     with uow.transaccion():
-        uow.presupuestos.obtener_o_error(presupuesto_id)
+        # Mismo bloqueo que enviar/decidir/crear_version: si alguien envía la
+        # versión a la vez, esta edición espera y luego ve que ya no es editable.
+        uow.presupuestos.obtener_para_actualizar(presupuesto_id)
         version = uow.presupuestos.version(presupuesto_id, numero)
+        uow.sesion.refresh(version)
         if not version.editable:
             raise ConflictoDeDatos(
                 f"La versión {numero} ya fue enviada y no se puede modificar; "

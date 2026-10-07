@@ -125,6 +125,33 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
       observacion: undefined,
     });
   });
+
+  it('cambiarEstado trata la observación de solo espacios como ausente', async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: ordenApi });
+
+    await orderService.cambiarEstado('3', 2, '   ');
+
+    // CambioEstadoSolicitud declara min_length=1 con str_strip_whitespace, así que
+    // mandar "   " llegaría al backend como "" y respondería 422. Omitirla lo evita.
+    expect(apiClient.patch).toHaveBeenCalledWith('/ordenes/3/estado', {
+      estado_destino: 2,
+      observacion: undefined,
+    });
+  });
+
+  it('cambiarEstado envía solo estado_destino y observacion, sin campos extra', async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: ordenApi });
+
+    await orderService.cambiarEstado('3', 6, 'Listo');
+
+    // El modelo de MS2 tiene extra="forbid": mandar orden_id o actor_usuario_id
+    // desde el cliente lo haría rechazar con 422. El rol y el id del mecánico los
+    // saca MS2 del JWT.
+    const cuerpo = vi.mocked(apiClient.patch).mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(cuerpo).sort()).toEqual(['estado_destino', 'observacion']);
+    expect(cuerpo.estado_destino).toBe(6);
+    expect(typeof cuerpo.estado_destino).toBe('number');
+  });
 });
 
 // Cuerpos literales de gateway/contratos/ordenes.py, los mismos que valida

@@ -80,6 +80,17 @@ y arquitectura hexagonal.
   adaptado; `VehicleInfoPanel` permite envolver título/patente y `ServiceCard`
   mantiene el badge fijo frente al título truncado.
 
+### Tarea 8 — Crear pruebas de visualización de información según cliente autenticado
+- Pruebas de que el portal Cliente muestra información según la **identidad de la
+  sesión** (`user.id`), no según el cliente demo:
+  - **Ficha del vehículo**: un vehículo cuyo `clientId` no calza con el
+    autenticado se oculta ("Vehículo no encontrado o no pertenece a su cuenta") y
+    el control de pertenencia usa el id de la sesión.
+  - **Estado del Servicio / Mis Órdenes**: en *offline*, el filtro por vehículos
+    del cliente usa al cliente autenticado (no el demo `c1`).
+  - **Panel del cliente** (`/client`): saluda con `full_name` del autenticado.
+  - **Layout topnav**: muestra la identidad (nombre/email) del usuario de sesión.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en

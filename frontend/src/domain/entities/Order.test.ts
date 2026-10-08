@@ -5,14 +5,12 @@ import { AVANCES_MECANICO, ESTADOS_ORDEN, ordenStatusLabel } from './Order';
  * Pares que `validar_transicion` acepta en MS2, transcritos de
  * `backend/services/ms2_taller/domain/transiciones_orden.py:70-111`. La función
  * valida el par (estado_actual, estado_destino) e ignora el evento, así que
- * estos son exactamente los 10 pares que el endpoint `PATCH /ordenes/{id}/estado`
- * deja pasar. Cualquier otro responde 409.
+ * el servicio excluye del PATCH la asignación inicial y las dos ramas de
+ * aprobación, que requieren operaciones específicas. Los pares restantes
+ * siguen disponibles y algunos tienen precondiciones funcionales pendientes.
  */
 const PARES_ACEPTADOS_POR_MS2: ReadonlyArray<readonly [number, number]> = [
-    [1, 2],
     [2, 3],
-    [3, 4],
-    [3, 5],
     [4, 5],
     [5, 6],
     [6, 7],
@@ -23,6 +21,7 @@ const PARES_ACEPTADOS_POR_MS2: ReadonlyArray<readonly [number, number]> = [
 
 /** Estados sin ninguna transición para el mecánico, con el motivo. */
 const ESTADOS_SIN_AVANCE_DEL_MECANICO: Record<number, string> = {
+    1: 'la primera asignación la realiza el administrador mediante la operación específica',
     3: 'la aprobación del presupuesto la gestiona el cliente',
     6: 'la entrega física la gestiona el administrador',
     7: 'es terminal (Entregado)',
@@ -30,22 +29,20 @@ const ESTADOS_SIN_AVANCE_DEL_MECANICO: Record<number, string> = {
 };
 
 describe('AVANCES_MECANICO: transiciones que la vista del mecánico ofrece', () => {
-    it('no ofrece ningún par que MS2 vaya a rechazar con 409', () => {
+    it('excluye los pares reservados a las operaciones específicas de MS2', () => {
         const ofrecidos = Object.entries(AVANCES_MECANICO).flatMap(([origen, destinos]) =>
             destinos.map((destino): readonly [number, number] => [Number(origen), destino])
         );
 
-        // Es la garantía que sostiene el selector de "Actualizar Estados": cada
-        // opción que el mecánico puede elegir es una transición que el backend
-        // acepta. Si alguien agregara aquí un par inexistente, el 409 lo vería
-        // el usuario en pantalla en vez de detenerlo este test.
+        // Esta comprobación acota pares estructurales y operaciones reservadas.
+        // No acredita las precondiciones funcionales aún pendientes.
         for (const par of ofrecidos) {
             expect(PARES_ACEPTADOS_POR_MS2).toContainEqual(par);
         }
     });
 
-    it('cubre los cuatro estados en los que el mecánico sí puede avanzar', () => {
-        expect(AVANCES_MECANICO).toEqual({ 1: [2], 2: [3], 4: [5], 5: [6] });
+    it('ofrece los tres avances conservados sin sustituir la asignación administrativa', () => {
+        expect(AVANCES_MECANICO).toEqual({ 2: [3], 4: [5], 5: [6] });
     });
 
     it('no ofrece avance en los estados que dependen del cliente, el admin o son terminales', () => {

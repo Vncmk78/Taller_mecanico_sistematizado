@@ -361,6 +361,11 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     assert "Cancelado exige una observación" in (
         paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
     )
+    descripcion_cambio = paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
+    assert "1 → 2" in descripcion_cambio and "3 → 4/5" in descripcion_cambio
+    assert "operaciones" in descripcion_cambio or "decisión verificada" in descripcion_cambio
+    assert "siguen pendientes" in descripcion_cambio
+    assert "operación específica" in paths["/api/ordenes/{orden_id}/estado"]["patch"]["responses"]["409"]["description"]
     assert paths["/api/ordenes/{orden_id}/estado"]["patch"]["requestBody"][
         "content"
     ]["application/json"]["schema"]["$ref"] == (

@@ -734,7 +734,16 @@ No se reserva stock ni hay transacción SQL entre ambos servicios.
 ### PATCH `/api/ordenes/{orden_id}/estado`
 
 Cambia el estado de una orden validando rol, catálogo oficial (1 a 8) y la
-transición declarada por el dominio. El Administrador siempre puede ejecutarlo;
+transición declarada por el dominio. Rechaza con `409` la primera asignación
+(`1 → 2`), que debe realizarse por `PUT /api/ordenes/{orden_id}/mecanico`, y la
+primera aprobación (`3 → 4/5`), que exige una decisión verificada mediante
+`POST /api/ordenes/{orden_id}/decisiones-presupuesto`. También rechaza estos
+cambios para Administrador o usuarios multirrol, sin modificar estado ni historial.
+
+Los demás pares conservan el comportamiento existente y **no están completamente
+protegidos por sus precondiciones funcionales**: permanecen pendientes los flujos
+de envío inicial, disponibilidad posterior de repuestos, finalización, entrega
+física y cancelación independiente. El Administrador supera el control de rol;
 el Mecánico solo sobre las órdenes que tiene asignadas. `Entregado` y
 `Cancelado` son terminales y rechazan cualquier cambio. El estado y el historial
 se actualizan en la misma transacción.
@@ -749,13 +758,13 @@ valida en el servicio de MS2 y no cambia las precondiciones de cada transición.
 | Auth | `Authorization: Bearer <token>` con rol Administrador o mecánico asignado |
 | Body | `{"estado_destino": int positivo, "observacion"?: string no vacío}`; obligatoria si el destino es `Cancelado` |
 | Respuesta OK | `200` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador ni orden asignada · `404` orden inexistente · `409` transición no permitida o terminal · `422` estado de destino desconocido o body inválido · `500` persistencia · `502` MS2 no disponible |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador ni orden asignada · `404` orden inexistente · `409` transición no permitida, terminal o reservada a operación específica · `422` estado de destino desconocido o body inválido · `500` persistencia · `502` MS2 no disponible |
 
 ```json
 // Request
-{ "estado_destino": 2, "observacion": "Inicia evaluación técnica" }
+{ "estado_destino": 6, "observacion": "Trabajo autorizado finalizado" }
 // Response 200
-{ "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 2,
+{ "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 6,
   "mecanico_actual_id": 50, "creado_por_id": 99,
   "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T11:00:00-03:00" }
 ```

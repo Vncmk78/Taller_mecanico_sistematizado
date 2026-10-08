@@ -574,7 +574,14 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 resumen="Cambiar el estado de una orden",
                 descripcion=(
                     "Cambia el estado validando rol, catálogo oficial y "
-                    "transición declarada por el dominio. Administrador siempre; "
+                    "transición declarada por el dominio. La primera asignación (1 → 2) "
+                    "requiere PUT /api/ordenes/{orden_id}/mecanico; la primera aprobación "
+                    "(3 → 4/5) requiere POST /api/ordenes/{orden_id}/decisiones-presupuesto "
+                    "con una decisión verificada de MS3. El PATCH directo responde 409 "
+                    "en esos tres pares, también para Administrador y usuarios multirrol. "
+                    "Los otros pares mantienen su comportamiento y las brechas de "
+                    "precondiciones de envío, stock posterior, finalización, entrega y "
+                    "cancelación siguen pendientes. Administrador por rol; "
                     "Mecánico solo en órdenes que tiene asignadas. Una orden "
                     "Entregada o Cancelada es terminal y rechaza cualquier "
                     "cambio. Pasar a Cancelado exige una observación o motivo no vacío; "
@@ -589,7 +596,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador o ser el mecánico asignado",
-                    "409": "Transición no permitida o terminal",
+                    "409": "Transición no permitida, terminal o reservada a una operación específica",
                     "422": "Estado de destino desconocido, cancelación sin motivo o datos inválidos",
                 },
                 requiere_auth=True,

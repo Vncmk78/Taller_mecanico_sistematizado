@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
+from services.ms1_auth.models.historial_rol import HistorialRol
 from services.ms1_auth.models.rol import Rol, UsuarioRol
 from services.ms1_auth.models.usuario import Usuario
 from services.ms1_auth.security.passwords import hash_contrasena, verificar_contrasena
@@ -60,6 +61,16 @@ def registrar_cliente(
         )
         usuario.roles.append(UsuarioRol(rol=rol_cliente))
         db.add(usuario)
+        # El alta inicial de `cliente` la hace el sistema: se registra en el
+        # historial sin responsable, pero con su fecha y hora.
+        db.flush()
+        _registrar_cambio_de_rol(
+            db,
+            usuario_id=usuario.usuario_id,
+            rol_id=rol_cliente.rol_id,
+            accion="asignado",
+            responsable_id=None,
+        )
         db.commit()
         return usuario
     except (CorreoRegistradoError, ConfiguracionRolesError, ValueError):
@@ -181,6 +192,13 @@ def asignar_rol_restringido(
             usuario.roles.append(
                 UsuarioRol(rol=registro_rol, asignado_por_id=administrador_id)
             )
+            _registrar_cambio_de_rol(
+                db,
+                usuario_id=usuario_id,
+                rol_id=registro_rol.rol_id,
+                accion="asignado",
+                responsable_id=administrador_id,
+            )
             db.commit()
         return _recargar_usuario(db, usuario_id)
     except (UsuarioNoEncontradoError, ConfiguracionRolesError):
@@ -196,6 +214,7 @@ def retirar_rol_restringido(
     *,
     usuario_id: int,
     rol: NombreRol,
+    administrador_id: int,
 ) -> Usuario:
     """Quita un rol restringido a una cuenta existente. Idempotente."""
 
@@ -215,7 +234,15 @@ def retirar_rol_restringido(
             None,
         )
         if asignacion is not None:
+            rol_id = asignacion.rol_id
             usuario.roles.remove(asignacion)
+            _registrar_cambio_de_rol(
+                db,
+                usuario_id=usuario_id,
+                rol_id=rol_id,
+                accion="retirado",
+                responsable_id=administrador_id,
+            )
             db.commit()
         return _recargar_usuario(db, usuario_id)
     except UsuarioNoEncontradoError:
@@ -236,6 +263,30 @@ def roles_del_usuario(usuario: Usuario) -> frozenset[NombreRol]:
     if not roles:
         raise ConfiguracionRolesError("El usuario no posee roles")
     return roles
+
+
+def _registrar_cambio_de_rol(
+    db: Session,
+    *,
+    usuario_id: int,
+    rol_id: int,
+    accion: str,
+    responsable_id: int | None,
+) -> None:
+    """Añade una fila al historial de roles.
+
+    No confirma: la fila se persiste junto con el cambio de `usuario_rol` en la
+    misma transacción, de modo que historia y estado vigente nunca divergen.
+    """
+
+    db.add(
+        HistorialRol(
+            usuario_id=usuario_id,
+            rol_id=rol_id,
+            accion=accion,
+            responsable_id=responsable_id,
+        )
+    )
 
 
 def _recargar_usuario(db: Session, usuario_id: int) -> Usuario:

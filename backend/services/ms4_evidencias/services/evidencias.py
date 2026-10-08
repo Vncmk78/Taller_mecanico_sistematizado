@@ -10,6 +10,7 @@ con SQLite y un FakeS3, y reutilizadas por los endpoints.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -25,8 +26,10 @@ from services.ms4_evidencias.schemas.evidencia import DatosRecepcion
 from services.ms4_evidencias.services.almacenamiento import (
     calcular_sha256_y_tamano,
     eliminar_objeto,
+    metadatos_objeto,
     subir_objeto,
 )
+from services.ms4_evidencias.services.contexto import normalizar_request_id
 
 
 class EvidenciaInvalidaError(ValueError):
@@ -48,6 +51,9 @@ _EXT_POR_CONTENT_TYPE = {
     "video/x-msvideo": "avi",
     "video/mpeg": "mpeg",
 }
+
+# Convención única de clave (checklist 2.5): ordenes/{orden_id positivo}/{evidencia_id hex 32}.{ext}.
+PATRON_CLAVE_OBJETO = re.compile(r"^ordenes/[1-9][0-9]*/[0-9a-f]{32}\.[a-z0-9]{2,5}$")
 
 
 def normalizar_content_type(content_type: str) -> str:
@@ -74,18 +80,36 @@ def tipo_desde_content_type(content_type: str) -> TipoArchivo:
     raise EvidenciaInvalidaError("Tipo de archivo no permitido")
 
 
-def generar_clave_objeto(orden_id: int, content_type: str) -> str:
-    """Clave del objeto en MinIO: ordenes/{orden_id}/{uuid}.{ext}.
+def generar_clave_objeto(
+    orden_id: int,
+    content_type: str,
+    evidencia_id: uuid.UUID | None = None,
+) -> str:
+    """Clave del objeto en MinIO: ordenes/{orden_id}/{evidencia_id}.{ext}.
 
-    La extensión sale del content_type, no del nombre original del archivo
-    (checklist 1.4 y 2.5).
+    El identificador de 32 caracteres es el `evidencia_id` (hex) cuando se
+    pasa; si no (compatibilidad con llamadas anteriores, pruebas y flujo C),
+    se genera un `uuid4` nuevo. La extensión sale del content_type, no del
+    nombre original (checklist 1.4 y 2.5).
     """
+    if orden_id <= 0:
+        raise ValueError("orden_id debe ser un entero positivo")
     ct = normalizar_content_type(content_type)
     # Tipos fuera del mapa quedan como .bin: nunca se copia el subtipo recibido
     # a la clave (un content_type como "image/../../x" no puede alterar la ruta).
     # La lista blanca real de formatos es el control 1.1 (Semana 6).
     extension = _EXT_POR_CONTENT_TYPE.get(ct, "bin")
-    return f"ordenes/{orden_id}/{uuid.uuid4().hex}.{extension}"
+    identificador = (evidencia_id or uuid.uuid4()).hex
+    return f"ordenes/{orden_id}/{identificador}.{extension}"
+
+
+def es_clave_valida(clave: str) -> bool:
+    """True si la clave cumple la convención PATRON_CLAVE_OBJETO.
+
+    Sirve para validar claves que llegan de afuera (búsqueda, limpieza de
+    huérfanos en Semana 6) sin confiar en prefijos ni segmentos arbitrarios.
+    """
+    return PATRON_CLAVE_OBJETO.fullmatch(clave) is not None
 
 
 def nombre_limpio(nombre: str) -> str:
@@ -116,8 +140,11 @@ def recibir_evidencia(
     Orden (para no dejar residuos):
     1. valida el content_type y calcula el SHA-256 + tamaño (bloques de 1 MiB);
        un archivo de 0 bytes se rechaza ANTES de subir;
-    2. genera la clave del objeto (UUID, extensión desde el content_type);
-    3. sube el archivo a MinIO — si falla, se propaga y NO se crea ninguna fila;
+    2. genera el evidencia_id y, a partir de él, la clave del objeto
+       (filas y objetos comparten el mismo UUID: trazabilidad y, en Semana 6,
+       limpieza de huérfanos por prefijo);
+    3. sube el archivo a MinIO con los metadatos en x-amz-meta-* — si falla,
+       se propaga y NO se crea ninguna fila;
     4. inserta la fila con estado `confirmada`, `confirmada_en` y `sha256` y hace
        commit;
     5. compensación: si la base falla, rollback y borra el objeto recién subido.
@@ -129,11 +156,27 @@ def recibir_evidencia(
     if tamano == 0:
         raise EvidenciaInvalidaError("El archivo no puede estar vacío")
 
-    clave = generar_clave_objeto(datos.orden_id, content_type)
+    evidencia_id = uuid.uuid4()
+    clave = generar_clave_objeto(
+        datos.orden_id, content_type, evidencia_id=evidencia_id
+    )
 
-    subir_objeto(s3, bucket, clave, archivo, content_type)
+    subir_objeto(
+        s3,
+        bucket,
+        clave,
+        archivo,
+        content_type,
+        metadatos=metadatos_objeto(
+            evidencia_id,
+            datos.orden_id,
+            sha256,
+            autor_usuario_id,
+        ),
+    )
 
     campos: dict = {
+        "evidencia_id": evidencia_id,
         "orden_id": datos.orden_id,
         "presupuesto_id": datos.presupuesto_id,
         "autor_usuario_id": autor_usuario_id,
@@ -145,7 +188,7 @@ def recibir_evidencia(
         "content_type": content_type,
         "tamano_bytes": tamano,
         "sha256": sha256,
-        "request_id": request_id[:64] if request_id else None,
+        "request_id": normalizar_request_id(request_id),
         "confirmada_en": datetime.now(timezone.utc),
     }
     # visible_cliente: si no viene, rige el default por contexto del modelo.
@@ -168,17 +211,20 @@ def recibir_evidencia(
     return evidencia
 
 
-def listar_por_orden(db: Session, orden_id: int, *, vista_cliente: bool) -> list[Evidencia]:
+def listar_por_orden(
+    db: Session, orden_id: int, *, vista_cliente: bool, incluir_eliminadas: bool = False
+) -> list[Evidencia]:
     """Evidencias de una orden, filtradas según quien consulta.
 
     Cliente: solo `visible_cliente = true`, `estado = confirmada` y no eliminadas.
-    Otros roles (mecánico/admin): todas las no eliminadas.
+    Otros roles (mecánico): todas las no eliminadas.
+    Admin (`incluir_eliminadas=True`): todas, incluidas las eliminadas
+    (auditoría, matriz §4.5).
     Ordena por `creada_en`.
     """
-    consulta = select(Evidencia).where(
-        Evidencia.orden_id == orden_id,
-        Evidencia.eliminada_en.is_(None),
-    )
+    consulta = select(Evidencia).where(Evidencia.orden_id == orden_id)
+    if not incluir_eliminadas:
+        consulta = consulta.where(Evidencia.eliminada_en.is_(None))
     if vista_cliente:
         consulta = consulta.where(
             Evidencia.visible_cliente.is_(True),
@@ -186,6 +232,34 @@ def listar_por_orden(db: Session, orden_id: int, *, vista_cliente: bool) -> list
         )
     consulta = consulta.order_by(Evidencia.creada_en)
     return list(db.scalars(consulta))
+
+
+def buscar_por_id(db: Session, evidencia_id: uuid.UUID) -> Evidencia | None:
+    """Evidencia por su UUID, o `None` si no existe."""
+    return db.get(Evidencia, evidencia_id)
+
+
+def es_visible_para(
+    evidencia: Evidencia, *, vista_cliente: bool, es_admin: bool
+) -> bool:
+    """Regla de visibilidad de detalle/descarga, espejo de `listar_por_orden`.
+
+    - Administrador: ve todo, incluidas las eliminadas (auditoría).
+    - Eliminada lógicamente: solo la ve el administrador.
+    - Vista cliente: los tres filtros acumulativos (`visible_cliente = true`,
+      `estado = confirmada`, `eliminada_en IS NULL`).
+    - Resto (personal): todas las no eliminadas, cualquier estado.
+    """
+    if es_admin:
+        return True
+    if evidencia.eliminada_en is not None:
+        return False
+    if vista_cliente:
+        return (
+            evidencia.visible_cliente
+            and evidencia.estado == EstadoEvidencia.CONFIRMADA
+        )
+    return True
 
 
 def presupuesto_tiene_evidencia(db: Session, presupuesto_id: int) -> bool:

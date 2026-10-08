@@ -343,3 +343,16 @@ en el listado y sin consultar MS2 en detalle/descarga, multirol cliente+mecánic
 por unión, MS2 caído → 503 en los cuatro endpoints, y la unidad de
 `VerificadorOrdenesHttp` con `httpx` simulado (reenvía el JWT, 403/404 →
 `OrdenNoVisible`, errores/timeouts → `ServicioOrdenesNoDisponible`).
+
+`tests/test_ms4_ciclo_archivos.py` (Semana 5 — *Crear pruebas de subida,
+consulta y recuperación de archivos*) recorre el ciclo completo por la API
+HTTP: `POST /evidencias` → `GET /evidencias?orden_id=` → `GET /evidencias/{id}`
+→ `GET /evidencias/{id}/descarga` → seguir la URL prefirmada.
+
+| Bloque | Qué comprueba | Requiere |
+|---|---|---|
+| Sin MinIO (6 pruebas) | Los bytes recuperados son los subidos y su SHA-256 es el de la fila; la URL apunta al objeto de *esa* evidencia (clave = `evidencia_id`); varias evidencias de una orden (foto JPG/PNG y video MP4) no se cruzan y mantienen el orden de creación; nombre con tildes en JSON y en `Content-Disposition`; `request_id` y autor trazables; eliminada solo la recupera el administrador; el cliente solo recupera lo visible. | Nada (almacenamiento en memoria) |
+| Con MinIO real (6 pruebas) | Bytes idénticos al seguir la URL prefirmada y cabeceras `Content-Type`/`Content-Disposition` forzadas; metadatos `x-amz-meta-*` sin datos personales; archivo de 9 MiB por multipart íntegro; URL vencida, firma alterada o nombre manipulado → 403; acceso anónimo al objeto y al listado del bucket → 403; falla de la base → sin archivo huérfano en el bucket. | `docker compose up -d minio minio_init` (si no, se omiten) |
+
+Las pruebas con MinIO usan una orden aleatoria alta y borran su prefijo
+`ordenes/{orden_id}/` al terminar.

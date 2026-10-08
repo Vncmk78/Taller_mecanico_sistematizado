@@ -110,6 +110,10 @@ verifica** · **cuándo** se implementa (tarea del plan).
     y lo guarda en la fila con estado `confirmada` y `confirmada_en`
     (`services/evidencias.py`); verificado en `tests/test_ms4_recepcion.py` y
     `tests/test_ms4_recepcion_minio.py` (sube, descarga y compara el hash).
+  - Ciclo por la API (Semana 5): `tests/test_ms4_ciclo_archivos.py` sube por
+    `POST /evidencias`, recupera siguiendo la URL de `/descarga` y compara el
+    SHA-256 con el de la fila (en memoria y contra MinIO real, incluido un
+    archivo de 9 MiB por multipart).
 
 - [x] **2.5 Convención de claves.** `ordenes/{orden_id}/{uuid}.{ext}`, sin
   datos personales en la ruta (ni patente, ni nombre, ni email).

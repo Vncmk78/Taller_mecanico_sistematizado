@@ -221,7 +221,6 @@ def asignar_rol_a_usuario(
     "/usuarios/{usuario_id}/roles/{rol}",
     response_model=UsuarioRespuesta,
     summary="Retirar un rol restringido a un usuario",
-    dependencies=[Depends(requerir_roles(NombreRol.ADMINISTRADOR))],
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
@@ -235,10 +234,16 @@ def retirar_rol_de_usuario(
     usuario_id: int,
     rol: NombreRol,
     db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(
+        requerir_roles(NombreRol.ADMINISTRADOR)
+    ),
 ) -> UsuarioRespuesta:
     try:
         usuario = retirar_rol_restringido(
-            db, usuario_id=usuario_id, rol=rol
+            db,
+            usuario_id=usuario_id,
+            rol=rol,
+            administrador_id=principal.usuario_id,
         )
         # La retirada ya está confirmada: si fue la última, la cuenta queda
         # legítimamente con `roles: []` y la respuesta no debe fallar.

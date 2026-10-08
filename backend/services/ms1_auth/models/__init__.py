@@ -10,7 +10,8 @@ Referencia: lámina 04-mer-erd, recuadro "BD MS1 | Identidad, acceso y notificac
 from __future__ import annotations
 
 from services.ms1_auth.db import Base
+from services.ms1_auth.models.historial_rol import HistorialRol
 from services.ms1_auth.models.rol import Rol, UsuarioRol
 from services.ms1_auth.models.usuario import Usuario
 
-__all__ = ["Base", "Usuario", "Rol", "UsuarioRol"]
+__all__ = ["Base", "Usuario", "Rol", "UsuarioRol", "HistorialRol"]

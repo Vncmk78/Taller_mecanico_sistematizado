@@ -30,8 +30,8 @@ _EJEMPLO_RESPUESTA: dict[str, object] = {
 }
 
 _EJEMPLO_CAMBIAR_ESTADO: dict[str, object] = {
-    "estado_destino": 2,
-    "observacion": "Inicia evaluación técnica",
+    "estado_destino": 6,
+    "observacion": "Trabajo autorizado finalizado",
 }
 
 _EJEMPLO_HISTORIAL: dict[str, object] = {
@@ -129,7 +129,7 @@ class CambioEstadoSolicitud(BaseModel):
     estado_destino: int = Field(
         gt=0,
         description="Código del estado de destino en el catálogo oficial.",
-        examples=[2],
+        examples=[6],
     )
     observacion: str | None = Field(
         default=None,

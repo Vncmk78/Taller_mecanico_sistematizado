@@ -309,9 +309,9 @@ export function MechanicStatusPage() {
 
                 {closed.length > 0 && (
                     <section className="mt-10">
-                        <h3 className="text-lg font-semibold mb-1">Órdenes cerradas</h3>
+                        <h3 className="text-lg font-semibold mb-1">Órdenes sin avance disponible</h3>
                         <p className="text-text-muted text-sm mb-4">
-                            Sin avances pendientes: las gestiona el cliente o el administrador.
+                            Sin acciones del mecánico disponibles en este estado.
                         </p>
                         <div className="space-y-6">
                             {closed.map((order) => (

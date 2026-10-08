@@ -177,6 +177,7 @@ def test_decision_coordina_estado_historial_actor_y_motivo(flujo, decision, stoc
     assert historial[0].estado_nuevo == esperado
     assert historial[0].decision_presupuesto_id == decision_id
     assert historial[0].actor_usuario_id == 42 and historial[0].origen == "usuario"
+    assert historial[0].fecha_hora is not None
     assert historial[0].observacion == motivo
     with flujo.db3() as db:
         registro = db.get(DecisionPresupuesto, decision_id)
@@ -301,8 +302,12 @@ def test_stock_del_reintento_no_cambia_la_rama_persistida(flujo):
 
 def test_retry_despues_de_otro_estado_devuelve_aplicacion_original(flujo):
     resultado = _decidir(flujo).json()
+    assert flujo.ms2.put(
+        f"/ordenes/{flujo.orden_id}/mecanico", json={"mecanico_id": 50},
+        headers=_headers(99, NombreRol.ADMINISTRADOR),
+    ).status_code == 200
     assert flujo.ms2.patch(f"/ordenes/{flujo.orden_id}/estado", json={"estado_destino": LISTO},
-                           headers=_headers(99, NombreRol.ADMINISTRADOR)).status_code == 200
+                           headers=_headers(50, NombreRol.MECANICO)).status_code == 200
     flujo.fallo["modo"] = "verificacion"  # Un efecto ya guardado no necesita verificar MS3 otra vez.
     repetida = _aplicar(flujo, resultado["decision_id"])
     assert repetida.status_code == 200 and repetida.json() == resultado["aplicacion_en_orden"]

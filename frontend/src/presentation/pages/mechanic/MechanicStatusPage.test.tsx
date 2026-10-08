@@ -188,7 +188,7 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
 
         renderPage();
 
-        expect(await screen.findByText('Órdenes cerradas')).toBeInTheDocument();
+        expect(await screen.findByText('Órdenes sin avance disponible')).toBeInTheDocument();
         expect(
             screen.getByText('No hay avances disponibles para el mecánico en este estado.')
         ).toBeInTheDocument();
@@ -280,12 +280,11 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         expect(screen.queryByLabelText('Siguiente estado de la orden 102')).not.toBeInTheDocument();
     });
 
-    // La vista promete al mecánico que cualquier opción del selector será
-    // aceptada por MS2. Estos pares son los 10 que validar_transicion admite
-    // (ms2_taller/domain/transiciones_orden.py:70-111).
+    // La vista no sustituye operaciones específicas. Los avances de envío y
+    // stock posterior se conservan con sus precondiciones funcionales pendientes.
     describe('matriz de estados: qué ofrece el selector en cada uno', () => {
         const ESPERADOS: Record<number, string[]> = {
-            1: ['Esperando diagnóstico'],
+            1: [],
             2: ['Esperando aprobación de presupuesto'],
             3: [],
             4: ['En reparación'],
@@ -332,7 +331,7 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
 
             renderPage();
 
-            expect(await screen.findByText('Órdenes cerradas')).toBeInTheDocument();
+            expect(await screen.findByText('Órdenes sin avance disponible')).toBeInTheDocument();
             for (const id of ['301', '302', '303', '304']) {
                 expect(screen.getByText(`Orden n° ${id}`)).toBeInTheDocument();
                 expect(screen.queryByLabelText(`Siguiente estado de la orden ${id}`)).not.toBeInTheDocument();
@@ -340,11 +339,10 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         });
     });
 
-    // Los cuatro avances declarados en AVANCES_MECANICO, y no solo el 5->6 que
+    // Los tres avances conservados en AVANCES_MECANICO, y no solo el 5->6 que
     // ya cubría la suite.
     describe('avances permitidos por el mecánico', () => {
         it.each([
-            [1, 2, 'Esperando diagnóstico'],
             [2, 3, 'Esperando aprobación de presupuesto'],
             [4, 5, 'En reparación'],
             [5, 6, 'Listo'],
@@ -511,7 +509,7 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
 
         // El 6 no tiene avance del mecánico, así que la orden sale de la lista
         // accionable: la caché se actualizó y la vista lo refleja.
-        expect(await screen.findByText('Órdenes cerradas')).toBeInTheDocument();
+        expect(await screen.findByText('Órdenes sin avance disponible')).toBeInTheDocument();
         expect(screen.queryByLabelText('Siguiente estado de la orden 101')).not.toBeInTheDocument();
         expect(screen.getAllByText('Listo').length).toBeGreaterThan(0);
     });

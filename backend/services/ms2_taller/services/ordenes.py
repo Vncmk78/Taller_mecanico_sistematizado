@@ -19,6 +19,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from services.ms2_taller.domain.transiciones_orden import (
     EstadoOrdenDesconocidoError,
     EventoOrden,
+    TRANSICIONES_PERMITIDAS,
     TransicionOrdenNoPermitidaError,
     TransicionOrdenTerminalError,
     resolver_transicion,
@@ -40,6 +41,17 @@ from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.vehiculo import Vehiculo
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import AplicacionDecisionRespuesta
+
+
+# Solo eventos con una operación existente que verifica su hecho de negocio.
+# Las demás brechas del PATCH se conservan pendientes de definición explícita.
+_OPERACIONES_ESPECIFICAS_POR_EVENTO = {
+    EventoOrden.PRIMERA_ASIGNACION: "PUT /ordenes/{orden_id}/mecanico",
+    EventoOrden.PRIMERA_APROBACION_CON_REPUESTOS:
+        "POST /ordenes/{orden_id}/decisiones-presupuesto",
+    EventoOrden.PRIMERA_APROBACION_SIN_REPUESTOS:
+        "POST /ordenes/{orden_id}/decisiones-presupuesto",
+}
 
 
 class VehiculoNoEncontradoError(Exception):
@@ -368,7 +380,7 @@ def cambiar_estado_orden(
     principal: PrincipalAutenticado,
     observacion: str | None = None,
 ) -> OrdenTrabajo:
-    """Cambia el estado de una orden validando rol, catálogo y transición.
+    """Valida rol, estructura y operaciones específicas antes del cambio directo.
 
     El lock de la orden se conserva hasta el commit o rollback, de modo que una
     operación concurrente observa el estado confirmado por la anterior. Dentro
@@ -391,6 +403,14 @@ def cambiar_estado_orden(
             raise OrdenEstadoInvalidoError(str(exc)) from exc
         except TransicionOrdenNoPermitidaError as exc:
             raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        for (origen, evento), destino in TRANSICIONES_PERMITIDAS.items():
+            if origen == orden.estado_codigo and destino == estado_destino:
+                operacion = _OPERACIONES_ESPECIFICAS_POR_EVENTO.get(evento)
+                if operacion is not None:
+                    raise OrdenTransicionNoPermitidaError(
+                        f"Esta transición requiere la operación específica {operacion}"
+                    )
 
         estado_anterior = orden.estado_codigo
         orden.estado_codigo = estado_destino

@@ -16,10 +16,17 @@ Reglas que se aplican a todos los endpoints:
   genera un UUID y lo devuelve en la respuesta.
 - Errores propios de la Gateway: `RUTA_NO_ENCONTRADA` (404),
   `MICROSERVICIO_INALCANZABLE` (502), `TIEMPO_AGOTADO` (504),
-  `GATEWAY_SATURADA` (503), `ERROR_MICROSERVICIO` y `ERROR_INTERNO` (500),
-  todos con el cuerpo `{"detail": "...", "error": {"codigo", "estado",
-  "ruta", "request_id"}}`. `GATEWAY_SATURADA` y `ERROR_MICROSERVICIO` son de
-  la Semana 4 (mapeo de errores y cabeceras).
+  `GATEWAY_SATURADA` (503), `CUERPO_DEMASIADO_GRANDE` (413),
+  `ERROR_MICROSERVICIO` y `ERROR_INTERNO` (500), todos con el cuerpo
+  `{"detail": "...", "error": {"codigo", "estado", "ruta", "request_id"}}`.
+  `GATEWAY_SATURADA`, `ERROR_MICROSERVICIO` y `CUERPO_DEMASIADO_GRANDE` son de
+  la Semana 4/5 (mapeo de errores, cabeceras y límites de body).
+- Límites de body por prefijo (checklist 4.2): la Gateway rechaza con `413`
+  (`CUERPO_DEMASIADO_GRANDE`, mensaje genérico) los bodies mayores al límite
+  del prefijo **antes de leerlos o llamar al microservicio**. El `prefijo`
+  `evidencias` admite hasta 12 MiB (multipart con foto de hasta 10 MB); el
+  resto de los prefijos (JSON de MS1/MS2/MS3) admite hasta 1 MiB. Un
+  `Content-Length` no numérica responde `400` (`ERROR_HTTP`).
 - Errores de los microservicios: `{"detail": "mensaje"}` con su status code.
   En los `422` (validación de body en MS1/MS2), `detail` es una **lista** de
   errores de FastAPI, no un string:
@@ -80,7 +87,9 @@ operaciones, con su cabecera `X-Request-ID` y sus ejemplos:
 | `TiempoAgotado` | 504 | El microservicio tardó demasiado |
 
 El `503` y el `504` de cada operación de negocio se referencian con `$ref` a
-`GatewaySaturada` y `TiempoAgotado`. El `401`, el `500` y el `502` se describen en
+`GatewaySaturada` y `TiempoAgotado`. Excepción: en `/api/evidencias*` el `503`
+también puede venir de MS4 (almacenamiento o MS2 caídos), así que se describe en
+línea con ambos formatos y sus ejemplos. El `401`, el `500` y el `502` se describen en
 línea en cada operación porque no son idénticos en todas: dependen de si el error
 lo genera la Gateway (`ErrorRespuesta`) o el microservicio (`ErrorDetalle`), y el
 OpenAPI publica en cada caso el esquema que corresponde.
@@ -92,8 +101,8 @@ OpenAPI publica en cada caso el esquema que corresponde.
 
 | Prefijo | Ejemplos |
 |---|---|
-| `error_*` | Los siete errores de la Gateway: `error_ruta_no_encontrada` (404), `error_metodo_no_permitido` (405), `error_interno_gateway` (500), `error_microservicio` (respuesta no JSON), `error_microservicio_no_disponible` (502), `error_gateway_saturada` (503) y `error_tiempo_agotado` (504) |
-| `detalle_*` | Los errores que responden MS1 y MS2: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados y los dos `422` de validación |
+| `error_*` | Los ocho errores de la Gateway: `error_ruta_no_encontrada` (404), `error_metodo_no_permitido` (405), `error_cuerpo_demasiado_grande` (413), `error_interno_gateway` (500), `error_microservicio` (respuesta no JSON), `error_microservicio_no_disponible` (502), `error_gateway_saturada` (503) y `error_tiempo_agotado` (504) |
+| `detalle_*` | Los errores que responden MS1, MS2 y MS4: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados, los dos `422` de validación y los de evidencias (orden o evidencia no encontrada, tipo de archivo no permitido, archivo vacío, almacenamiento u órdenes no disponibles) |
 
 Los mensajes de los errores de la Gateway se importan de `gateway/errores.py`, así
 que el ejemplo no puede divergir del texto que la Gateway responde realmente. Los
@@ -117,7 +126,7 @@ en `error.request_id`. Los dos endpoints de salud muestran también sus ejemplos
 ### Verificación
 
 ```bash
-python -m pytest tests/test_gateway_openapi.py tests/test_gateway_openapi_ejemplos.py -v
+python -m pytest tests/test_gateway_openapi.py tests/test_gateway_openapi_ejemplos.py tests/test_gateway_openapi_evidencias.py -v
 ```
 
 `tests/test_gateway_openapi_ejemplos.py` valida el documento con
@@ -211,13 +220,15 @@ Convención que deben respetar los endpoints de la Semana 5:
 - El microservicio recibe la ruta sin el prefijo `/api` (p. ej. MS4 recibe
   `/evidencias`, no `/api/evidencias`).
 
-Nota sobre la subida de archivos: hoy la Gateway lee el body completo en
-memoria antes de reenviarlo y conserva el `Content-Type` con el `boundary`
-del multipart. Para fotos no es problema, pero el límite de tamaño (`413`), el
-modo de subida (streaming desde la Gateway o POST prefirmado directo a MinIO)
-y los timeouts para videos son las tareas pendientes de la Semana 5 (controles
-4.2, 4.3 y 4.5 del
-[checklist de seguridad de evidencias](checklist-seguridad-evidencias.md)).
+Nota sobre la subida de archivos: la Gateway conserva el `Content-Type` con el
+`boundary` del multipart y aplica un límite de tamaño de body por prefijo
+(checklist 4.2): 1 MiB para los prefijos JSON y 12 MiB para `evidencias` (foto
+de hasta 10 MB + margen del multipart). Superarlo responde `413
+CUERPO_DEMASIADO_GRANDE` sin llamar al microservicio. No hay streaming hacia
+MS4 (riesgo 4.3 acotado por ese límite): los videos usan el flujo C (POST
+prefirmado directo a MinIO, Semana 6+). Detalle en
+[checklist-seguridad-evidencias.md](checklist-seguridad-evidencias.md) (4.2,
+4.3 y 4.5) y `estudio-almacenamiento-objetos.md` (sección 6).
 
 Deuda registrada (decisión pendiente): existen alias en singular
 (`presupuesto`, `evidencia`, `orden`, `vehiculo`) que reenvían la ruta tal
@@ -760,6 +771,190 @@ valida en el servicio de MS2 y no cambia las precondiciones de cada transición.
   "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T11:00:00-03:00" }
 ```
 
+## Evidencias multimedia (MS4)
+
+Fotos y videos asociados a una orden de trabajo (diagnóstico, presupuesto,
+reparación y entrega). El archivo vive en el almacenamiento de objetos
+(MinIO/S3, bucket privado) y sus datos en la base de MS4. Todos los endpoints
+requieren `Authorization: Bearer <token>`; MS4 valida el JWT y, antes de leer
+o guardar nada, pregunta a MS2 si la orden es visible para ese usuario
+reenviando el **mismo** token.
+
+```json
+// EvidenciaRespuesta
+{
+  "evidencia_id": "3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f",
+  "orden_id": 31,
+  "presupuesto_id": null,
+  "contexto": "diagnostico",
+  "tipo_archivo": "foto",
+  "visible_cliente": false,
+  "estado": "confirmada",
+  "nombre_original": "frenos delanteros.jpg",
+  "content_type": "image/jpeg",
+  "tamano_bytes": 482133,
+  "creada_en": "2026-10-07T10:15:00-03:00"
+}
+```
+
+La respuesta **nunca** incluye la clave del objeto en el almacenamiento, el
+SHA-256 ni el autor: son datos internos. Para mostrar o bajar el archivo se pide
+una URL de descarga (ver más abajo).
+
+Quién ve qué (resumen de `matriz-autorizacion-roles.md` §4.5):
+
+| Rol | Subir | Consultar y descargar |
+|---|---|---|
+| Cliente | ❌ `403` | Solo de sus órdenes y solo las `visible_cliente=true`, confirmadas y no eliminadas |
+| Mecánico | ✅ solo en órdenes que atiende | Todas las no eliminadas de las órdenes que atiende |
+| Administrador | ✅ | Todas, incluidas las eliminadas (auditoría) |
+| Multirol | Por unión: rige el alcance más amplio | Ídem |
+
+Visibilidad por defecto según `contexto` (si no se envía `visible_cliente`):
+`diagnostico` y `reparacion` ocultas; `presupuesto` y `resultado_final`
+visibles. En `presupuesto` es obligatorio `presupuesto_id` y la evidencia
+siempre es visible.
+
+### POST `/api/evidencias`
+
+Sube una foto o video de una orden. Es `multipart/form-data`, **no** JSON.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Mecánico (orden asignada) o Administrador |
+| Body (multipart) | `archivo` (binario, `image/*` o `video/*`) · `orden_id` (int > 0) · `contexto` (`diagnostico` \| `presupuesto` \| `reparacion` \| `resultado_final`) · `presupuesto_id`? (solo con `presupuesto`) · `visible_cliente`? (`true`/`false`) |
+| Cabeceras opcionales | `X-Request-ID` (queda guardado con la evidencia para rastrearla) |
+| Respuesta OK | `201` con `EvidenciaRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` rol Cliente (se rechaza antes de procesar el archivo) · `404` `"Orden no encontrada"` (inexistente o no visible) · `413` body > 12 MiB (Gateway) · `422` `"Tipo de archivo no permitido"`, `"El archivo no puede estar vacío"` o formulario inválido · `503` `"El almacenamiento de evidencias no está disponible"` o `"El servicio de órdenes no está disponible"` |
+
+El servidor decide el nombre y la extensión del objeto a partir del
+`Content-Type` de la parte `archivo`; el nombre original solo se guarda para
+mostrarlo, sin rutas. Si la base falla después de subir, el archivo se borra
+(no quedan archivos huérfanos).
+
+```bash
+curl -X POST "$GATEWAY/api/evidencias" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-Request-ID: subida-orden-31" \
+  -F "archivo=@frenos.jpg;type=image/jpeg" \
+  -F "orden_id=31" \
+  -F "contexto=diagnostico"
+```
+
+```js
+// Frontend (fetch): NO fijar Content-Type a mano; el navegador agrega el boundary.
+const form = new FormData();
+form.append("archivo", archivoSeleccionado);        // File de un <input type="file">
+form.append("orden_id", String(ordenId));
+form.append("contexto", "resultado_final");
+const resp = await fetch(`${API}/api/evidencias`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${token}` },
+  body: form,
+});
+if (resp.status === 201) {
+  const evidencia = await resp.json();               // EvidenciaRespuesta
+}
+```
+
+### GET `/api/evidencias?orden_id={orden_id}`
+
+Lista las evidencias de una orden, en orden de creación, filtradas por rol.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Query | `orden_id` (obligatorio, int > 0) |
+| Respuesta OK | `200` con lista de `EvidenciaRespuesta` (puede ser `[]`) |
+| Errores | `401` JWT ausente/inválido · `404` `"Orden no encontrada"` · `422` falta `orden_id` o no es positivo · `503` MS2 no disponible |
+
+```bash
+curl "$GATEWAY/api/evidencias?orden_id=31" -H "Authorization: Bearer $TOKEN"
+```
+
+### GET `/api/evidencias/{evidencia_id}`
+
+Devuelve una evidencia con la misma visibilidad del listado. Inexistente,
+eliminada (para quien no es Administrador) o fuera de alcance responden el
+**mismo** `404`, sin revelar si existe.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Path | `evidencia_id` (UUID) |
+| Respuesta OK | `200` con `EvidenciaRespuesta` |
+| Errores | `401` JWT ausente/inválido · `404` `"Evidencia no encontrada"` · `422` el id no es UUID · `503` MS2 no disponible |
+
+### GET `/api/evidencias/{evidencia_id}/descarga`
+
+Entrega una **URL prefirmada** del almacenamiento para descargar el archivo.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Path | `evidencia_id` (UUID) |
+| Respuesta OK | `200` con `{"url": string, "expira_en": int}` y cabeceras `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` |
+| Errores | `401` · `404` `"Evidencia no encontrada"` · `422` · `503` (igual que el detalle) |
+
+```json
+// Response 200
+{
+  "url": "https://almacenamiento.taller.example/evidencias/ordenes/31/3f2b8c1e5d4a4e6b9c7d1a2b3c4d5e6f.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=300&X-Amz-Signature=...",
+  "expira_en": 300
+}
+```
+
+Cómo usarla:
+
+- La URL apunta al almacenamiento, **no** a la Gateway: se abre tal cual, sin
+  `Authorization` (la firma ya autoriza esa única descarga).
+- Vence en `expira_en` segundos (5 minutos por defecto, configurable con
+  `MS4_URL_DESCARGA_TTL_SECONDS`). Vencida, alterada o con otro nombre de
+  archivo responde `403` del almacenamiento: se pide una nueva a este endpoint.
+- No se guarda en la base ni en `localStorage`, ni se cachea: se pide cada vez
+  que el usuario va a ver o bajar el archivo.
+- El almacenamiento responde con el `Content-Type` validado y
+  `Content-Disposition: attachment; filename="..."` (con `filename*` UTF-8 para
+  tildes y ñ), así que el navegador lo descarga en vez de interpretarlo.
+
+```js
+// Frontend: botón "Descargar"
+const r = await fetch(`${API}/api/evidencias/${id}/descarga`, {
+  headers: { Authorization: `Bearer ${token}` },
+});
+if (r.ok) {
+  const { url } = await r.json();
+  window.location.assign(url);   // o <a href={url}> recién obtenida
+}
+```
+
+Para mostrar una miniatura en un `<img>`, también se usa esta URL recién
+pedida; si la imagen falla con `403` por vencimiento, se vuelve a pedir.
+
+### Flujo completo (ejemplo)
+
+1. El mecánico inicia sesión (`POST /api/auth/login`) y ve sus órdenes
+   (`GET /api/ordenes`).
+2. Sube una foto de diagnóstico: `POST /api/evidencias` con
+   `contexto=diagnostico` → queda oculta para el cliente.
+3. Al entregar, sube la foto final con `contexto=resultado_final` → visible.
+4. El cliente lista `GET /api/evidencias?orden_id=31` y solo ve la foto final.
+5. Para verla pide `GET /api/evidencias/{id}/descarga` y abre la `url`.
+
+Configuración en el despliegue: `MS4_S3_PUBLIC_ENDPOINT` debe ser la URL
+pública HTTPS del almacenamiento (la que verá el navegador); la firma incluye
+el host, así que una URL firmada con el nombre interno de la red Docker no
+funciona fuera de ella. Detalle en `estudio-urls-firmadas.md`.
+
+Videos: por ahora entran por este mismo endpoint dentro del límite de 12 MiB.
+La subida directa de videos grandes al almacenamiento (flujo C, POST
+prefirmado) está planificada para una semana posterior.
+
+Pruebas que respaldan este contrato: `tests/test_ms4_api_evidencias.py`,
+`tests/test_ms4_autorizacion_evidencias.py`, `tests/test_ms4_ciclo_archivos.py`,
+`tests/test_gateway_evidencias.py` y `tests/test_gateway_openapi_evidencias.py`
+(los ejemplos del Swagger se comparan con las respuestas reales de MS4).
+
 ## Contratos todavía no publicados
 
 Las siguientes capacidades no tienen un endpoint implementado y no deben ser
@@ -769,7 +964,6 @@ consumidas como parte del contrato actual:
 |---|---|
 | Capacidad y máximo de órdenes activas | Subsistema de una semana posterior |
 | Presupuestos, repuestos e inventario | Los contratos de MS3 se publicarán cuando sus endpoints estén definidos y verificados |
-| Evidencias multimedia | Los contratos de MS4 se publicarán cuando sus endpoints estén definidos y verificados |
 
 El frontend web y la aplicación móvil deben consumir exclusivamente las rutas
 publicadas por la API Gateway con prefijo `/api`. La existencia de una llamada o

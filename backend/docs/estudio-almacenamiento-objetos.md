@@ -287,3 +287,9 @@ La **visibilidad** (quién puede ver cada evidencia) se define en esa tarea.
 - FastAPI — *Concurrency and async / await* (endpoints `def` en threadpool).
 - Repositorio: `backend/scripts/prueba_minio.py` (subida, descarga, SHA-256,
   URL prefirmada y acceso anónimo verificados en local).
+
+## 10. Siguiente estudio
+
+La entrega de archivos por URL prefirmada (endpoint público de firma, TTL,
+cabeceras de descarga y saneo del nombre) se profundiza en
+`docs/estudio-urls-firmadas.md` (Semana 5, controles 3.3 y 3.4).

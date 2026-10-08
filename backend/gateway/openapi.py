@@ -3,12 +3,13 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los endpoints reales que enruta la Gateway hacia MS1 (Autenticación) y MS2
-(Vehículos y Órdenes), con sus esquemas (`gateway/contratos`), la seguridad
-`bearerAuth` y el formato común de errores de la Gateway (`gateway.esquemas`).
+los endpoints reales que enruta la Gateway hacia MS1 (Autenticación), MS2
+(Vehículos y Órdenes) y MS4 (Evidencias), con sus esquemas
+(`gateway/contratos`), la seguridad `bearerAuth` y el formato común de errores
+de la Gateway (`gateway.esquemas`).
 
 Incluye el contrato mínimo de decisiones MS3–MS2; los contratos generales de
-presupuestos, evidencias e integración con facturación conservan su alcance previo.
+presupuestos e integración con facturación conservan su alcance previo.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
@@ -31,7 +33,7 @@ _TITULO = "SGTM — API Gateway"
 _VERSION = "0.1.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia MS1 (Autenticación y \
-Usuarios) y MS2 (Vehículos y Órdenes).
+Usuarios), MS2 (Vehículos y Órdenes) y MS4 (Evidencias multimedia).
 
 ## URL base
 
@@ -63,6 +65,7 @@ de validación, `detail` es una lista de errores de Pydantic.
 |---|---|---|
 | 404 | `RUTA_NO_ENCONTRADA` | La ruta no existe |
 | 405 | `METODO_NO_PERMITIDO` | El método no existe en esa ruta |
+| 413 | `CUERPO_DEMASIADO_GRANDE` | El body supera el límite (1 MiB; 12 MiB en `/api/evidencias`) |
 | 500 | `ERROR_INTERNO` o `ERROR_MICROSERVICIO` | Error no controlado o respuesta no JSON |
 | 502 | `MICROSERVICIO_INALCANZABLE` | El microservicio no respondió |
 | 503 | `GATEWAY_SATURADA` | El pool de conexiones está agotado |
@@ -98,6 +101,13 @@ _TAGS = [
         ),
     },
     {
+        "name": "Evidencias",
+        "description": (
+            "Subida de fotos y videos de una orden, consulta por rol y "
+            "descarga con URL prefirmada de corta duración (MS4)."
+        ),
+    },
+    {
         "name": "Presupuestos",
         "description": "Consulta y reintento de la decisión inicial de presupuesto (MS3).",
     },
@@ -123,6 +133,9 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
+    ("EvidenciaSubida", contratos_evidencias.EvidenciaSubida),
+    ("EvidenciaRespuesta", contratos_evidencias.EvidenciaRespuesta),
+    ("UrlDescargaRespuesta", contratos_evidencias.UrlDescargaRespuesta),
     ("DecisionOrdenSolicitud", DecisionOrdenSolicitud),
     ("DecisionPresupuestoVerificada", DecisionPresupuestoVerificada),
     ("AplicacionDecisionRespuesta", AplicacionDecisionRespuesta),
@@ -163,6 +176,27 @@ _PARAMETRO_ORDEN_ID: dict[str, object] = {
 }
 
 
+_PARAMETRO_EVIDENCIA_ID: dict[str, object] = {
+    "name": "evidencia_id",
+    "in": "path",
+    "required": True,
+    "description": "Identificador (UUID) de la evidencia.",
+    "schema": {
+        "type": "string",
+        "format": "uuid",
+        "example": "3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f",
+    },
+}
+
+_PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
+    "name": "orden_id",
+    "in": "query",
+    "required": True,
+    "description": "Orden de trabajo (MS2) cuyas evidencias se listan.",
+    "schema": {"type": "integer", "format": "int64", "minimum": 1, "example": 31},
+}
+
+
 def _ref(nombre: str) -> dict[str, object]:
     return {"$ref": f"#/components/schemas/{nombre}"}
 
@@ -191,6 +225,8 @@ def _operacion(
     requiere_auth: bool,
     con_vehiculo_id: bool = False,
     con_orden_id: bool = False,
+    parametros_extra: list[dict[str, object]] | None = None,
+    cuerpo_multipart: str | None = None,
     descripcion_404: str = (
         "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA)."
     ),
@@ -201,6 +237,7 @@ def _operacion(
         parametros.append(_PARAMETRO_VEHICULO_ID)
     if con_orden_id:
         parametros.append(_PARAMETRO_ORDEN_ID)
+    parametros.extend(parametros_extra or [])
 
     errores: dict[str, dict[str, object]] = {
         **{
@@ -255,7 +292,162 @@ def _operacion(
             "required": True,
             "content": {"application/json": {"schema": _ref(cuerpo)}},
         }
+    if cuerpo_multipart is not None:
+        operacion["requestBody"] = {
+            "required": True,
+            "content": {"multipart/form-data": {"schema": _ref(cuerpo_multipart)}},
+        }
     return operacion
+
+
+def _operacion_evidencias(**kwargs: object) -> dict[str, object]:
+    """Operación de MS4: además del 503 de la Gateway, MS4 responde 503 propio.
+
+    MS4 devuelve `{"detail": ...}` con 503 cuando el almacenamiento (MinIO/S3)
+    o MS2 (verificación de la orden) no responden; por eso el 503 de estas
+    operaciones admite ambos formatos en lugar de la respuesta reutilizable.
+    """
+    operacion = _operacion(tag="Evidencias", requiere_auth=True, **kwargs)  # type: ignore[arg-type]
+    operacion["responses"]["503"] = _respuesta(
+        (
+            "No disponible. MS4 responde {'detail': ...} si el almacenamiento "
+            "o el servicio de órdenes no responden; la Gateway responde "
+            "GATEWAY_SATURADA si su pool está agotado."
+        ),
+        {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
+    )
+    return operacion
+
+
+def _caminos_evidencias() -> dict[str, dict[str, object]]:
+    error_404_ms4: dict[str, object] = {
+        "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")],
+    }
+    subir = _operacion_evidencias(
+        resumen="Subir una evidencia de una orden",
+        descripcion=(
+            "Formulario multipart con el archivo y sus datos. Solo Mecánico "
+            "(de una orden que atiende) o Administrador; un Cliente recibe 403 "
+            "antes de procesar el archivo. MS4 verifica la orden contra MS2 con "
+            "el mismo JWT antes de guardar nada. El autor sale del token y el "
+            "`X-Request-ID` queda registrado con la evidencia. La Gateway "
+            "rechaza con 413 un body mayor a 12 MiB."
+        ),
+        operation_id="subir_evidencia",
+        cuerpo=None,
+        cuerpo_multipart="EvidenciaSubida",
+        respuestas_ok={
+            "201": _respuesta("Evidencia guardada.", _ref("EvidenciaRespuesta"))
+        },
+        errores_ms={
+            "401": "JWT ausente o inválido",
+            "403": "Se requiere rol Mecánico o Administrador",
+            "422": "Archivo vacío, tipo no permitido o datos del formulario inválidos",
+        },
+        descripcion_404=(
+            "Orden no encontrada: no existe o no es visible para el usuario "
+            "(no se revela cuál de las dos)."
+        ),
+        esquema_404=error_404_ms4,
+    )
+    subir["responses"]["413"] = _respuesta(
+        "La Gateway rechazó el body por superar el límite (CUERPO_DEMASIADO_GRANDE).",
+        _ref("ErrorRespuesta"),
+    )
+    return {
+        "/api/evidencias": {
+            "post": subir,
+            "get": _operacion_evidencias(
+                resumen="Listar las evidencias de una orden",
+                descripcion=(
+                    "MS4 verifica primero que la orden sea visible para el "
+                    "usuario (MS2). Cliente: solo las visibles para él, "
+                    "confirmadas y no eliminadas. Mecánico: todas las no "
+                    "eliminadas de las órdenes que atiende. Administrador: "
+                    "todas, incluidas las eliminadas. En un usuario multirol "
+                    "rige el alcance más amplio. Orden de creación ascendente."
+                ),
+                operation_id="listar_evidencias",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_ORDEN_ID_QUERY],
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Evidencias de la orden.",
+                        {"type": "array", "items": _ref("EvidenciaRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Falta orden_id o no es un entero positivo",
+                },
+                descripcion_404="Orden no encontrada o no visible.",
+                esquema_404=error_404_ms4,
+            ),
+        },
+        "/api/evidencias/{evidencia_id}": {
+            "get": _operacion_evidencias(
+                resumen="Consultar una evidencia",
+                descripcion=(
+                    "Aplica la misma visibilidad del listado. Una evidencia "
+                    "inexistente, eliminada o fuera del alcance responde el "
+                    "mismo 404, sin revelar su existencia."
+                ),
+                operation_id="consultar_evidencia",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_EVIDENCIA_ID],
+                respuestas_ok={
+                    "200": _respuesta("Evidencia encontrada.", _ref("EvidenciaRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de evidencia inválido (no es UUID)",
+                },
+                descripcion_404="Evidencia no encontrada.",
+                esquema_404=error_404_ms4,
+            )
+        },
+        "/api/evidencias/{evidencia_id}/descarga": {
+            "get": _operacion_evidencias(
+                resumen="Obtener la URL de descarga de una evidencia",
+                descripcion=(
+                    "Devuelve una URL prefirmada del almacenamiento que vence "
+                    "en `expira_en` segundos (5 minutos por defecto) y fuerza "
+                    "el tipo validado y la descarga como adjunto. El cliente la "
+                    "abre directamente (no pasa por la Gateway) y pide una "
+                    "nueva cuando vence. La respuesta lleva `Cache-Control: "
+                    "no-store` y `X-Content-Type-Options: nosniff`. Mismo 404 "
+                    "que el detalle."
+                ),
+                operation_id="descargar_evidencia",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_EVIDENCIA_ID],
+                respuestas_ok={
+                    "200": {
+                        **_respuesta(
+                            "URL prefirmada de corta duración.",
+                            _ref("UrlDescargaRespuesta"),
+                        ),
+                        "headers": {
+                            "Cache-Control": {
+                                "description": "La URL no se debe cachear.",
+                                "schema": {"type": "string", "example": "no-store"},
+                            },
+                            "X-Content-Type-Options": {
+                                "description": "El navegador no adivina el tipo.",
+                                "schema": {"type": "string", "example": "nosniff"},
+                            },
+                        },
+                    }
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de evidencia inválido (no es UUID)",
+                },
+                descripcion_404="Evidencia no encontrada.",
+                esquema_404=error_404_ms4,
+            )
+        },
+    }
 
 
 def _caminos_documentados() -> dict[str, dict[str, object]]:
@@ -705,7 +897,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 14 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 18 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:
@@ -718,7 +910,11 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         routes=app.routes,
         tags=_TAGS,
     )
-    esquema["paths"] = {**esquema["paths"], **_caminos_documentados()}
+    esquema["paths"] = {
+        **esquema["paths"],
+        **_caminos_documentados(),
+        **_caminos_evidencias(),
+    }
 
     componentes = esquema.setdefault("components", {})
     componentes["securitySchemes"] = {

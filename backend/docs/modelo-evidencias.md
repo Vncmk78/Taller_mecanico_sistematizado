@@ -4,7 +4,8 @@ Semana 3 · Bastián Liempi · Taller de Integración II (Grupo 10)
 
 Define el modelo `Evidencia` (metadatos) de fotos y videos de orden, las reglas
 de visibilidad que usarán las consultas y el flujo de recepción (A) que lo
-puebla. **Aquí no hay endpoints**: la subida y consulta por HTTP es tarea aparte.
+puebla. Los endpoints HTTP que lo usan están en `routers/evidencias.py`
+(subida, listado, detalle y descarga, Semana 5).
 
 El archivo vive en MinIO/S3; en PostgreSQL solo van los **metadatos**. Fuentes:
 lámina 04-mer-erd (recuadro "BD MS4"), Sistematización final §4.3, §4.4, §8, y
@@ -85,6 +86,9 @@ La lista de `content_type` permitidos (`image/jpeg`, `image/png`, `image/webp`,
 | Mecánico | Todas las confirmadas y no eliminadas de las órdenes que atiende | Subir, cambiar `visible_cliente` (salvo contexto presupuesto), eliminar las propias |
 | Administrador | Todo, incluidas las eliminadas (auditoría) | Todo |
 
+El alcance por orden ("sus órdenes" / "las que atiende") lo decide MS2: ver
+[Verificación de acceso con MS2](#verificación-de-acceso-con-ms2).
+
 **Valor por defecto de `visible_cliente` según contexto:**
 
 | Contexto | `visible_cliente` por defecto |
@@ -128,11 +132,14 @@ orden, diseñado para no dejar residuos:
    el SHA-256 y el tamaño** leyendo en bloques de 1 MiB; al terminar deja el
    archivo al inicio.
 2. **Archivo de 0 bytes se rechaza** (`EvidenciaInvalidaError`) antes de subir.
-3. **Genera la clave** `ordenes/{orden_id}/{uuid}.{ext}` — la extensión sale del
-   content_type, nunca del nombre original (checklist 1.4 y 2.5).
+3. **Genera el `evidencia_id`** (`uuid4`) y, a partir de él, **la clave**
+   `ordenes/{orden_id}/{evidencia_id_hex}.{ext}` — el UUID de la fila y el de la
+   clave son el mismo; la extensión sale del content_type, nunca del nombre
+   original (checklist 1.4 y 2.5). Ver "Convención de claves de objeto".
 4. **Sube a MinIO** con `subir_objeto` (multipart desde 8 MiB, decisión 3 del
-   estudio de almacenamiento). Si MinIO falla, se propaga y **no se crea
-   ninguna fila**.
+   estudio de almacenamiento), incluyendo los `x-amz-meta-*` de soporte
+   (evidencia-id, orden-id, sha256, autor-id) — nunca nombre original ni datos
+   personales. Si MinIO falla, se propaga y **no se crea ninguna fila**.
 5. **Inserta la fila** con estado `confirmada`, `confirmada_en` y `sha256` y
    hace commit. `visible_cliente` solo se escribe si vino en la entrada; si no,
    rige el default por contexto del modelo.
@@ -141,6 +148,71 @@ orden, diseñado para no dejar residuos:
 
 Los metadatos que vienen del JWT/cabeceras (autor, `request_id`) no forman
 parte del body: los resuelve el endpoint que llama a este servicio.
+
+## Convención de claves de objeto
+
+La clave es la única cadena pública (viaja en URLs y logs), así que sigue un
+patrón fijo y autocontenido:
+
+```text
+ordenes/{orden_id}/{evidencia_id_hex}.{ext}
+```
+
+- **`orden_id`**: entero positivo, sin ceros a la izquierda (el segmento no
+  puede empezar con `0`). Nunca es parte de ninguna consulta a la BD.
+- **`evidencia_id_hex`**: el id de la evidencia (UUID) en hex (32 caracteres).
+  La fila y el objeto comparten el mismo UUID, lo que permite trazabilidad
+  certa y, en la limpieza de huérfanos (Semana 6), reconstruir los objetos de
+  una orden con un solo prefijo `ordenes/{orden_id}/`.
+- **`ext`**: extensión derivada **del content_type** (mapa `_EXT_POR_CONTENT_TYPE`:
+  `image/jpeg → jpg`, `image/png → png`, `image/webp → webp`, `image/heic → heic`,
+  `image/gif → gif`, `video/mp4 → mp4`, `video/webm → webm`, `video/quicktime → mov`,
+  `video/x-msvideo → avi`, `video/mpeg → mpeg`); tipos fuera del mapa van a `.bin`.
+  Nunca se copia la extensión ni el nombre que manda el usuario.
+
+Patrón exacto (en `PATRON_CLAVE_OBJETO` de `services/evidencias.py`):
+
+```regex
+^ordenes/[1-9][0-9]*/[0-9a-f]{32}\.[a-z0-9]{2,5}$
+```
+
+Reglas:
+
+1. **Inmutable**: la clave no cambia nunca tras la recepción (es UNIQUE y es
+   el identificador del objeto en MinIO).
+2. **Sin datos personales**: no hay nombre del usuario, patente, correo ni
+   nombre de archivo del cliente.
+3. **Solo ASCII**: `[a-z0-9./]` como mucho; nada de espacios ni caracteres a
+   codificar.
+4. **Validable desde afuera**: `es_clave_valida(clave)` rechaza cualquier
+   desviación (segmentos `..`, prefijos distintos, uuid de otra longitud,
+   mayúsculas, extensión fuera de `[a-z0-9]{2,5}`, ceros a la izquierda).
+
+### Metadatos: dónde vive cada dato
+
+El nombre "metadatos" agrupa datos con **destinos distintos**: algunos viven
+solo en la BD, otros viajan junto al objeto en S3 (`x-amz-meta-*`, visibles a
+quien tenga la clave), y algunos no se guardan en ningún lado (solo en el
+`Content-Disposition` de la descarga).
+
+| Dato | BD (`evidencia`) | Objeto (`x-amz-meta-*`) | Nunca se guarda |
+|---|---|---|---|
+| `evidencia_id` | `evidencia_id` (PK UUID) | `evidencia-id` | |
+| `orden_id` | `orden_id` | `orden-id` | |
+| `autor_usuario_id` | `autor_usuario_id` | `autor-id` | |
+| `sha256` | `sha256` (al confirmar) | `sha256` | |
+| `content_type` | `content_type` | — (va en `ContentType` del objeto) | |
+| `tamano_bytes` | `tamano_bytes` | | |
+| `contexto` | `contexto` | | |
+| estado, visibilidad, fechas | columnas del modelo | | |
+| `request_id` (Gateway) | `request_id` (normalizado) | | |
+| nombre original | `nombre_original` (solo para mostrar) | | **nunca en el objeto** |
+| correo, contraseña, datos personales | | | **nunca en ningún lado** |
+
+Regla: el objeto **solo** lleva lo mínimo para soportar/auditar sin abrir la
+BD (`evidencia-id`, `orden-id`, `sha256`, `autor-id`); los datos íntegros de la
+evidencia viven en la BD, que es la única superficie controlada. `metadatos_objeto`
+genera ese dict y se inyecta en `subir_objeto(..., metadatos=...)`.
 
 ## Relación con los requisitos funcionales
 
@@ -153,6 +225,76 @@ parte del body: los resuelve el endpoint que llama a este servicio.
   en presupuestos y reparaciones.* Se apoya en los contextos `presupuesto` y
   `reparacion`, y en que la evidencia de presupuesto siempre es visible para
   el cliente que lo aprueba (regla 7).
+
+## Verificación de acceso con MS2
+
+MS4 guarda `orden_id` como referencia lógica (§8): no sabe si el cliente es el
+dueño del vehículo ni qué mecánico atiende la orden. Para aplicar la visibilidad
+de la matriz §4.5, MS4 pregunta a MS2 si la orden es visible para quien llama
+llamando a `GET {MS2_URL}/ordenes/{orden_id}` con el **MISMO JWT** del
+solicitante (`services/integracion_ms2.py`, mismo contrato que MS3). MS2 aplica
+su propio `_filtro_visibilidad` por rol:
+
+```text
+Cliente / Mecánico            MS4                              MS2
+     │  (su JWT)               │                                │
+     │── GET /evidencias ─────►│── GET /ordenes/{id} + Bearer ──►│
+     │                         │◄── 200 (visible para él) ───────│
+     │◄── 200 / 404 / 503 ─────│◄── 404/403 (ajena o inexistente)│
+
+       200  → la orden es de ese cliente o la atiende el mecánico → MS4 sigue
+       404 / 403 → OrdenNoVisible  → MS4 responde 404
+       otro código / sin conexión / timeout → ServicioOrdenesNoDisponible → 503
+```
+
+Cómo se aplica por endpoint:
+
+- **Subir (`POST`)** y **listar (`GET ?orden_id=`)** exigen la orden visible para
+  todos los roles: se valida contra MS2 antes de continuar (`404 "Orden no
+  encontrada"` o `503 "El servicio de órdenes no está disponible"`). En la
+  subida la validación ocurre **antes** de subir a MinIO: un 404/503 no deja ni
+  objeto ni fila.
+- **Detalle y descarga**: la evidencia inexistente responde
+  `404 "Evidencia no encontrada"`. Para quien no es administrador se valida la
+  orden contra MS2 **antes** del filtro de visibilidad: si MS2 responde 404/403,
+  la evidencia "no existe" (el mismo 404 que un UUID inexistente, no enumera).
+  El **Administrador no consulta MS2** (auditoría: ve todo, incluidas las
+  eliminadas) y la decisión termina solo en `es_visible_para`.
+- El JWT se reenvía tal como llegó y **nunca** se loguea; MS2 aplica su
+  visibilidad por rol, incluida la unión multirol (matriz §3.1).
+
+Implementado en `routers/evidencias.py` (helper `_exigir_orden_accesible`, vía
+las dependencias `obtener_token_bearer` y `obtener_verificador_ordenes`) y
+probado con un `FakeVerificador` en `tests/test_ms4_autorizacion_evidencias.py`;
+`VerificadorOrdenesHttp` se prueba en unidad con `httpx` simulado.
+
+## Endpoints de MS4 (Semana 5)
+
+`routers/evidencias.py` (APIRouter con prefijo `/evidencias`, registrado en
+`main.py`). Todos exigen JWT válido (`obtener_principal_actual`).
+
+| Método y ruta | Rol | Respuestas |
+|---|---|---|
+| `POST /evidencias` (multipart: archivo + `orden_id`, `contexto`, `presupuesto_id`?, `visible_cliente`?) | Mecánico, Administrador | `201 EvidenciaLeida` · `401` · `403` · `404` · `422` · `503` |
+| `GET /evidencias?orden_id=` | Cualquier autenticado | `200 [EvidenciaLeida]` · `401` · `404` · `422` · `503` |
+| `GET /evidencias/{evidencia_id}` | Cualquier autenticado | `200 EvidenciaLeida` · `401` · `404` · `503` |
+| `GET /evidencias/{evidencia_id}/descarga` | Cualquier autenticado | `200 UrlDescarga` · `401` · `404` · `503` |
+
+Detalles:
+
+- `EvidenciaLeida` expone los metadatos de lectura y **nunca** `clave_objeto` ni
+  `sha256`; `UrlDescarga` es solo `{"url", "expira_en"}` y la clave de S3 solo
+  puede aparecer dentro de la URL firmada.
+- Descarga: URL prefirmada del cliente público (`S3_PUBLIC_ENDPOINT`) que
+  expira en `URL_DESCARGA_TTL_SECONDS` (por defecto 300 s) y firma
+  `response-content-type` + `response-content-disposition`; la respuesta lleva
+  `Cache-Control: no-store` y `X-Content-Type-Options: nosniff` (3.3 y 3.4).
+- Errores: `403` solo en la subida (el cliente no sube; control 3.1); `404` por
+  no enumeración (orden ajena en subir/listar → "Orden no encontrada"; evidencia
+  oculta o ajena en detalle/descarga → "Evidencia no encontrada", igual que una
+  inexistente); `503` si MS2 no responde o el almacenamiento de objetos falla;
+  `422` para las reglas de entrada (formato de archivo, contexto, reglas 6/7 de
+  presupuesto). Ver "Verificación de acceso con MS2".
 
 ## Pruebas
 
@@ -174,3 +316,43 @@ parte del body: los resuelve el endpoint que llama a este servicio.
   ninguna fila;
 - `listar_por_orden` filtra por visibilidad según la vista, y
   `presupuesto_tiene_evidencia` implementa la regla de RF18.
+
+`tests/test_ms4_convencion_metadatos.py` (reutiliza `FakeS3`/`sesion` de
+`test_ms4_recepcion.py`, ahora registrando `Metadata`):
+- la clave cumple `PATRON_CLAVE_OBJETO` y su UUID es el `evidencia_id` de la fila;
+- dos recepciones de la misma orden no comparten clave pero sí prefijo;
+- `generar_clave_objeto` rechaza ordenes `0`/negativas y acepta `evidencia_id`;
+- el objeto guardado lleva `evidencia-id`, `orden-id`, `sha256` y `autor-id`,
+  y **nunca** nombre original ni datos personales (todo ASCII);
+- `normalizar_request_id` conserva IDs válidos y descarta espacios, caracteres
+  raros y valores de más de 64 caracteres; la fila guarda el valor normalizado;
+- `es_clave_valida` rechaza `..`, prefijos ajenos, uuid malformado, ceros a la
+  izquierda, mayúsculas y extensiones fuera del patrón.
+
+`tests/test_ms4_api_evidencias.py` (TestClient + SQLite en memoria + FakeS3 +
+cliente S3 público real que firma offline) cubre los contratos HTTP de los
+endpoints de la tabla anterior, con un verificador de MS2 que permite todo
+(controles 3.1, 3.3 y 3.4).
+
+`tests/test_ms4_autorizacion_evidencias.py` (TestClient + `FakeVerificador` de
+MS2) cubre la verificación contra MS2 por rol: cliente dueño/ajeno en listado
+(200 vs 404 "Orden no encontrada"), mecánico asignado/no asignado en subida
+(201 vs 404 sin filas ni objetos), cliente que no sube sin llamar a MS2, el
+404 idéntico entre evidencia ajena e inexistente, administrador con eliminadas
+en el listado y sin consultar MS2 en detalle/descarga, multirol cliente+mecánico
+por unión, MS2 caído → 503 en los cuatro endpoints, y la unidad de
+`VerificadorOrdenesHttp` con `httpx` simulado (reenvía el JWT, 403/404 →
+`OrdenNoVisible`, errores/timeouts → `ServicioOrdenesNoDisponible`).
+
+`tests/test_ms4_ciclo_archivos.py` (Semana 5 — *Crear pruebas de subida,
+consulta y recuperación de archivos*) recorre el ciclo completo por la API
+HTTP: `POST /evidencias` → `GET /evidencias?orden_id=` → `GET /evidencias/{id}`
+→ `GET /evidencias/{id}/descarga` → seguir la URL prefirmada.
+
+| Bloque | Qué comprueba | Requiere |
+|---|---|---|
+| Sin MinIO (6 pruebas) | Los bytes recuperados son los subidos y su SHA-256 es el de la fila; la URL apunta al objeto de *esa* evidencia (clave = `evidencia_id`); varias evidencias de una orden (foto JPG/PNG y video MP4) no se cruzan y mantienen el orden de creación; nombre con tildes en JSON y en `Content-Disposition`; `request_id` y autor trazables; eliminada solo la recupera el administrador; el cliente solo recupera lo visible. | Nada (almacenamiento en memoria) |
+| Con MinIO real (6 pruebas) | Bytes idénticos al seguir la URL prefirmada y cabeceras `Content-Type`/`Content-Disposition` forzadas; metadatos `x-amz-meta-*` sin datos personales; archivo de 9 MiB por multipart íntegro; URL vencida, firma alterada o nombre manipulado → 403; acceso anónimo al objeto y al listado del bucket → 403; falla de la base → sin archivo huérfano en el bucket. | `docker compose up -d minio minio_init` (si no, se omiten) |
+
+Las pruebas con MinIO usan una orden aleatoria alta y borran su prefijo
+`ordenes/{orden_id}/` al terminar.

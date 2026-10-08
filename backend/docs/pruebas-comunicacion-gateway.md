@@ -91,7 +91,9 @@ automáticos que cubren la comunicación Gateway ↔ microservicios:
 | Nivel | Archivo | Chiste | Rápido |
 |---|---|---|---|
 | Gateway simulada (respx) | `tests/test_gateway_rutas.py`, `tests/test_gateway_errores_proxy.py` | Los microservicios son respuestas respx; se prueban enrutamiento, cabeceras y errores de la Gateway | Sí |
+| Límites de body de la Gateway (respx) | `tests/test_gateway_evidencias.py` | 413/400 antes de tocar al microservicio, corte en streaming, límites configurables y unidades de `limite_para`/`timeout_para` | Sí |
 | Integración in-process | `tests/test_integracion_prefijos.py` | Gateway REAL + los 4 apps REALES conectados por `httpx.ASGITransport` por URL base, cada uno con SQLite en memoria | Sí |
+| Integración in-process (evidencias) | `tests/test_gateway_evidencias.py` | Gateway REAL → app REAL de MS4 (SQLite en memoria, FakeS3, VerificadorPermiteTodo): subida multipart 201, request_id propagado, listado/descarga 200, 403 del cliente y 503 de MS4 a través de la Gateway | Sí |
 | Servicios levantados | `scripts/prueba_comunicacion.py` | Red real + PostgreSQL + MinIO/S3 | No |
 
 El nivel in-process (`tests/test_integracion_prefijos.py`) es el gemelo
@@ -130,6 +132,38 @@ Qué cubre:
 
 No usa respx a propósito: responder el código real de cada microservicio es
 justamente lo que se quiere comprobar.
+
+## Evidencias por la Gateway (Semana 5)
+
+Subir y consultar evidencias usa el nivel in-process de `tests/test_gateway_evidencias.py`:
+la Gateway REAL conectada a la app REAL de MS4 por `ASGITransport` (SQLite en
+memoria, FakeS3, cliente S3 público que firma offline y `VerificadorPermiteTodo`,
+pues la autorización contra MS2 es de `test_ms4_autorizacion_evidencias.py`).
+El token lo acuña directamente la prueba con la clave JWT de MS4 (el fixture no
+levanta MS1, igual que en los tests HTTP de MS4).
+
+Casos y resultados:
+
+| Caso | Resultado |
+|---|---|
+| `POST /api/evidencias` con `Content-Length` > 12 MiB | `413 CUERPO_DEMASIADO_GRANDE`, sin llamar a MS4, sin filtrar el límite |
+| `POST /api/vehiculos` (JSON) con body > 1 MiB | `413 CUERPO_DEMASIADO_GRANDE`, sin llamar a MS2 |
+| Body justo en el límite del prefijo | pasa (200/201) |
+| Petición chunked sin `Content-Length` que excede | `413` (corte en el streaming, nunca acumula más del límite + un trozo) |
+| `Content-Length` no numérica | `400 ERROR_HTTP` |
+| Límites configurables (`monkeypatch` de settings) | el corte sigue a `GATEWAY_MAX_BODY_*` |
+| Mecánico sube multipart por `/api/evidencias` | `201`, JSON sin `clave_objeto` ni `ordenes/`, `X-Request-ID` de ida y vuelta, fila con ese `request_id`, objeto en FakeS3 con `content_type` correcto |
+| `GET /api/evidencias?orden_id=...` | `200` con los filtros de visibilidad de MS4 intactos |
+| `GET /api/evidencias/{id}/descarga` | `200`, URL firmada (`minio.publico.test:9000`), `Cache-Control: no-store` y `X-Content-Type-Options: nosniff` llegan al cliente |
+| Cliente intenta subir | `403` con el body JSON de MS4 tal cual (`detail`) |
+| MinIO caído (MS4 tradujo el fallo de boto3) | `503` con el `detail` de MS4 a través de la Gateway |
+| `timeout_para("evidencias")` | read/write = `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` (60 s) |
+
+Para correrlo solo:
+
+```bash
+python -m pytest tests/test_gateway_evidencias.py -v
+```
 
 ## Resultados
 

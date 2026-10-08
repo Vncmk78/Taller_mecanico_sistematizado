@@ -26,6 +26,8 @@ from services.ms2_taller.models import (
     Vehiculo,
 )
 from services.ms2_taller.models.estado_orden import (
+    CANCELADO,
+    EN_REPARACION,
     ENTREGADO,
     ESPERANDO_APROBACION_PRESUPUESTO,
     ESPERANDO_DIAGNOSTICO,
@@ -33,9 +35,12 @@ from services.ms2_taller.models.estado_orden import (
     RECIBIDO,
 )
 from services.ms2_taller.services.ordenes import (
+    OrdenObservacionInvalidaError,
     _consulta_vehiculo_para_actualizacion,
+    cambiar_estado_orden,
+    registrar_historial_estado,
 )
-from shared.auth import NombreRol, crear_token_acceso
+from shared.auth import NombreRol, PrincipalAutenticado, crear_token_acceso
 
 
 @pytest.fixture
@@ -657,6 +662,96 @@ def test_patch_estado_administrador_actualiza_sin_ser_mecanico_asignado(
 
     assert respuesta.status_code == 200
     assert respuesta.json()["estado_codigo"] == ESPERANDO_DIAGNOSTICO
+    historial = db_ordenes.scalar(select(HistorialEstado))
+    assert historial is not None
+    assert historial.observacion is None
+
+
+@pytest.mark.parametrize("datos_observacion", [
+    {}, {"observacion": None}, {"observacion": ""}, {"observacion": " \t\n "},
+])
+def test_cancelacion_sin_motivo_valido_no_modifica_orden_ni_historial(
+    api_ordenes: TestClient, db_ordenes: Session, datos_observacion: dict,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    orden_id = orden.orden_id
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden_id}/estado",
+        json={"estado_destino": CANCELADO, **datos_observacion},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 422
+    db_ordenes.expire_all()
+    assert db_ordenes.get(OrdenTrabajo, orden_id).estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+@pytest.mark.parametrize("estado_anterior", [
+    RECIBIDO, ESPERANDO_DIAGNOSTICO, ESPERANDO_APROBACION_PRESUPUESTO,
+])
+def test_cancelacion_con_motivo_guarda_historial_y_no_admite_repeticion(
+    api_ordenes: TestClient, db_ordenes: Session, estado_anterior: int,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, estado_codigo=estado_anterior)
+    orden_id = orden.orden_id
+    datos = {"estado_destino": CANCELADO, "observacion": "  Cliente solicita cancelar  "}
+    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+    respuesta = api_ordenes.patch(f"/ordenes/{orden_id}/estado", json=datos, headers=headers)
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["estado_codigo"] == CANCELADO
+    historial = db_ordenes.scalar(select(HistorialEstado))
+    assert historial.estado_anterior == estado_anterior
+    assert historial.estado_nuevo == CANCELADO
+    assert historial.observacion == "Cliente solicita cancelar"
+    assert historial.actor_usuario_id == 99
+    assert historial.origen == "usuario"
+
+    repetida = api_ordenes.patch(f"/ordenes/{orden_id}/estado", json=datos, headers=headers)
+    assert repetida.status_code == 409
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
+
+
+@pytest.mark.parametrize("observacion", [None, "", " \t\n "])
+def test_service_cancelacion_invalida_hace_rollback_sin_depender_del_schema(
+    db_ordenes: Session, observacion: str | None,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    orden_id = orden.orden_id
+    principal = PrincipalAutenticado(99, frozenset({NombreRol.ADMINISTRADOR}))
+    with pytest.raises(OrdenObservacionInvalidaError):
+        cambiar_estado_orden(
+            db_ordenes, orden_id=orden_id, estado_destino=CANCELADO,
+            principal=principal, observacion=observacion,
+        )
+
+    assert db_ordenes.get(OrdenTrabajo, orden_id).estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_historial_cancelacion_del_sistema_tambien_exige_motivo(db_ordenes: Session):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    with pytest.raises(OrdenObservacionInvalidaError):
+        registrar_historial_estado(
+            db_ordenes, orden_id=orden.orden_id, estado_anterior=RECIBIDO,
+            estado_nuevo=CANCELADO, actor_usuario_id=None, origen="sistema",
+        )
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_motivo_valido_no_habilita_cancelacion_desde_estado_no_permitido(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, estado_codigo=EN_REPARACION)
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden.orden_id}/estado",
+        json={"estado_destino": CANCELADO, "observacion": "Cliente solicita cancelar"},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 409
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == EN_REPARACION
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
 def test_patch_estado_mecanico_no_asignado_recibe_403(

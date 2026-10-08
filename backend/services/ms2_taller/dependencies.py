@@ -40,6 +40,15 @@ def obtener_principal_actual(
         raise _error_no_autenticado("Token inválido o expirado") from exc
 
 
+def obtener_token_bearer(
+    credenciales: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    """Reenvía la credencial original; las rutas también exigen el principal."""
+    if credenciales is None:
+        raise _error_no_autenticado("No se proporcionó un token de acceso")
+    return credenciales.credentials
+
+
 def resolver_cliente_actual(
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     db: Session = Depends(get_db),

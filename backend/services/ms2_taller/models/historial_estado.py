@@ -35,6 +35,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -51,6 +52,11 @@ class HistorialEstado(Base):
     __table_args__ = (
         # Consulta típica: "historial de la orden X en orden cronológico".
         Index("ix_historial_estado_orden_fecha", "orden_id", "fecha_hora"),
+        UniqueConstraint("decision_presupuesto_id", name="uq_historial_estado_decision_presupuesto_id"),
+        CheckConstraint(
+            "decision_presupuesto_id is null or decision_presupuesto_id > 0",
+            name="decision_presupuesto_positiva",
+        ),
         CheckConstraint("origen in ('usuario', 'sistema')", name="origen_valido"),
         # Un cambio de estado real: el nuevo estado debe ser distinto del anterior.
         CheckConstraint(
@@ -99,6 +105,9 @@ class HistorialEstado(Base):
         server_default=func.now(),
     )
     observacion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # REF lógica a DecisionPresupuesto (MS3), sin FK entre bases. La unicidad
+    # hace durable la idempotencia y deja intactos los historiales anteriores.
+    decision_presupuesto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     orden: Mapped["OrdenTrabajo"] = relationship(back_populates="historial")
 

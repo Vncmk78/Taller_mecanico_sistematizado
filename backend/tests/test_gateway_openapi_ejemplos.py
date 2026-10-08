@@ -234,6 +234,9 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
         ("/api/ordenes", "post"),
         ("/api/ordenes/{orden_id}", "get"),
         ("/api/ordenes/{orden_id}/estado", "patch"),
+        ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"),
+        ("/api/presupuestos/decisiones/{decision_id}", "get"),
+        ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
         ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/vehiculos", "get"),
@@ -247,7 +250,12 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
         etiqueta = f"{metodo.upper()} {ruta}"
         for codigo in ("404", "500", "502", "503", "504"):
             assert codigo in respuestas, f"{etiqueta} sin {codigo}"
-        assert respuestas["503"] == {"$ref": "#/components/responses/GatewaySaturada"}
+        if ruta in {"/api/ordenes/{orden_id}/decisiones-presupuesto",
+                    "/api/presupuestos/decisiones/{decision_id}/aplicacion"}:
+            refs = respuestas["503"]["content"][_JSON]["schema"]["oneOf"]
+            assert {item["$ref"] for item in refs} >= {"#/components/schemas/ErrorRespuesta"}
+        else:
+            assert respuestas["503"] == {"$ref": "#/components/responses/GatewaySaturada"}
         assert respuestas["504"] == {"$ref": "#/components/responses/TiempoAgotado"}
         # El registro es público; el login responde 401 por credenciales, no por
         # token ausente, y el resto de operaciones exige Bearer.

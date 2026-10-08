@@ -33,6 +33,41 @@ def api_mock() -> respx.MockRouter:
         yield mock
 
 
+@pytest.mark.parametrize("metodo,ruta,servicio,body", [
+    ("POST", "ordenes/31/decisiones-presupuesto", "MS2_URL", {"decision_id": 9}),
+    ("GET", "presupuestos/decisiones/9", "MS3_URL", None),
+    ("POST", "presupuestos/decisiones/9/aplicacion", "MS3_URL", None),
+])
+def test_coordinacion_decisiones_preserva_ruta_body_y_jwt(
+    gateway: TestClient, api_mock: respx.MockRouter,
+    metodo: str, ruta: str, servicio: str, body: dict | None,
+) -> None:
+    destino = api_mock.request(metodo, f"{getattr(settings, servicio)}/{ruta}").mock(
+        return_value=httpx.Response(200, json={"decision_id": 9}),
+    )
+    argumentos = {"json": body} if body is not None else {}
+    respuesta = gateway.request(metodo, f"/api/{ruta}",
+                                headers={"Authorization": "Bearer jwt-original"}, **argumentos)
+    assert respuesta.status_code == 200
+    solicitud = destino.calls.last.request
+    assert solicitud.headers["authorization"] == "Bearer jwt-original"
+    assert str(solicitud.url) == f"{getattr(settings, servicio)}/{ruta}"
+    if body is not None:
+        assert json.loads(solicitud.content) == body
+
+
+def test_verificacion_propiedad_preserva_query_y_jwt(gateway, api_mock):
+    destino = api_mock.get(f"{settings.MS2_URL}/ordenes/31?solo_propietario=true").mock(
+        return_value=httpx.Response(200, json={"orden_id": 31}),
+    )
+    respuesta = gateway.get("/api/ordenes/31?solo_propietario=true",
+                            headers={"Authorization": "Bearer jwt-original"})
+    assert respuesta.status_code == 200
+    solicitud = destino.calls.last.request
+    assert solicitud.url.params["solo_propietario"] == "true"
+    assert solicitud.headers["authorization"] == "Bearer jwt-original"
+
+
 def test_auth_login_reenvia_a_ms1_con_su_body(
     gateway: TestClient, api_mock: respx.MockRouter
 ) -> None:
@@ -278,3 +313,27 @@ def test_ms3_o_ms4_caido_devuelve_502_con_formato_comun(
 )
 def test_resolver_microservicio(ruta: str, esperado: str | None) -> None:
     assert resolver_microservicio(ruta) == esperado
+
+
+def test_historial_reenvia_ruta_completa_y_authorization(
+    gateway: TestClient, api_mock: respx.MockRouter,
+) -> None:
+    registros = [{
+        "historial_id": 1, "orden_id": 31, "estado_anterior": None,
+        "estado_nuevo": 1, "actor_usuario_id": 99,
+        "fecha_hora": "2026-10-07T10:00:00-03:00",
+        "origen": "usuario", "observacion": None,
+    }]
+    ruta = api_mock.get(f"{settings.MS2_URL}/ordenes/31/historial").mock(
+        return_value=httpx.Response(200, json=registros),
+    )
+    respuesta = gateway.get(
+        "/api/ordenes/31/historial",
+        headers={"Authorization": "Bearer token.jwt.historial"},
+    )
+    assert respuesta.status_code == 200
+    assert respuesta.json() == registros
+    llamada = ruta.calls.last.request
+    assert llamada.method == "GET"
+    assert str(llamada.url) == f"{settings.MS2_URL}/ordenes/31/historial"
+    assert llamada.headers["authorization"] == "Bearer token.jwt.historial"

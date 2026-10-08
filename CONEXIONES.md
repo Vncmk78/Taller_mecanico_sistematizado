@@ -550,3 +550,110 @@ la purga de cachés.
 | `npm run lint` | 0 errores, 0 warnings |
 | `npx vitest run` | 380 tests en 133 archivos, todos verdes (antes 347) |
 | `npm run build` | Compila; queda el aviso preexistente de chunk > 500 kB |
+
+## Cambios de estado desde la vista del mecánico: matriz y verificación real (2026-10-07)
+
+La vista `/mechanic/estados` ya probaba solo el avance `5 -> 6`. Esta ronda cierra
+el resto de la matriz con pruebas de frontend y confirma el ciclo contra
+PostgreSQL real y los tres procesos (MS1 + MS2 + Gateway).
+
+### Frontend (tests nuevos)
+
+- `Order.test.ts` amarra `AVANCES_MECANICO` a los 10 pares que acepta
+  `backend/services/ms2_taller/domain/transiciones_orden.py:70-111`: si se
+  agrega un par que MS2 rechaza, el test falla (no lo descubre el 409 en
+  pantalla). Además exige que los 4 estados sin avance del mecánico (3, 6, 7, 8)
+  queden explícitos y que todo destino ofrecido tenga etiqueta.
+- `MechanicStatusPage.test.tsx` sube a 30 casos: matriz de los 8 estados
+  (qué opciones ofrece cada uno y cuáles caen a "Órdenes cerradas"), los 4
+  avances del mecánico con observación, errores literales del backend
+  (403 reasignación, 409 transición, 409 terminal, 404, 422 listado de
+  FastAPI), reintento sin recargar, ausencia de doble envío con el botón en
+  "Cargando...", actualización visual de la caché y alcance por `user.id`.
+- `OrderService.test.ts` verifica la forma del body (`estado_destino` +
+  `observacion`, sin campos extra porque el modelo usa `extra="forbid"`) y que la
+  observación de solo espacios se omite (`min_length=1` con strip en MS2).
+
+| Verificación frontend | Resultado |
+| --- | --- |
+| `npx tsc --noEmit -p tsconfig.json` | Sin errores |
+| `npm run lint` | 0 errores, 0 warnings (163 archivos) |
+| `npx vitest run` | 417 tests en 141 suites, todos verdes (antes 387) |
+| `npm run build` (tsc -b && vite build) | OK; aviso preexistente de chunk > 500 kB |
+
+### PostgreSQL local (en vez de Docker)
+
+Docker Desktop/WSL no estaban disponibles; se usó el PostgreSQL 18 local
+(127.0.0.1:5432) que ya corría. Quedó así en `backend/.env` (gitignored, no se
+sube):
+
+- Rol `taller` (password `taller`) y bases `taller_ms1`, `taller_ms2`,
+  `taller_ms3` (no existían; se crearon solo si faltaban).
+- `alembic upgrade head` para MS1, MS2 y MS3, y `scripts/seed_usuarios_prueba.py`
+  (idempotente) que crea cliente/mecánico/admin y el perfil Cliente en MS2.
+
+### B1: suite pytest contra PostgreSQL real
+
+Docker no se usa; se apuntan las suites de migración/ORM a la instancia local:
+
+```
+$env:MS2_MIGRATION_TEST_DATABASE_URL="postgresql+psycopg://taller:taller@localhost:5432/taller_ms2"
+$env:MS3_ORM_TEST_DATABASE_URL="postgresql+psycopg://taller:taller@localhost:5432/taller_ms3"
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Resultado: **488 passed, 0 skipped** (54 s). Incluye MinIO; antes de tenerlo eran
+486/2 y con la suite original 427/61 (por tiempos de conexión a 5434/5435).
+
+### MinIO (MS4) con Docker Desktop
+
+El `docker-compose` de MS4 usa `cgr.dev/chainguard/minio` (servidor) y
+`quay.io/minio/mc` (cliente `minio_init`); este último ahora responde **401
+UNAUTHORIZED** en los pulls (el repo/tag ya no se sirve sin auth). Workaround
+verificado (2026-10-07):
+
+```
+docker volume create minio_data
+docker run -d --name sgtm_minio `
+  -e MINIO_ROOT_USER=admin-local -e MINIO_ROOT_PASSWORD=cambia-esta-clave-local `
+  -p 9000:9000 -p 9001:9001 `
+  -v minio_data:/data -v "$PWD\minio:/config:ro" `
+  cgr.dev/chainguard/minio@sha256:999718c09ef5d2ac888aa97ffd628a67ba8be2d64d6eea9e719d1f58cd59e204 `
+  server /data --console-address ":9001"
+```
+
+El binario `mc` viene incluido en la imagen de Chainguard (lo usa su healthcheck),
+así que el setup de `minio_init` se replica con `docker exec sgtm_minio mc
+--config-dir /tmp/mc-live ...`: alias `sgtm`, bucket `evidencias` privado, usuario
+`ms4-evidencias`, y la política `politica-ms4` desde `/config/politica-ms4.json`
+(montada en ro). Verificado con `mc admin user info` (PolicyName: politica-ms4) y
+con la suite: `test_ms4_minio_integracion` y `test_ms4_recepcion_minio` en verde.
+
+### B2: ciclo completo contra el stack real (Gateway 8000, MS1 8001, MS2 8002)
+
+Script temporal (borrado al terminar); cada paso se ejecutó con el token real de
+MS1 a través de `PATCH /api/ordenes/{id}/estado`. Resultado: **20/20 PASS**.
+
+- Login de admin, cliente y mecánico (3 JWTs), alta de vehículo (cliente)
+  y de orden (admin).
+- Ciclo de la orden asignada: asignar mecánico mueve `1 -> 2` automáticamente;
+  luego mecánico `2 -> 3`, admin `3 -> 5`, mecánico `5 -> 6`, admin `6 -> 7`.
+- El historial registra 6 entradas con el actor correcto (mecánico en 2->3 y 5->6;
+  admin en las demás) y `origen="usuario"`.
+- Rechazos verificados con el literal exacto del backend:
+  - terminal: 409 `El estado Entregado es terminal y no admite transiciones`
+  - transición inválida: 409 `Transición no permitida: Recibido -> En reparación`
+  - no autorizado: 403 `No tienes permiso para cambiar el estado de esta orden`
+  - inexistente: 404 `Orden no encontrada`
+  - destino desconocido: 422 `Estado de destino desconocido: 999`
+  - esquema: 422 con `detail` list (p. ej. `estado_destino: 0`)
+- Tras los rechazos la orden sigue en estado 1 (rollback correcto).
+
+Los literales 403/409/404/422 coinciden con los fixtures de
+`frontend/src/infrastructure/mocks/payloads.reales.ts` que usan los tests de la
+vista, así que los tests de UI y la verificación real validan el mismo contrato.
+
+Nota: al correr desde una consola de Python en Windows, el keep-alive de httpx
+contra uvicorn se cae al reutilizar el socket (WinError 10054); el script usó
+`httpx.Limits(max_keepalive_connections=1, keepalive_expiry=0)`. Correr pytest
+solo también exige que el puerto 5432 esté libre y las 3 bases migradas.

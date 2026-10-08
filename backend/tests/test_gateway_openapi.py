@@ -66,6 +66,9 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/evidencias", "get"),
     ("/api/evidencias/{evidencia_id}", "get"),
     ("/api/evidencias/{evidencia_id}/descarga", "get"),
+    ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"),
+    ("/api/presupuestos/decisiones/{decision_id}", "get"),
+    ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
 }
 
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
@@ -82,6 +85,9 @@ _PROTEGIDOS = {
     "/api/evidencias",
     "/api/evidencias/{evidencia_id}",
     "/api/evidencias/{evidencia_id}/descarga",
+    "/api/ordenes/{orden_id}/decisiones-presupuesto",
+    "/api/presupuestos/decisiones/{decision_id}",
+    "/api/presupuestos/decisiones/{decision_id}/aplicacion",
 }
 
 
@@ -114,7 +120,7 @@ def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["openapi"].startswith("3.")
 
 
-def test_estan_los_18_endpoints_con_sus_metodos(esquema: dict) -> None:
+def test_estan_los_endpoints_con_sus_metodos(esquema: dict) -> None:
     operaciones = set(_operaciones_documentadas(esquema))
     assert operaciones == _ENDPOINTS_ESPERADOS
 
@@ -165,6 +171,9 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
         ("/api/evidencias/{evidencia_id}/descarga", "get"),
+        ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"),
+        ("/api/presupuestos/decisiones/{decision_id}", "get"),
+        ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
     }
     for ruta, metodo in _ENDPOINTS_ESPERADOS:
         respuestas = operaciones[(ruta, metodo)]["responses"]
@@ -215,6 +224,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
             "put",
         ): "AsignacionMecanicoActualizar",
         ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
+        ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"): "DecisionOrdenSolicitud",
     }
     for (ruta, metodo), ref in con_cuerpo.items():
         esquema_cuerpo = operaciones[(ruta, metodo)]["requestBody"]["content"][
@@ -415,6 +425,13 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     cambio = schemas["CambioEstadoSolicitud"]
     assert cambio["additionalProperties"] is False
     assert cambio["properties"]["estado_destino"]["exclusiveMinimum"] == 0
+    assert "observacion" not in cambio["required"]
+    assert "Obligatoria al pasar a Cancelado" in (
+        cambio["properties"]["observacion"]["description"]
+    )
+    assert "Cancelado exige una observación" in (
+        paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
+    )
     assert paths["/api/ordenes/{orden_id}/estado"]["patch"]["requestBody"][
         "content"
     ]["application/json"]["schema"]["$ref"] == (
@@ -529,3 +546,55 @@ def test_ejemplos_errores_coinciden_con_respuestas_reales_ms2(
                     "content"
                 ]["application/json"]["examples"][nombre]["value"]
                 assert respuesta.json() == ejemplo
+
+
+@pytest.mark.parametrize("aplicacion,prefijo", [(app, "/api"), (ms2_app, "")])
+def test_openapi_historial_publica_lista_protegida_y_errores(aplicacion, prefijo) -> None:
+    esquema = aplicacion.openapi()
+    operacion = esquema["paths"][f"{prefijo}/ordenes/{{orden_id}}/historial"]["get"]
+    assert operacion["security"]
+    assert "requestBody" not in operacion
+    respuesta = operacion["responses"]["200"]["content"]["application/json"]["schema"]
+    assert respuesta["type"] == "array"
+    assert respuesta["items"] == {"$ref": "#/components/schemas/HistorialEstadoRespuesta"}
+    assert {"200", "401", "404", "422", "500"} <= set(operacion["responses"])
+
+
+
+def test_contrato_historial_coincide_en_tipos_y_nulabilidad() -> None:
+    def tipos(valor):
+        if isinstance(valor, dict):
+            return {
+                clave: tipos(contenido) for clave, contenido in valor.items()
+                if clave not in {"title", "description", "examples"}
+            }
+        if isinstance(valor, list):
+            return [tipos(item) for item in valor]
+        return valor
+
+    gateway_schema = contratos_ordenes.HistorialEstadoRespuesta.model_json_schema()
+    ms2_schema = Ms2HistorialEstadoRespuesta.model_json_schema()
+    assert set(gateway_schema["required"]) == set(ms2_schema["required"])
+    assert tipos(gateway_schema["properties"]) == tipos(ms2_schema["properties"])
+    assert gateway_schema["properties"]["origen"]["enum"] == ["usuario", "sistema"]
+
+
+def test_coordinacion_publica_contrato_minimo_y_error_reintentable(esquema: dict) -> None:
+    from shared.contratos_decisiones import (
+        AplicacionDecisionRespuesta, DecisionOrdenSolicitud, DecisionPresupuestoVerificada,
+    )
+    schemas = esquema["components"]["schemas"]
+    for modelo in (AplicacionDecisionRespuesta, DecisionOrdenSolicitud, DecisionPresupuestoVerificada):
+        assert schemas[modelo.__name__]["properties"] == modelo.model_json_schema()["properties"]
+    solicitud = schemas["DecisionOrdenSolicitud"]
+    assert set(solicitud["properties"]) == {"decision_id"}
+    assert solicitud["additionalProperties"] is False
+    reintento = esquema["paths"]["/api/presupuestos/decisiones/{decision_id}/aplicacion"]["post"]
+    refs = reintento["responses"]["503"]["content"]["application/json"]["schema"]["oneOf"]
+    assert {ref["$ref"] for ref in refs} == {
+        "#/components/schemas/DecisionAplicacionPendiente", "#/components/schemas/ErrorRespuesta",
+    }
+    assert reintento["security"] == [{"bearerAuth": []}]
+    parametros = esquema["paths"]["/api/ordenes/{orden_id}"]["get"]["parameters"]
+    propiedad = next(p for p in parametros if p["name"] == "solo_propietario")
+    assert propiedad["in"] == "query" and propiedad["schema"]["default"] is False

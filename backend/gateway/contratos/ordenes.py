@@ -7,6 +7,7 @@ OpenAPI comparan sus campos y obligatoriedad con los esquemas reales de MS2.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -133,7 +134,7 @@ class CambioEstadoSolicitud(BaseModel):
     observacion: str | None = Field(
         default=None,
         min_length=1,
-        description="Observación opcional del cambio de estado.",
+        description="Obligatoria al pasar a Cancelado; opcional en los demás destinos.",
         examples=["Inicia evaluación técnica"],
     )
 
@@ -158,7 +159,7 @@ class HistorialEstadoRespuesta(BaseModel):
         description="Referencia lógica al usuario de MS1 que registró el cambio.",
         examples=[50],
     )
-    origen: str = Field(
+    origen: Literal["usuario", "sistema"] = Field(
         description="Origen del registro: 'usuario' o 'sistema'.",
         examples=["usuario"],
     )

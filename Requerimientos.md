@@ -44,9 +44,15 @@ vehículo mantiene un historial de mantenciones trazable, con evidencia visual
   vehículo y a un mecánico asignado.
 - **RF-10:** Cada orden debe avanzar por estados controlados:
 
-  `recibido → esperando_diagnostico → esperando_aprobacion → esperando_repuestos → en_reparacion → listo → entregado`
+  `recibido → esperando_diagnostico → esperando_aprobacion`
 
-  Además de un estado `cancelado`.
+  Tras la primera aprobación del presupuesto, pasa directamente a `en_reparacion`
+  si los repuestos necesarios están disponibles; si faltan, pasa a
+  `esperando_repuestos` y luego a `en_reparacion` cuando estén disponibles.
+  El flujo continúa con `en_reparacion → listo → entregado`.
+
+  Además de un estado `cancelado`, según las reglas de la máquina de estados
+  detallada en `backend/docs/maquina-estados-ordenes.md`.
 - **RF-11:** El mecánico debe poder subir fotos y videos del diagnóstico como
   evidencia de la cotización.
 - **RF-12:** El cliente debe poder revisar la evidencia y aprobar o rechazar el

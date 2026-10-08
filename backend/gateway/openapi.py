@@ -3,13 +3,13 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los 18 endpoints reales que enruta la Gateway hacia MS1 (Autenticación), MS2
+los endpoints reales que enruta la Gateway hacia MS1 (Autenticación), MS2
 (Vehículos y Órdenes) y MS4 (Evidencias), con sus esquemas
 (`gateway/contratos`), la seguridad `bearerAuth` y el formato común de errores
 de la Gateway (`gateway.esquemas`).
 
-Los endpoints todavía no publicados (presupuestos e integración con
-facturación) no se documentan como contratos.
+Incluye el contrato mínimo de decisiones MS3–MS2; los contratos generales de
+presupuestos e integración con facturación conservan su alcance previo.
 """
 from __future__ import annotations
 
@@ -24,6 +24,10 @@ from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
 from gateway.openapi_ejemplos import agregar_ejemplos_gateway
 from shared.openapi_ordenes import agregar_ejemplos_ordenes
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta, DecisionAplicacionPendiente,
+    DecisionOrdenSolicitud, DecisionPresupuestoVerificada,
+)
 
 _TITULO = "SGTM — API Gateway"
 _VERSION = "0.1.0"
@@ -104,6 +108,10 @@ _TAGS = [
         ),
     },
     {
+        "name": "Presupuestos",
+        "description": "Consulta y reintento de la decisión inicial de presupuesto (MS3).",
+    },
+    {
         "name": "Gateway",
         "description": "Endpoints propios de la Gateway (índice y healthcheck).",
     },
@@ -128,6 +136,10 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("EvidenciaSubida", contratos_evidencias.EvidenciaSubida),
     ("EvidenciaRespuesta", contratos_evidencias.EvidenciaRespuesta),
     ("UrlDescargaRespuesta", contratos_evidencias.UrlDescargaRespuesta),
+    ("DecisionOrdenSolicitud", DecisionOrdenSolicitud),
+    ("DecisionPresupuestoVerificada", DecisionPresupuestoVerificada),
+    ("AplicacionDecisionRespuesta", AplicacionDecisionRespuesta),
+    ("DecisionAplicacionPendiente", DecisionAplicacionPendiente),
 ]
 
 _PARAMETRO_X_REQUEST_ID: dict[str, object] = {
@@ -445,7 +457,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
         "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")],
     }
 
-    return {
+    caminos = {
         "/api/auth/register": {
             "post": _operacion(
                 tag="Autenticación",
@@ -720,10 +732,12 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 tag="Órdenes",
                 resumen="Consultar el historial de estados de una orden",
                 descripcion=(
-                    "Devuelve los cambios de estado de una orden, en orden "
-                    "cronológico, con el actor que los registró y su "
-                    "observación. Aplica la misma visibilidad del detalle: una "
-                    "orden inexistente o ajena responde 404."
+                    "Devuelve todos los registros por fecha/hora e identificador "
+                    "ascendente, con el actor, origen y observación. Aplica la "
+                    "misma visibilidad del detalle: Administrador ve todas; "
+                    "Cliente sus vehículos; Mecánico sus órdenes asignadas; "
+                    "multirol combina los alcances. Una orden inexistente o "
+                    "ajena responde 404; una visible sin registros devuelve []."
                 ),
                 operation_id="consultar_historial_orden",
                 cuerpo=None,
@@ -755,7 +769,9 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "transición declarada por el dominio. Administrador siempre; "
                     "Mecánico solo en órdenes que tiene asignadas. Una orden "
                     "Entregada o Cancelada es terminal y rechaza cualquier "
-                    "cambio. Registra el historial en la misma transacción."
+                    "cambio. Pasar a Cancelado exige una observación o motivo no vacío; "
+                    "en los demás destinos es opcional. Registra el historial "
+                    "en la misma transacción."
                 ),
                 operation_id="cambiar_estado_orden",
                 cuerpo="CambioEstadoSolicitud",
@@ -766,7 +782,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador o ser el mecánico asignado",
                     "409": "Transición no permitida o terminal",
-                    "422": "Estado de destino desconocido o datos inválidos",
+                    "422": "Estado de destino desconocido, cancelación sin motivo o datos inválidos",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
@@ -775,6 +791,78 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
             )
         },
     }
+    caminos["/api/ordenes/{orden_id}"]["get"]["parameters"].append({
+        "name": "solo_propietario", "in": "query", "required": False,
+        "schema": {"type": "boolean", "default": False},
+        "description": "Exige propiedad como Cliente aunque el JWT incluya otros roles.",
+    })
+    caminos["/api/ordenes/{orden_id}"]["get"]["responses"]["200"]["headers"] = {
+        "X-Orden-Propiedad-Verificada": {
+            "description": "Solo con solo_propietario=true y propiedad confirmada por MS2.",
+            "schema": {"type": "string", "enum": ["true"]},
+        },
+    }
+    caminos.update(_caminos_decisiones(error_404_recurso))
+    return caminos
+
+
+def _caminos_decisiones(error_404: dict[str, object]) -> dict[str, dict[str, object]]:
+    aplicada = {"decision_id": 9, "orden_id": 31, "estado_aplicado": 8, "historial_id": 40}
+    hecho = {"decision_id": 9, "orden_id": 31, "cliente_usuario_id": 42,
+             "decision": "rechazado", "primera_decision": True,
+             "repuestos_disponibles": None, "motivo": "No autorizo el servicio"}
+    parametros_decision = {"name": "decision_id", "in": "path", "required": True,
+                           "schema": {"type": "integer", "exclusiveMinimum": 0}}
+    operaciones = {}
+    for ruta, metodo, tag, resumen, descripcion, contrato, cuerpo, errores in (
+        ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post", "Órdenes",
+         "Aplicar una decisión de presupuesto",
+         "Cliente propietario. Verifica el hecho en MS3 con el JWT original, deriva el evento "
+         "y guarda estado e historial atómicamente. Repetir decision_id devuelve la aplicación "
+         "registrada sin nuevas escrituras. No acepta actor, stock ni destino en el body.",
+         "AplicacionDecisionRespuesta", "DecisionOrdenSolicitud",
+         {"409": "Estado/evento incompatible o decisión no aplicable", "503": "MS3 no verificable"}),
+        ("/api/presupuestos/decisiones/{decision_id}", "get", "Presupuestos",
+         "Consultar una decisión persistida",
+         "Solo el cliente que decidió. Devuelve el hecho y la disponibilidad guardada al aprobar; "
+         "no recalcula stock ni consulta MS2. Una aprobación histórica sin evaluación responde 409.",
+         "DecisionPresupuestoVerificada", None, {"409": "Decisión histórica sin evaluación de stock"}),
+        ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post", "Presupuestos",
+         "Reintentar la aplicación de una decisión",
+         "Solo el cliente responsable. Reutiliza la decisión existente y su JWT, sin crear "
+         "otra decisión. Un 503 identifica la decisión registrada cuya aplicación no se confirmó.",
+         "AplicacionDecisionRespuesta", None,
+         {"409": "No es una decisión inicial aplicable", "503": "Aplicación no confirmada en MS2"}),
+    ):
+        operacion = _operacion(
+            tag=tag, resumen=resumen, descripcion=descripcion,
+            operation_id={
+                "/api/ordenes/{orden_id}/decisiones-presupuesto": "aplicar_decision_presupuesto",
+                "/api/presupuestos/decisiones/{decision_id}": "consultar_decision_presupuesto",
+                "/api/presupuestos/decisiones/{decision_id}/aplicacion": "reintentar_aplicacion_decision",
+            }[ruta],
+            cuerpo=cuerpo, respuestas_ok={"200": _respuesta(resumen, _ref(contrato))},
+            errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente",
+                        "422": "Datos inválidos", **errores},
+            requiere_auth=True, con_orden_id=ruta.startswith("/api/ordenes"),
+            descripcion_404="Orden o decisión inexistente o ajena", esquema_404=error_404,
+        )
+        if "{decision_id}" in ruta:
+            operacion["parameters"].append(parametros_decision)
+        media = operacion["responses"]["200"]["content"]["application/json"]
+        media["examples"] = {"ejemplo": {"value": hecho if metodo == "get" else aplicada}}
+        if cuerpo:
+            operacion["requestBody"]["content"]["application/json"]["examples"] = {
+                "referencia": {"value": {"decision_id": 9}},
+            }
+        if "503" in errores:
+            esquema_503 = "DecisionAplicacionPendiente" if ruta.startswith("/api/presupuestos") else "ErrorDetalle"
+            operacion["responses"]["503"] = _respuesta(
+                errores["503"] + "; o pool de Gateway agotado",
+                {"oneOf": [_ref(esquema_503), _ref("ErrorRespuesta")]},
+            )
+        operaciones[ruta] = {metodo: operacion}
+    return operaciones
 
 
 def _esquemas_documentados() -> dict[str, dict[str, object]]:

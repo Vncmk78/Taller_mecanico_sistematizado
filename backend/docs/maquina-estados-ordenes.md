@@ -9,9 +9,13 @@ dominio tiene ocho estados estables y pocas transiciones respaldadas por la
 Sistematización final, por lo que una librería externa de máquinas de estados no
 aportaría una ventaja proporcional.
 
-Este estudio no implementa el flujo general ni crea endpoints de cambio de
-estado. La única transición productiva ya disponible es la primera asignación de
-INT-33: `Recibido → Esperando diagnóstico`.
+En `Develop` ya existe un endpoint genérico para cambiar el estado: valida que
+el par estado actual/destino esté permitido y registra el cambio en el historial
+de MS2. Esto no ejecuta por sí solo todas las precondiciones de negocio ni
+coordina los efectos de presupuesto o inventario entre MS2 y MS3.
+SCRUM-438 agrega una operación específica para aplicar la primera decisión de
+presupuesto, verificada por HTTP contra MS3, con atribución al cliente e
+idempotencia persistida por `decision_id`.
 
 ## 1. Fuentes y alcance
 
@@ -126,18 +130,20 @@ historial y transacciones entre límites de servicio.
 
 ### 3.4 Reglas de transición y efectos externos
 
-La validación del cambio de estado debe estar separada de sus efectos externos.
-MS2 es responsable de decidir si la transición recibida está permitida para la
-orden, actualizar `OrdenTrabajo.estado_codigo` y escribir `HistorialEstado`.
+La validación estructural del cambio de estado está separada de sus efectos
+externos. MS2 valida la transición, actualiza `OrdenTrabajo.estado_codigo` y
+escribe `HistorialEstado` en una transacción local. El endpoint genérico actual
+no comprueba por sí mismo decisiones de presupuesto, disponibilidad de stock ni
+otras precondiciones que pertenecen a servicios externos.
 
 Notificaciones, decisiones de presupuesto, reservas o movimientos de inventario
 y otras acciones de servicios externos no deben ocultarse dentro del validador.
-Esos efectos se producen mediante los contratos del servicio propietario y no
-deben provocar que MS2 confirme un estado si falla su persistencia local.
+MS3 persiste la decisión y solicita a MS2 aplicar su efecto inicial. MS2 recibe
+solo `decision_id`, consulta el hecho en MS3 y deriva el evento con su propia
+máquina. MS3 no publica un evento ni envía un destino arbitrario.
 
-Los contratos, eventos, reintentos e idempotencia para coordinar cambios entre
-MS2 y MS3 están **PENDIENTES DE DEFINICIÓN**. Esta tarea no inventa endpoints ni
-una transacción distribuida.
+La primera decisión usa el contrato descrito en la sección 6.1. La coordinación
+del envío inicial y de la disponibilidad posterior de repuestos sigue pendiente.
 
 ### 3.5 Historial, actor y atomicidad
 
@@ -151,18 +157,60 @@ Toda transición confirmada debe producir exactamente una nueva fila de
 - `fecha_hora` asignada por la base;
 - `observacion` cuando corresponda.
 
+SCRUM-397 exige una observación o motivo no vacío para toda transición hacia
+`Cancelado`, incluso si su origen es `sistema`. En los demás destinos sigue
+siendo opcional. MS2 valida esta regla en el servicio que registra el historial;
+un motivo ausente o inválido provoca rollback del cambio de estado.
+El rechazo inicial exige `DecisionPresupuesto.motivo` en MS3. MS2 obtiene ese
+mismo motivo mediante la consulta verificada de la decisión y lo registra en
+`HistorialEstado.observacion`. Las aprobaciones no inventan una observación.
+
 El cambio de `OrdenTrabajo.estado_codigo` y el alta del historial pertenecen a la
-misma transacción local de MS2. Antes de validar se debe bloquear la orden para
-actualización, siguiendo el patrón `SELECT ... FOR UPDATE` ya usado por la
-asignación. Un error en la actualización o en el historial exige rollback total:
-no puede quedar el estado sin trazabilidad ni una historia que no corresponda al
-estado vigente.
+misma transacción local de MS2. La asignación también guarda sus cambios y su
+historial dentro de la transacción local. Un error en la actualización o en el
+historial exige rollback total: no puede quedar el estado sin trazabilidad ni
+una historia que no corresponda al estado vigente.
 
 Los datos de presupuesto o inventario pertenecen a otra base y no forman parte de
-la transacción local de MS2. El contrato futuro debe entregar evidencia suficiente
-del evento sin crear FK físicas ni acceso directo a tablas de MS3.
+la transacción local de MS2. No existe una transacción única que abarque MS2 y
+MS3 ni acceso directo entre sus bases.
 
-### 3.6 Estados terminales
+### 3.6 Trazabilidad, auditoría y eventos de dominio
+
+En los cambios iniciados por una persona, el actor se obtiene del usuario
+autenticado por JWT. `HistorialEstado` conserva `estado_anterior`,
+`estado_nuevo`, `actor_usuario_id`, `origen`, `fecha_hora` y `observacion`.
+Si el origen es `usuario`, el actor es obligatorio; si es `sistema`, el actor
+queda vacío. `HistorialAsignacion` conserva el mecánico anterior y nuevo, el
+administrador responsable, la fecha/hora y la observación. Los IDs de usuario
+apuntan lógicamente a MS1: no hay claves foráneas físicas entre bases de
+microservicios.
+
+Estos términos describen cosas relacionadas, pero distintas:
+
+- **Historial:** registros persistidos de hechos anteriores, como cambios de
+  estado o asignaciones.
+- **Auditoría:** datos que permiten saber qué cambió, quién lo hizo, cuándo y,
+  cuando corresponde, por qué.
+- **Trazabilidad:** capacidad de relacionar esos registros con la orden y seguir
+  su recorrido. `X-Request-ID` aporta correlación técnica entre una solicitud y
+  los servicios que la reciben; no reemplaza el historial de dominio.
+- **Evento de dominio:** hecho ocurrido en el negocio que puede ser comunicado a
+  otros componentes para que reaccionen.
+
+`EventoOrden` es un `StrEnum` que identifica hechos y sirve como clave para que
+`resolver_transicion()` encuentre el destino permitido. No es actualmente un
+evento publicado, no se persiste como evento independiente y no tiene
+suscriptores ni handlers de dominio.
+
+El proyecto no cuenta actualmente con event bus, outbox, broker,
+publishers/consumers ni mensajería asíncrona entre microservicios. La comunicación
+existente entre servicios es principalmente HTTP síncrona. Cada microservicio
+garantiza atomicidad dentro de su propia base. La primera decisión tiene
+coordinación síncrona e idempotencia local en MS2; un fallo distribuido requiere
+reintentar la aplicación de la decisión ya persistida, sin una transacción global.
+
+### 3.7 Estados terminales
 
 `Entregado` y `Cancelado` no tienen transiciones salientes. El validador debe
 rechazar cualquier intento de cambio desde ellos antes de ejecutar efectos. Una
@@ -198,12 +246,12 @@ Esta tabla es cerrada: una transición no incluida no debe considerarse permitid
 | No existe orden | El administrador confirma el ingreso físico y crea la orden. | Administrador | Recibido | MS2 crea orden e historial inicial. |
 | Recibido | Primera asignación válida de mecánico. | Administrador | Esperando diagnóstico | MS2; ya implementado por INT-33. |
 | Esperando diagnóstico | Se envía el primer presupuesto al cliente. | Administrador envía la versión revisada | Esperando aprobación de presupuesto | MS3 gestiona presupuesto y envío; MS2 valida y persiste el estado mediante un contrato futuro. |
-| Esperando aprobación de presupuesto | El cliente aprueba por primera vez y existen los repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | En reparación | MS3 aporta los hechos; MS2 valida y persiste el estado mediante un contrato futuro. |
-| Esperando aprobación de presupuesto | El cliente aprueba por primera vez y faltan repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | Esperando repuestos | MS3 aporta los hechos; MS2 valida y persiste el estado mediante un contrato futuro. |
+| Esperando aprobación de presupuesto | El cliente aprueba por primera vez y existen los repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | En reparación | MS3 conserva la disponibilidad al decidir; MS2 verifica la decisión y persiste estado e historial (SCRUM-438). |
+| Esperando aprobación de presupuesto | El cliente aprueba por primera vez y faltan repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | Esperando repuestos | MS3 conserva la disponibilidad al decidir; MS2 verifica la decisión y persiste estado e historial (SCRUM-438). |
 | Esperando repuestos | Se registra la disponibilidad necesaria para el trabajo autorizado. | Evento originado en MS3; actor exacto **PENDIENTE DE DEFINICIÓN** | En reparación | MS3 aporta el hecho; MS2 valida y persiste el estado mediante un contrato futuro. |
 | En reparación | El mecánico finaliza el trabajo autorizado. | Mecánico asignado | Listo | MS2 valida responsable, actualiza orden e historial. |
 | Listo | Se registra la entrega física del vehículo. | Administrador | Entregado | MS2 actualiza orden, datos de entrega e historial. |
-| Esperando aprobación de presupuesto | El cliente rechaza el presupuesto cuando nunca ha existido una aprobación y confirma la consecuencia de cancelar. No requiere una segunda confirmación administrativa. | Cliente | Cancelado | MS3 registra la decisión; MS2 vuelve a validar la condición y persiste la cancelación mediante un contrato futuro. |
+| Esperando aprobación de presupuesto | El cliente rechaza el presupuesto cuando nunca ha existido una aprobación y confirma la consecuencia de cancelar. No requiere una segunda confirmación administrativa. | Cliente | Cancelado | MS3 conserva decisión y motivo; MS2 verifica el hecho y persiste cancelación e historial (SCRUM-438). |
 | Recibido | El cliente solicita cancelar y el administrador confirma la solicitud después de comprobar que no existe una primera aprobación. | Cliente solicita; Administrador confirma | Cancelado | MS2 persiste cancelación e historial; consulta del hecho de aprobación por contrato con MS3 **PENDIENTE DE DEFINICIÓN**. |
 | Esperando diagnóstico | El cliente solicita cancelar y el administrador confirma la solicitud después de comprobar que no existe una primera aprobación. | Cliente solicita; Administrador confirma | Cancelado | MS2 persiste cancelación e historial; consulta del hecho de aprobación por contrato con MS3 **PENDIENTE DE DEFINICIÓN**. |
 | Esperando aprobación de presupuesto | El cliente solicita cancelar sin rechazar el presupuesto y el administrador confirma la solicitud después de comprobar que no existe una primera aprobación. | Cliente solicita; Administrador confirma | Cancelado | MS2 persiste cancelación e historial; consulta del hecho de aprobación por contrato con MS3 **PENDIENTE DE DEFINICIÓN**. |
@@ -248,9 +296,49 @@ sobre el estado de la orden y comprueba que el cambio solicitado sea compatible
 con el estado actual.
 
 Quedan **PENDIENTES DE DEFINICIÓN** los contratos concretos para comunicar a MS2
-el envío del primer presupuesto, la primera aprobación o rechazo y la
-disponibilidad de repuestos, incluidos autenticación entre servicios, identidad
-del actor original, idempotencia y manejo de reintentos.
+el envío del primer presupuesto y la disponibilidad posterior de repuestos.
+
+### 6.1 Primera decisión de presupuesto (SCRUM-397 y SCRUM-438)
+
+1. MS3 confirma `DecisionPresupuesto` y guarda la disponibilidad evaluada al
+   aprobar. `decision_id` ya es su PK; una modificación posterior no aplica esta
+   transición inicial.
+   Antes del commit verifica propiedad mediante
+   `GET /ordenes/{orden_id}?solo_propietario=true`: tener también un rol interno
+   no autoriza al cliente a decidir sobre una orden ajena.
+   MS3 exige `X-Orden-Propiedad-Verificada: true` en la respuesta; si un MS2
+   anterior ignora el parámetro, la decisión no se guarda.
+2. MS3 llama a `POST /ordenes/{orden_id}/decisiones-presupuesto` con
+   `{"decision_id": ...}` y el JWT original. MS2 valida Cliente y propietario,
+   consulta `GET /presupuestos/decisiones/{decision_id}` en MS3 y comprueba orden,
+   actor y decisión inicial. No acepta actor, stock, evento ni destino del body.
+3. MS2 deriva el evento de rechazo o de aprobación con/sin repuestos y llama a
+   `resolver_transicion()`. Bajo bloqueo de la orden, confirma estado e historial
+   juntos, con actor del JWT, `origen="usuario"` y motivo del rechazo.
+4. `HistorialEstado.decision_presupuesto_id` es una referencia lógica nullable
+   y única, sin FK a MS3. Un reintento devuelve el historial ya asociado, sin
+   cambiar el estado aunque la orden haya avanzado después. La restricción única
+   y el bloqueo evitan aplicaciones duplicadas.
+
+Si MS2 falla, MS3 conserva la decisión y responde `503` con `decision_id`,
+`aplicacion_confirmada=false` y la ruta de reintento
+`POST /presupuestos/decisiones/{decision_id}/aplicacion`. Una respuesta perdida
+puede significar que MS2 ya confirmó; el reintento idempotente resuelve esa duda.
+Se informa el estado HTTP y detalle de MS2 cuando se recibió su respuesta.
+No hay reintento automático ni recuperación en segundo plano.
+
+La disponibilidad es una instantánea, no una reserva de inventario: no se
+recalcula al reintentar y no garantiza que otro trabajo no consuma el stock.
+Las aprobaciones históricas sin instantánea responden `409`; no se reconstruye
+su stock pasado ni se enlazan artificialmente historiales anteriores.
+La orden debe estar en `Esperando aprobación de presupuesto`; SCRUM-438 no
+implementa el envío inicial de SCRUM-435.
+
+Aplicar las migraciones `0006_ms2` (referencia única) y `0004_ms3` (instantánea).
+Configurar `MS2_MS3_URL`, `MS2_MS3_TIMEOUT_SEGUNDOS` y los existentes
+`MS3_MS2_URL`, `MS3_MS2_TIMEOUT_SEGUNDOS`. El timeout exterior de MS3 debe dar
+margen a la consulta de verificación y al commit de MS2. Ambos validan el mismo
+JWT de MS1 con la configuración existente.
 
 ## 7. Relación con INT-33
 

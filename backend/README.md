@@ -164,6 +164,8 @@ reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
 | `PUT /presupuestos/{id}/versiones/{n}/items` | Reemplaza los ítems de un borrador (`409` si ya fue enviada) |
 | `POST /presupuestos/{id}/versiones/{n}/envio` | **Administrador**: envía la última versión (con ítems y precios); queda congelada |
 | `POST /presupuestos/{id}/versiones/{n}/decision` | **Cliente dueño**: `{"decision": "aprobado"}` o `{"decision": "rechazado", "motivo": "...", "confirmar_cancelacion": true}` |
+| `GET /presupuestos/decisiones/{decision_id}` | **Cliente responsable**: hecho persistido que MS2 verifica antes de aplicar la decisión |
+| `POST /presupuestos/decisiones/{decision_id}/aplicacion` | **Cliente responsable**: reintenta la misma decisión, sin crear otra |
 
 Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
 la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
@@ -173,8 +175,14 @@ si el primer presupuesto fue rechazado (servicio cancelado) no se crean más
 versiones (`409`). Las versiones anteriores, sus ítems y decisiones nunca se
 modifican: la base lo impide además con los triggers de `0003_ms3`.
 
-Envío y decisión son **transaccionales**: bloquean el presupuesto (`SELECT ... FOR UPDATE`),
-validan y escriben todo junto; si algo falla no queda nada a medias. Responden
+Envío y decisión son **transaccionales dentro de MS3**: bloquean el presupuesto
+(`SELECT ... FOR UPDATE`), validan y escriben todo junto. Tras confirmar la
+primera decisión, MS3 solicita su aplicación en MS2. Un fallo posterior no
+revierte la decisión: responde `503` con `decision_id` y la ruta de reintento.
+MS2 verifica el hecho con el JWT original y confirma estado e historial en su
+propia transacción, con idempotencia persistida. Véase
+[el contrato de coordinación](docs/maquina-estados-ordenes.md#61-primera-decisión-de-presupuesto-scrum-397-y-scrum-438).
+Responden
 `efecto_en_orden`, lo que corresponde aplicar a la orden en MS2 (§4.2):
 
 | Operación | `efecto_en_orden` |

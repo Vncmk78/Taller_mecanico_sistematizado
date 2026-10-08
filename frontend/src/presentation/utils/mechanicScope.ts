@@ -1,4 +1,5 @@
 import type { Order } from '@/domain/entities/Order';
+import type { User } from '@/domain/entities/User';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 
 /**
@@ -28,4 +29,17 @@ export function filterOrdersByMechanic(orders: Order[], mechanicId: string | nul
 export function filterVehiclesByOrders(vehicles: Vehicle[], orders: Order[]): Vehicle[] {
     const assignedIds = new Set(orders.map((order) => order.vehicleId));
     return vehicles.filter((vehicle) => assignedIds.has(vehicle.id));
+}
+
+/**
+ * Permiso y asignación para actuar sobre una orden desde el portal del
+ * mecánico. Se evalúa por tarjeta, antes de mostrar el selector de avance:
+ * el usuario debe traer rol mecánico y la orden debe estar asignada justo a él
+ * (`mecanicoActualId === user.id`). Sin esto la UI dependía solo del filtro de
+ * la lista y del 403 del backend.
+ */
+export function puedeCambiarEstado(order: Order, user: User | null | undefined): boolean {
+    if (!user) return false;
+    if (user.role !== 'mecanico') return false;
+    return Boolean(order.mecanicoActualId) && order.mecanicoActualId === user.id;
 }

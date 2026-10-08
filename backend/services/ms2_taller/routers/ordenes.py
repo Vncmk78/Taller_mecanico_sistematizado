@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
-from services.ms2_taller.dependencies import obtener_principal_actual
+from services.ms2_taller.dependencies import obtener_principal_actual, obtener_token_bearer
+from services.ms2_taller.integracion_ms3 import (
+    DecisionNoAplicableError, DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError,
+    VerificadorDecisiones, obtener_verificador_decisiones,
+)
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.schemas.orden import (
@@ -20,11 +24,13 @@ from services.ms2_taller.services.ordenes import (
     OrdenEstadoInvalidoError,
     OrdenEstadoNoAutorizadoError,
     OrdenNoEncontradaError,
+    OrdenObservacionInvalidaError,
     OrdenTerminalError,
     OrdenTransicionNoPermitidaError,
     PersistenciaOrdenError,
     VehiculoNoEncontradoError,
     asignar_mecanico,
+    aplicar_decision_presupuesto,
     cambiar_estado_orden,
     crear_orden,
     listar_ordenes,
@@ -32,8 +38,48 @@ from services.ms2_taller.services.ordenes import (
     obtener_orden_visible,
 )
 from shared.auth import NombreRol, PrincipalAutenticado
+from shared.contratos_decisiones import AplicacionDecisionRespuesta, DecisionOrdenSolicitud
 
 router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
+
+
+@router_ordenes.post(
+    "/{orden_id}/decisiones-presupuesto", response_model=AplicacionDecisionRespuesta,
+    summary="Aplicar una decisión inicial de presupuesto verificada en MS3",
+    responses={
+        401: {"description": "JWT ausente o inválido"},
+        403: {"description": "Se requiere rol Cliente"},
+        404: {"description": "Orden o decisión inexistente o ajena"},
+        409: {"description": "Estado/evento incompatible o decisión no aplicable"},
+        422: {"description": "Referencia inválida o cancelación sin motivo"},
+        500: {"description": "Error de persistencia local"},
+        503: {"description": "No fue posible verificar la decisión en MS3"},
+    },
+)
+def aplicar_decision(
+    body: DecisionOrdenSolicitud, orden_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorDecisiones = Depends(obtener_verificador_decisiones),
+) -> AplicacionDecisionRespuesta:
+    try:
+        return aplicar_decision_presupuesto(
+            db, orden_id=orden_id, decision_id=body.decision_id,
+            principal=principal, token=token, verificador=verificador,
+        )
+    except (OrdenNoEncontradaError, DecisionNoVisibleError) as exc:
+        raise HTTPException(404, "Orden o decisión no encontrada") from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except (OrdenTransicionNoPermitidaError, DecisionNoAplicableError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except OrdenObservacionInvalidaError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ServicioPresupuestosNoDisponibleError as exc:
+        raise HTTPException(503, "No fue posible verificar la decisión en MS3") from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(500, "No fue posible aplicar la decisión") from exc
 
 
 @router_ordenes.post(
@@ -113,11 +159,25 @@ def consultar_ordenes(
 )
 def consultar_orden(
     orden_id: int,
+    response: Response,
+    solo_propietario: bool = Query(
+        default=False, description="Verificar propiedad del cliente, incluso con otros roles.",
+    ),
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> OrdenTrabajo:
     try:
-        return obtener_orden_visible(db, principal, orden_id)
+        if solo_propietario:
+            if NombreRol.CLIENTE not in principal.roles:
+                raise OrdenNoEncontradaError("Orden no encontrada")
+            # La visibilidad como personal no autoriza a decidir como cliente.
+            principal = PrincipalAutenticado(
+                principal.usuario_id, frozenset({NombreRol.CLIENTE}),
+            )
+        orden = obtener_orden_visible(db, principal, orden_id)
+        if solo_propietario:
+            response.headers["X-Orden-Propiedad-Verificada"] = "true"
+        return orden
     except OrdenNoEncontradaError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -134,6 +194,10 @@ def consultar_orden(
     "/{orden_id}/historial",
     response_model=list[HistorialEstadoRespuesta],
     summary="Consultar el historial de estados de una orden",
+    description=(
+        "Devuelve todos los registros por fecha/hora e identificador ascendente. "
+        "Aplica la misma visibilidad del detalle; sin registros devuelve []."
+    ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
@@ -175,7 +239,7 @@ def consultar_historial_orden(
             "description": "La transición solicitada no está permitida o la orden es terminal"
         },
         status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Estado de destino desconocido o datos inválidos"
+            "description": "Estado de destino desconocido, cancelación sin motivo o datos inválidos"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
@@ -206,7 +270,7 @@ def cambiar_estado(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
-    except OrdenEstadoInvalidoError as exc:
+    except (OrdenEstadoInvalidoError, OrdenObservacionInvalidaError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),

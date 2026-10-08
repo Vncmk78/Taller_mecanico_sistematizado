@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -47,7 +48,11 @@ class CambioEstadoSolicitud(BaseModel):
     # Sin tope superior: el catálogo oficial (1 a 8) lo valida el dominio, que
     # es quien conoce los estados y las transiciones permitidas.
     estado_destino: int = Field(gt=0)
-    observacion: str | None = Field(default=None, min_length=1)
+    observacion: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Obligatoria al pasar a Cancelado; opcional en los demás destinos.",
+    )
 
 
 class HistorialEstadoRespuesta(BaseModel):
@@ -60,6 +65,6 @@ class HistorialEstadoRespuesta(BaseModel):
     estado_anterior: int | None
     estado_nuevo: int
     actor_usuario_id: int | None
-    origen: str
+    origen: Literal["usuario", "sistema"]
     fecha_hora: datetime
     observacion: str | None

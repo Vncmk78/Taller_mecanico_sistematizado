@@ -17,12 +17,14 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
-from services.ms2_taller.models import HistorialEstado, OrdenTrabajo
+from services.ms2_taller.models import HistorialAsignacion, HistorialEstado, OrdenTrabajo
+from services.ms2_taller.services import ordenes as servicio_ordenes
 from services.ms3_presupuestos.models import DecisionPresupuesto, VersionPresupuesto
 from shared.auth import NombreRol
+from test_ordenes_api import _crear_vehiculo
 from test_decisiones_presupuesto_integracion import (
     _aplicar, _decidir, _estado_y_historial, _headers, preparar_flujo,
     test_cliente_multirol_solo_decide_presupuesto_de_su_orden as comprobar_multirol,
@@ -96,6 +98,134 @@ def test_tres_ramas_con_migraciones_y_triggers_reales(flujo_pg, decision, stock,
     with flujo_pg.db3() as db:
         version = db.scalar(select(VersionPresupuesto))
         assert (version.bloqueada_en is not None) == (decision == "aprobado")
+
+
+def _ahora_postgresql(flujo):
+    with flujo.db2() as db:
+        return db.scalar(text("select clock_timestamp()"))
+
+
+def test_historial_persiste_fecha_hora_con_zona_en_postgresql(flujo_pg):
+    antes = _ahora_postgresql(flujo_pg)
+    respuesta = _decidir(flujo_pg, "aprobado", stock=10)
+    assert respuesta.status_code == 201, respuesta.text
+
+    _, historial = _estado_y_historial(flujo_pg)
+    assert len(historial) == 1
+    fecha_hora = historial[0].fecha_hora
+    assert fecha_hora is not None
+    assert fecha_hora.tzinfo is not None
+    assert fecha_hora.utcoffset() is not None
+    assert antes <= fecha_hora <= _ahora_postgresql(flujo_pg)
+    assert historial[0].orden_id == flujo_pg.orden_id
+
+
+def test_asignacion_especifica_crea_historial_completo_y_patch_no_la_sustituye(flujo_pg):
+    with flujo_pg.db2() as db:
+        vehiculo_id = _crear_vehiculo(db, usuario_cliente=10).vehiculo_id
+    admin = _headers(99, NombreRol.ADMINISTRADOR)
+    creada = flujo_pg.ms2.post("/ordenes", json={"vehiculo_id": vehiculo_id}, headers=admin)
+    assert creada.status_code == 201
+    orden_id = creada.json()["orden_id"]
+    rechazada = flujo_pg.ms2.patch(
+        f"/ordenes/{orden_id}/estado", json={"estado_destino": 2}, headers=admin,
+    )
+    assert rechazada.status_code == 409
+    with flujo_pg.db2() as db:
+        assert db.get(OrdenTrabajo, orden_id).estado_codigo == 1
+        assert len(list(db.scalars(select(HistorialEstado).where(
+            HistorialEstado.orden_id == orden_id,
+        )))) == 1  # Solo la creación, sin transición rechazada.
+    antes = _ahora_postgresql(flujo_pg)
+    asignada = flujo_pg.ms2.put(
+        f"/ordenes/{orden_id}/mecanico", json={"mecanico_id": 50}, headers=admin,
+    )
+    assert asignada.status_code == 200
+    with flujo_pg.db2() as db:
+        orden = db.get(OrdenTrabajo, orden_id)
+        assert orden.estado_codigo == 2 and orden.mecanico_actual_id == 50
+        historial = db.scalar(select(HistorialEstado).where(
+            HistorialEstado.orden_id == orden_id, HistorialEstado.estado_nuevo == 2,
+        ))
+        assert (historial.estado_anterior, historial.estado_nuevo) == (1, 2)
+        assert historial.actor_usuario_id == 99 and historial.origen == "usuario"
+        assert historial.observacion is None
+        assert historial.fecha_hora.utcoffset() is not None
+        assert antes <= historial.fecha_hora <= _ahora_postgresql(flujo_pg)
+        asignacion = db.scalar(select(HistorialAsignacion).where(
+            HistorialAsignacion.orden_id == orden_id,
+        ))
+        assert asignacion.administrador_id == 99 and asignacion.mecanico_nuevo_id == 50
+
+
+@pytest.mark.parametrize("destino,stock", [(4, 1), (5, 10)])
+@pytest.mark.parametrize("usuario,rol", [(99, NombreRol.ADMINISTRADOR), (50, NombreRol.MECANICO)])
+def test_patch_no_aprueba_pero_decision_verificada_si_aplica_en_postgresql(
+    flujo_pg, destino, stock, usuario, rol,
+):
+    with flujo_pg.db2() as db:
+        db.get(OrdenTrabajo, flujo_pg.orden_id).mecanico_actual_id = 50
+        db.commit()
+    respuesta = flujo_pg.ms2.patch(
+        f"/ordenes/{flujo_pg.orden_id}/estado", json={"estado_destino": destino},
+        headers=_headers(usuario, rol),
+    )
+    assert respuesta.status_code == 409
+    assert _estado_y_historial(flujo_pg) == (3, [])
+    decision = _decidir(flujo_pg, "aprobado", stock)
+    assert decision.status_code == 201
+    estado, historial = _estado_y_historial(flujo_pg)
+    assert estado == destino and len(historial) == 1
+    assert historial[0].actor_usuario_id == 42
+    assert historial[0].decision_presupuesto_id == decision.json()["decision_id"]
+
+
+def _preparar_finalizacion(flujo):
+    assert _decidir(flujo).status_code == 201
+    assert flujo.ms2.put(
+        f"/ordenes/{flujo.orden_id}/mecanico", json={"mecanico_id": 50},
+        headers=_headers(99, NombreRol.ADMINISTRADOR),
+    ).status_code == 200
+
+
+def test_finalizacion_conservada_persiste_actor_jwt_y_campos_en_postgresql(flujo_pg):
+    _preparar_finalizacion(flujo_pg)
+    antes = _ahora_postgresql(flujo_pg)
+    respuesta = flujo_pg.ms2.patch(
+        f"/ordenes/{flujo_pg.orden_id}/estado",
+        json={"estado_destino": 6, "observacion": "  Trabajo autorizado finalizado  "},
+        headers=_headers(50, NombreRol.MECANICO),
+    )
+    assert respuesta.status_code == 200
+    estado, historial = _estado_y_historial(flujo_pg)
+    assert estado == 6 and len(historial) == 2
+    registro = next(h for h in historial if h.estado_nuevo == 6)
+    assert (registro.estado_anterior, registro.estado_nuevo) == (5, estado)
+    assert registro.orden_id == flujo_pg.orden_id
+    assert registro.actor_usuario_id == 50 and registro.origen == "usuario"
+    assert registro.observacion == "Trabajo autorizado finalizado"
+    assert registro.fecha_hora.utcoffset() is not None
+    assert antes <= registro.fecha_hora <= _ahora_postgresql(flujo_pg)
+
+
+def test_error_tras_flush_del_patch_revierte_estado_e_historial_en_postgresql(flujo_pg, monkeypatch):
+    _preparar_finalizacion(flujo_pg)
+    registrar = servicio_ordenes.registrar_historial_estado
+
+    def fallar_despues_de_escribir(db, **datos):
+        registrar(db, **datos)
+        db.flush()  # Ejecuta las escrituras reales antes de provocar el error.
+        raise SQLAlchemyError("Fallo de persistencia simulado")
+
+    monkeypatch.setattr(servicio_ordenes, "registrar_historial_estado", fallar_despues_de_escribir)
+    respuesta = flujo_pg.ms2.patch(
+        f"/ordenes/{flujo_pg.orden_id}/estado", json={"estado_destino": 6},
+        headers=_headers(50, NombreRol.MECANICO),
+    )
+    assert respuesta.status_code == 500
+    estado, historial = _estado_y_historial(flujo_pg)
+    assert estado == 5 and len(historial) == 1
+    assert historial[0].estado_nuevo == 5 and historial[0].decision_presupuesto_id is not None
 
 
 @pytest.mark.parametrize("fallo,historias_antes", [("antes", 0), ("verificacion", 0), ("despues", 1)])

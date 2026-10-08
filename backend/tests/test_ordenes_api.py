@@ -31,11 +31,15 @@ from services.ms2_taller.models.estado_orden import (
     ENTREGADO,
     ESPERANDO_APROBACION_PRESUPUESTO,
     ESPERANDO_DIAGNOSTICO,
+    ESPERANDO_REPUESTOS,
     ESTADOS_ORDEN,
+    LISTO,
     RECIBIDO,
 )
 from services.ms2_taller.services.ordenes import (
     OrdenObservacionInvalidaError,
+    OrdenEstadoNoAutorizadoError,
+    OrdenTransicionNoPermitidaError,
     _consulta_vehiculo_para_actualizacion,
     cambiar_estado_orden,
     registrar_historial_estado,
@@ -536,35 +540,35 @@ def test_historial_devuelve_entradas_en_orden_cronologico(
     api_ordenes: TestClient,
     db_ordenes: Session,
 ):
-    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    admin_headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+    creada = api_ordenes.post(
+        "/ordenes", json={"vehiculo_id": vehiculo.vehiculo_id}, headers=admin_headers,
+    )
+    assert creada.status_code == 201
+    orden_id = creada.json()["orden_id"]
     headers = _headers_para(50, NombreRol.MECANICO)
     assert (
-        api_ordenes.patch(
-            f"/ordenes/{orden.orden_id}/estado",
-            json={"estado_destino": ESPERANDO_DIAGNOSTICO},
-            headers=headers,
+        api_ordenes.put(
+            f"/ordenes/{orden_id}/mecanico",
+            json={"mecanico_id": 50},
+            headers=admin_headers,
         ).status_code
         == 200
     )
-    api_ordenes.patch(
-        f"/ordenes/{orden.orden_id}/estado",
-        json={"estado_destino": ESPERANDO_APROBACION_PRESUPUESTO},
-        headers=headers,
-    )
-
     respuesta = api_ordenes.get(
-        f"/ordenes/{orden.orden_id}/historial",
+        f"/ordenes/{orden_id}/historial",
         headers=headers,
     )
 
     assert respuesta.status_code == 200
     entradas = respuesta.json()
     assert [entrada["estado_nuevo"] for entrada in entradas] == [
+        RECIBIDO,
         ESPERANDO_DIAGNOSTICO,
-        ESPERANDO_APROBACION_PRESUPUESTO,
     ]
-    assert entradas[0]["estado_anterior"] == RECIBIDO
-    assert entradas[0]["actor_usuario_id"] == 50
+    assert entradas[0]["estado_anterior"] is None
+    assert entradas[0]["actor_usuario_id"] == 99
     assert entradas[0]["origen"] == "usuario"
     assert entradas[0]["fecha_hora"] is not None
     assert [entrada["fecha_hora"] for entrada in entradas] == sorted(
@@ -623,48 +627,92 @@ def test_patch_estado_mecanico_asignado_actualiza_y_registra_historial(
     api_ordenes: TestClient,
     db_ordenes: Session,
 ):
-    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=EN_REPARACION,
+    )
 
     respuesta = api_ordenes.patch(
         f"/ordenes/{orden.orden_id}/estado",
         json={
-            "estado_destino": ESPERANDO_DIAGNOSTICO,
-            "observacion": "  Inicia evaluación técnica  ",
+            "estado_destino": LISTO,
+            "observacion": "  Trabajo autorizado finalizado  ",
         },
         headers=_headers_para(50, NombreRol.MECANICO),
     )
 
     assert respuesta.status_code == 200
-    assert respuesta.json()["estado_codigo"] == ESPERANDO_DIAGNOSTICO
+    assert respuesta.json()["estado_codigo"] == LISTO
 
     orden_actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
-    assert orden_actual.estado_codigo == ESPERANDO_DIAGNOSTICO
+    assert orden_actual.estado_codigo == LISTO
     historial = db_ordenes.scalar(select(HistorialEstado))
     assert historial is not None
-    assert historial.estado_anterior == RECIBIDO
-    assert historial.estado_nuevo == ESPERANDO_DIAGNOSTICO
+    assert historial.estado_anterior == EN_REPARACION
+    assert historial.estado_nuevo == LISTO
     assert historial.actor_usuario_id == 50
     assert historial.origen == "usuario"
-    assert historial.observacion == "Inicia evaluación técnica"
+    assert historial.observacion == "Trabajo autorizado finalizado"
+    assert historial.orden_id == orden.orden_id
+    assert historial.fecha_hora is not None
 
 
-def test_patch_estado_administrador_actualiza_sin_ser_mecanico_asignado(
+@pytest.mark.parametrize("estado_actual,destino", [
+    (RECIBIDO, ESPERANDO_DIAGNOSTICO),
+    (ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS),
+    (ESPERANDO_APROBACION_PRESUPUESTO, EN_REPARACION),
+])
+@pytest.mark.parametrize("usuario,roles", [
+    (99, (NombreRol.ADMINISTRADOR,)),
+    (50, (NombreRol.MECANICO,)),
+    (50, (NombreRol.CLIENTE, NombreRol.MECANICO)),
+    (99, (NombreRol.CLIENTE, NombreRol.MECANICO, NombreRol.ADMINISTRADOR)),
+])
+def test_patch_estado_no_elude_operaciones_especificas_ni_con_varios_roles(
     api_ordenes: TestClient,
     db_ordenes: Session,
+    estado_actual: int, destino: int, usuario: int, roles: tuple[NombreRol, ...],
 ):
-    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=estado_actual,
+    )
 
     respuesta = api_ordenes.patch(
         f"/ordenes/{orden.orden_id}/estado",
-        json={"estado_destino": ESPERANDO_DIAGNOSTICO},
-        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+        json={"estado_destino": destino},
+        headers=_headers_para(usuario, *roles),
     )
 
-    assert respuesta.status_code == 200
-    assert respuesta.json()["estado_codigo"] == ESPERANDO_DIAGNOSTICO
-    historial = db_ordenes.scalar(select(HistorialEstado))
-    assert historial is not None
-    assert historial.observacion is None
+    assert respuesta.status_code == 409
+    assert "operación específica" in respuesta.json()["detail"]
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == estado_actual
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_servicio_no_permite_aprobacion_directa_sin_decision_verificada(db_ordenes: Session):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, estado_codigo=ESPERANDO_APROBACION_PRESUPUESTO,
+    )
+    with pytest.raises(OrdenTransicionNoPermitidaError):
+        cambiar_estado_orden(
+            db_ordenes, orden_id=orden.orden_id, estado_destino=EN_REPARACION,
+            principal=PrincipalAutenticado(99, frozenset({NombreRol.ADMINISTRADOR})),
+        )
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == ESPERANDO_APROBACION_PRESUPUESTO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_servicio_usuario_sin_roles_no_modifica_estado_ni_historial(db_ordenes: Session):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, estado_codigo=EN_REPARACION)
+    with pytest.raises(OrdenEstadoNoAutorizadoError):
+        cambiar_estado_orden(
+            db_ordenes, orden_id=orden.orden_id, estado_destino=LISTO,
+            principal=PrincipalAutenticado(99, frozenset()),
+        )
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == EN_REPARACION
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
 @pytest.mark.parametrize("datos_observacion", [
@@ -770,21 +818,47 @@ def test_patch_estado_mecanico_no_asignado_recibe_403(
     assert respuesta.json() == {
         "detail": "No tienes permiso para cambiar el estado de esta orden"
     }
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
+@pytest.mark.parametrize("usuario", [10, 20])
 def test_patch_estado_cliente_recibe_403(
     api_ordenes: TestClient,
     db_ordenes: Session,
+    usuario: int,
 ):
     orden = _crear_orden(db_ordenes, usuario_cliente=10)
 
     respuesta = api_ordenes.patch(
         f"/ordenes/{orden.orden_id}/estado",
         json={"estado_destino": ESPERANDO_DIAGNOSTICO},
-        headers=_headers_para(10, NombreRol.CLIENTE),
+        headers=_headers_para(usuario, NombreRol.CLIENTE),
     )
 
     assert respuesta.status_code == 403
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_patch_estado_cliente_mecanico_propietario_no_asignado_no_elude_responsabilidad(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=60)
+
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden.orden_id}/estado",
+        json={"estado_destino": ESPERANDO_DIAGNOSTICO},
+        headers=_headers_para(10, NombreRol.CLIENTE, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 403
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
 def test_patch_estado_destino_desconocido_devuelve_422(
@@ -913,7 +987,9 @@ def test_patch_estado_fallo_en_persistencia_revierte_estado_e_historial(
     db_ordenes: Session,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=EN_REPARACION,
+    )
 
     def fallar_commit() -> None:
         raise SQLAlchemyError("commit fallido")
@@ -922,12 +998,12 @@ def test_patch_estado_fallo_en_persistencia_revierte_estado_e_historial(
 
     respuesta = api_ordenes.patch(
         f"/ordenes/{orden.orden_id}/estado",
-        json={"estado_destino": ESPERANDO_DIAGNOSTICO},
-        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+        json={"estado_destino": LISTO},
+        headers=_headers_para(50, NombreRol.MECANICO),
     )
 
     assert respuesta.status_code == 500
-    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == RECIBIDO
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == EN_REPARACION
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 

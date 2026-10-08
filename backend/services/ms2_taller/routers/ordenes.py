@@ -229,6 +229,12 @@ def consultar_historial_orden(
     "/{orden_id}/estado",
     response_model=OrdenRespuesta,
     summary="Cambiar el estado de una orden",
+    description=(
+        "La primera asignación (1 → 2) y la primera aprobación de presupuesto "
+        "(3 → 4/5) requieren sus operaciones específicas y no admiten PATCH directo. "
+        "Los demás pares conservan su comportamiento; este endpoint no garantiza "
+        "las precondiciones pendientes de envío, repuestos, finalización, entrega o cancelación."
+    ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_403_FORBIDDEN: {
@@ -236,7 +242,7 @@ def consultar_historial_orden(
         },
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_409_CONFLICT: {
-            "description": "La transición solicitada no está permitida o la orden es terminal"
+            "description": "Transición no permitida, terminal o reservada a una operación específica"
         },
         status.HTTP_422_UNPROCESSABLE_ENTITY: {
             "description": "Estado de destino desconocido, cancelación sin motivo o datos inválidos"

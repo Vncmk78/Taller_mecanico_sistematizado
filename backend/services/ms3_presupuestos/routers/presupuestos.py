@@ -29,11 +29,13 @@ from services.ms3_presupuestos.dependencies import (
     requerir_roles,
 )
 from services.ms3_presupuestos.integracion_ms2 import (
+    CoordinadorOrdenes,
     OrdenNoVisible,
     VerificadorOrdenes,
     obtener_verificador_ordenes,
+    obtener_coordinador_ordenes,
 )
-from services.ms3_presupuestos.persistencia import RecursoNoEncontrado, UnidadDeTrabajo
+from services.ms3_presupuestos.persistencia import ConflictoDeDatos, RecursoNoEncontrado, UnidadDeTrabajo
 from services.ms3_presupuestos.persistencia.repositorios import LIMITE_MAXIMO
 from services.ms3_presupuestos.schemas.presupuesto import (
     DecisionEntrada,
@@ -47,6 +49,9 @@ from services.ms3_presupuestos.schemas.presupuesto import (
 )
 from services.ms3_presupuestos.services import presupuestos as casos
 from shared.auth import NombreRol, PrincipalAutenticado
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta, DecisionAplicacionPendiente, DecisionPresupuestoVerificada,
+)
 
 router = APIRouter(prefix="/presupuestos", tags=["presupuestos"])
 
@@ -71,11 +76,15 @@ def _es_personal(principal: PrincipalAutenticado) -> bool:
 
 
 def _exigir_orden_del_cliente(
-    orden_id: int, presupuesto_id: int | None, token: str, verificador: VerificadorOrdenes
+    orden_id: int, presupuesto_id: int | None, token: str, verificador: VerificadorOrdenes,
+    *, solo_propietario: bool = False,
 ) -> None:
     """404 si la orden no es del cliente: no se revela si el presupuesto existe."""
     try:
-        verificador.verificar_acceso(orden_id, token)
+        if solo_propietario:
+            verificador.verificar_propiedad(orden_id, token)
+        else:
+            verificador.verificar_acceso(orden_id, token)
     except OrdenNoVisible as exc:
         recurso = f"Presupuesto {presupuesto_id}" if presupuesto_id else f"Orden {orden_id}"
         raise RecursoNoEncontrado(f"{recurso} no existe") from exc
@@ -284,7 +293,9 @@ def enviar(
         "Todo rechazo exige `motivo`. Rechazar antes de la primera aprobación cancela el "
         "servicio y exige `confirmar_cancelacion: true` (efecto `cancelado`). Aprobar da "
         "`en_reparacion` o `esperando_repuestos` según el stock. Rechazar una modificación "
-        "posterior conserva la aprobación vigente (efecto `null`)."
+        "posterior conserva la aprobación vigente (efecto `null`). MS3 confirma primero "
+        "la decisión; en la primera decisión solicita a MS2 su aplicación idempotente. "
+        "Un 503 con decision_id permite reintentar la aplicación sin volver a decidir."
     ),
     responses={
         **_401,
@@ -293,6 +304,7 @@ def enviar(
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Cliente"},
         status.HTTP_409_CONFLICT: {"description": "No enviada, ya decidida o reemplazada"},
         422: {"description": "Rechazo sin motivo o sin confirmar la cancelación"},
+        503: {"description": "MS2 no disponible o decisión guardada con aplicación pendiente"},
     },
 )
 def decidir(
@@ -303,15 +315,60 @@ def decidir(
     principal: PrincipalAutenticado = Depends(_solo_cliente),
     token: str = Depends(obtener_token_bearer),
     verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
+    coordinador: CoordinadorOrdenes = Depends(obtener_coordinador_ordenes),
 ) -> ResultadoOperacion:
     presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
-    _exigir_orden_del_cliente(presupuesto.orden_id, presupuesto_id, token, verificador)
+    _exigir_orden_del_cliente(
+        presupuesto.orden_id, presupuesto_id, token, verificador, solo_propietario=True,
+    )
     # Una versión en borrador no existe para el cliente.
     casos.obtener_version(uow, presupuesto_id, numero, solo_enviadas=True)
     # decidir_version vuelve a leer con FOR UPDATE (populate_existing): decide
     # sobre el estado confirmado más reciente, no sobre esta lectura previa.
-    return casos.decidir_version(
+    resultado = casos.decidir_version(
         uow, presupuesto_id=presupuesto_id, numero=numero,
         cliente_usuario_id=principal.usuario_id, decision=body.decision,
         motivo=body.motivo, confirmar_cancelacion=body.confirmar_cancelacion,
     )
+    decision = casos.consultar_decision(uow, resultado.decision_id, principal.usuario_id)
+    if decision.primera_decision:
+        resultado.aplicacion_en_orden = coordinador.aplicar(
+            decision.orden_id, decision.decision_id, token,
+        )
+    return resultado
+
+
+@router.get(
+    "/decisiones/{decision_id}", response_model=DecisionPresupuestoVerificada,
+    summary="Consultar el hecho persistido de una decisión (cliente responsable)",
+    responses={**_401, **_NO_EXISTE, 403: {"description": "Se requiere rol Cliente"},
+               409: {"description": "Decisión histórica sin evaluación de stock"}},
+)
+def consultar_decision(
+    decision_id: int = Path(gt=0),
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_solo_cliente),
+) -> DecisionPresupuestoVerificada:
+    # No llama a MS2: evita una consulta circular durante la verificación.
+    return casos.consultar_decision(uow, decision_id, principal.usuario_id)
+
+
+@router.post(
+    "/decisiones/{decision_id}/aplicacion", response_model=AplicacionDecisionRespuesta,
+    summary="Reintentar la aplicación de una decisión inicial, sin crear otra",
+    responses={**_401, **_NO_EXISTE, 403: {"description": "Se requiere rol Cliente"},
+               409: {"description": "No es una decisión inicial aplicable"},
+               503: {"description": "La decisión existe; aplicación no confirmada en MS2",
+                     "model": DecisionAplicacionPendiente}},
+)
+def reintentar_aplicacion(
+    decision_id: int = Path(gt=0),
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_solo_cliente),
+    token: str = Depends(obtener_token_bearer),
+    coordinador: CoordinadorOrdenes = Depends(obtener_coordinador_ordenes),
+) -> AplicacionDecisionRespuesta:
+    decision = casos.consultar_decision(uow, decision_id, principal.usuario_id)
+    if not decision.primera_decision:
+        raise ConflictoDeDatos("Una modificación no produce la transición inicial")
+    return coordinador.aplicar(decision.orden_id, decision.decision_id, token)

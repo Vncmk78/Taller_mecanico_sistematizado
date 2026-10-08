@@ -605,6 +605,12 @@ Lista solamente las órdenes visibles para la identidad autenticada:
 
 Devuelve una orden solo si es visible conforme a las mismas reglas del listado.
 Una orden ajena y una inexistente se responden de manera indistinguible.
+El parámetro opcional `solo_propietario=true` exige rol Cliente y propiedad,
+incluso si el JWT también incluye roles de personal. MS3 lo usa antes de guardar
+una decisión del cliente; la visibilidad administrativa no permite decidir por otro.
+Cuando MS2 confirma propiedad incluye `X-Orden-Propiedad-Verificada: true`.
+MS3 exige esa confirmación: un `200` de una versión anterior que ignore la query
+no autoriza a guardar una decisión.
 
 | Atributo | Descripción |
 |---|---|
@@ -689,6 +695,42 @@ necesariamente el mecánico asignado. No se consultan nombres en MS1.
 ]
 ```
 
+### Coordinación de decisiones de presupuesto (SCRUM-438)
+
+Las tres rutas requieren JWT con rol Cliente. La solicitud de aplicación solo
+admite una referencia; MS2 obtiene los hechos directamente de MS3 y también
+comprueba el propietario actual de la orden. El actor procede del JWT y debe
+coincidir con el cliente que decidió.
+
+| Método y ruta | Contrato |
+|---|---|
+| `GET /api/presupuestos/decisiones/{decision_id}` | Solo el cliente responsable: `decision_id`, `orden_id`, `cliente_usuario_id`, `decision`, `primera_decision`, `repuestos_disponibles` y `motivo`. Disponibilidad guardada al decidir; `null` en rechazos. |
+| `POST /api/ordenes/{orden_id}/decisiones-presupuesto` | Body `{"decision_id": int positivo}`. Verifica en MS3 y deriva el evento en MS2. No acepta actor, destino ni stock. |
+| `POST /api/presupuestos/decisiones/{decision_id}/aplicacion` | Sin body. Reintenta la aplicación de la decisión existente, sin decidir otra vez. |
+
+La aplicación y su reintento responden `200` con `decision_id`, `orden_id`,
+`estado_aplicado` e `historial_id`. Repetir la misma decisión devuelve su
+aplicación original, aunque el estado actual de la orden sea posterior.
+El historial público mantiene sus campos actuales; la referencia de idempotencia
+no agrega un campo al endpoint de historial.
+
+El `POST .../versiones/{numero}/decision` de MS3 persiste primero la decisión y
+solicita aplicar su efecto inicial en MS2. En éxito (`201`), incorpora
+`decision_id` y `aplicacion_en_orden` al resultado. Las modificaciones conservan
+su comportamiento previo y no ejecutan esta transición inicial.
+
+Si el efecto no se confirma, MS3 responde `503`: la decisión queda guardada.
+El body contiene `detail`, `decision_id`, `orden_id`, `decision_registrada=true`,
+`aplicacion_confirmada=false`, `reintento`, `estado_ms2` y `detalle_ms2` (los dos
+últimos pueden ser `null` cuando no se recibió una respuesta). Un timeout puede
+ocurrir después del commit de MS2; se reintenta la misma ID, nunca otra decisión.
+
+Errores comunes: `401` JWT ausente/inválido, `403` sin rol Cliente, `404` recurso
+inexistente/ajeno y `422` datos inválidos. MS2 agrega `409` por estado/evento
+incompatible o modificación y `503` por verificación fallida de MS3. Consultar
+una aprobación histórica sin evaluación de stock devuelve `409`.
+No se reserva stock ni hay transacción SQL entre ambos servicios.
+
 ### PATCH `/api/ordenes/{orden_id}/estado`
 
 Cambia el estado de una orden validando rol, catálogo oficial (1 a 8) y la
@@ -697,10 +739,15 @@ el Mecánico solo sobre las órdenes que tiene asignadas. `Entregado` y
 `Cancelado` son terminales y rechazan cualquier cambio. El estado y el historial
 se actualizan en la misma transacción.
 
+Toda transición hacia `Cancelado` exige `observacion` con un motivo no vacío.
+En los demás destinos puede omitirse o ser `null`; si se proporciona texto,
+no puede estar vacío ni contener solo whitespace. Esta regla condicional se
+valida en el servicio de MS2 y no cambia las precondiciones de cada transición.
+
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` con rol Administrador o mecánico asignado |
-| Body | `{"estado_destino": int positivo, "observacion"?: string no vacío}` |
+| Body | `{"estado_destino": int positivo, "observacion"?: string no vacío}`; obligatoria si el destino es `Cancelado` |
 | Respuesta OK | `200` con `OrdenRespuesta` |
 | Errores | `401` JWT ausente/inválido · `403` sin rol Administrador ni orden asignada · `404` orden inexistente · `409` transición no permitida o terminal · `422` estado de destino desconocido o body inválido · `500` persistencia · `502` MS2 no disponible |
 

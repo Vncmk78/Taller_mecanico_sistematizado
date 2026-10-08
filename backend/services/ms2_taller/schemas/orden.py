@@ -48,7 +48,11 @@ class CambioEstadoSolicitud(BaseModel):
     # Sin tope superior: el catálogo oficial (1 a 8) lo valida el dominio, que
     # es quien conoce los estados y las transiciones permitidas.
     estado_destino: int = Field(gt=0)
-    observacion: str | None = Field(default=None, min_length=1)
+    observacion: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Obligatoria al pasar a Cancelado; opcional en los demás destinos.",
+    )
 
 
 class HistorialEstadoRespuesta(BaseModel):

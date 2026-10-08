@@ -110,7 +110,7 @@ describe('OrderStatusAndHistory: contrato de reuso (estado + historial)', () => 
         render(<OrderStatusAndHistory order={orden} />);
 
         expect(await screen.findByText('Presupuesto v1 enviado al cliente')).toBeInTheDocument();
-        expect(screen.getByText(/Mostrando datos disponibles localmente/)).toBeInTheDocument();
+        expect(await screen.findByRole('alert')).toHaveTextContent('El servidor tuvo un problema.');
         expect(
             screen.queryByText('Aún no hay registros del historial de estados de esta orden.')
         ).not.toBeInTheDocument();

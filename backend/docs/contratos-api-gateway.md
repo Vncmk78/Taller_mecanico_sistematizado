@@ -168,6 +168,94 @@ Devuelve el usuario identificado por el token.
   "roles": ["cliente"], "is_active": true }
 ```
 
+### Gestión de usuarios (solo Administrador)
+
+Los cuatro endpoints siguientes son la administración de usuarios de MS1. Todos
+exigen `Authorization: Bearer <token>` con rol Administrador: sin token
+responden `401` y con un token de Cliente o Mecánico, `403`. El listado y el
+detalle incluyen también las cuentas sin roles (`roles: []`).
+
+#### GET `/api/auth/usuarios`
+
+Lista todas las cuentas de MS1, activas y desactivadas, ordenadas por `id`
+ascendente.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Bearer` con rol Administrador |
+| Body | — |
+| Respuesta OK | `200` con `UsuarioRespuesta[]` |
+| Errores | `401` JWT ausente o inválido · `403` rol insuficiente · `404/502/500` de la Gateway |
+
+```json
+// Response 200
+[ { "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
+    "roles": ["cliente"], "is_active": true },
+  { "id": 9, "email": "leo@correo.cl", "full_name": "Leo Díaz",
+    "roles": [], "is_active": false } ]
+```
+
+#### GET `/api/auth/usuarios/{usuario_id}`
+
+Devuelve una cuenta concreta, activa o no.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Bearer` con rol Administrador |
+| Body | — |
+| Respuesta OK | `200` con `UsuarioRespuesta` |
+| Errores | `401` · `403` · `404` la cuenta no existe · `404/502/500` de la Gateway |
+
+```json
+// Response 200
+{ "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
+  "roles": ["cliente"], "is_active": true }
+```
+
+#### POST `/api/auth/usuarios/{usuario_id}/roles`
+
+Asigna un rol restringido (`cliente`, `mecanico` o `administrador`) a una cuenta
+existente. Es idempotente: repetir un rol ya asignado no lo duplica ni devuelve
+error.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Bearer` con rol Administrador |
+| Body | `{"rol": "administrador"}`, con `rol` entre los tres valores de `NombreRol` |
+| Respuesta OK | `200` con `UsuarioRespuesta` ya actualizado |
+| Errores | `401` · `403` · `404` la cuenta no existe · `422` rol desconocido · `404/502/500` de la Gateway |
+
+```json
+// Request
+{ "rol": "administrador" }
+// Response 200
+{ "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
+  "roles": ["administrador", "cliente"], "is_active": true }
+```
+
+#### DELETE `/api/auth/usuarios/{usuario_id}/roles/{rol}`
+
+Retira un rol de una cuenta existente. Es idempotente: retirar un rol que la
+cuenta no tiene no cambia nada ni devuelve error. Se permite retirar el último
+rol; la cuenta queda con `roles: []`.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Bearer` con rol Administrador |
+| Body | — |
+| Respuesta OK | `200` con `UsuarioRespuesta` ya actualizado |
+| Errores | `401` · `403` · `404` la cuenta no existe · `422` rol de la ruta desconocido · `404/502/500` de la Gateway |
+
+```json
+// Response 200 (se retiró "cliente")
+{ "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
+  "roles": [], "is_active": true }
+```
+
+Cada asignación y retirada queda registrada en `historial_rol` con el
+administrador responsable y la fecha y hora; el alta inicial de `cliente` en el
+registro se registra con responsable nulo (sistema).
+
 ### El JWT: claims, validación y quién las aplica
 
 Esta sección es la **fuente de verdad** del token de acceso. La implementación

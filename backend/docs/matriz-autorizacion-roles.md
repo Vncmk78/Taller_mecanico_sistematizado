@@ -80,10 +80,16 @@ Leyenda: ✅ permitido · ⚠️ permitido con condición · ❌ prohibido (`403
 | `POST /api/auth/register` | público | público | público |
 | `POST /api/auth/login` | público | público | público |
 | `GET /api/auth/me` | ✅ el propio | ✅ el propio | ✅ el propio |
-| Ver datos de **otros** usuarios | — | — | — |
-| Asignar roles | — | — | — |
+| `GET /api/auth/usuarios` (listar cuentas) | ❌ | ❌ | ✅ |
+| `GET /api/auth/usuarios/{usuario_id}` (detalle de cualquier cuenta) | ❌ | ❌ | ✅ |
+| `POST /api/auth/usuarios/{usuario_id}/roles` (asignar un rol) | ❌ | ❌ | ✅ |
+| `DELETE /api/auth/usuarios/{usuario_id}/roles/{rol}` (retirar un rol) | ❌ | ❌ | ✅ |
 
-No existe ningún endpoint de administración de usuarios.
+Los cuatro endpoints de gestión de usuarios exigen el rol `administrador`
+(`Depends(requerir_roles(NombreRol.ADMINISTRADOR))`): sin token responden `401`
+y con un rol distinto, `403`. El listado y el detalle incluyen también las
+cuentas sin roles (`roles: []`). Cada asignación o retirada queda registrada en
+`historial_rol` con el administrador responsable y la fecha y hora.
 
 ### 4.2 Vehículos (MS2)
 

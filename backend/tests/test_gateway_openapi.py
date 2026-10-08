@@ -1,9 +1,9 @@
 """Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 14 endpoints reales de Auth,
-Vehículos y Órdenes con sus contratos y seguridad, que el proxy genérico no
-aparece, y que las copias de `gateway/contratos` no se desactualizan respecto
-a los esquemas reales de MS1 y MS2.
+Verifican que `/openapi.json` publica los 18 endpoints reales de Auth,
+Vehículos, Órdenes y Evidencias con sus contratos y seguridad, que el proxy
+genérico no aparece, y que las copias de `gateway/contratos` no se
+desactualizan respecto a los esquemas reales de MS1, MS2 y MS4.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.main import app
@@ -38,6 +39,11 @@ from services.ms2_taller.schemas.orden import (
     OrdenCrear as Ms2OrdenCrear,
     OrdenRespuesta as Ms2OrdenRespuesta,
 )
+from services.ms4_evidencias.schemas.evidencia import (
+    DatosRecepcion as Ms4DatosRecepcion,
+    EvidenciaLeida as Ms4EvidenciaLeida,
+    UrlDescarga as Ms4UrlDescarga,
+)
 from shared.auth import NombreRol, crear_token_acceso
 from shared.openapi_ordenes import ESTADOS_DOCUMENTADOS
 
@@ -56,6 +62,10 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes/{orden_id}/mecanico", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
+    ("/api/evidencias", "post"),
+    ("/api/evidencias", "get"),
+    ("/api/evidencias/{evidencia_id}", "get"),
+    ("/api/evidencias/{evidencia_id}/descarga", "get"),
 }
 
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
@@ -69,6 +79,9 @@ _PROTEGIDOS = {
     "/api/ordenes/{orden_id}/mecanico",
     "/api/ordenes/{orden_id}/historial",
     "/api/ordenes/{orden_id}/estado",
+    "/api/evidencias",
+    "/api/evidencias/{evidencia_id}",
+    "/api/evidencias/{evidencia_id}/descarga",
 }
 
 
@@ -101,7 +114,7 @@ def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["openapi"].startswith("3.")
 
 
-def test_estan_los_14_endpoints_con_sus_metodos(esquema: dict) -> None:
+def test_estan_los_18_endpoints_con_sus_metodos(esquema: dict) -> None:
     operaciones = set(_operaciones_documentadas(esquema))
     assert operaciones == _ENDPOINTS_ESPERADOS
 
@@ -148,6 +161,10 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/estado", "patch"),
+        ("/api/evidencias", "post"),
+        ("/api/evidencias", "get"),
+        ("/api/evidencias/{evidencia_id}", "get"),
+        ("/api/evidencias/{evidencia_id}/descarga", "get"),
     }
     for ruta, metodo in _ENDPOINTS_ESPERADOS:
         respuestas = operaciones[(ruta, metodo)]["responses"]
@@ -212,8 +229,19 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/ordenes", "get"),
         ("/api/ordenes/{orden_id}", "get"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/evidencias", "get"),
+        ("/api/evidencias/{evidencia_id}", "get"),
+        ("/api/evidencias/{evidencia_id}/descarga", "get"),
     ):
         assert "requestBody" not in operaciones[(ruta, metodo)]
+
+    # La subida de evidencias es multipart (archivo + campos), no JSON.
+    subida = operaciones[("/api/evidencias", "post")]["requestBody"]
+    assert subida["required"] is True
+    assert set(subida["content"]) == {"multipart/form-data"}
+    assert subida["content"]["multipart/form-data"]["schema"]["$ref"] == (
+        "#/components/schemas/EvidenciaSubida"
+    )
 
 
 def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
@@ -245,6 +273,8 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
             contratos_ordenes.HistorialEstadoRespuesta,
             Ms2HistorialEstadoRespuesta,
         ),
+        (contratos_evidencias.EvidenciaRespuesta, Ms4EvidenciaLeida),
+        (contratos_evidencias.UrlDescargaRespuesta, Ms4UrlDescarga),
     ],
 )
 def test_contrato_coincide_con_esquema_real(contrato, real) -> None:
@@ -259,6 +289,44 @@ def test_contrato_coincide_con_esquema_real(contrato, real) -> None:
         assert (
             contrato.model_fields[nombre].is_required() == campo_real.is_required()
         ), f"El campo '{nombre}' cambió su obligatoriedad"
+
+
+def test_formulario_de_subida_coincide_con_ms4() -> None:
+    """`EvidenciaSubida` = campos de `DatosRecepcion` de MS4 + la parte `archivo`."""
+    formulario = contratos_evidencias.EvidenciaSubida.model_fields
+    real = Ms4DatosRecepcion.model_fields
+    assert set(formulario) == set(real) | {"archivo"}
+    assert formulario["archivo"].is_required()
+    for nombre, campo_real in real.items():
+        assert formulario[nombre].is_required() == campo_real.is_required(), nombre
+
+
+def test_contrato_evidencias_documenta_formulario_y_seguridad(esquema: dict) -> None:
+    schemas = esquema["components"]["schemas"]
+    subida = schemas["EvidenciaSubida"]
+    assert set(subida["required"]) == {"archivo", "orden_id", "contexto"}
+    assert subida["properties"]["archivo"]["format"] == "binary"
+    assert subida["properties"]["contexto"]["enum"] == [
+        "diagnostico",
+        "presupuesto",
+        "reparacion",
+        "resultado_final",
+    ]
+    # Nunca se publican datos internos del almacenamiento.
+    for nombre in ("EvidenciaRespuesta", "UrlDescargaRespuesta"):
+        propiedades = set(schemas[nombre]["properties"])
+        assert not propiedades & {"clave_objeto", "sha256", "autor_usuario_id"}, nombre
+
+    paths = esquema["paths"]
+    subir = paths["/api/evidencias"]["post"]["responses"]
+    assert subir["413"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/ErrorRespuesta"
+    )
+    listado = paths["/api/evidencias"]["get"]
+    [query] = [p for p in listado["parameters"] if p["in"] == "query"]
+    assert query["name"] == "orden_id" and query["required"] is True
+    descarga = paths["/api/evidencias/{evidencia_id}/descarga"]["get"]["responses"]["200"]
+    assert {"Cache-Control", "X-Content-Type-Options"} <= set(descarga["headers"])
 
 
 def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
@@ -276,6 +344,9 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "OrdenRespuesta",
         "CambioEstadoSolicitud",
         "HistorialEstadoRespuesta",
+        "EvidenciaSubida",
+        "EvidenciaRespuesta",
+        "UrlDescargaRespuesta",
         "ErrorRespuesta",
         "DetalleError",
         "ErrorDetalle",

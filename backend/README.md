@@ -256,6 +256,18 @@ curl localhost:8004/health/storage
 `/health/storage` responde 200 cuando el bucket S3 responde y 503 con un mensaje
 genérico en cualquier otro caso (sin filtrar endpoint ni claves).
 
+Endpoints de negocio (por la Gateway, con `Authorization: Bearer <token>`):
+`POST /api/evidencias` (multipart), `GET /api/evidencias?orden_id=`,
+`GET /api/evidencias/{evidencia_id}` y `GET /api/evidencias/{evidencia_id}/descarga`
+(URL prefirmada de 5 minutos). Contratos, permisos por rol y ejemplos de uso
+(`curl` y `fetch`) en
+[`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md#evidencias-multimedia-ms4).
+
+```bash
+# Pruebas de MS4 (las que usan MinIO real se omiten si no está levantado)
+python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py -q
+```
+
 ## API Gateway
 
 El frontend (React) y la app móvil no llaman directo a los microservicios: lo

@@ -17,6 +17,7 @@ from jsonschema import Draft202012Validator
 from openapi_spec_validator import validate as validar_openapi
 
 from gateway.errores import (
+    MENSAJE_CUERPO_DEMASIADO_GRANDE,
     MENSAJE_ERROR_MICROSERVICIO,
     MENSAJE_GATEWAY_SATURADA,
     MENSAJE_METODO_NO_PERMITIDO,
@@ -39,7 +40,7 @@ _TOKENS_PERMITIDOS = {
     "eyJhbGciOiJIUzI1NiJ9.ejemplo.firma",
 }
 
-# Los siete errores de la Gateway: ejemplo -> (código, estado, detalle).
+# Los ocho errores de la Gateway: ejemplo -> (código, estado, detalle).
 _ERRORES_GATEWAY = {
     "error_ruta_no_encontrada": ("RUTA_NO_ENCONTRADA", 404, MENSAJE_RUTA_NO_ENCONTRADA),
     "error_metodo_no_permitido": (
@@ -60,6 +61,20 @@ _ERRORES_GATEWAY = {
         MENSAJE_ERROR_MICROSERVICIO,
     ),
     "error_interno_gateway": ("ERROR_INTERNO", 500, MENSAJE_ERROR_INTERNO),
+    "error_cuerpo_demasiado_grande": (
+        "CUERPO_DEMASIADO_GRANDE",
+        413,
+        MENSAJE_CUERPO_DEMASIADO_GRANDE,
+    ),
+}
+
+# MS4 responde su propio 503 (almacenamiento o MS2 caídos) además del de la
+# Gateway; esas operaciones no usan la respuesta reutilizable GatewaySaturada.
+_OPERACIONES_EVIDENCIAS = {
+    ("/api/evidencias", "post"),
+    ("/api/evidencias", "get"),
+    ("/api/evidencias/{evidencia_id}", "get"),
+    ("/api/evidencias/{evidencia_id}/descarga", "get"),
 }
 
 
@@ -241,13 +256,27 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
         ("/api/vehiculos/asignados", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
         ("/api/vehiculos/{vehiculo_id}", "patch"),
-    }
+    } | _OPERACIONES_EVIDENCIAS
     for (ruta, metodo), operacion in operaciones.items():
         respuestas = operacion["responses"]
         etiqueta = f"{metodo.upper()} {ruta}"
         for codigo in ("404", "500", "502", "503", "504"):
             assert codigo in respuestas, f"{etiqueta} sin {codigo}"
-        assert respuestas["503"] == {"$ref": "#/components/responses/GatewaySaturada"}
+        if (ruta, metodo) in _OPERACIONES_EVIDENCIAS:
+            esquema_503 = respuestas["503"]["content"][_JSON]["schema"]
+            assert {item["$ref"] for item in esquema_503["oneOf"]} == {
+                "#/components/schemas/ErrorRespuesta",
+                "#/components/schemas/ErrorDetalle",
+            }, etiqueta
+            assert {
+                "almacenamiento_no_disponible",
+                "ordenes_no_disponible",
+                "gateway_saturada",
+            } <= set(respuestas["503"]["content"][_JSON]["examples"]), etiqueta
+        else:
+            assert respuestas["503"] == {
+                "$ref": "#/components/responses/GatewaySaturada"
+            }
         assert respuestas["504"] == {"$ref": "#/components/responses/TiempoAgotado"}
         # El registro es público; el login responde 401 por credenciales, no por
         # token ausente, y el resto de operaciones exige Bearer.

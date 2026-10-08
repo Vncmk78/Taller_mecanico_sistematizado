@@ -22,9 +22,9 @@ gateway/
 ├── esquemas.py      Modelos Pydantic del formato común (errores)
 ├── errores.py       Formato común de errores + middleware del 500 (dentro de CORS)
 ├── middleware.py    Cabecera X-Request-ID en cada petición
-├── openapi.py       Reescribe el Swagger con los contratos reales de MS1 y MS2
+├── openapi.py       Reescribe el Swagger con los contratos reales de MS1, MS2 y MS4
 ├── openapi_ejemplos.py Ejemplos reales, respuestas comunes y X-Request-ID
-├── contratos/       Copias de los contratos HTTP de MS1 y MS2 (para documentar)
+├── contratos/       Copias de los contratos HTTP de MS1, MS2 y MS4 (para documentar)
 └── routers/
     ├── health.py    GET /  y  GET /api/health (endpoints propios de la Gateway)
     └── proxy.py     Reenvío de /api/* hacia los microservicios
@@ -33,7 +33,7 @@ gateway/
 ## Documentación
 
 El Swagger de la Gateway publica los contratos reales que enruta (Auth,
-Vehículos y Órdenes), con sus esquemas, ejemplos y el botón Authorize:
+Vehículos, Órdenes y Evidencias), con sus esquemas, ejemplos y el botón Authorize:
 
 - `GET /docs` — Swagger UI.
 - `GET /openapi.json` — esquema OpenAPI completo.

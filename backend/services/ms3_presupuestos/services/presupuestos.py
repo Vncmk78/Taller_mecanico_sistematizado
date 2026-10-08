@@ -7,7 +7,8 @@
 - enviar_version: congela la versión y la deja lista para el cliente.
 - decidir_version: registra la aprobación o el rechazo del cliente.
 
-Cada escritura es UNA transacción (`with uow.transaccion()`). Las reglas de
+Cada escritura local es UNA transacción (`with uow.transaccion()`). La aplicación
+en MS2 ocurre después del commit de la decisión y no puede revertirlo. Las reglas de
 versionado las garantiza la base (triggers 0003_ms3); aquí se anticipan para
 responder 409/422 con mensajes claros.
 
@@ -22,7 +23,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from decimal import Decimal
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 from services.ms3_presupuestos.models import (
     DecisionPresupuesto,
@@ -46,6 +47,7 @@ from services.ms3_presupuestos.schemas.presupuesto import (
     ResultadoOperacion,
     VersionDetalle,
 )
+from shared.contratos_decisiones import DecisionPresupuestoVerificada
 
 
 # ---------------------------------------------------------------- escritura --
@@ -235,22 +237,24 @@ def decidir_version(
                 "servicio; confirme con confirmar_cancelacion=true"
             )
 
-        uow.sesion.add(DecisionPresupuesto(
+        faltantes = _repuestos_faltantes(version) if decision == "aprobado" else []
+        registro = DecisionPresupuesto(
             version=version, cliente_usuario_id=cliente_usuario_id,
             decision=decision, motivo=motivo or None,
-        ))
+            repuestos_disponibles=not faltantes if decision == "aprobado" else None,
+        )
+        uow.sesion.add(registro)
         uow.sesion.flush()
         uow.sesion.refresh(version)  # bloqueada_en lo completa el trigger al aprobar
 
-        faltantes: list[RepuestoFaltante] = []
         if decision == "aprobado":
-            faltantes = _repuestos_faltantes(version)
             efecto = "esperando_repuestos" if faltantes else "en_reparacion"
         else:
             efecto = "cancelado" if primera_decision else None
     return ResultadoOperacion(
         presupuesto=a_detalle(presupuesto), efecto_en_orden=efecto,
         repuestos_faltantes=faltantes,
+        decision_id=registro.decision_id,
     )
 
 
@@ -289,6 +293,30 @@ def listar_presupuestos(
 
 def obtener_presupuesto(uow: UnidadDeTrabajo, presupuesto_id: int) -> Presupuesto:
     return uow.presupuestos.obtener_o_error(presupuesto_id)
+
+
+def consultar_decision(
+    uow: UnidadDeTrabajo, decision_id: int, cliente_usuario_id: int,
+) -> DecisionPresupuestoVerificada:
+    """Lee el hecho inmutable; no consulta MS2 ni recalcula stock al reintentar."""
+    registro = uow.sesion.scalar(select(DecisionPresupuesto).where(
+        DecisionPresupuesto.decision_id == decision_id,
+        DecisionPresupuesto.cliente_usuario_id == cliente_usuario_id,
+    ))
+    if registro is None:
+        raise RecursoNoEncontrado("Decisión no encontrada")
+    primera = not registro.version.es_modificacion
+    if primera and registro.decision == "aprobado" and registro.repuestos_disponibles is None:
+        raise ConflictoDeDatos(
+            "La decisión histórica no conserva la disponibilidad al aprobar; "
+            "no puede aplicarse automáticamente"
+        )
+    return DecisionPresupuestoVerificada(
+        decision_id=registro.decision_id, orden_id=registro.version.presupuesto.orden_id,
+        cliente_usuario_id=registro.cliente_usuario_id, decision=registro.decision,
+        primera_decision=primera, repuestos_disponibles=registro.repuestos_disponibles,
+        motivo=registro.motivo,
+    )
 
 
 def obtener_version(

@@ -134,7 +134,7 @@ class CambioEstadoSolicitud(BaseModel):
     observacion: str | None = Field(
         default=None,
         min_length=1,
-        description="Observación opcional del cambio de estado.",
+        description="Obligatoria al pasar a Cancelado; opcional en los demás destinos.",
         examples=["Inicia evaluación técnica"],
     )
 

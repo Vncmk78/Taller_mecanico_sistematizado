@@ -26,13 +26,20 @@ from services.ms2_taller.domain.transiciones_orden import (
     validar_transicion,
 )
 from services.ms2_taller.models.cliente import Cliente
-from services.ms2_taller.models.estado_orden import RECIBIDO
+from services.ms2_taller.integracion_ms3 import (
+    DecisionNoAplicableError,
+    DecisionNoVisibleError,
+    ServicioPresupuestosNoDisponibleError,
+    VerificadorDecisiones,
+)
+from services.ms2_taller.models.estado_orden import CANCELADO, RECIBIDO
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.vehiculo import Vehiculo
 from shared.auth import NombreRol, PrincipalAutenticado
+from shared.contratos_decisiones import AplicacionDecisionRespuesta
 
 
 class VehiculoNoEncontradoError(Exception):
@@ -63,6 +70,10 @@ class OrdenEstadoNoAutorizadoError(Exception):
     """La identidad autenticada no puede cambiar el estado de la orden."""
 
 
+class OrdenObservacionInvalidaError(Exception):
+    """La observación está vacía o falta el motivo de una cancelación."""
+
+
 def registrar_historial_estado(
     db: Session,
     *,
@@ -72,6 +83,7 @@ def registrar_historial_estado(
     actor_usuario_id: int | None,
     origen: str,
     observacion: str | None = None,
+    decision_presupuesto_id: int | None = None,
 ) -> HistorialEstado:
     """Agrega el cambio de estado a la sesión sin confirmar la transacción.
 
@@ -80,6 +92,19 @@ def registrar_historial_estado(
     persistir el historial junto con el resto de sus cambios de forma atómica.
     """
 
+    # Regla de negocio compartida por los cambios de estado, incluidos los
+    # iniciados por el sistema. El campo sigue admitiendo None en otros destinos.
+    if observacion is not None:
+        observacion = observacion.strip()
+        if not observacion:
+            raise OrdenObservacionInvalidaError(
+                "La observación no puede estar vacía ni contener solo espacios"
+            )
+    if estado_nuevo == CANCELADO and observacion is None:
+        raise OrdenObservacionInvalidaError(
+            "Toda transición a Cancelado requiere una observación o motivo no vacío"
+        )
+
     historial = HistorialEstado(
         orden_id=orden_id,
         estado_anterior=estado_anterior,
@@ -87,6 +112,7 @@ def registrar_historial_estado(
         actor_usuario_id=actor_usuario_id,
         origen=origen,
         observacion=observacion,
+        decision_presupuesto_id=decision_presupuesto_id,
     )
     db.add(historial)
     return historial
@@ -386,6 +412,7 @@ def cambiar_estado_orden(
         OrdenEstadoNoAutorizadoError,
         OrdenEstadoInvalidoError,
         OrdenTransicionNoPermitidaError,
+        OrdenObservacionInvalidaError,
     ):
         db.rollback()
         raise
@@ -394,6 +421,88 @@ def cambiar_estado_orden(
         raise PersistenciaOrdenError(
             "No fue posible cambiar el estado de la orden"
         ) from exc
+
+
+def aplicar_decision_presupuesto(
+    db: Session, *, orden_id: int, decision_id: int,
+    principal: PrincipalAutenticado, token: str, verificador: VerificadorDecisiones,
+) -> AplicacionDecisionRespuesta:
+    """Verifica el hecho en MS3 y aplica una sola transición local auditada.
+
+    El bloqueo serializa decisiones sobre la misma orden. La referencia única
+    del historial hace durable el reintento incluso tras avanzar a otro estado.
+    MS3 ya confirmó su decisión antes de llamar a esta operación.
+    """
+    try:
+        if NombreRol.CLIENTE not in principal.roles:
+            raise OrdenEstadoNoAutorizadoError("Se requiere rol Cliente")
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        propietario = db.scalar(
+            select(Cliente.usuario_id).join(Vehiculo, Vehiculo.cliente_id == Cliente.cliente_id)
+            .where(Vehiculo.vehiculo_id == orden.vehiculo_id)
+        )
+        if propietario != principal.usuario_id:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        historial = db.scalar(select(HistorialEstado).where(
+            HistorialEstado.decision_presupuesto_id == decision_id,
+        ))
+        if historial is not None:
+            if historial.orden_id != orden_id or historial.actor_usuario_id != principal.usuario_id:
+                raise DecisionNoVisibleError("Decisión no encontrada")
+            respuesta = _aplicacion_de_historial(historial)
+            db.commit()  # Libera el lock sin modificar estado ni historial.
+            return respuesta
+
+        decision = verificador.consultar(decision_id, token)
+        if (decision.decision_id != decision_id or decision.orden_id != orden_id
+                or decision.cliente_usuario_id != principal.usuario_id):
+            raise DecisionNoVisibleError("Decisión no encontrada")
+        if not decision.primera_decision:
+            raise DecisionNoAplicableError("Una modificación no produce esta transición inicial")
+
+        if decision.decision == "rechazado":
+            evento = EventoOrden.RECHAZO_PRIMER_PRESUPUESTO
+        elif decision.repuestos_disponibles is True:
+            evento = EventoOrden.PRIMERA_APROBACION_CON_REPUESTOS
+        elif decision.repuestos_disponibles is False:
+            evento = EventoOrden.PRIMERA_APROBACION_SIN_REPUESTOS
+        else:
+            raise DecisionNoAplicableError("La aprobación no conserva una evaluación de stock")
+        try:
+            destino = resolver_transicion(orden.estado_codigo, evento)
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        historial = registrar_historial_estado(
+            db, orden_id=orden_id, estado_anterior=orden.estado_codigo, estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id, origen="usuario",
+            observacion=decision.motivo if decision.decision == "rechazado" else None,
+            decision_presupuesto_id=decision_id,
+        )
+        orden.estado_codigo = destino
+        db.flush()
+        respuesta = _aplicacion_de_historial(historial)
+        db.commit()
+        return respuesta
+    except (OrdenEstadoNoAutorizadoError, OrdenNoEncontradaError,
+            OrdenTransicionNoPermitidaError, OrdenObservacionInvalidaError,
+            DecisionNoVisibleError, DecisionNoAplicableError,
+            ServicioPresupuestosNoDisponibleError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible aplicar la decisión") from exc
+
+
+def _aplicacion_de_historial(historial: HistorialEstado) -> AplicacionDecisionRespuesta:
+    return AplicacionDecisionRespuesta(
+        decision_id=historial.decision_presupuesto_id, orden_id=historial.orden_id,
+        estado_aplicado=historial.estado_nuevo, historial_id=historial.historial_id,
+    )
 
 
 def _puede_cambiar_estado(

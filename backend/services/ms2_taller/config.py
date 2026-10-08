@@ -31,5 +31,8 @@ class Settings(ServiceSettings):
     JWT_SECRET_KEY: SecretStr = Field(min_length=32)
     JWT_ALGORITHM: Literal["HS256"] = "HS256"
 
+    MS3_URL: str = "http://localhost:8003"
+    MS3_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
+
 
 settings = Settings()

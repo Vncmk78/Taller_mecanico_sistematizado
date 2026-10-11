@@ -413,7 +413,12 @@ El rechazo también se aplica a Administrador y a usuarios multirrol.
 
 Por decisión expresa del usuario se mantienen los flujos sin alternativa completa.
 Conservarlos **no los convierte en seguros ni en reglas funcionales aprobadas**.
-El portal mecánico deja de ofrecer `1 → 2`; conserva sus demás opciones pendientes.
+El portal mecánico ofrece únicamente `5 → 6`, la finalización del trabajo por
+el mecánico asignado. No ofrece `2 → 3`, que corresponde al envío inicial del
+presupuesto por el Administrador, ni `4 → 5`, cuyo evento de disponibilidad y
+actor siguen pendientes de definición. El `PATCH` de MS2 todavía acepta esos
+pares para llamadas directas; la restricción del portal no sustituye la
+autorización del backend, que se aborda en SCRUM-436.
 La asignación específica conserva los límites ya documentados de INT-33 sobre
 comprobación remota del rol del destino y capacidad configurable; no se agregan
 validaciones ficticias para esos puntos.

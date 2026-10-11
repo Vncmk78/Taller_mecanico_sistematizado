@@ -706,6 +706,33 @@ necesariamente el mecánico asignado. No se consultan nombres en MS1.
 ]
 ```
 
+### Envío inicial del presupuesto y aplicación en MS2 (SCRUM-435)
+
+El envío inicial mueve la orden de `Esperando diagnóstico` a
+`Esperando aprobación de presupuesto`. Solo el Administrador puede enviar una
+versión; el endpoint requiere que sea la última versión en borrador y que tenga
+ítems con precio.
+
+| Método y ruta | Servicio y contrato |
+|---|---|
+| `POST /api/presupuestos/{presupuesto_id}/versiones/{numero}/envio` | MS3 congela el envío inicial y coordina con MS2. En éxito responde `200` con el resultado del envío y `aplicacion_en_orden`; una modificación posterior retorna `aplicacion_en_orden: null`. Errores relevantes: `401`, `403`, `404`, `409`, `422`, `503`. |
+| `POST /ordenes/{orden_id}/envios-presupuesto` (interno MS2) | Operación invocada por MS3 con el JWT original y `{"presupuesto_id": int positivo}`. MS2 valida rol y estado, consulta a MS3 el hecho de envío, y deriva el evento; no admite destino ni actor enviados por el cliente. |
+| `GET /presupuestos/{presupuesto_id}/envio-inicial` (interno MS3) | Verificación invocada por MS2; solo Administrador. Confirma que la versión inicial se envió y corresponde a la orden. |
+| `POST /presupuestos/{presupuesto_id}/envio-inicial/aplicacion` (MS3) | Reintenta la aplicación del envío ya persistido; no vuelve a enviar la versión. Responde `200` si MS2 confirma la aplicación y `503` si aún no se confirma. |
+
+MS3 guarda primero el envío. Si MS2 no responde o falla, MS3 devuelve `503`
+indicando que el envío quedó guardado y ofrece la ruta de reintento. MS2 asocia
+el `presupuesto_id` al historial de forma única y bloquea la orden durante la
+aplicación, por lo que repetir la misma solicitud devuelve el historial existente
+sin duplicar el cambio. Las bases no comparten transacción. `test_envio_inicial_coordina_estado_historial_y_actor_administrador` y
+`test_fallo_de_ms2_deja_envio_guardado_y_reintento_idempotente` verifican el
+camino feliz, errores de comunicación y reintentos.
+
+La migración `0007_ms2` que agrega la referencia única sigue pendiente de
+validación sobre PostgreSQL real; 26 pruebas asociadas a SCRUM-435 están omitidas.
+La última ejecución completa informó 733 aprobadas y 197 omitidas: las omitidas
+no se consideran aprobadas.
+
 ### Coordinación de decisiones de presupuesto (SCRUM-438)
 
 Las tres rutas requieren JWT con rol Cliente. La solicitud de aplicación solo
@@ -727,8 +754,17 @@ no agrega un campo al endpoint de historial.
 
 El `POST .../versiones/{numero}/decision` de MS3 persiste primero la decisión y
 solicita aplicar su efecto inicial en MS2. En éxito (`201`), incorpora
-`decision_id` y `aplicacion_en_orden` al resultado. Las modificaciones conservan
-su comportamiento previo y no ejecutan esta transición inicial.
+`decision_id` y `aplicacion_en_orden` al resultado. Para la primera aprobación,
+la instantánea de disponibilidad decide entre `Esperando repuestos` y
+`En reparación`; el segundo resultado no implica reserva. El rechazo inicial
+antes de cualquier aprobación lleva a `Cancelado`, guardando decisión, motivo e
+historial. La aplicación/reintento no vuelve a decidir ni duplica el historial.
+
+Las modificaciones posteriores son independientes de esa transición inicial:
+enviar o rechazar una modificación no cancela la orden ni invalida el alcance ya
+autorizado; aprobar otra versión tampoco vuelve a aplicar el evento inicial. La
+modificación y su decisión quedan en MS3. El efecto que una versión posterior
+aprobada tenga sobre el alcance de reparación permanece por definir.
 
 Si el efecto no se confirma, MS3 responde `503`: la decisión queda guardada.
 El body contiene `detail`, `decision_id`, `orden_id`, `decision_registrada=true`,
@@ -750,14 +786,16 @@ esta llamada registra el cambio y el historial, pero todavía no comprueba el
 término del alcance autorizado. El Administrador no puede finalizar el trabajo
 por PATCH, aunque tenga otro rol asociado.
 
-Las transiciones `1 → 2`, `2 → 3` y `3 → 4/5` se realizan por las operaciones
-específicas de asignación, envío inicial de presupuesto y decisión verificada.
-El PATCH devuelve `409` para esos pares. También bloquea `4 → 5` hasta contar
-con verificación de disponibilidad, `6 → 7` hasta registrar la entrega física y
-cualquier transición genérica a `Cancelado` hasta que exista el flujo de negocio
-correspondiente. Los rechazos no modifican estado ni historial. `Entregado` y
-`Cancelado` son terminales; estado e historial se actualizan en la misma
-transacción cuando una transición permitida se confirma.
+Las transiciones `1 → 2`, `2 → 3` y `3 → 4/5/8` requieren las operaciones
+específicas de asignación, envío inicial y decisión verificada. El `PATCH`
+devuelve `409` para esos pares, incluso si el usuario tiene varios roles.
+También bloquea `4 → 5` hasta contar con verificación de disponibilidad, `6 → 7`
+hasta registrar la entrega física y cualquier transición genérica a `Cancelado`
+hasta que exista el flujo de negocio correspondiente. El rechazo inicial `3 → 8`
+sigue disponible por la operación específica de decisión; ese hecho no habilita
+la cancelación independiente. Los rechazos no modifican estado ni historial.
+`Entregado` y `Cancelado` son terminales; estado e historial se actualizan en la
+misma transacción local cuando una transición permitida se confirma.
 
 Toda transición hacia `Cancelado` exige `observacion` con un motivo no vacío.
 En los demás destinos puede omitirse o ser `null`; si se proporciona texto,

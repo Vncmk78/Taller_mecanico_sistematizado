@@ -44,6 +44,13 @@ def test_openapi_publica_los_endpoints_de_presupuestos() -> None:
     for metodo, ruta in RUTAS:
         assert rutas[ruta][metodo]["tags"] == ["presupuestos"]
 
+    envio = rutas["/presupuestos/{presupuesto_id}/versiones/{numero}/envio"]["post"]
+    reintento = rutas[
+        "/presupuestos/{presupuesto_id}/envio-inicial/aplicacion"
+    ]["post"]
+    assert "reintento idempotente" in envio["description"]
+    assert "no vuelve a enviar la versión" in reintento["description"]
+
 
 def _token(*roles: NombreRol) -> dict[str, str]:
     token = crear_token_acceso(

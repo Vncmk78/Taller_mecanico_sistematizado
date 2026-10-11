@@ -55,6 +55,13 @@ router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
     "/{orden_id}/envios-presupuesto",
     response_model=AplicacionEnvioPresupuestoRespuesta,
     summary="Aplicar el envío inicial de presupuesto verificado en MS3",
+    description=(
+        "Solo Administrador. Recibe únicamente presupuesto_id, consulta el envío "
+        "inicial a MS3 y deriva 2 → 3; no acepta actor ni estado destino. La "
+        "referencia única en HistorialEstado hace idempotente el reintento. "
+        "409 indica orden incompatible y 503 que no se pudo verificar el envío; "
+        "los rechazos no cambian estado ni historial."
+    ),
     responses={
         401: {"description": "JWT ausente o inválido"},
         403: {"description": "Se requiere rol Administrador"},
@@ -280,7 +287,9 @@ def consultar_historial_orden(
     description=(
         "El PATCH genérico solo permite finalizar el trabajo (5 → 6) al Mecánico "
         "asignado. La asignación (1 → 2), el envío de presupuesto (2 → 3) y la "
-        "decisión inicial (3 → 4/5) requieren sus operaciones específicas. La "
+        "decisión inicial (3 → 4/5/8) requieren sus operaciones específicas; "
+        "3 → 8 está disponible solo por el rechazo inicial verificado, no por "
+        "cancelación genérica. La "
         "disponibilidad de repuestos (4 → 5), entrega (6 → 7) y cancelación "
         "genérica están bloqueadas hasta contar con operaciones que verifiquen "
         "sus hechos de negocio."

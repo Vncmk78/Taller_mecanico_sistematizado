@@ -270,7 +270,10 @@ def reemplazar_items(
         "Solo Administrador. La versión debe ser la última, estar en borrador y tener "
         "ítems con precio. El primer envío coordina la transición de la orden con MS2; "
         "`efecto_en_orden` es `esperando_aprobacion` y `aplicacion_en_orden` confirma "
-        "el estado e historial. `null` si es una modificación posterior a una aprobación."
+        "el estado e historial. Si falla la coordinación, el envío queda guardado y "
+        "se responde 503 con una ruta de reintento idempotente. `null` si es una "
+        "modificación posterior a una aprobación; esa modificación no cancela ni "
+        "invalida el alcance previamente autorizado."
     ),
     responses={
         **_401,
@@ -315,6 +318,12 @@ def verificar_envio_inicial(
     "/{presupuesto_id}/envio-inicial/aplicacion",
     response_model=AplicacionEnvioPresupuestoRespuesta,
     summary="Reintentar la aplicación del envío inicial en MS2",
+    description=(
+        "Solo Administrador. Reintenta aplicar en MS2 el envío inicial ya guardado; "
+        "no vuelve a enviar la versión ni crea otro evento. Si MS2 ya confirmó, "
+        "devuelve la aplicación e historial existentes. Si la verificación todavía "
+        "falla, responde 503 y conserva el envío para un nuevo reintento."
+    ),
     responses={
         **_401, **_NO_EXISTE,
         403: {"description": "Se requiere rol Administrador"},

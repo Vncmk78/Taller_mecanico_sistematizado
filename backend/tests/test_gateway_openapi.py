@@ -429,13 +429,14 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     assert "Obligatoria al pasar a Cancelado" in (
         cambio["properties"]["observacion"]["description"]
     )
-    assert "Cancelado exige una observación" in (
+    assert "exige un motivo no vacío" in (
         paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
     )
     descripcion_cambio = paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
-    assert "1 → 2" in descripcion_cambio and "3 → 4/5" in descripcion_cambio
+    assert "1 → 2" in descripcion_cambio and "3 → 4/5/8" in descripcion_cambio
     assert "operaciones" in descripcion_cambio or "decisión verificada" in descripcion_cambio
-    assert "siguen pendientes" in descripcion_cambio
+    assert "bloquearlos no implementa esos flujos" in descripcion_cambio
+    assert "5 → 6 al Mecánico asignado" in descripcion_cambio
     assert "operación específica" in paths["/api/ordenes/{orden_id}/estado"]["patch"]["responses"]["409"]["description"]
     assert paths["/api/ordenes/{orden_id}/estado"]["patch"]["requestBody"][
         "content"
@@ -563,6 +564,24 @@ def test_openapi_historial_publica_lista_protegida_y_errores(aplicacion, prefijo
     assert respuesta["type"] == "array"
     assert respuesta["items"] == {"$ref": "#/components/schemas/HistorialEstadoRespuesta"}
     assert {"200", "401", "404", "422", "500"} <= set(operacion["responses"])
+
+
+def test_openapi_ms2_documenta_coordinacion_idempotente_de_envio_inicial() -> None:
+    operacion = ms2_app.openapi()["paths"][
+        "/ordenes/{orden_id}/envios-presupuesto"
+    ]["post"]
+    assert "únicamente presupuesto_id" in operacion["description"]
+    assert "idempotente el reintento" in operacion["description"]
+    assert {"403", "409", "503"} <= set(operacion["responses"])
+
+
+def test_openapi_ms2_patch_distingue_rechazo_inicial_de_cancelacion_generica() -> None:
+    descripcion = ms2_app.openapi()["paths"]["/ordenes/{orden_id}/estado"]["patch"][
+        "description"
+    ]
+    assert "3 → 4/5/8" in descripcion
+    assert "rechazo inicial verificado" in descripcion
+    assert "no por cancelación genérica" in descripcion
 
 
 

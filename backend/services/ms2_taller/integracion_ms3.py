@@ -6,7 +6,10 @@ from typing import Protocol
 import httpx
 
 from services.ms2_taller.config import settings
-from shared.contratos_decisiones import DecisionPresupuestoVerificada
+from shared.contratos_decisiones import (
+    DecisionPresupuestoVerificada,
+    EnvioPresupuestoVerificado,
+)
 
 
 class DecisionNoVisibleError(Exception):
@@ -23,6 +26,50 @@ class ServicioPresupuestosNoDisponibleError(Exception):
 
 class VerificadorDecisiones(Protocol):
     def consultar(self, decision_id: int, token: str) -> DecisionPresupuestoVerificada: ...
+
+
+class EnvioPresupuestoNoVisibleError(Exception):
+    """El presupuesto no existe o no tiene un envío inicial verificable."""
+
+
+class EnvioPresupuestoNoAplicableError(Exception):
+    """La versión inicial de ese presupuesto todavía no fue enviada."""
+
+
+class VerificadorEnviosPresupuesto(Protocol):
+    def consultar(self, presupuesto_id: int, token: str) -> EnvioPresupuestoVerificado: ...
+
+
+class VerificadorEnviosPresupuestoHttp:
+    def __init__(self, url_base: str, timeout: float) -> None:
+        self.url_base = url_base.rstrip("/")
+        self.timeout = timeout
+
+    def consultar(self, presupuesto_id: int, token: str) -> EnvioPresupuestoVerificado:
+        try:
+            respuesta = httpx.get(
+                f"{self.url_base}/presupuestos/{presupuesto_id}/envio-inicial",
+                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise ServicioPresupuestosNoDisponibleError("No fue posible consultar MS3") from exc
+        if respuesta.status_code in (403, 404):
+            raise EnvioPresupuestoNoVisibleError("Envío inicial no encontrado")
+        if respuesta.status_code == 409:
+            raise EnvioPresupuestoNoAplicableError("La primera versión aún no fue enviada")
+        if respuesta.status_code != 200:
+            raise ServicioPresupuestosNoDisponibleError(
+                "MS3 no devolvió un envío inicial verificable"
+            )
+        try:
+            envio = EnvioPresupuestoVerificado.model_validate(respuesta.json())
+        except ValueError as exc:
+            raise ServicioPresupuestosNoDisponibleError("Respuesta inválida de MS3") from exc
+        if envio.presupuesto_id != presupuesto_id:
+            raise ServicioPresupuestosNoDisponibleError(
+                "La referencia devuelta por MS3 no coincide"
+            )
+        return envio
 
 
 class VerificadorDecisionesHttp:
@@ -55,3 +102,7 @@ class VerificadorDecisionesHttp:
 
 def obtener_verificador_decisiones() -> VerificadorDecisiones:
     return VerificadorDecisionesHttp(settings.MS3_URL, settings.MS3_TIMEOUT_SEGUNDOS)
+
+
+def obtener_verificador_envios_presupuesto() -> VerificadorEnviosPresupuesto:
+    return VerificadorEnviosPresupuestoHttp(settings.MS3_URL, settings.MS3_TIMEOUT_SEGUNDOS)

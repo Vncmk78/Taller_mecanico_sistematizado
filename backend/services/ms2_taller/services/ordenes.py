@@ -30,8 +30,11 @@ from services.ms2_taller.models.cliente import Cliente
 from services.ms2_taller.integracion_ms3 import (
     DecisionNoAplicableError,
     DecisionNoVisibleError,
+    EnvioPresupuestoNoVisibleError,
+    EnvioPresupuestoNoAplicableError,
     ServicioPresupuestosNoDisponibleError,
     VerificadorDecisiones,
+    VerificadorEnviosPresupuesto,
 )
 from services.ms2_taller.models.estado_orden import CANCELADO, RECIBIDO
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
@@ -40,7 +43,10 @@ from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.vehiculo import Vehiculo
 from shared.auth import NombreRol, PrincipalAutenticado
-from shared.contratos_decisiones import AplicacionDecisionRespuesta
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta,
+    AplicacionEnvioPresupuestoRespuesta,
+)
 
 
 # Solo eventos con una operación existente que verifica su hecho de negocio.
@@ -96,6 +102,7 @@ def registrar_historial_estado(
     origen: str,
     observacion: str | None = None,
     decision_presupuesto_id: int | None = None,
+    envio_presupuesto_id: int | None = None,
 ) -> HistorialEstado:
     """Agrega el cambio de estado a la sesión sin confirmar la transacción.
 
@@ -125,6 +132,7 @@ def registrar_historial_estado(
         origen=origen,
         observacion=observacion,
         decision_presupuesto_id=decision_presupuesto_id,
+        envio_presupuesto_id=envio_presupuesto_id,
     )
     db.add(historial)
     return historial
@@ -518,9 +526,70 @@ def aplicar_decision_presupuesto(
         raise PersistenciaOrdenError("No fue posible aplicar la decisión") from exc
 
 
+def aplicar_envio_inicial_presupuesto(
+    db: Session, *, orden_id: int, presupuesto_id: int,
+    principal: PrincipalAutenticado, token: str,
+    verificador: VerificadorEnviosPresupuesto,
+) -> AplicacionEnvioPresupuestoRespuesta:
+    """Aplica el primer envío confirmado por MS3 con estado e historial atómicos."""
+    try:
+        if NombreRol.ADMINISTRADOR not in principal.roles:
+            raise OrdenEstadoNoAutorizadoError("Se requiere rol Administrador")
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        historial = db.scalar(select(HistorialEstado).where(
+            HistorialEstado.envio_presupuesto_id == presupuesto_id,
+        ))
+        if historial is not None:
+            if historial.orden_id != orden_id:
+                raise EnvioPresupuestoNoVisibleError("Envío inicial no encontrado")
+            respuesta = _aplicacion_de_envio(historial)
+            db.commit()
+            return respuesta
+
+        envio = verificador.consultar(presupuesto_id, token)
+        if envio.orden_id != orden_id or envio.presupuesto_id != presupuesto_id:
+            raise EnvioPresupuestoNoVisibleError("Envío inicial no encontrado")
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.ENVIO_PRIMER_PRESUPUESTO,
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        historial = registrar_historial_estado(
+            db, orden_id=orden_id, estado_anterior=orden.estado_codigo,
+            estado_nuevo=destino, actor_usuario_id=principal.usuario_id,
+            origen="usuario", envio_presupuesto_id=presupuesto_id,
+        )
+        orden.estado_codigo = destino
+        db.flush()
+        respuesta = _aplicacion_de_envio(historial)
+        db.commit()
+        return respuesta
+    except (OrdenEstadoNoAutorizadoError, OrdenNoEncontradaError,
+            OrdenTransicionNoPermitidaError, EnvioPresupuestoNoVisibleError,
+            EnvioPresupuestoNoAplicableError,
+            ServicioPresupuestosNoDisponibleError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible aplicar el envío del presupuesto") from exc
+
+
 def _aplicacion_de_historial(historial: HistorialEstado) -> AplicacionDecisionRespuesta:
     return AplicacionDecisionRespuesta(
         decision_id=historial.decision_presupuesto_id, orden_id=historial.orden_id,
+        estado_aplicado=historial.estado_nuevo, historial_id=historial.historial_id,
+    )
+
+
+def _aplicacion_de_envio(historial: HistorialEstado) -> AplicacionEnvioPresupuestoRespuesta:
+    return AplicacionEnvioPresupuestoRespuesta(
+        presupuesto_id=historial.envio_presupuesto_id, orden_id=historial.orden_id,
         estado_aplicado=historial.estado_nuevo, historial_id=historial.historial_id,
     )
 

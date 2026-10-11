@@ -30,10 +30,12 @@ from services.ms3_presupuestos.dependencies import (
 )
 from services.ms3_presupuestos.integracion_ms2 import (
     CoordinadorOrdenes,
+    CoordinadorEnviosPresupuesto,
     OrdenNoVisible,
     VerificadorOrdenes,
     obtener_verificador_ordenes,
     obtener_coordinador_ordenes,
+    obtener_coordinador_envios_presupuesto,
 )
 from services.ms3_presupuestos.persistencia import ConflictoDeDatos, RecursoNoEncontrado, UnidadDeTrabajo
 from services.ms3_presupuestos.persistencia.repositorios import LIMITE_MAXIMO
@@ -50,7 +52,9 @@ from services.ms3_presupuestos.schemas.presupuesto import (
 from services.ms3_presupuestos.services import presupuestos as casos
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
-    AplicacionDecisionRespuesta, DecisionAplicacionPendiente, DecisionPresupuestoVerificada,
+    AplicacionDecisionRespuesta, AplicacionEnvioPresupuestoRespuesta,
+    DecisionAplicacionPendiente, DecisionPresupuestoVerificada,
+    EnvioPresupuestoVerificado,
 )
 
 router = APIRouter(prefix="/presupuestos", tags=["presupuestos"])
@@ -264,8 +268,9 @@ def reemplazar_items(
     summary="Enviar la versión al cliente (queda congelada)",
     description=(
         "Solo Administrador. La versión debe ser la última, estar en borrador y tener "
-        "ítems con precio. `efecto_en_orden` = `esperando_aprobacion` en el primer envío; "
-        "`null` si es una modificación posterior a una aprobación."
+        "ítems con precio. El primer envío coordina la transición de la orden con MS2; "
+        "`efecto_en_orden` es `esperando_aprobacion` y `aplicacion_en_orden` confirma "
+        "el estado e historial. `null` si es una modificación posterior a una aprobación."
     ),
     responses={
         **_401,
@@ -273,6 +278,7 @@ def reemplazar_items(
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_409_CONFLICT: {"description": "Ya enviada o no es la última versión"},
         422: {"description": "Sin ítems o con ítems sin precio"},
+        503: {"description": "El envío se guardó, pero falta confirmar el efecto en MS2"},
     },
     dependencies=[Depends(_solo_administrador)],
 )
@@ -280,8 +286,51 @@ def enviar(
     presupuesto_id: int = IdPresupuesto,
     numero: int = NumeroVersion,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    token: str = Depends(obtener_token_bearer),
+    coordinador: CoordinadorEnviosPresupuesto = Depends(obtener_coordinador_envios_presupuesto),
 ) -> ResultadoOperacion:
-    return casos.enviar_version(uow, presupuesto_id=presupuesto_id, numero=numero)
+    resultado = casos.enviar_version(uow, presupuesto_id=presupuesto_id, numero=numero)
+    if resultado.efecto_en_orden == "esperando_aprobacion":
+        resultado.aplicacion_en_orden = coordinador.aplicar(
+            resultado.presupuesto.orden_id, presupuesto_id, token,
+        )
+    return resultado
+
+
+@router.get(
+    "/{presupuesto_id}/envio-inicial",
+    response_model=EnvioPresupuestoVerificado,
+    summary="Verificar el envío inicial para la coordinación con MS2",
+    responses={**_401, **_NO_EXISTE, 409: {"description": "No hay envío inicial pendiente"}},
+    dependencies=[Depends(_solo_administrador)],
+)
+def verificar_envio_inicial(
+    presupuesto_id: int = IdPresupuesto,
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+) -> EnvioPresupuestoVerificado:
+    return casos.consultar_envio_inicial(uow, presupuesto_id=presupuesto_id)
+
+
+@router.post(
+    "/{presupuesto_id}/envio-inicial/aplicacion",
+    response_model=AplicacionEnvioPresupuestoRespuesta,
+    summary="Reintentar la aplicación del envío inicial en MS2",
+    responses={
+        **_401, **_NO_EXISTE,
+        403: {"description": "Se requiere rol Administrador"},
+        409: {"description": "El envío no está pendiente de aplicación"},
+        503: {"description": "El envío está guardado; falta confirmar su efecto en MS2"},
+    },
+    dependencies=[Depends(_solo_administrador)],
+)
+def reintentar_aplicacion_envio(
+    presupuesto_id: int = IdPresupuesto,
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    token: str = Depends(obtener_token_bearer),
+    coordinador: CoordinadorEnviosPresupuesto = Depends(obtener_coordinador_envios_presupuesto),
+) -> AplicacionEnvioPresupuestoRespuesta:
+    envio = casos.consultar_envio_inicial(uow, presupuesto_id=presupuesto_id)
+    return coordinador.aplicar(envio.orden_id, presupuesto_id, token)
 
 
 @router.post(

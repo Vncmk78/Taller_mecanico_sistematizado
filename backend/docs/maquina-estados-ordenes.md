@@ -139,12 +139,12 @@ otras precondiciones que pertenecen a servicios externos.
 
 Notificaciones, decisiones de presupuesto, reservas o movimientos de inventario
 y otras acciones de servicios externos no deben ocultarse dentro del validador.
-MS3 persiste la decisión y solicita a MS2 aplicar su efecto inicial. MS2 recibe
-solo `decision_id`, consulta el hecho en MS3 y deriva el evento con su propia
+MS3 persiste el envío inicial o la decisión y solicita a MS2 aplicar su efecto.
+MS2 consulta el hecho correspondiente en MS3 y deriva el evento con su propia
 máquina. MS3 no publica un evento ni envía un destino arbitrario.
 
-La primera decisión usa el contrato descrito en la sección 6.1. La coordinación
-del envío inicial y de la disponibilidad posterior de repuestos sigue pendiente.
+El envío inicial y la primera decisión usan coordinación HTTP con MS2. La
+disponibilidad posterior de repuestos sigue pendiente.
 
 ### 3.5 Historial, actor y atomicidad
 
@@ -246,7 +246,7 @@ Esta tabla es cerrada: una transición no incluida no debe considerarse permitid
 |---|---|---|---|---|
 | No existe orden | El administrador confirma el ingreso físico y crea la orden. | Administrador | Recibido | MS2 crea orden e historial inicial. |
 | Recibido | Primera asignación válida de mecánico. | Administrador | Esperando diagnóstico | MS2; ya implementado por INT-33. |
-| Esperando diagnóstico | Se envía el primer presupuesto al cliente. | Administrador envía la versión revisada | Esperando aprobación de presupuesto | MS3 gestiona presupuesto y envío; MS2 valida y persiste el estado mediante un contrato futuro. |
+| Esperando diagnóstico | Se envía el primer presupuesto al cliente. | Administrador envía la versión revisada | Esperando aprobación de presupuesto | MS3 congela el envío y pide a MS2 verificar el hecho y persistir estado e historial (SCRUM-435). |
 | Esperando aprobación de presupuesto | El cliente aprueba por primera vez y existen los repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | En reparación | MS3 conserva la disponibilidad al decidir; MS2 verifica la decisión y persiste estado e historial (SCRUM-438). |
 | Esperando aprobación de presupuesto | El cliente aprueba por primera vez y faltan repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | Esperando repuestos | MS3 conserva la disponibilidad al decidir; MS2 verifica la decisión y persiste estado e historial (SCRUM-438). |
 | Esperando repuestos | Se registra la disponibilidad necesaria para el trabajo autorizado. | Evento originado en MS3; actor exacto **PENDIENTE DE DEFINICIÓN** | En reparación | MS3 aporta el hecho; MS2 valida y persiste el estado mediante un contrato futuro. |
@@ -343,8 +343,8 @@ bases. El evento puede originarse en otro servicio, pero MS2 conserva la autorid
 sobre el estado de la orden y comprueba que el cambio solicitado sea compatible
 con el estado actual.
 
-Quedan **PENDIENTES DE DEFINICIÓN** los contratos concretos para comunicar a MS2
-el envío del primer presupuesto y la disponibilidad posterior de repuestos.
+Queda **PENDIENTE DE DEFINICIÓN** el contrato para comunicar a MS2 la disponibilidad
+posterior de repuestos.
 
 ### 6.1 Primera decisión de presupuesto (SCRUM-397 y SCRUM-438)
 
@@ -401,7 +401,7 @@ El rechazo también se aplica a Administrador y a usuarios multirrol.
 |---|---|---|---|---|
 | Sin orden → 1 | Ingreso físico; Administrador | Vehículo e ingreso válidos | `POST /ordenes`, `crear_orden()` | No crea órdenes |
 | 1 → 2 | Primera asignación; Administrador | Asignación real de responsable | `PUT /ordenes/{id}/mecanico`, `asignar_mecanico()` | Rechazado; usar la operación específica |
-| 2 → 3 | Envío del primer presupuesto; Administrador | Versión revisada y enviada al cliente | MS3 tiene `POST /presupuestos/{id}/versiones/{numero}/envio`; no aplica el estado en MS2 | Disponible con brecha |
+| 2 → 3 | Envío del primer presupuesto; Administrador | Primera versión confirmada como enviada por MS3 | `POST /presupuestos/{id}/versiones/{numero}/envio` coordina con `POST /ordenes/{id}/envios-presupuesto` | Operación específica verificada (SCRUM-435) |
 | 3 → 4 | Primera aprobación sin repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Decisión MS3 y `POST /ordenes/{id}/decisiones-presupuesto` | Rechazado; usar decisión verificada |
 | 3 → 5 | Primera aprobación con repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Mismo flujo SCRUM-438 | Rechazado; usar decisión verificada |
 | 4 → 5 | Disponibilidad posterior; actor exacto pendiente | Disponibilidad suficiente para el alcance aprobado | No hay operación MS2–MS3 específica | Disponible con brecha |
@@ -423,22 +423,37 @@ La asignación específica conserva los límites ya documentados de INT-33 sobre
 comprobación remota del rol del destino y capacidad configurable; no se agregan
 validaciones ficticias para esos puntos.
 
-#### Envío inicial (2 → 3)
+#### Envío inicial (2 → 3) — SCRUM-435
 
-Un Administrador o un Mecánico asignado puede solicitar el destino `3` sin que
-exista un envío real. La operación de MS3 sí valida última versión, borrador,
-ítems y precios, y congela el envío, pero solo devuelve `efecto_en_orden`: no
-coordina la transición de MS2. El riesgo es mostrar al cliente una orden esperando
-su decisión sin tener un presupuesto enviado.
+1. El Administrador envía desde MS3 la última versión en borrador, que debe tener
+   ítems y precios. MS3 la congela y conserva el envío en su base.
+2. Cuando el efecto es `esperando_aprobacion`, MS3 llama a
+   `POST /ordenes/{orden_id}/envios-presupuesto` con `presupuesto_id` y el JWT
+   original. Las modificaciones posteriores a una aprobación no originan este
+   efecto.
+3. MS2 exige el rol Administrador, bloquea la orden y consulta
+   `GET /presupuestos/{presupuesto_id}/envio-inicial` en MS3. Solo acepta la
+   referencia si MS3 confirma que la versión 1 fue enviada y que el presupuesto
+   corresponde a esa orden. No acepta un destino o actor indicado por el body.
+4. MS2 deriva `ENVIO_PRIMER_PRESUPUESTO`; estado e historial se guardan juntos,
+   con el Administrador autenticado como actor y `origen="usuario"`.
+   `HistorialEstado.envio_presupuesto_id` es una referencia lógica nullable y
+   única, sin FK a MS3. El bloqueo y la clave hacen idempotentes los reintentos.
+5. Si MS3 ya guardó el envío, pero no logra confirmar la respuesta de MS2,
+   responde `503` con la ruta
+   `POST /presupuestos/{presupuesto_id}/envio-inicial/aplicacion`. Repetir esa
+   aplicación devuelve el historial existente si MS2 ya había confirmado.
 
-Es necesario acordar un contrato que permita a MS2 verificar presupuesto, orden,
-versión enviada y actor, aplicar `ENVIO_PRIMER_PRESUPUESTO`, y registrar una sola
-transición ante reintentos o fallos de comunicación. Reutilizar el envío MS3 sería
-posible con esa coordinación, pero requiere definir una operación/contrato nuevo
-antes de restringir este flujo. [SCRUM-435](https://taller-mecanico-sistematizado.atlassian.net/browse/SCRUM-435)
-es la tarea relacionada; su título también menciona "Esperando aprobación de
-documento", que no pertenece al catálogo vigente de ocho estados y sigue pendiente
-de aclaración del equipo. Esta corrección no implementa SCRUM-435 ni un noveno estado.
+Las dos bases no comparten una transacción. La operación conserva el hecho de
+envío en MS3 aunque la transición falle; el cliente puede reintentar la aplicación
+sin volver a enviar la versión. La migración `0007_ms2` agrega la referencia única
+al historial. El catálogo de órdenes continúa compuesto por los ocho estados
+oficiales; “Esperando aprobación de documento” no se incorpora.
+
+El título de [SCRUM-435](https://taller-mecanico-sistematizado.atlassian.net/browse/SCRUM-435)
+también menciona “Esperando aprobación de documento”. El equipo confirmó que esa
+frase es una discrepancia del ticket y que se conserva el catálogo de ocho estados;
+la corrección del título en Jira sigue pendiente porque no se autorizó editar Jira.
 
 #### Disponibilidad posterior (4 → 5)
 

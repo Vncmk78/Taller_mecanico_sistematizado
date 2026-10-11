@@ -29,6 +29,8 @@ RUTAS = {
     ("put", "/presupuestos/{presupuesto_id}/versiones/{numero}/items"),
     ("post", "/presupuestos/{presupuesto_id}/versiones"),
     ("post", "/presupuestos/{presupuesto_id}/versiones/{numero}/envio"),
+    ("get", "/presupuestos/{presupuesto_id}/envio-inicial"),
+    ("post", "/presupuestos/{presupuesto_id}/envio-inicial/aplicacion"),
     ("post", "/presupuestos/{presupuesto_id}/versiones/{numero}/decision"),
     ("get", "/presupuestos/decisiones/{decision_id}"),
     ("post", "/presupuestos/decisiones/{decision_id}/aplicacion"),
@@ -56,12 +58,21 @@ def _token(*roles: NombreRol) -> dict[str, str]:
     ((NombreRol.CLIENTE,), "/presupuestos/1/versiones", None),
     ((NombreRol.CLIENTE,), "/presupuestos/1/versiones/1/envio", None),
     ((NombreRol.MECANICO,), "/presupuestos/1/versiones/1/envio", None),
+    ((NombreRol.CLIENTE,), "/presupuestos/1/envio-inicial/aplicacion", None),
     ((NombreRol.ADMINISTRADOR,), "/presupuestos/1/versiones/1/decision", {"decision": "aprobado"}),
     ((NombreRol.MECANICO,), "/presupuestos/1/versiones/1/decision", {"decision": "aprobado"}),
 ])
 def test_rol_no_permitido_recibe_403_antes_de_tocar_la_base(roles, ruta, cuerpo) -> None:
     with TestClient(app) as cliente:
         assert cliente.post(ruta, json=cuerpo, headers=_token(*roles)).status_code == 403
+
+
+def test_solo_administrador_consulta_el_hecho_de_envio_inicial() -> None:
+    with TestClient(app) as cliente:
+        respuesta = cliente.get(
+            "/presupuestos/1/envio-inicial", headers=_token(NombreRol.CLIENTE),
+        )
+        assert respuesta.status_code == 403
 
 
 def test_nueva_version_admite_items_o_copia_pero_no_ambos() -> None:

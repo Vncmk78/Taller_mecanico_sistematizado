@@ -157,9 +157,68 @@ def _aplicar(flujo, decision_id, *, orden_id=None, headers=None, **extras):
                           headers=_headers() if headers is None else headers)
 
 
+def _enviar_presupuesto_inicial(flujo, *, headers=None):
+    """Devuelve la fixture a la etapa documentada antes del primer envío."""
+    with flujo.db2() as db:
+        db.get(OrdenTrabajo, flujo.orden_id).estado_codigo = 2
+        db.commit()
+    with flujo.db3() as db:
+        db.scalar(select(VersionPresupuesto)).enviado_en = None
+        db.commit()
+    return flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones/1/envio",
+        headers=_headers(99, NombreRol.ADMINISTRADOR) if headers is None else headers,
+    )
+
+
 def _estado_y_historial(flujo):
     with flujo.db2() as db:
         return db.get(OrdenTrabajo, flujo.orden_id).estado_codigo, list(db.scalars(select(HistorialEstado)))
+
+
+def test_envio_inicial_coordina_estado_historial_y_actor_administrador(flujo):
+    respuesta = _enviar_presupuesto_inicial(flujo)
+    assert respuesta.status_code == 200, respuesta.text
+    body = respuesta.json()
+    aplicacion = body["aplicacion_en_orden"]
+    assert body["efecto_en_orden"] == "esperando_aprobacion"
+    assert aplicacion["estado_aplicado"] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert aplicacion["presupuesto_id"] == flujo.presupuesto_id
+    estado, historial = _estado_y_historial(flujo)
+    assert estado == ESPERANDO_APROBACION_PRESUPUESTO and len(historial) == 1
+    registro = historial[0]
+    assert (registro.estado_anterior, registro.estado_nuevo) == (2, 3)
+    assert registro.envio_presupuesto_id == flujo.presupuesto_id
+    assert registro.actor_usuario_id == 99 and registro.origen == "usuario"
+    assert registro.decision_presupuesto_id is None
+    assert registro.fecha_hora is not None
+    assert all(headers == _headers(99, NombreRol.ADMINISTRADOR)
+               for _, _, headers in flujo.llamadas)
+
+
+@pytest.mark.parametrize("fallo,historias_antes", [("antes", 0), ("verificacion", 0), ("despues", 1)])
+def test_fallo_de_ms2_deja_envio_guardado_y_reintento_idempotente(flujo, fallo, historias_antes):
+    flujo.fallo["modo"] = fallo
+    respuesta = _enviar_presupuesto_inicial(flujo)
+    assert respuesta.status_code == 503, respuesta.text
+    body = respuesta.json()
+    assert body["envio_confirmado"] is True and body["aplicacion_confirmada"] is False
+    assert body["presupuesto_id"] == flujo.presupuesto_id
+    assert body["reintento"] == (
+        f"/api/presupuestos/{flujo.presupuesto_id}/envio-inicial/aplicacion"
+    )
+    with flujo.db3() as db:
+        assert db.scalar(select(VersionPresupuesto)).enviado_en is not None
+    assert len(_estado_y_historial(flujo)[1]) == historias_antes
+    flujo.fallo["modo"] = None
+    reintento = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/envio-inicial/aplicacion",
+        headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert reintento.status_code == 200, reintento.text
+    assert reintento.json()["estado_aplicado"] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert _estado_y_historial(flujo)[0] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert len(_estado_y_historial(flujo)[1]) == 1
 
 
 @pytest.mark.parametrize("decision,stock,esperado,motivo", [

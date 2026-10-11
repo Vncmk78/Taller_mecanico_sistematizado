@@ -9,7 +9,9 @@ from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import obtener_principal_actual, obtener_token_bearer
 from services.ms2_taller.integracion_ms3 import (
     DecisionNoAplicableError, DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError,
-    VerificadorDecisiones, obtener_verificador_decisiones,
+    EnvioPresupuestoNoAplicableError, EnvioPresupuestoNoVisibleError,
+    VerificadorDecisiones, VerificadorEnviosPresupuesto,
+    obtener_verificador_decisiones, obtener_verificador_envios_presupuesto,
 )
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
@@ -31,6 +33,7 @@ from services.ms2_taller.services.ordenes import (
     VehiculoNoEncontradoError,
     asignar_mecanico,
     aplicar_decision_presupuesto,
+    aplicar_envio_inicial_presupuesto,
     cambiar_estado_orden,
     crear_orden,
     listar_ordenes,
@@ -38,9 +41,54 @@ from services.ms2_taller.services.ordenes import (
     obtener_orden_visible,
 )
 from shared.auth import NombreRol, PrincipalAutenticado
-from shared.contratos_decisiones import AplicacionDecisionRespuesta, DecisionOrdenSolicitud
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta,
+    AplicacionEnvioPresupuestoRespuesta,
+    DecisionOrdenSolicitud,
+    EnvioPresupuestoSolicitud,
+)
 
 router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
+
+
+@router_ordenes.post(
+    "/{orden_id}/envios-presupuesto",
+    response_model=AplicacionEnvioPresupuestoRespuesta,
+    summary="Aplicar el envío inicial de presupuesto verificado en MS3",
+    responses={
+        401: {"description": "JWT ausente o inválido"},
+        403: {"description": "Se requiere rol Administrador"},
+        404: {"description": "Orden o envío inicial inexistente"},
+        409: {"description": "Estado incompatible con el envío inicial"},
+        500: {"description": "Error de persistencia local"},
+        503: {"description": "No fue posible verificar el envío en MS3"},
+    },
+)
+def aplicar_envio_presupuesto(
+    body: EnvioPresupuestoSolicitud,
+    orden_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorEnviosPresupuesto = Depends(obtener_verificador_envios_presupuesto),
+) -> AplicacionEnvioPresupuestoRespuesta:
+    try:
+        return aplicar_envio_inicial_presupuesto(
+            db, orden_id=orden_id, presupuesto_id=body.presupuesto_id,
+            principal=principal, token=token, verificador=verificador,
+        )
+    except (OrdenNoEncontradaError, EnvioPresupuestoNoVisibleError) as exc:
+        raise HTTPException(404, "Orden o envío inicial no encontrado") from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except EnvioPresupuestoNoAplicableError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ServicioPresupuestosNoDisponibleError as exc:
+        raise HTTPException(503, "No fue posible verificar el envío en MS3") from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(500, "No fue posible aplicar el envío del presupuesto") from exc
 
 
 @router_ordenes.post(

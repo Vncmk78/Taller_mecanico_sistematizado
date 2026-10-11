@@ -47,7 +47,10 @@ from services.ms3_presupuestos.schemas.presupuesto import (
     ResultadoOperacion,
     VersionDetalle,
 )
-from shared.contratos_decisiones import DecisionPresupuestoVerificada
+from shared.contratos_decisiones import (
+    DecisionPresupuestoVerificada,
+    EnvioPresupuestoVerificado,
+)
 
 
 # ---------------------------------------------------------------- escritura --
@@ -200,6 +203,22 @@ def enviar_version(uow: UnidadDeTrabajo, *, presupuesto_id: int, numero: int) ->
         uow.sesion.refresh(version)
         efecto = None if presupuesto.version_vigente else "esperando_aprobacion"
     return ResultadoOperacion(presupuesto=a_detalle(presupuesto), efecto_en_orden=efecto)
+
+
+def consultar_envio_inicial(
+    uow: UnidadDeTrabajo, *, presupuesto_id: int,
+) -> EnvioPresupuestoVerificado:
+    """Devuelve a MS2 el hecho de envío inicial persistido por este servicio."""
+    presupuesto = obtener_presupuesto(uow, presupuesto_id)
+    if not any(v.numero == 1 and v.enviada for v in presupuesto.versiones):
+        raise ConflictoDeDatos(
+            "La primera versión del presupuesto aún no fue enviada"
+        )
+    return EnvioPresupuestoVerificado(
+        presupuesto_id=presupuesto.presupuesto_id,
+        orden_id=presupuesto.orden_id,
+        envio_inicial_confirmado=True,
+    )
 
 
 def decidir_version(

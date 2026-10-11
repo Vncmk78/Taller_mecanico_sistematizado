@@ -176,6 +176,16 @@ def _estado_y_historial(flujo):
         return db.get(OrdenTrabajo, flujo.orden_id).estado_codigo, list(db.scalars(select(HistorialEstado)))
 
 
+def _firma_historial(registros):
+    return tuple(
+        (registro.historial_id, registro.estado_anterior, registro.estado_nuevo,
+         registro.actor_usuario_id, registro.origen, registro.observacion,
+         registro.decision_presupuesto_id, registro.envio_presupuesto_id,
+         registro.fecha_hora)
+        for registro in registros
+    )
+
+
 def test_envio_inicial_coordina_estado_historial_y_actor_administrador(flujo):
     respuesta = _enviar_presupuesto_inicial(flujo)
     assert respuesta.status_code == 200, respuesta.text
@@ -317,18 +327,39 @@ def test_fallo_despues_del_flush_revierte_estado_e_historial_juntos(flujo):
 @pytest.mark.parametrize("decision", ["aprobado", "rechazado"])
 def test_modificacion_conserva_comportamiento_y_no_reaplica_transicion_inicial(flujo, decision):
     assert _decidir(flujo).status_code == 201
+    estado_aprobado, historial_aprobado = _estado_y_historial(flujo)
+    assert estado_aprobado == EN_REPARACION and len(historial_aprobado) == 1
+    historial_aprobado = _firma_historial(historial_aprobado)
     with flujo.db3() as db:
-        # Fixture de una aprobación previa: SQLite no ejecuta el trigger de MS3.
+        # PostgreSQL marca la versión vigente con un trigger al aprobar; SQLite
+        # no ejecuta ese trigger, así que el fixture reproduce su efecto.
         db.scalar(select(VersionPresupuesto)).bloqueada_en = datetime.now(timezone.utc)
-        version = VersionPresupuesto(
-            presupuesto_id=flujo.presupuesto_id, numero=2, creado_por_id=50,
-            es_modificacion=True,
-        )
-        db.add(version)
-        db.flush()
-        version.enviado_en = func.now()
         db.commit()
+
+    nueva_version = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones",
+        json={}, headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert nueva_version.status_code == 201, nueva_version.text
+    version = next(
+        version for version in nueva_version.json()["versiones"]
+        if version["numero"] == 2
+    )
+    assert version["es_modificacion"] is True
+
     llamadas_antes = len([llamada for llamada in flujo.llamadas if llamada[0] == "POST"])
+    envio = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones/2/envio",
+        headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert envio.status_code == 200, envio.text
+    assert envio.json()["efecto_en_orden"] is None
+    assert envio.json()["aplicacion_en_orden"] is None
+    assert len([llamada for llamada in flujo.llamadas if llamada[0] == "POST"]) == llamadas_antes
+    estado_actual, historial_actual = _estado_y_historial(flujo)
+    assert estado_actual == estado_aprobado
+    assert _firma_historial(historial_actual) == historial_aprobado
+
     body = {"decision": decision, "motivo": "Rechazo el trabajo adicional"}
     respuesta = flujo.ms3.post(
         f"/presupuestos/{flujo.presupuesto_id}/versiones/2/decision",
@@ -343,8 +374,9 @@ def test_modificacion_conserva_comportamiento_y_no_reaplica_transicion_inicial(f
     assert _aplicar(flujo, decision_id).status_code == 409
     assert flujo.ms3.post(f"/presupuestos/decisiones/{decision_id}/aplicacion",
                          headers=_headers()).status_code == 409
-    assert _estado_y_historial(flujo)[0] == EN_REPARACION
-    assert len(_estado_y_historial(flujo)[1]) == 1
+    estado_actual, historial_actual = _estado_y_historial(flujo)
+    assert estado_actual == estado_aprobado
+    assert _firma_historial(historial_actual) == historial_aprobado
 
 
 def test_stock_del_reintento_no_cambia_la_rama_persistida(flujo):

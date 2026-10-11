@@ -282,6 +282,53 @@ presupuesto, cambios especiales por reasignación ni transiciones automáticas p
 cada modificación posterior del presupuesto. Cualquier flujo no incluido en la
 tabla queda **PENDIENTE DE DEFINICIÓN** y no debe implementarse por inferencia.
 
+### 5.3 Diagrama visual y estado de implementación
+
+El diagrama conserva el catálogo oficial de ocho estados. Las etiquetas indican
+el estado real de cada flujo según el código y las pruebas disponibles; que
+exista una transición estructural en `TRANSICIONES_PERMITIDAS` no significa que
+se comprueben todas sus precondiciones funcionales.
+
+```mermaid
+flowchart LR
+    I([Ingreso físico]) -->|Confirmar ingreso · 🟡 Parcial| S1["1 · Recibido"]
+    S1 -->|Primera asignación · 🟡 Parcial| S2["2 · Esperando diagnóstico"]
+    S2 -->|Enviar primer presupuesto · 🟡 Parcial| S3["3 · Esperando aprobación de presupuesto"]
+    S3 -->|Aprobación inicial y sin stock · ✅ Implementada y verificada| S4["4 · Esperando repuestos"]
+    S3 -->|Aprobación inicial y con stock · 🟡 Parcial| S5["5 · En reparación"]
+    S4 -->|Disponibilidad suficiente · ⚪ Pendiente| S5
+    S5 -->|Trabajo terminado · 🟡 Parcial| S6["6 · Listo"]
+    S6 -->|Entrega física · 🟡 Parcial| S7["7 · Entregado · terminal"]
+    S3 -->|Rechazo inicial confirmado · 🟡 Parcial¹| S8["8 · Cancelado · terminal"]
+    S1 -->|Cancelación solicitada y confirmada · 🟡 Parcial²| S8
+    S2 -->|Cancelación solicitada y confirmada · 🟡 Parcial²| S8
+    S3 -->|Cancelación solicitada y confirmada · 🟡 Parcial²| S8
+
+    classDef terminal fill:#e8edf2,stroke:#526477,color:#192c42,stroke-width:2px;
+    class S7,S8 terminal;
+```
+
+**Leyenda:** ✅ flujo específico implementado y verificado; 🟡 flujo parcial,
+porque alguna precondición o coordinación sigue pendiente; ⚪ flujo pendiente de
+una operación que valide el hecho de negocio.
+
+1. La primera decisión de rechazo se verifica mediante SCRUM-438 y tiene pruebas.
+   Se marca parcial porque el `PATCH` genérico todavía admite el mismo par de
+   estados sin verificar esa decisión.
+2. La cancelación independiente todavía no cuenta con una operación que compruebe
+   la solicitud del cliente, la confirmación administrativa y la ausencia de una
+   aprobación previa.
+
+La primera asignación aún no comprueba el rol remoto del mecánico ni la capacidad
+configurable. El envío inicial no coordina el estado de MS2 con el envío de MS3.
+La aprobación con stock usa la disponibilidad registrada al decidir, pero no
+reserva ni vuelve a verificar el inventario. La finalización no comprueba que
+todo el trabajo autorizado esté terminado y el permiso del administrador sigue
+siendo más amplio que el actor definido. La entrega no completa los datos de
+auditoría física. La creación de la orden tampoco valida todavía el cupo diario.
+Por eso esos flujos aparecen como parciales. `Entregado` y `Cancelado` son
+terminales y no tienen salidas.
+
 ## 6. Responsabilidades por microservicio
 
 | Responsabilidad | Servicio propietario |

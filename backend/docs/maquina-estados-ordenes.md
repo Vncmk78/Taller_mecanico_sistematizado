@@ -392,33 +392,33 @@ JWT de MS1 con la configuración existente.
 
 Se distinguen autorización (rol y recurso), transición estructural (tabla de
 eventos) y precondición funcional (hecho comprobado por una operación).
-`cambiar_estado_orden()` rechaza `1 → 2` y `3 → 4/5` con `409`, antes de modificar
-la orden o agregar historial. La selección de esos pares se deriva de
-`TRANSICIONES_PERMITIDAS` por los eventos protegidos, sin copiar el catálogo.
-El rechazo también se aplica a Administrador y a usuarios multirrol.
+`cambiar_estado_orden()` consulta el evento de
+`TRANSICIONES_PERMITIDAS` para el par solicitado antes de modificar la orden o
+agregar historial. El `PATCH` genérico permite únicamente `5 → 6` al Mecánico
+asignado; las operaciones específicas conservan su propio control de rol,
+responsabilidad y hecho de negocio. Los bloqueos devuelven `409`, y un actor que
+no es el Mecánico asignado al finalizar devuelve `403`.
 
 | Transición | Evento y actor funcional | Hecho necesario | Operación conectada | Situación del PATCH |
 |---|---|---|---|---|
 | Sin orden → 1 | Ingreso físico; Administrador | Vehículo e ingreso válidos | `POST /ordenes`, `crear_orden()` | No crea órdenes |
-| 1 → 2 | Primera asignación; Administrador | Asignación real de responsable | `PUT /ordenes/{id}/mecanico`, `asignar_mecanico()` | Rechazado; usar la operación específica |
-| 2 → 3 | Envío del primer presupuesto; Administrador | Primera versión confirmada como enviada por MS3 | `POST /presupuestos/{id}/versiones/{numero}/envio` coordina con `POST /ordenes/{id}/envios-presupuesto` | Operación específica verificada (SCRUM-435) |
-| 3 → 4 | Primera aprobación sin repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Decisión MS3 y `POST /ordenes/{id}/decisiones-presupuesto` | Rechazado; usar decisión verificada |
-| 3 → 5 | Primera aprobación con repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Mismo flujo SCRUM-438 | Rechazado; usar decisión verificada |
-| 4 → 5 | Disponibilidad posterior; actor exacto pendiente | Disponibilidad suficiente para el alcance aprobado | No hay operación MS2–MS3 específica | Disponible con brecha |
-| 5 → 6 | Finalización; Mecánico asignado | Trabajo autorizado terminado | Solo `PATCH /ordenes/{id}/estado` | Disponible; la finalización no se comprueba y Administrador conserva acceso amplio |
-| 6 → 7 | Entrega física; Administrador | Entrega confirmada y sus datos de auditoría | Solo PATCH; no completa `entregado_en` / `entregado_por_id` | Disponible con brecha y permiso demasiado amplio |
-| 3 → 8 | Rechazo inicial; Cliente propietario | Rechazo confirmado y motivo, sin aprobación previa | Decisión MS3 y aplicación verificada SCRUM-438 | El par sigue disponible por compartirlo con cancelación independiente |
-| 1/2/3 → 8 | Solicitud del Cliente confirmada por Administrador | Solicitud real, confirmación, ausencia de primera aprobación y motivo | Falta operación específica | Disponible con brecha; solo se exige motivo y par estructural |
+| 1 → 2 | Primera asignación; Administrador | Asignación real de responsable | `PUT /ordenes/{id}/mecanico`, `asignar_mecanico()` | PATCH rechazado con `409`; operación específica disponible |
+| 2 → 3 | Envío del primer presupuesto; Administrador | Primera versión confirmada como enviada por MS3 | `POST /presupuestos/{id}/versiones/{numero}/envio` coordina con `POST /ordenes/{id}/envios-presupuesto` | PATCH rechazado con `409`; operación específica verificada (SCRUM-435) |
+| 3 → 4 | Primera aprobación sin repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Decisión MS3 y `POST /ordenes/{id}/decisiones-presupuesto` | PATCH rechazado con `409`; usar decisión verificada |
+| 3 → 5 | Primera aprobación con repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Mismo flujo SCRUM-438 | PATCH rechazado con `409`; usar decisión verificada |
+| 4 → 5 | Disponibilidad posterior; actor exacto pendiente | Disponibilidad suficiente para el alcance aprobado | No hay operación MS2–MS3 específica | PATCH rechazado con `409`; requiere operación futura que verifique disponibilidad |
+| 5 → 6 | Finalización; Mecánico asignado | Trabajo autorizado terminado | `PATCH /ordenes/{id}/estado` | Permitido solo al Mecánico asignado (`403` para otros); la evidencia de finalización sigue pendiente |
+| 6 → 7 | Entrega física; Administrador | Entrega confirmada y sus datos de auditoría | No hay operación de entrega disponible | PATCH rechazado con `409` hasta registrar la entrega y sus datos |
+| 3 → 8 | Rechazo inicial; Cliente propietario | Rechazo confirmado y motivo, sin aprobación previa | Decisión MS3 y aplicación verificada SCRUM-438 | PATCH rechazado con `409`; usar decisión verificada |
+| 1/2/3 → 8 | Solicitud del Cliente confirmada por Administrador | Solicitud real, confirmación, ausencia de primera aprobación y motivo | Falta operación específica | PATCH rechazado con `409`; requiere flujo futuro de cancelación independiente |
 | 7/8 → cualquier estado | Ninguno | Son terminales | Validación existente | Rechazado |
 
-Por decisión expresa del usuario se mantienen los flujos sin alternativa completa.
-Conservarlos **no los convierte en seguros ni en reglas funcionales aprobadas**.
-El portal mecánico ofrece únicamente `5 → 6`, la finalización del trabajo por
-el mecánico asignado. No ofrece `2 → 3`, que corresponde al envío inicial del
-presupuesto por el Administrador, ni `4 → 5`, cuyo evento de disponibilidad y
-actor siguen pendientes de definición. El `PATCH` de MS2 todavía acepta esos
-pares para llamadas directas; la restricción del portal no sustituye la
-autorización del backend, que se aborda en SCRUM-436.
+El `PATCH` genérico no sustituye estas operaciones: rechaza `1 → 2`, `2 → 3` y
+`3 → 4/5`; bloquea `4 → 5`, `6 → 7` y los destinos genéricos `Cancelado` hasta
+que existan operaciones con las comprobaciones funcionales correspondientes.
+El portal mecánico ofrece `5 → 6`, y MS2 exige que el actor tenga rol Mecánico y
+sea el responsable asignado. Esa transición todavía no acredita por sí sola que
+el alcance autorizado esté terminado.
 La asignación específica conserva los límites ya documentados de INT-33 sobre
 comprobación remota del rol del destino y capacidad configurable; no se agregan
 validaciones ficticias para esos puntos.
@@ -457,8 +457,9 @@ la corrección del título en Jira sigue pendiente porque no se autorizó editar
 
 #### Disponibilidad posterior (4 → 5)
 
-El PATCH acepta el destino `5` sin consultar inventario ni comprobar los repuestos
-del alcance aprobado. Puede iniciar trabajo sin unidades suficientes. La decisión
+El PATCH genérico ahora rechaza el destino `5` con `409`; no consulta inventario
+ni comprueba los repuestos del alcance aprobado. Puede iniciar trabajo sin
+unidades suficientes si se habilitara sin esa verificación. La decisión
 original de SCRUM-438 contiene una instantánea inmutable: no sirve como prueba de
 que el stock haya aumentado después. Los endpoints de inventario no comunican un
 evento verificado de disponibilidad a MS2.
@@ -476,11 +477,10 @@ relacionadas, sin sustituir esa implementación.
 
 #### Finalización (5 → 6)
 
-El Mecánico asignado puede declarar `Listo` por PATCH, pero la operación no verifica
-la finalización del alcance autorizado. Además, el permiso genérico permite que
-un Administrador no asignado lo haga, aunque la sistematización atribuye la
-finalización al Mecánico. Se conserva ese comportamiento pendiente por instrucción
-del usuario; las pruebas del caso válido usan un Mecánico realmente asignado.
+Solo el Mecánico asignado puede declarar `Listo` por PATCH. El Administrador y
+cualquier otro usuario reciben `403`, incluso si tienen otros roles. La operación
+todavía no verifica la finalización del alcance autorizado; no se añade aquí esa
+verificación ni una operación nueva.
 
 Se necesita definir una operación de finalización que compruebe rol y responsable,
 el trabajo autorizado terminado y derive `FINALIZACION_TRABAJO`. Puede reutilizar
@@ -491,10 +491,10 @@ específica de implementación de esta operación, por lo que ese alcance debe a
 
 #### Entrega física (6 → 7)
 
-El Administrador o el Mecánico asignado pueden marcar `Entregado` mediante PATCH.
-Esto permite al Mecánico usar una acción reservada al Administrador y deja sin
-registrar `entregado_en` y `entregado_por_id`. El historial registra el cambio,
-pero no prueba una entrega física ni completa los datos propios de esa entrega.
+El PATCH genérico rechaza `6 → 7` con `409` para todos los actores. No cambia el
+estado ni el historial, y no escribe `entregado_en` o `entregado_por_id`. Sigue
+pendiente acordar e implementar una operación administrativa que valide y
+registre la entrega física.
 
 Hace falta acordar la operación de entrega administrativa, sus datos y confirmación.
 Debe comprobar `Listo`, derivar `ENTREGA_FISICA`, obtener el responsable del JWT y
@@ -505,24 +505,20 @@ adicional, sin tarea específica localizada en la búsqueda dirigida.
 
 #### Cancelación independiente y par compartido (1/2/3 → 8)
 
-El PATCH exige un motivo, pero no acredita solicitud del Cliente, confirmación del
-Administrador ni ausencia de primera aprobación en MS3. Un Mecánico asignado también
-puede cancelar. El riesgo es terminar una atención sin la decisión o confirmación
-documentada. La observación libre no reemplaza esos hechos.
+El PATCH genérico rechaza todos los destinos `Cancelado` con `409`, incluso si
+incluyen un motivo. El contrato sigue rechazando con `422` una solicitud sin
+motivo; un motivo no reemplaza la solicitud del Cliente ni la confirmación del
+Administrador. La cancelación independiente continúa pendiente de una operación
+que compruebe esos hechos.
 
-El riesgo también existe durante un fallo de coordinación: MS3 puede haber
-confirmado una primera aprobación mientras MS2 sigue en `3` por un timeout o
-error de aplicación. El PATCH de cancelación no consulta esa aprobación y puede
-llevar la orden a `8`; el reintento de la aprobación encontraría entonces una
-orden terminal. La combinación se desprende de los flujos existentes de decisión
-persistida con aplicación pendiente y cancelación directa desde `3`; no se trata
-de una transacción distribuida que garantice ausencia de aprobación al cancelar.
+Antes de SCRUM-436, el PATCH permitía esa carrera entre una aprobación persistida
+en MS3 y una cancelación directa en MS2. El bloqueo genérico elimina esa vía; el
+flujo independiente deberá comprobar la decisión persistida antes de habilitarse.
 
-El rechazo inicial verificado por SCRUM-438 sí tiene un flujo específico seguro,
-pero no sustituye la solicitud independiente: esta puede ocurrir sin presupuesto,
-y no significa necesariamente rechazar una versión. Ambos eventos comparten
-`3 → 8`, por lo que bloquear ese par también impediría la cancelación independiente
-conservada por el usuario.
+El rechazo inicial verificado por SCRUM-438 conserva su operación específica.
+Como rechazo y cancelación independiente comparten `3 → 8`, el PATCH genérico
+bloquea el par completo; el endpoint de decisiones mantiene operativo el rechazo
+inicial comprobado, sin habilitar la cancelación independiente.
 
 Se necesita un flujo de solicitud y confirmación, límites de propiedad/rol y un
 contrato para comprobar en MS3 que no existe aprobación previa al confirmar.

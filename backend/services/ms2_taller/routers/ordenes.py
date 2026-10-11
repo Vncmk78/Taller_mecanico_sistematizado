@@ -278,15 +278,17 @@ def consultar_historial_orden(
     response_model=OrdenRespuesta,
     summary="Cambiar el estado de una orden",
     description=(
-        "La primera asignación (1 → 2) y la primera aprobación de presupuesto "
-        "(3 → 4/5) requieren sus operaciones específicas y no admiten PATCH directo. "
-        "Los demás pares conservan su comportamiento; este endpoint no garantiza "
-        "las precondiciones pendientes de envío, repuestos, finalización, entrega o cancelación."
+        "El PATCH genérico solo permite finalizar el trabajo (5 → 6) al Mecánico "
+        "asignado. La asignación (1 → 2), el envío de presupuesto (2 → 3) y la "
+        "decisión inicial (3 → 4/5) requieren sus operaciones específicas. La "
+        "disponibilidad de repuestos (4 → 5), entrega (6 → 7) y cancelación "
+        "genérica están bloqueadas hasta contar con operaciones que verifiquen "
+        "sus hechos de negocio."
     ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_403_FORBIDDEN: {
-            "description": "Se requiere rol Administrador o ser el mecánico asignado"
+            "description": "Se requiere rol Administrador o Mecánico asignado; solo este último finaliza el trabajo"
         },
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_409_CONFLICT: {

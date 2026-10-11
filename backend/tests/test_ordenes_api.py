@@ -656,10 +656,12 @@ def test_patch_estado_mecanico_asignado_actualiza_y_registra_historial(
     assert historial.fecha_hora is not None
 
 
-@pytest.mark.parametrize("estado_actual,destino", [
-    (RECIBIDO, ESPERANDO_DIAGNOSTICO),
-    (ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS),
-    (ESPERANDO_APROBACION_PRESUPUESTO, EN_REPARACION),
+@pytest.mark.parametrize("estado_actual,destino,motivo", [
+    (RECIBIDO, ESPERANDO_DIAGNOSTICO, "operación específica"),
+    (ESPERANDO_DIAGNOSTICO, ESPERANDO_APROBACION_PRESUPUESTO, "operación específica"),
+    (ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS, "operación específica"),
+    (ESPERANDO_APROBACION_PRESUPUESTO, EN_REPARACION, "operación específica"),
+    (ESPERANDO_REPUESTOS, EN_REPARACION, "disponibilidad de repuestos"),
 ])
 @pytest.mark.parametrize("usuario,roles", [
     (99, (NombreRol.ADMINISTRADOR,)),
@@ -670,7 +672,8 @@ def test_patch_estado_mecanico_asignado_actualiza_y_registra_historial(
 def test_patch_estado_no_elude_operaciones_especificas_ni_con_varios_roles(
     api_ordenes: TestClient,
     db_ordenes: Session,
-    estado_actual: int, destino: int, usuario: int, roles: tuple[NombreRol, ...],
+    estado_actual: int, destino: int, motivo: str,
+    usuario: int, roles: tuple[NombreRol, ...],
 ):
     orden = _crear_orden(
         db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=estado_actual,
@@ -683,7 +686,7 @@ def test_patch_estado_no_elude_operaciones_especificas_ni_con_varios_roles(
     )
 
     assert respuesta.status_code == 409
-    assert "operación específica" in respuesta.json()["detail"]
+    assert motivo in respuesta.json()["detail"]
     db_ordenes.refresh(orden)
     assert orden.estado_codigo == estado_actual
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
@@ -738,27 +741,76 @@ def test_cancelacion_sin_motivo_valido_no_modifica_orden_ni_historial(
 @pytest.mark.parametrize("estado_anterior", [
     RECIBIDO, ESPERANDO_DIAGNOSTICO, ESPERANDO_APROBACION_PRESUPUESTO,
 ])
-def test_cancelacion_con_motivo_guarda_historial_y_no_admite_repeticion(
+@pytest.mark.parametrize("usuario,rol", [
+    (99, NombreRol.ADMINISTRADOR),
+    (50, NombreRol.MECANICO),
+])
+def test_cancelacion_generica_se_bloquea_aunque_tenga_motivo(
     api_ordenes: TestClient, db_ordenes: Session, estado_anterior: int,
+    usuario: int, rol: NombreRol,
 ):
-    orden = _crear_orden(db_ordenes, usuario_cliente=10, estado_codigo=estado_anterior)
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50,
+        estado_codigo=estado_anterior,
+    )
     orden_id = orden.orden_id
     datos = {"estado_destino": CANCELADO, "observacion": "  Cliente solicita cancelar  "}
-    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+    headers = _headers_para(usuario, rol)
     respuesta = api_ordenes.patch(f"/ordenes/{orden_id}/estado", json=datos, headers=headers)
 
-    assert respuesta.status_code == 200
-    assert respuesta.json()["estado_codigo"] == CANCELADO
-    historial = db_ordenes.scalar(select(HistorialEstado))
-    assert historial.estado_anterior == estado_anterior
-    assert historial.estado_nuevo == CANCELADO
-    assert historial.observacion == "Cliente solicita cancelar"
-    assert historial.actor_usuario_id == 99
-    assert historial.origen == "usuario"
+    assert respuesta.status_code == 409
+    assert "flujo de negocio específico" in respuesta.json()["detail"] or (
+        "operación específica" in respuesta.json()["detail"]
+    )
+    db_ordenes.expire_all()
+    assert db_ordenes.get(OrdenTrabajo, orden_id).estado_codigo == estado_anterior
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
-    repetida = api_ordenes.patch(f"/ordenes/{orden_id}/estado", json=datos, headers=headers)
-    assert repetida.status_code == 409
-    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
+
+@pytest.mark.parametrize("usuario,roles", [
+    (99, (NombreRol.ADMINISTRADOR,)),
+    (50, (NombreRol.ADMINISTRADOR,)),
+    (60, (NombreRol.MECANICO,)),
+])
+def test_solo_mecanico_asignado_puede_finalizar_trabajo(
+    api_ordenes: TestClient, db_ordenes: Session,
+    usuario: int, roles: tuple[NombreRol, ...],
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=EN_REPARACION,
+    )
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden.orden_id}/estado",
+        json={"estado_destino": LISTO},
+        headers=_headers_para(usuario, *roles),
+    )
+
+    assert respuesta.status_code == 403
+    db_ordenes.expire_all()
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == EN_REPARACION
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_patch_no_entrega_sin_operacion_ni_registro_de_entrega(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    orden_id = orden.orden_id
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden_id}/estado",
+        json={"estado_destino": ENTREGADO},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    db_ordenes.expire_all()
+    orden_actual = db_ordenes.get(OrdenTrabajo, orden_id)
+    assert orden_actual.estado_codigo == LISTO
+    assert orden_actual.entregado_en is None
+    assert orden_actual.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
 @pytest.mark.parametrize("observacion", [None, "", " \t\n "])

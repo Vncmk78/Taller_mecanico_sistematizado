@@ -49,14 +49,28 @@ from shared.contratos_decisiones import (
 )
 
 
-# Solo eventos con una operación existente que verifica su hecho de negocio.
-# Las demás brechas del PATCH se conservan pendientes de definición explícita.
+# El PATCH solo permite las transiciones cuyo hecho de negocio puede comprobar
+# por sí mismo. Los eventos sin operación coordinadora quedan bloqueados hasta
+# que su flujo específico se implemente.
 _OPERACIONES_ESPECIFICAS_POR_EVENTO = {
     EventoOrden.PRIMERA_ASIGNACION: "PUT /ordenes/{orden_id}/mecanico",
+    EventoOrden.ENVIO_PRIMER_PRESUPUESTO:
+        "POST /ordenes/{orden_id}/envios-presupuesto",
     EventoOrden.PRIMERA_APROBACION_CON_REPUESTOS:
         "POST /ordenes/{orden_id}/decisiones-presupuesto",
     EventoOrden.PRIMERA_APROBACION_SIN_REPUESTOS:
         "POST /ordenes/{orden_id}/decisiones-presupuesto",
+}
+
+_EVENTOS_SIN_OPERACION_FUNCIONAL = {
+    EventoOrden.DISPONIBILIDAD_REPUESTOS:
+        "La disponibilidad de repuestos aún no tiene una operación verificada",
+    EventoOrden.ENTREGA_FISICA:
+        "La entrega requiere el registro válido de entrega, aún no disponible",
+    EventoOrden.RECHAZO_PRIMER_PRESUPUESTO:
+        "Usa la operación específica de decisión del presupuesto",
+    EventoOrden.CANCELACION_SOLICITADA_CONFIRMADA:
+        "La cancelación requiere su flujo de negocio específico, aún no disponible",
 }
 
 
@@ -412,12 +426,36 @@ def cambiar_estado_orden(
         except TransicionOrdenNoPermitidaError as exc:
             raise OrdenTransicionNoPermitidaError(str(exc)) from exc
 
+        # El contrato existente exige motivo para Cancelado. Mantener primero
+        # ese error de validación (422); un motivo válido no sustituye el flujo
+        # de negocio de rechazo/cancelación, que se bloquea más abajo.
+        if estado_destino == CANCELADO:
+            if observacion is None:
+                raise OrdenObservacionInvalidaError(
+                    "Toda transición a Cancelado requiere una observación o motivo no vacío"
+                )
+            if not observacion.strip():
+                raise OrdenObservacionInvalidaError(
+                    "La observación no puede estar vacía ni contener solo espacios"
+                )
+
         for (origen, evento), destino in TRANSICIONES_PERMITIDAS.items():
             if origen == orden.estado_codigo and destino == estado_destino:
                 operacion = _OPERACIONES_ESPECIFICAS_POR_EVENTO.get(evento)
                 if operacion is not None:
                     raise OrdenTransicionNoPermitidaError(
                         f"Esta transición requiere la operación específica {operacion}"
+                    )
+                motivo_bloqueo = _EVENTOS_SIN_OPERACION_FUNCIONAL.get(evento)
+                if motivo_bloqueo is not None:
+                    raise OrdenTransicionNoPermitidaError(motivo_bloqueo)
+
+                if evento == EventoOrden.FINALIZACION_TRABAJO and not (
+                    NombreRol.MECANICO in principal.roles
+                    and orden.mecanico_actual_id == principal.usuario_id
+                ):
+                    raise OrdenEstadoNoAutorizadoError(
+                        "Solo el mecánico asignado puede finalizar el trabajo"
                     )
 
         estado_anterior = orden.estado_codigo

@@ -9,13 +9,13 @@ dominio tiene ocho estados estables y pocas transiciones respaldadas por la
 Sistematización final, por lo que una librería externa de máquinas de estados no
 aportaría una ventaja proporcional.
 
-El endpoint genérico para cambiar el estado valida permisos, el par estructural
-y registra el historial de MS2. SCRUM-398/399 restringe en la rama personal la
-asignación inicial y las dos ramas de primera aprobación a sus operaciones
-específicas. Los demás flujos conservan brechas de precondiciones; este cambio
-no protege por sí solo todos los eventos ni coordina todas las operaciones MS2–MS3.
-SCRUM-438 agrega una operación específica para aplicar la primera decisión de
-presupuesto, verificada por HTTP contra MS3, con atribución al cliente e
+El dominio declara las transiciones estructurales en una tabla de eventos. El
+PATCH genérico valida autorización y esa tabla, registra el historial de MS2 y,
+desde SCRUM-436, solo permite `5 → 6` al Mecánico asignado. La asignación inicial,
+el envío y la primera decisión de presupuesto se coordinan por operaciones
+específicas. Los flujos sin precondiciones verificables (disponibilidad de
+repuestos, entrega y cancelación independiente) quedan bloqueados en el PATCH.
+La primera decisión se verifica por HTTP contra MS3, con atribución al Cliente e
 idempotencia persistida por `decision_id`.
 
 ## 1. Fuentes y alcance
@@ -108,11 +108,10 @@ situación no debe añadirse al catálogo de estados de la orden.
 
 ### 3.3 Mapa explícito y validadores simples
 
-Cuando se implemente el flujo general, la tabla puede representarse mediante un
-mapa explícito indexado por `(estado_actual, evento)`, cuyo resultado sea el
-`estado_nuevo`. Esta forma es preferible a validar solo el destino, porque dos
-eventos distintos pueden conducir a `Cancelado` y cada uno exige condiciones y
-actores diferentes.
+La tabla ejecutable se representa mediante un mapa explícito indexado por
+`(estado_actual, evento)`, cuyo resultado es el `estado_nuevo`. Esta forma es
+preferible a validar solo el destino, porque dos eventos distintos pueden
+conducir a `Cancelado` y cada uno exige condiciones y actores diferentes.
 
 El validador debe rechazar por defecto toda combinación ausente del mapa. Además,
 cada evento debe aplicar por separado:
@@ -133,9 +132,9 @@ historial y transacciones entre límites de servicio.
 
 La validación estructural del cambio de estado está separada de sus efectos
 externos. MS2 valida la transición, actualiza `OrdenTrabajo.estado_codigo` y
-escribe `HistorialEstado` en una transacción local. El endpoint genérico actual
-no comprueba por sí mismo decisiones de presupuesto, disponibilidad de stock ni
-otras precondiciones que pertenecen a servicios externos.
+escribe `HistorialEstado` en una transacción local. Las operaciones de envío y
+decisión verifican los hechos de MS3. El PATCH genérico no puede sustituirlas ni
+ejecutar eventos que aún carecen de una operación verificadora.
 
 Notificaciones, decisiones de presupuesto, reservas o movimientos de inventario
 y otras acciones de servicios externos no deben ocultarse dentro del validador.
@@ -545,9 +544,10 @@ reasignación posterior mantiene el estado, y las órdenes `Entregado` o
 `Cancelado` rechazan asignación y reasignación. Por tanto, no corresponde
 reimplementar esta transición en SCRUM-313/SCRUM-314.
 
-## 8. Guía para la implementación futura
+## 8. Trabajo futuro sobre la máquina de estados
 
-La futura tarea de máquina de estados deberá, como mínimo:
+La base estructural está implementada. Para completar los eventos pendientes,
+las operaciones futuras deberán, como mínimo:
 
 1. reutilizar las constantes y `ESTADOS_TERMINALES` existentes;
 2. declarar el mapa cerrado de eventos y transiciones sin duplicar el catálogo;
@@ -559,9 +559,9 @@ La futura tarea de máquina de estados deberá, como mínimo:
 8. probar cada transición permitida y todos los rechazos relevantes, en especial
    terminales, eventos repetidos y condiciones externas desactualizadas.
 
-Esta guía no autoriza endpoints generales ni el flujo completo de las Semanas
-4–6. Es la especificación técnica previa para que esas tareas se implementen sin
-inventar estados o transiciones.
+Esta guía no autoriza endpoints generales ni anticipa el flujo completo de las
+Semanas 4–6. Las operaciones pendientes deben añadirse dentro del orden de Jira,
+sin inventar estados o transiciones.
 
 ## 9. Referencias técnicas del repositorio
 

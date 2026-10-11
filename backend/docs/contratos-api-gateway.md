@@ -745,19 +745,19 @@ No se reserva stock ni hay transacción SQL entre ambos servicios.
 ### PATCH `/api/ordenes/{orden_id}/estado`
 
 Cambia el estado de una orden validando rol, catálogo oficial (1 a 8) y la
-transición declarada por el dominio. Rechaza con `409` la primera asignación
-(`1 → 2`), que debe realizarse por `PUT /api/ordenes/{orden_id}/mecanico`, y la
-primera aprobación (`3 → 4/5`), que exige una decisión verificada mediante
-`POST /api/ordenes/{orden_id}/decisiones-presupuesto`. También rechaza estos
-cambios para Administrador o usuarios multirrol, sin modificar estado ni historial.
+transición declarada por el dominio. Solo permite `5 → 6` al Mecánico asignado;
+esta llamada registra el cambio y el historial, pero todavía no comprueba el
+término del alcance autorizado. El Administrador no puede finalizar el trabajo
+por PATCH, aunque tenga otro rol asociado.
 
-Los demás pares conservan el comportamiento existente y **no están completamente
-protegidos por sus precondiciones funcionales**: permanecen pendientes los flujos
-de envío inicial, disponibilidad posterior de repuestos, finalización, entrega
-física y cancelación independiente. El Administrador supera el control de rol;
-el Mecánico solo sobre las órdenes que tiene asignadas. `Entregado` y
-`Cancelado` son terminales y rechazan cualquier cambio. El estado y el historial
-se actualizan en la misma transacción.
+Las transiciones `1 → 2`, `2 → 3` y `3 → 4/5` se realizan por las operaciones
+específicas de asignación, envío inicial de presupuesto y decisión verificada.
+El PATCH devuelve `409` para esos pares. También bloquea `4 → 5` hasta contar
+con verificación de disponibilidad, `6 → 7` hasta registrar la entrega física y
+cualquier transición genérica a `Cancelado` hasta que exista el flujo de negocio
+correspondiente. Los rechazos no modifican estado ni historial. `Entregado` y
+`Cancelado` son terminales; estado e historial se actualizan en la misma
+transacción cuando una transición permitida se confirma.
 
 Toda transición hacia `Cancelado` exige `observacion` con un motivo no vacío.
 En los demás destinos puede omitirse o ser `null`; si se proporciona texto,
@@ -766,10 +766,10 @@ valida en el servicio de MS2 y no cambia las precondiciones de cada transición.
 
 | Atributo | Descripción |
 |---|---|
-| Auth | `Authorization: Bearer <token>` con rol Administrador o mecánico asignado |
+| Auth | `Authorization: Bearer <token>` con rol Administrador o Mecánico asignado; para `5 → 6` se exige el segundo |
 | Body | `{"estado_destino": int positivo, "observacion"?: string no vacío}`; obligatoria si el destino es `Cancelado` |
 | Respuesta OK | `200` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador ni orden asignada · `404` orden inexistente · `409` transición no permitida, terminal o reservada a operación específica · `422` estado de destino desconocido o body inválido · `500` persistencia · `502` MS2 no disponible |
+| Errores | `401` JWT ausente/inválido · `403` actor sin autorización para el recurso o finalización por alguien distinto del Mecánico asignado · `404` orden inexistente · `409` transición no permitida, terminal, protegida por operación específica o sin precondición funcional verificable · `422` estado de destino desconocido o body inválido (incluido motivo de cancelación ausente) · `500` persistencia · `502` MS2 no disponible |
 
 ```json
 // Request

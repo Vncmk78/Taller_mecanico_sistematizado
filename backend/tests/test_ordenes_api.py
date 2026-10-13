@@ -682,10 +682,43 @@ def test_patch_estado_no_elude_operaciones_especificas_ni_con_varios_roles(
         headers=_headers_para(usuario, *roles),
     )
 
+    if (estado_actual, destino) == (RECIBIDO, ESPERANDO_DIAGNOSTICO):
+        # Excepción acordada: 1->2 se permite por PATCH cuando la orden ya está
+        # asignada (mecanico_actual_id presente). El actor autorizado (mecánico
+        # asignado o administrador) avanza y se registra el historial.
+        assert respuesta.status_code == 200
+        db_ordenes.refresh(orden)
+        assert orden.estado_codigo == destino
+        assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
+        return
+
     assert respuesta.status_code == 409
     assert "operación específica" in respuesta.json()["detail"]
     db_ordenes.refresh(orden)
     assert orden.estado_codigo == estado_actual
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_patch_estado_no_elude_asignacion_inicial_cuando_orden_no_esta_asignada(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    # Sin mecánico asignado, la transición 1->2 sigue reservada a la operación
+    # específica de asignación: ni el administrador puede avanzarla por PATCH.
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=None, estado_codigo=RECIBIDO,
+    )
+
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden.orden_id}/estado",
+        json={"estado_destino": ESPERANDO_DIAGNOSTICO},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    assert "operación específica" in respuesta.json()["detail"]
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == RECIBIDO
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 

@@ -408,9 +408,18 @@ def cambiar_estado_orden(
             if origen == orden.estado_codigo and destino == estado_destino:
                 operacion = _OPERACIONES_ESPECIFICAS_POR_EVENTO.get(evento)
                 if operacion is not None:
-                    raise OrdenTransicionNoPermitidaError(
-                        f"Esta transición requiere la operación específica {operacion}"
-                    )
+                    # Permitir 1->2 vía PATCH cuando la orden ya está asignada
+                    if (
+                        origen == 1  # RECIBIDO
+                        and evento == EventoOrden.PRIMERA_ASIGNACION
+                        and destino == 2  # ESPERANDO_DIAGNOSTICO
+                        and orden.mecanico_actual_id is not None
+                    ):
+                        operacion = None
+                    if operacion is not None:
+                        raise OrdenTransicionNoPermitidaError(
+                            f"Esta transición requiere la operación específica {operacion}"
+                        )
 
         estado_anterior = orden.estado_codigo
         orden.estado_codigo = estado_destino

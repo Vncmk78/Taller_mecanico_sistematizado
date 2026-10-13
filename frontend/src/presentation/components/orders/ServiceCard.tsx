@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Car, Clock, FileText, Wrench } from 'lucide-react';
+import { Car, Clock, FileText, Images, Wrench } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
 import { OrderStatusBadge } from '@/presentation/components/orders/OrderStatusBadge';
 import { formatDate } from '@/presentation/utils/orderDisplay';
@@ -10,6 +10,8 @@ interface ServiceCardProps {
     vehiclePath: string;
     patente?: string;
     vehicleLabel?: string;
+    /** Ruta a la evidencia multimedia del servicio (si el portal la ofrece). */
+    evidencePath?: string;
     /** Estado que requiere acción del cliente (p. ej. presupuesto por aprobar). */
     requiresAttention?: boolean;
     attentionLabel?: string;
@@ -21,6 +23,7 @@ export function ServiceCard({
     vehiclePath,
     patente,
     vehicleLabel,
+    evidencePath,
     requiresAttention = false,
     attentionLabel,
 }: ServiceCardProps) {
@@ -75,6 +78,16 @@ export function ServiceCard({
                         <Car className="w-4 h-4" aria-hidden />
                         <span className="hidden sm:inline">Vehículo</span>
                     </Link>
+                    {evidencePath && (
+                        <Link
+                            to={evidencePath}
+                            className="flex items-center justify-center gap-2 bg-surface border border-border-custom text-primary-blue py-2.5 rounded-lg text-sm hover:bg-bg-secondary transition-colors no-underline"
+                            title="Ver evidencia multimedia"
+                        >
+                            <Images className="w-4 h-4" aria-hidden />
+                            <span className="hidden sm:inline">Evidencia</span>
+                        </Link>
+                    )}
                 </div>
             </div>
         </div>

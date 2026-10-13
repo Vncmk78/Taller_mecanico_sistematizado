@@ -67,6 +67,7 @@ export function ClientServicesPage() {
                             order={order}
                             detailPath={`/client/ordenes/${order.id}`}
                             vehiclePath={`/client/vehiculos/${order.vehicleId}`}
+                            evidencePath={`/client/ordenes/${order.id}/evidencias`}
                             patente={orderPatente(order, vehicles)}
                             vehicleLabel={orderVehicleLabel(order, vehicles)}
                             requiresAttention={attention}

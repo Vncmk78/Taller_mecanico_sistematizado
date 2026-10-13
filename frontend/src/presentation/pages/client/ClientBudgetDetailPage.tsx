@@ -9,17 +9,17 @@ import {
     versionVigente,
 } from '@/domain/entities/Presupuesto';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
-import { getApiErrorMessage } from '@/infrastructure/api/errors';
+import { getApiErrorMessage, isConflictError } from '@/infrastructure/api/errors';
 import { useBudgetStore } from '@/infrastructure/stores/useBudgetStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useBudgetDetail } from '@/presentation/hooks/useBudgetDetail';
+import { ApproveBudgetDialog } from '@/presentation/components/budgets/ApproveBudgetDialog';
 import { BudgetItemRow } from '@/presentation/components/budgets/BudgetItemRow';
 import { BudgetStatusBadge } from '@/presentation/components/budgets/BudgetStatusBadge';
 import { RejectBudgetDialog } from '@/presentation/components/budgets/RejectBudgetDialog';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
-import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
@@ -43,33 +43,73 @@ export function ClientBudgetDetailPage() {
     const [submitting, setSubmitting] = useState(false);
     const [decisionError, setDecisionError] = useState<string | null>(null);
     const [decisionResuelta, setDecisionResuelta] = useState<DecisionResuelta | null>(null);
+    const [decisionVersion, setDecisionVersion] = useState<number | null>(null);
 
     const pendiente = presupuesto ? versionPendiente(presupuesto) : undefined;
     const cancelaServicio = presupuesto ? rechazoCancelaServicio(presupuesto) : false;
     const mostrada = pendiente ?? (presupuesto ? versionVigente(presupuesto) : undefined);
+    const puedeAprobar = pendiente != null && !isOffline && pendiente.items.length > 0;
+    const puedeRechazar = pendiente != null && !isOffline;
+
+    const cerrarDialogos = () => {
+        setApproveOpen(false);
+        setRejectOpen(false);
+    };
+
+    const abrirDecision = (destino: DecisionCliente) => {
+        if (!pendiente) return;
+        setDecisionError(null);
+        setDecisionVersion(pendiente.numero);
+        if (destino === 'aprobado') setApproveOpen(true);
+        else setRejectOpen(true);
+    };
 
     const decidir = async (
         tipo: DecisionCliente,
         motivo?: string,
         confirmarCancelacion?: boolean
     ) => {
-        if (!presupuesto || !pendiente) return;
+        if (submitting || !presupuesto) return;
+
+        const actual = versionPendiente(presupuesto);
+        const yaNoPendiente = 'Este presupuesto ya no está pendiente de su decisión. Actualizamos la información.';
+        const versionCambio =
+            'El presupuesto cambió mientras lo revisaba. Actualizamos la información; revise la versión vigente antes de decidir.';
+
+        if (!actual) {
+            setDecisionError(yaNoPendiente);
+            cerrarDialogos();
+            refetch();
+            return;
+        }
+        if (decisionVersion !== null && actual.numero !== decisionVersion) {
+            setDecisionError(versionCambio);
+            cerrarDialogos();
+            refetch();
+            return;
+        }
+
         setSubmitting(true);
         setDecisionError(null);
         try {
             const resultado = await presupuestoService.decidir(
                 presupuesto.id,
-                pendiente.numero,
+                actual.numero,
                 tipo,
                 motivo,
                 confirmarCancelacion
             );
             updateBudget(resultado.presupuesto);
             setDecisionResuelta({ tipo, resultado });
-            setApproveOpen(false);
-            setRejectOpen(false);
+            cerrarDialogos();
         } catch (err) {
-            setDecisionError(getApiErrorMessage(err));
+            if (isConflictError(err)) {
+                setDecisionError(versionCambio);
+                cerrarDialogos();
+                refetch();
+            } else {
+                setDecisionError(getApiErrorMessage(err));
+            }
         } finally {
             setSubmitting(false);
         }
@@ -207,6 +247,20 @@ export function ClientBudgetDetailPage() {
                                 repuestos indicados y avanzar con la reparación.
                             </p>
 
+                            {pendiente.items.length === 0 && (
+                                <Alert tone="warning" className="mb-4">
+                                    Este presupuesto no tiene partidas, por lo que no puede aprobarse.
+                                    Contacte al taller o rechace la propuesta.
+                                </Alert>
+                            )}
+
+                            {isOffline && (
+                                <Alert tone="warning" className="mb-4">
+                                    Sin conexión: para aprobar o rechazar el presupuesto necesita estar
+                                    conectado. Reintente cuando recupere la conexión.
+                                </Alert>
+                            )}
+
                             {decisionError && (
                                 <Alert tone="error" className="mb-4">
                                     {decisionError}
@@ -217,10 +271,8 @@ export function ClientBudgetDetailPage() {
                                 <Button
                                     variant="success"
                                     className="w-full py-3"
-                                    onClick={() => {
-                                        setDecisionError(null);
-                                        setApproveOpen(true);
-                                    }}
+                                    disabled={!puedeAprobar}
+                                    onClick={() => abrirDecision('aprobado')}
                                 >
                                     <CheckCircle2 className="w-5 h-5 mr-2" aria-hidden />
                                     Aprobar Presupuesto
@@ -228,10 +280,8 @@ export function ClientBudgetDetailPage() {
                                 <Button
                                     variant="danger"
                                     className="w-full py-3"
-                                    onClick={() => {
-                                        setDecisionError(null);
-                                        setRejectOpen(true);
-                                    }}
+                                    disabled={!puedeRechazar}
+                                    onClick={() => abrirDecision('rechazado')}
                                 >
                                     <XCircle className="w-5 h-5 mr-2" aria-hidden />
                                     Rechazar
@@ -262,19 +312,19 @@ export function ClientBudgetDetailPage() {
                 </p>
             )}
 
-            <ConfirmDialog
-                open={approveOpen}
-                title="Aprobar presupuesto"
-                tone="primary"
-                confirmLabel="Aprobar"
-                isLoading={submitting}
-                description="Al aprobar, autoriza al taller a usar los repuestos indicados y continuar con la reparación. Esta acción no se puede deshacer."
-                onConfirm={() => decidir('aprobado')}
-                onCancel={() => {
-                    setApproveOpen(false);
-                    setDecisionError(null);
-                }}
-            />
+            {approveOpen && pendiente && (
+                <ApproveBudgetDialog
+                    total={pendiente.total}
+                    cantidadPartidas={pendiente.items.length}
+                    isLoading={submitting}
+                    error={decisionError}
+                    onConfirm={() => decidir('aprobado')}
+                    onCancel={() => {
+                        setApproveOpen(false);
+                        setDecisionError(null);
+                    }}
+                />
+            )}
 
             {rejectOpen && (
                 <RejectBudgetDialog

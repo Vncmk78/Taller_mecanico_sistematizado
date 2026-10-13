@@ -155,6 +155,24 @@ y arquitectura hexagonal.
   `ClientBudgetsPage.test.tsx` y `ClientBudgetDetailPage.test.tsx` (lista,
   aprobación, rechazo con motivo/cancelación y estados de error).
 
+### Tarea 12 — Agregar confirmaciones y validaciones antes de aprobar o rechazar
+- **Aprobar**: nuevo diálogo `ApproveBudgetDialog` que resume el **total** y la
+  cantidad de partidas y exige marcar *"He revisado las partidas y el total"*
+  antes de habilitar la confirmación (aprobar autoriza el cobro y no se deshace).
+- **Rechazar**: el **motivo** ahora exige un mínimo de 5 caracteres (con contador),
+  además de ser obligatorio; se conserva la confirmación de cancelación cuando
+  rechazar cancela el servicio.
+- **Versión vigente**: se recuerda la versión pendiente al abrir el diálogo y se
+  compara antes de enviar; si cambió —o el backend responde `409`— **no** se envía
+  la decisión obsoleta: se refresca el detalle y se avisa al cliente.
+- **Sin conexión**: se bloquean aprobar y rechazar con un aviso (no se envía una
+  decisión que el servidor no registraría). Un presupuesto **sin partidas** no se
+  puede aprobar.
+- **Doble envío**: la decisión queda bloqueada mientras hay una petición en curso.
+- Pruebas: `ApproveBudgetDialog.test.tsx` y casos nuevos en
+  `ClientBudgetDetailPage.test.tsx` (bloqueo de aprobación, conflicto `409` y
+  decisiones bloqueadas sin conexión).
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en

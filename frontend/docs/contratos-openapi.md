@@ -82,6 +82,26 @@ Reglas reflejadas en la interfaz:
   `POST /api/presupuestos/decisiones/{decision_id}/aplicacion`), así que **no** se
   trata como fallo de conexión ni se invita a repetir la decisión.
 
+### Confirmaciones y validaciones antes de decidir
+
+El contrato no impone estas reglas; son del frontend para no enviar decisiones
+incompletas, duplicadas o sobre una versión ya caducada:
+
+- **Aprobación explícita**: el diálogo muestra el total y exige marcar "He
+  revisado las partidas y el total" antes de habilitar la confirmación, porque
+  aprobar autoriza el cobro y no se puede deshacer.
+- **Motivo de rechazo**: debe tener al menos 5 caracteres (además de ser
+  obligatorio siempre); MS3 solo exige que no venga vacío.
+- **Versión vigente**: se recuerda el número de la versión pendiente al abrir el
+  diálogo y se vuelve a comparar antes de enviar. Si cambió, la interfaz no envía
+  la decisión, refresca el detalle y avisa al cliente. Lo mismo hace un `409` real
+  del backend (conflicto de estado de versión).
+- **Presupuesto sin partidas**: no se ofrece aprobar (solo rechazar o contactar al
+  taller).
+- **Sin conexión**: se bloquean aprobar y rechazar con un aviso, en vez de enviar
+  una decisión que el servidor no podría registrar.
+- **Doble envío**: se bloquea la decisión mientras hay una petición en curso.
+
 ## Campos que la Gateway expone y el frontend no puede nombrar
 
 MS2 no resuelve datos de MS1, así que el contrato entrega identificadores y no

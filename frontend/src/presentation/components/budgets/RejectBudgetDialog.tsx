@@ -19,6 +19,9 @@ interface RejectBudgetDialogProps {
  * parten siempre en blanco. MS3 exige un motivo en todo rechazo y, antes de la
  * primera aprobación, la confirmación explícita de que el servicio se cancelará.
  */
+const MOTIVO_MIN = 5;
+const MOTIVO_MAX = 1000;
+
 export function RejectBudgetDialog({
     cancelaServicio,
     isLoading = false,
@@ -39,8 +42,13 @@ export function RejectBudgetDialog({
     }, [isLoading, onCancel]);
 
     const handleConfirm = () => {
-        if (!motivo.trim()) {
+        const limpio = motivo.trim();
+        if (!limpio) {
             setLocalError('Indique el motivo del rechazo.');
+            return;
+        }
+        if (limpio.length < MOTIVO_MIN) {
+            setLocalError(`Describa el motivo con al menos ${MOTIVO_MIN} caracteres.`);
             return;
         }
         if (cancelaServicio && !confirmarCancelacion) {
@@ -48,7 +56,7 @@ export function RejectBudgetDialog({
             return;
         }
         setLocalError(null);
-        onConfirm(motivo.trim(), confirmarCancelacion);
+        onConfirm(limpio, confirmarCancelacion);
     };
 
     return (
@@ -86,12 +94,18 @@ export function RejectBudgetDialog({
                     id="motivo-rechazo"
                     value={motivo}
                     onChange={(event) => setMotivo(event.target.value)}
-                    maxLength={1000}
+                    maxLength={MOTIVO_MAX}
                     rows={4}
                     disabled={isLoading}
                     className="w-full py-3 px-4 bg-surface border border-border-custom rounded-lg text-text-main text-base outline-none focus:border-primary-blue focus:shadow-[0_0_0_3px_rgba(21,40,63,0.15)] resize-none disabled:opacity-50"
                     placeholder="Ej: El costo me parece elevado / prefiero una segunda opinión."
                 />
+                <div className="flex justify-between text-xs text-text-muted mt-1">
+                    <span>Mínimo {MOTIVO_MIN} caracteres.</span>
+                    <span aria-live="polite">
+                        {motivo.length}/{MOTIVO_MAX}
+                    </span>
+                </div>
 
                 {cancelaServicio && (
                     <label className="flex items-start gap-3 mt-4 text-sm text-text-main cursor-pointer">

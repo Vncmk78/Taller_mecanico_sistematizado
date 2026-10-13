@@ -43,6 +43,9 @@ esquemas reales del microservicio.
 | `PresupuestoService.getByOrder` | GET | `/api/presupuestos?orden_id={id}` | `/client/presupuestos`, detalle de presupuesto | Cliente (solo versiones enviadas) | OK (lista acotada; sin ítems) |
 | `PresupuestoService.getById` | GET | `/api/presupuestos/{presupuesto_id}` | `/client/presupuestos/{ordenId}` | Cliente (propio) | OK (404 fuera de alcance) |
 | `PresupuestoService.decidir` | POST | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/decision` | `/client/presupuestos/{ordenId}` | Cliente (propio) | OK (201; 409/422 de negocio) |
+| `EvidenciaService.getByOrder` | GET | `/api/evidencias?orden_id={id}` | `/client/ordenes/{id}/evidencias` | Cliente (visibles de sus órdenes) | OK (404 fuera de alcance) |
+| `EvidenciaService.getById` | GET | `/api/evidencias/{evidencia_id}` | (detalle puntual de evidencia) | Cliente (misma visibilidad) | OK (404 fuera de alcance) |
+| `EvidenciaService.getDownloadUrl` | GET | `/api/evidencias/{evidencia_id}/descarga` | `/client/ordenes/{id}/evidencias` | Cliente (misma visibilidad) | OK (URL prefirmada efímera) |
 
 El alcance por rol lo aplica el microservicio, no el frontend: el navegador
 recibe únicamente las filas que corresponden al usuario autenticado. Por eso las
@@ -102,6 +105,34 @@ incompletas, duplicadas o sobre una versión ya caducada:
   una decisión que el servidor no podría registrar.
 - **Doble envío**: se bloquea la decisión mientras hay una petición en curso.
 
+## Evidencia multimedia (MS4)
+
+El portal del Cliente muestra en `/client/ordenes/{id}/evidencias` las fotos y
+videos del servicio. El contrato de MS4 nunca devuelve el archivo: la
+`EvidenciaRespuesta` trae solo metadatos (`evidencia_id`, `contexto`,
+`tipo_archivo`, `visible_cliente`, `estado`, `nombre_original`, `content_type`,
+`tamano_bytes`, `creada_en`) y jamás la clave del objeto, el `sha256` ni el autor.
+Para verlo o bajarlo hay que pedir una **URL prefirmada**:
+
+| Caso | Endpoint | Resultado |
+| --- | --- | --- |
+| Listar evidencias de la orden | `GET /api/evidencias?orden_id={id}` | Lista (200). Las del cliente llegan ya filtradas por `visible_cliente = true`, `estado = confirmada` y no eliminadas. |
+| Detalle de una evidencia | `GET /api/evidencias/{evidencia_id}` | 200 o 404 (mismo 404 para ajena e inexistente: no enumera). |
+| Ver / descargar el archivo | `GET /api/evidencias/{evidencia_id}/descarga` | URL prefirmada con vigencia (`expira_en`). |
+
+Reglas reflejadas en la interfaz:
+
+- El Cliente es **solo lectura**: `POST /api/evidencias` (subida) responde `403`
+  para su rol, así que la vista no ofrece subir.
+- La **URL prefirmada es efímera y no se cachea**: se pide al momento de mostrar
+  la miniatura y al descargar; el store guarda solo los metadatos
+  (`useEvidenceStore`).
+- Si la URL falla, la tarjeta muestra un estado reintentable en vez de una imagen
+  rota. Sin conexión se conservan los metadatos desde la caché.
+- Un `404` en el listado se trata como **orden fuera de alcance**, distinto de una
+  lista vacía (`200 []`), para no mostrar "no encontrado" ante una orden ajena y
+  tampoco "sin evidencia" ante un fallo.
+
 ## Campos que la Gateway expone y el frontend no puede nombrar
 
 MS2 no resuelve datos de MS1, así que el contrato entrega identificadores y no
@@ -133,6 +164,7 @@ requieran):
 | `PATCH /api/vehiculos/{id}` | MS2 | Edición de vehículo. Sin vista aún. |
 | `POST /api/auth/register` | MS1 | Registro de usuario. Sin vista aún. |
 | `POST /api/presupuestos/decisiones/{decision_id}/aplicacion` | MS3 | Reintento de aplicación de una decisión tras `503`. Sin vista dedicada: el flujo actual informa el `503` y conserva el `decision_id`. |
+| `POST /api/evidencias` | MS4 | Subida multipart de evidencia (solo Mecánico/Administrador; el Cliente recibe `403`). Sin vista en el portal Cliente. |
 
 ## Estados de carga, vacío y error
 

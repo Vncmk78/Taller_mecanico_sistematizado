@@ -173,6 +173,32 @@ y arquitectura hexagonal.
   `ClientBudgetDetailPage.test.tsx` (bloqueo de aprobación, conflicto `409` y
   decisiones bloqueadas sin conexión).
 
+### Tarea 13 — Crear pruebas de presupuesto y evidencia multimedia
+- **Pruebas de presupuesto**: se suman `Presupuesto.test.ts` (reglas de decisión
+  del dominio: versión pendiente/vigente y cancelación del servicio) y pruebas de
+  `formatMoneyCLP`/diálogos ya existentes, para cubrir la lógica sin depender de la UI.
+- **Evidencia multimedia (MS4, portal Cliente)**: nueva vista
+  **`/client/ordenes/:id/evidencias`** que lista las fotos y videos que el taller
+  marcó como **visibles para el cliente** (`GET /api/evidencias?orden_id={id}`).
+  - Cada archivo se muestra con una **URL prefirmada** obtenida al momento
+    (`GET /api/evidencias/{id}/descarga`); como es efímera **no se cachea** y se
+    vuelve a pedir al ver o descargar.
+  - Vista previa a pantalla completa (`EvidencePreviewDialog`) con opción de
+    **descargar el original**; si la URL falla, la tarjeta ofrece reintentar.
+  - El cliente **no puede subir** evidencia (`POST /api/evidencias` responde `403`):
+    la vista es de solo lectura.
+  - Accesos desde **Estado del Servicio** (`ServiceCard`) y desde el detalle del
+    presupuesto. Estados de carga, vacío, *offline* con caché y error reintentable
+    coherentes con el resto del portal.
+- Capas: `domain/entities/Evidencia.ts` (+ `domain/ports/EvidenciaPort.ts`),
+  `infrastructure/api/EvidenciaService.ts`, `infrastructure/stores/useEvidenceStore.ts`,
+  `presentation/hooks/useOrderEvidence.ts` y
+  `presentation/components/evidence/*` (`EvidenceCard`, `EvidenceGallery`,
+  `EvidencePreviewDialog`).
+- Pruebas: `EvidenciaService.test.ts` (mapeo del contrato),
+  `ClientOrderEvidencePage.test.tsx` (listado, vacío, `404`, error, *offline*,
+  vista previa/descarga y reintento de URL) y `evidenceDisplay.test.ts`.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -191,6 +217,7 @@ El mapa completo de rutas está documentado en
 | `/client/servicios` | Estado del Servicio (consulta de servicios) | Funcional |
 | `/client/ordenes` (+ `/:id`) | Órdenes del cliente y detalle de estado y seguimiento | Funcional |
 | `/client/presupuestos` (+ `/:ordenId`) | Presupuestos: lista y detalle con aprobación/rechazo | Funcional |
+| `/client/ordenes/:id/evidencias` | Evidencia multimedia del servicio (fotos y videos visibles) | Funcional |
 | `/mechanic` | Portal Mecánico (dashboard) | Funcional (solo rol mecánico) |
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |

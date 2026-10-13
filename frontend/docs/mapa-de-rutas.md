@@ -40,7 +40,11 @@ Roles del sistema: `administrador`, `cliente`, `mecanico`.
 │   ├── /client/vehiculos/:id → Detalle del vehículo
 │   ├── /client/agendar       → Agendar Mantención (provisional)
 │   ├── /client/servicios     → Estado del Servicio
-│   └── /client/presupuestos  → Presupuestos
+│   ├── /client/ordenes       → Mis Órdenes
+│   ├── /client/ordenes/:id   → Detalle y seguimiento del servicio
+│   ├── /client/ordenes/:id/evidencias → Evidencia multimedia del servicio
+│   ├── /client/presupuestos  → Presupuestos
+│   └── /client/presupuestos/:ordenId → Detalle y decisión del presupuesto
 │
 └── /mechanic  (solo mecanico, MechanicLayout/RoleLayout sidebar)
     ├── /mechanic             → Panel (índice)
@@ -90,8 +94,12 @@ Layout: `ClientLayout` → `RoleLayout` (variante `topnav`). Aplica
 | `/client/vehiculos/nuevo` | `ClientVehicleFormPage` | Funcional |
 | `/client/vehiculos/:id` | `ClientVehicleDetailPage` | Funcional |
 | `/client/agendar` | `div` inline en `AppRoutes` | Provisional ("Próximamente") |
-| `/client/servicios` | `ClientServicesPage` | Placeholder |
-| `/client/presupuestos` | `ClientBudgetsPage` | Placeholder |
+| `/client/servicios` | `ClientServicesPage` | Funcional |
+| `/client/ordenes` | `ClientOrdersPage` | Funcional |
+| `/client/ordenes/:id` | `ClientOrderDetailPage` | Funcional |
+| `/client/ordenes/:id/evidencias` | `ClientOrderEvidencePage` | Funcional |
+| `/client/presupuestos` | `ClientBudgetsPage` | Funcional |
+| `/client/presupuestos/:ordenId` | `ClientBudgetDetailPage` | Funcional |
 
 ### Portal mecánico (`/mechanic`)
 

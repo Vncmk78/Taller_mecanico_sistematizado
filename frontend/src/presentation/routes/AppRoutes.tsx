@@ -19,6 +19,7 @@ import { ClientVehicleFormPage } from '@/presentation/pages/client/ClientVehicle
 import { ClientVehicleDetailPage } from '@/presentation/pages/client/ClientVehicleDetailPage';
 import { ClientServicesPage } from '@/presentation/pages/client/ClientServicesPage';
 import { ClientBudgetsPage } from '@/presentation/pages/client/ClientBudgetsPage';
+import { ClientBudgetDetailPage } from '@/presentation/pages/client/ClientBudgetDetailPage';
 import { ClientOrdersPage } from '@/presentation/pages/client/ClientOrdersPage';
 import { ClientOrderDetailPage } from '@/presentation/pages/client/ClientOrderDetailPage';
 import { MechanicDashboardPage } from '@/presentation/pages/mechanic/MechanicDashboardPage';
@@ -79,6 +80,7 @@ export function AppRoutes() {
         <Route path="ordenes" element={<ClientOrdersPage />} />
         <Route path="ordenes/:id" element={<ClientOrderDetailPage />} />
         <Route path="presupuestos" element={<ClientBudgetsPage />} />
+        <Route path="presupuestos/:ordenId" element={<ClientBudgetDetailPage />} />
       </Route>
 
       <Route

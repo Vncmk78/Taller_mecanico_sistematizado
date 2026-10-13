@@ -302,6 +302,12 @@ export function ClientBudgetDetailPage() {
                     >
                         Ver seguimiento del servicio
                     </Link>
+                    <Link
+                        to={`/client/ordenes/${presupuesto.orderId}/evidencias`}
+                        className="text-primary-blue text-sm font-medium no-underline hover:underline mt-2"
+                    >
+                        Ver evidencia multimedia
+                    </Link>
                 </section>
             </div>
 

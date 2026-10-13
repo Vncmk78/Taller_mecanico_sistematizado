@@ -129,6 +129,32 @@ y arquitectura hexagonal.
   `OrderStateStepper` (ciclo), `OrderHistoryTimeline` (seguimiento) y
   `OrderStatusBadge` (etiqueta del estado).
 
+### Tarea 11 — Implementar flujo visual de aprobación y rechazo de presupuesto
+- **`/client/presupuestos`** (lista): muestra los presupuestos de las órdenes del
+  cliente, destacando los que **esperan su decisión** (versión enviada pendiente)
+  frente a los ya aprobados o rechazados. Como el contrato de MS3 no expone un
+  listado global para el cliente, el listado se deriva de las órdenes del cliente
+  y se resuelve cada una con `GET /api/presupuestos?orden_id={id}` (consultas en
+  paralelo vía `useClientBudgets`/`useBudgetStore`).
+- **`/client/presupuestos/:ordenId`** (detalle y decisión):
+  - Trae el detalle con versiones e ítems (`GET /api/presupuestos/{id}`), muestra
+    las **partidas** (repuesto / mano de obra) y el **total** en CLP.
+  - **Aprobar** pide confirmación y envía
+    `{ decision: "aprobado" }`.
+  - **Rechazar** exige `motivo`; si se rechaza **antes de la primera aprobación**
+    (cancela el servicio) además exige confirmar la cancelación, tal como lo
+    declara el contrato (`confirmar_cancelacion`).
+  - `201` refleja el nuevo estado en caché y muestra el **efecto en la orden**;
+    `409/422` muestran el mensaje de negocio y `503` se informa como decisión
+    guardada con aplicación pendiente (sin invitar a repetir la decisión).
+- Componentes y utilidades: `BudgetStatusBadge`, `BudgetItemRow`, `BudgetCard`,
+  `RejectBudgetDialog`; `formatMoneyCLP` (CLP sin decimales) y `EFECTO_EN_ORDEN_LABEL`.
+- Estados de carga, vacío, *offline* con caché y error reintentable coherentes con
+  el resto del portal.
+- Pruebas: `PresupuestoService.test.ts` (mapeo del contrato),
+  `ClientBudgetsPage.test.tsx` y `ClientBudgetDetailPage.test.tsx` (lista,
+  aprobación, rechazo con motivo/cancelación y estados de error).
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -146,7 +172,7 @@ El mapa completo de rutas está documentado en
 | `/client/agendar` | Agendar mantención | Provisional "Próximamente" |
 | `/client/servicios` | Estado del Servicio (consulta de servicios) | Funcional |
 | `/client/ordenes` (+ `/:id`) | Órdenes del cliente y detalle de estado y seguimiento | Funcional |
-| `/client/presupuestos` | Presupuestos | Placeholder |
+| `/client/presupuestos` (+ `/:ordenId`) | Presupuestos: lista y detalle con aprobación/rechazo | Funcional |
 | `/mechanic` | Portal Mecánico (dashboard) | Funcional (solo rol mecánico) |
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |

@@ -6,7 +6,8 @@ fuentes de verdad del backend:
 
 - `backend/docs/contratos-api-gateway.md`
 - Swagger del API Gateway (`backend/gateway/openapi.py`)
-- Rutas reales de `backend/services/ms1_auth` y `backend/services/ms2_taller`
+- Rutas reales de `backend/services/ms1_auth`, `backend/services/ms2_taller` y
+  `backend/services/ms3_presupuestos`
 
 Todas las llamadas salen de la capa de infraestructura `src/infrastructure/api/`
 a través del cliente `src/infrastructure/config/apiClient.ts`, con base
@@ -18,6 +19,11 @@ contratos con ejemplos y respuestas comunes. Verificado contra la implementació
 real de `backend/services/ms1_auth` y `backend/services/ms2_taller`, y contra
 `backend/gateway/contratos/`. Las diferencias encontradas están en "Registro de
 discrepancias entre el frontend y el contrato de la API".
+
+Fecha del flujo de presupuestos: 13 oct 2026 (Sprint 3, Semana 6). Se agregan las
+llamadas de `PresupuestoService` contra MS3 (`ms3_presupuestos`), verificadas
+contra `backend/docs/contratos-api-gateway.md` (SCRUM-438) y los routers y
+esquemas reales del microservicio.
 
 ## Inventario de endpoints consumidos
 
@@ -34,11 +40,47 @@ discrepancias entre el frontend y el contrato de la API".
 | `OrderService.getOrderById` | GET | `/api/ordenes/{id}` | detalle de orden | Alcance por rol | OK |
 | `OrderService.getOrderHistory` | GET | `/api/ordenes/{id}/historial` | historial en detalle de orden | Alcance por rol | OK |
 | `OrderService.cambiarEstado` | PATCH | `/api/ordenes/{id}/estado` | `MechanicStatusPage` | Administrador o mecánico asignado | OK |
+| `PresupuestoService.getByOrder` | GET | `/api/presupuestos?orden_id={id}` | `/client/presupuestos`, detalle de presupuesto | Cliente (solo versiones enviadas) | OK (lista acotada; sin ítems) |
+| `PresupuestoService.getById` | GET | `/api/presupuestos/{presupuesto_id}` | `/client/presupuestos/{ordenId}` | Cliente (propio) | OK (404 fuera de alcance) |
+| `PresupuestoService.decidir` | POST | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/decision` | `/client/presupuestos/{ordenId}` | Cliente (propio) | OK (201; 409/422 de negocio) |
 
 El alcance por rol lo aplica el microservicio, no el frontend: el navegador
 recibe únicamente las filas que corresponden al usuario autenticado. Por eso las
 vistas ya no aplican filtros de identidad en modo offline (la caché conserva la
 misma respuesta que devolvió la Gateway).
+
+## Flujo de presupuestos (MS3)
+
+El portal del Cliente permite ver y decidir sobre los presupuestos de sus
+órdenes. El contrato de MS3 no ofrece un listado global para el cliente, así que
+`/client/presupuestos` se deriva de las órdenes del cliente: se toman las órdenes
+que ya pasaron a una etapa con presupuesto y se resuelve cada una con
+`GET /api/presupuestos?orden_id={id}` (llamadas en paralelo en
+`useClientBudgets`). El detalle (`GET /api/presupuestos/{id}`) es el único que
+trae versiones e ítems; por eso la vista de decisión exige el detalle completo y
+un fallo al traerlo no se disfraza de "sin presupuesto".
+
+La decisión se envía con `POST /api/presupuestos/{presupuesto_id}/versiones/{numero}/decision`:
+
+```json
+{ "decision": "rechazado", "motivo": "El costo me parece elevado", "confirmar_cancelacion": true }
+```
+
+Reglas reflejadas en la interfaz:
+
+- Un rechazo **antes de la primera aprobación** (`version_vigente === null`) exige
+  `motivo` **y** `confirmar_cancelacion: true`, porque cancela el servicio; la UI
+  muestra esa advertencia y no deja confirmar sin aceptarla.
+- Solo se puede decidir sobre la versión enviada pendiente
+  (`versionPendiente`); las versiones aprobadas o ya rechazadas se muestran en
+  modo lectura.
+- `201` devuelve `presupuesto`, `efecto_en_orden`, `decision_id` y
+  `aplicacion_en_orden`; el efecto sobre la orden se muestra al usuario
+  (`EFECTO_EN_ORDEN_LABEL`).
+- `503` significa que la decisión quedó guardada pero la aplicación en la orden
+  sigue pendiente (reintento contra
+  `POST /api/presupuestos/decisiones/{decision_id}/aplicacion`), así que **no** se
+  trata como fallo de conexión ni se invita a repetir la decisión.
 
 ## Campos que la Gateway expone y el frontend no puede nombrar
 
@@ -70,6 +112,7 @@ requieran):
 | `PUT /api/ordenes/{id}/mecanico` | MS2 | Asignación/reasignación de mecánico (Admin). Sin vista aún. |
 | `PATCH /api/vehiculos/{id}` | MS2 | Edición de vehículo. Sin vista aún. |
 | `POST /api/auth/register` | MS1 | Registro de usuario. Sin vista aún. |
+| `POST /api/presupuestos/decisiones/{decision_id}/aplicacion` | MS3 | Reintento de aplicación de una decisión tras `503`. Sin vista dedicada: el flujo actual informa el `503` y conserva el `decision_id`. |
 
 ## Estados de carga, vacío y error
 
@@ -159,6 +202,11 @@ la referencia al archivo del backend del que salió cada uno, y se prueban contr
 - Las fechas llegan con offset `-03:00`. El mapeo las conserva tal cual y
   `orderDisplay.ts` las formatea con `es-CL`; Vitest corre con
   `TZ: America/Santiago` para que el texto esperado sea estable.
+- MS3 serializa `Decimal` (precios y cantidades de ítems de presupuesto) como
+  texto, por ejemplo `"38990.00"`. `PresupuestoService` los convierte a `number`
+  al mapear y `budgetDisplay.ts` los muestra en CLP sin decimales
+  (`formatMoneyCLP`, `es-CL`/`CLP`). La conversión se prueba en
+  `PresupuestoService.test.ts` con los valores en texto del contrato.
 
 ## Registro de discrepancias entre el frontend y el contrato de la API
 

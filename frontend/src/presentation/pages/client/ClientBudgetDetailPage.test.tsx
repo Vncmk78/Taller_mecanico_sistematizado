@@ -17,6 +17,10 @@ vi.mock('@/infrastructure/api/PresupuestoService', () => ({
 
 const axiosNetworkError = { isAxiosError: true };
 const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
+const axios409 = {
+    isAxiosError: true,
+    response: { status: 409, data: { detail: 'La versión ya no está pendiente' } },
+};
 
 const versionAprobada = {
     ...mockPresupuestoPendiente.versiones[0],
@@ -62,7 +66,7 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         expect(screen.getByRole('button', { name: 'Rechazar' })).toBeInTheDocument();
     });
 
-    it('aprueba el presupuesto tras confirmar y avisa el resultado', async () => {
+    it('no aprueba hasta que el cliente acepte la revisión del total', async () => {
         withPendingSources();
         vi.mocked(presupuestoService.decidir).mockResolvedValue({
             presupuesto: {
@@ -80,10 +84,36 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         renderPage();
 
         fireEvent.click(await screen.findByRole('button', { name: 'Aprobar Presupuesto' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Aprobar' }));
+
+        const confirmar = screen.getByRole('button', { name: 'Confirmar aprobación' });
+        expect(screen.getByText(/Total a aprobar/)).toBeInTheDocument();
+
+        // Sin marcar la revisión, el botón está bloqueado y no se llama a la API.
+        expect(confirmar).toBeDisabled();
+        fireEvent.click(confirmar);
+        expect(presupuestoService.decidir).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByLabelText(/He revisado las partidas y el total/));
+        fireEvent.click(confirmar);
 
         expect(await screen.findByText(/Presupuesto aprobado/)).toBeInTheDocument();
         expect(presupuestoService.decidir).toHaveBeenCalledWith('501', 1, 'aprobado', undefined, undefined);
+    });
+
+    it('un conflicto de versión (409) refresca y avisa en vez de aplicar una decisión obsoleta', async () => {
+        withPendingSources();
+        vi.mocked(presupuestoService.decidir).mockRejectedValue(axios409);
+
+        renderPage();
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Aprobar Presupuesto' }));
+        fireEvent.click(screen.getByLabelText(/He revisado las partidas y el total/));
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar aprobación' }));
+
+        expect(await screen.findByText(/El presupuesto cambió mientras lo revisaba/)).toBeInTheDocument();
+        // El diálogo se cierra y se vuelve a consultar la versión vigente.
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(vi.mocked(presupuestoService.getById).mock.calls.length).toBeGreaterThan(1);
     });
 
     it('rechaza exigiendo motivo y, antes de aprobar, confirmación de cancelación', async () => {
@@ -107,6 +137,16 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         // Sin motivo el diálogo valida antes de llamar a la API.
         fireEvent.click(confirmar);
         expect(await screen.findByText('Indique el motivo del rechazo.')).toBeInTheDocument();
+        expect(presupuestoService.decidir).not.toHaveBeenCalled();
+
+        // Un motivo demasiado corto tampoco se acepta.
+        fireEvent.change(screen.getByLabelText('Motivo del rechazo'), {
+            target: { value: 'no' },
+        });
+        fireEvent.click(confirmar);
+        expect(
+            await screen.findByText('Describa el motivo con al menos 5 caracteres.')
+        ).toBeInTheDocument();
         expect(presupuestoService.decidir).not.toHaveBeenCalled();
 
         // Con motivo pero sin confirmar la cancelación sigue bloqueado.
@@ -164,5 +204,11 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         expect(await screen.findByText('Servicio n° 101')).toBeInTheDocument();
         expect(await screen.findByText(/No se pudo conectar con el servidor/)).toBeInTheDocument();
         expect(screen.getByText('Kit Pastillas Freno Delanteras')).toBeInTheDocument();
+        // Sin conexión no se puede decidir: avisa y bloquea los botones.
+        expect(
+            screen.getByText(/para aprobar o rechazar el presupuesto necesita estar conectado/)
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Aprobar Presupuesto' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Rechazar' })).toBeDisabled();
     });
 });

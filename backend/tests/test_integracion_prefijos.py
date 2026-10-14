@@ -446,7 +446,22 @@ def test_presupuestos_llega_a_ms3_con_y_sin_token(ecosistema):
     assert respuesta.json() == {"total": 0, "desde": 0, "limite": 50, "presupuestos": []}
 
 
-@pytest.mark.parametrize("prefijo", ["repuestos", "proveedores", "inventario"])
+@pytest.mark.parametrize("prefijo", ["repuestos", "proveedores"])
+def test_catalogo_de_ms3_llega_con_y_sin_token(ecosistema, prefijo):
+    gw, sesion_ms1, _ = ecosistema
+
+    sin_token = gw.get(f"/api/{prefijo}")
+    assert sin_token.status_code == 401
+    assert ultima_llamada() == ("ms3_presupuestos", "GET", f"/{prefijo}")
+
+    correo, clave, nombre = ADMINISTRADOR
+    token = crear_administrador(sesion_ms1, gw, correo, clave, nombre)
+    respuesta = gw.get(f"/api/{prefijo}", headers=autorizacion(token))
+    assert respuesta.status_code == 200
+    assert respuesta.json()["total"] == 0
+
+
+@pytest.mark.parametrize("prefijo", ["inventario"])
 def test_ms3_responde_404_propio_por_cada_prefijo(ecosistema, prefijo):
     gw, _, _ = ecosistema
 

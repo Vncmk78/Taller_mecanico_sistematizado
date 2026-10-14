@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from services.ms3_presupuestos.db import Base
@@ -52,6 +52,15 @@ class Repuesto(Base):
         CheckConstraint(
             "umbral_particular is null or umbral_particular >= 0",
             name="umbral_no_negativo",
+        ),
+        # Un proveedor no tiene dos repuestos con el mismo nombre (sin
+        # distinguir mayúsculas): "Filtro de aceite" = "filtro de aceite".
+        # Proveedores distintos sí pueden vender un repuesto homónimo.
+        Index(
+            "uq_repuesto_proveedor_nombre",
+            "proveedor_id",
+            text("lower(nombre)"),
+            unique=True,
         ),
     )
 

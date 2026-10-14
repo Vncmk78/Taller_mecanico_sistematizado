@@ -208,6 +208,26 @@ presupuesto su `version_vigente` (última aprobada). Capas: `routers/presupuesto
 → `services/presupuestos.py` (una transacción por caso de uso) →
 `persistencia/` (repositorio + unidad de trabajo) → modelos ORM.
 
+### Proveedores y repuestos (MS3)
+
+Lectura: Mecánico y Administrador. Escritura: solo Administrador. Cliente → `403`.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `GET /proveedores?q=&desde=&limite=` | Lista / busca por nombre o contacto |
+| `GET /proveedores/{id}` | Detalle con sus repuestos |
+| `POST /proveedores` · `PATCH /proveedores/{id}` | Alta y cambios (`409` si el nombre ya existe, sin distinguir mayúsculas) |
+| `DELETE /proveedores/{id}` | Solo si no tiene repuestos (`409`) |
+| `GET /repuestos?proveedor_id=&q=&bajo_umbral=&desde=&limite=` | Lista con `umbral_efectivo` y `bajo_umbral`; `bajo_umbral=true` = alerta de stock bajo |
+| `GET /repuestos/{id}` | Detalle |
+| `POST /repuestos` | Alta `{"proveedor_id", "nombre", "stock_inicial", "umbral_particular"}`; el stock inicial deja un movimiento `ingreso` |
+| `PATCH /repuestos/{id}` | Nombre, proveedor o `umbral_particular` (`null` = volver al general); cada cambio de umbral queda en `historial_umbral` |
+| `DELETE /repuestos/{id}` | Solo si nunca tuvo movimientos, presupuestos ni cambios de umbral (`409`) |
+
+El **stock no se edita** por estos endpoints: cambia solo con movimientos de
+inventario. Un proveedor no puede tener dos repuestos con el mismo nombre
+(migración `0005_ms3`: índice único `(proveedor_id, lower(nombre))`).
+
 ### Pruebas de rollback y consistencia de presupuestos (MS3)
 
 `services/ms3_presupuestos/tests/test_rollback_consistencia.py` (requiere

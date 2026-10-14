@@ -3,8 +3,10 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import { orderService } from '@/infrastructure/api/OrderService';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderHistoryStore } from '@/infrastructure/stores/useOrderHistoryStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
+import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { ClientOrderDetailPage } from './ClientOrderDetailPage';
 
 vi.mock('@/infrastructure/api/OrderService', () => ({
@@ -12,6 +14,10 @@ vi.mock('@/infrastructure/api/OrderService', () => ({
         getOrders: vi.fn(),
         getOrderById: vi.fn(),
         getOrderHistory: vi.fn(),
+        cambiarEstado: vi.fn(),
+        asignarMecanico: vi.fn(),
+        registrarEntrega: vi.fn(),
+        cancelarComoCliente: vi.fn(),
     },
 }));
 
@@ -35,9 +41,11 @@ const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
 function renderPage() {
     return render(
         <MemoryRouter initialEntries={['/client/ordenes/101']}>
-            <Routes>
-                <Route path="/client/ordenes/:id" element={<ClientOrderDetailPage />} />
-            </Routes>
+            <ToastProvider>
+                <Routes>
+                    <Route path="/client/ordenes/:id" element={<ClientOrderDetailPage />} />
+                </Routes>
+            </ToastProvider>
         </MemoryRouter>
     );
 }
@@ -46,6 +54,7 @@ describe('ClientOrderDetailPage: detalle desde el portal del cliente', () => {
     beforeEach(() => {
         useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
         useOrderHistoryStore.setState({ entries: [], status: 'idle', error: null, isOffline: false });
+        useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
         vi.clearAllMocks();
     });
 
@@ -77,5 +86,20 @@ describe('ClientOrderDetailPage: detalle desde el portal del cliente', () => {
 
         expect(await screen.findByText('No se pudo cargar el detalle de la orden')).toBeInTheDocument();
         expect(screen.queryByText(/Orden no encontrada/)).not.toBeInTheDocument();
+    });
+
+    it('ofrece al cliente gestionar el presupuesto y cancelar su solicitud', async () => {
+        useAuthStore.setState({
+            user: { id: '99', email: 'cliente@taller.cl', full_name: 'Cliente', role: 'cliente', is_active: true },
+            token: 't',
+            isAuthenticated: true,
+        });
+        vi.mocked(orderService.getOrderById).mockResolvedValue({ ...orden, estadoCodigo: 3 });
+        vi.mocked(orderService.getOrderHistory).mockResolvedValue([]);
+
+        renderPage();
+
+        expect(await screen.findByRole('link', { name: 'Gestionar presupuesto' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Cancelar solicitud' })).toBeInTheDocument();
     });
 });

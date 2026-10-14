@@ -14,4 +14,14 @@ export interface OrderPort {
         estadoDestino: number,
         observacion?: string
     ): Promise<Order>;
+    /** Asigna o reasigna el mecánico responsable (PUT /ordenes/{id}/mecanico). */
+    asignarMecanico(
+        ordenId: string,
+        mecanicoId: string,
+        observacion?: string
+    ): Promise<Order>;
+    /** Registra la entrega física de la orden (POST /ordenes/{id}/entrega). */
+    registrarEntrega(ordenId: string, observacion?: string): Promise<Order>;
+    /** Cancelación iniciada por el cliente propietario (POST /ordenes/{id}/cancelacion). */
+    cancelarComoCliente(ordenId: string, motivo: string): Promise<Order>;
 }

@@ -26,9 +26,6 @@
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services.ms2_taller.main:app",
-      "bindings": [
-        { "type": "service", "service": "ms-presupuestos", "format": "url", "env": "MS2_MS3_URL" }
-      ],
       "rewrites": [{ "source": "/ms2/(.*)", "destination": "/$1" }]
     },
     "ms-presupuestos": {

@@ -155,3 +155,20 @@ def test_guard_rol_permitido_responde_200_con_la_identidad() -> None:
     )
     assert respuesta.status_code == 200
     assert respuesta.json() == {"usuario_id": 42}
+
+
+# --------------------------------------------------------------------------- #
+# 4) Documentación publicada detrás de un prefijo (/ms3 en Vercel)            #
+# --------------------------------------------------------------------------- #
+
+def test_swagger_y_redoc_cargan_su_propia_especificacion_con_url_relativa() -> None:
+    """En Vercel el MS3 vive en /ms3: "/openapi.json" absoluto cargaba la de la Gateway."""
+    with TestClient(app) as cliente:
+        for ruta in ("/docs", "/redoc"):
+            html = cliente.get(ruta).text
+            assert "'openapi.json'" in html or '"openapi.json"' in html, ruta
+            assert "'/openapi.json'" not in html and '"/openapi.json"' not in html, ruta
+        especificacion = cliente.get("/openapi.json")
+    assert especificacion.status_code == 200
+    servidores = [s["url"] for s in especificacion.json()["servers"]]
+    assert servidores == [".", "/api"]

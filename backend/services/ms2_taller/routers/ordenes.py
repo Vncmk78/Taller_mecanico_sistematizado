@@ -12,7 +12,9 @@ from services.ms2_taller.integracion_ms3 import (
     VerificadorDecisiones, obtener_verificador_decisiones,
 )
 from services.ms2_taller.models.historial_estado import HistorialEstado
+from services.ms2_taller.models.bitacora_orden import BitacoraOrden
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
+from services.ms2_taller.schemas.bitacora import BitacoraCrear, BitacoraRespuesta
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
     CambioEstadoSolicitud,
@@ -21,6 +23,13 @@ from services.ms2_taller.schemas.orden import (
     HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
+)
+from services.ms2_taller.services.bitacora import (
+    BitacoraEntradaInvalidaError,
+    BitacoraNoAutorizadaError,
+    BitacoraRepuestoInvalidoError,
+    listar_bitacora_orden,
+    registrar_entrada_bitacora,
 )
 from services.ms2_taller.services.ordenes import (
     OrdenEstadoInvalidoError,
@@ -226,6 +235,106 @@ def consultar_historial_orden(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible consultar el historial de la orden",
+        ) from exc
+
+
+@router_ordenes.get(
+    "/{orden_id}/bitacora",
+    response_model=list[BitacoraRespuesta],
+    summary="Consultar la bitácora de trabajo de una orden",
+    description=(
+        "Devuelve todos los registros por fecha/hora e identificador ascendente, "
+        "con el autor, el tipo (observación o acción), el texto y los repuestos "
+        "utilizados. Aplica la misma visibilidad del detalle: Administrador ve "
+        "todas; Cliente sus vehículos; Mecánico sus órdenes asignadas; multirol "
+        "combina los alcances. Una orden inexistente o ajena responde 404; una "
+        "visible sin registros devuelve []."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la consulta"
+        },
+    },
+)
+def consultar_bitacora_orden(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> list[BitacoraOrden]:
+    try:
+        return listar_bitacora_orden(db, principal, orden_id)
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar la bitácora de la orden",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/bitacora",
+    response_model=BitacoraRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar una observación o acción en la bitácora",
+    description=(
+        "Registra lo que el mecánico observa o ejecuta sobre una orden sin "
+        "cambiar su estado. Una observación es una nota libre; una acción puede "
+        "declarar los repuestos utilizados (texto libre y cantidad). Solo el "
+        "mecánico asignado o un administrador pueden registrarla. No acepta "
+        "estado, actor ni fecha en el cuerpo."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Se requiere ser el mecánico asignado o Administrador"
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada o ajena"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Tipo, descripción o repuestos inválidos"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def registrar_bitacora_orden(
+    orden_id: int,
+    body: BitacoraCrear,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> BitacoraOrden:
+    try:
+        return registrar_entrada_bitacora(
+            db,
+            orden_id=orden_id,
+            principal=principal,
+            tipo=body.tipo,
+            descripcion=body.descripcion,
+            repuestos=[repuesto.model_dump() for repuesto in body.repuestos],
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except BitacoraNoAutorizadaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
+    except (BitacoraEntradaInvalidaError, BitacoraRepuestoInvalidoError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la entrada de la bitácora",
         ) from exc
 
 

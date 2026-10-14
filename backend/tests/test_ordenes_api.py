@@ -36,6 +36,7 @@ from services.ms2_taller.models.estado_orden import (
     LISTO,
     RECIBIDO,
 )
+from services.ms2_taller.models.bitacora_orden import BitacoraOrden, BitacoraRepuesto
 from services.ms2_taller.services.ordenes import (
     OrdenObservacionInvalidaError,
     OrdenEstadoNoAutorizadoError,
@@ -1514,6 +1515,326 @@ def test_historial_error_consulta_devuelve_500_y_rollback(
     }
     assert len(rollbacks) == 1
 
+
+
+def test_post_bitacora_mecanico_asignado_registra_observacion(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        json={"tipo": "observacion", "descripcion": "  Se revisó la batería  "},
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 201
+    datos = respuesta.json()
+    assert datos["orden_id"] == orden.orden_id
+    assert datos["tipo"] == "observacion"
+    assert datos["descripcion"] == "Se revisó la batería"
+    assert datos["autor_usuario_id"] == 50
+    assert datos["repuestos"] == []
+    assert datos["creado_en"] is not None
+    entrada = db_ordenes.scalar(select(BitacoraOrden))
+    assert entrada is not None
+    assert entrada.descripcion == "Se revisó la batería"
+    assert entrada.autor_usuario_id == 50
+    assert db_ordenes.scalar(select(func.count()).select_from(BitacoraRepuesto)) == 0
+
+
+def test_post_bitacora_accion_registra_repuestos_utilizados(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        json={
+            "tipo": "accion",
+            "descripcion": "Cambio de pastillas de freno",
+            "repuestos": [
+                {"nombre": "Pastilla de freno", "cantidad": 2},
+                {"nombre": "Líquido de frenos", "cantidad": 1},
+            ],
+        },
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 201
+    datos = respuesta.json()
+    assert datos["tipo"] == "accion"
+    assert datos["repuestos"] == [
+        {"nombre": "Pastilla de freno", "cantidad": 2},
+        {"nombre": "Líquido de frenos", "cantidad": 1},
+    ]
+    assert db_ordenes.scalar(select(func.count()).select_from(BitacoraOrden)) == 1
+    assert db_ordenes.scalar(select(func.count()).select_from(BitacoraRepuesto)) == 2
+
+
+def test_post_bitacora_administrador_puede_registrar(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=60)
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        json={"tipo": "accion", "descripcion": "Supervisión de reparación"},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 201
+    assert respuesta.json()["autor_usuario_id"] == 99
+
+
+def test_post_bitacora_mecanico_no_asignado_recibe_404(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=60)
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        json={"tipo": "observacion", "descripcion": "No es mi orden"},
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Orden no encontrada"}
+    assert db_ordenes.scalar(select(func.count()).select_from(BitacoraOrden)) == 0
+
+
+def test_post_bitacora_cliente_propietario_recibe_403(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        json={"tipo": "observacion", "descripcion": "Intento del cliente"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+
+    assert respuesta.status_code == 403
+    assert db_ordenes.scalar(select(func.count()).select_from(BitacoraOrden)) == 0
+
+
+def test_post_bitacora_observacion_con_repuestos_devuelve_422(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        json={
+            "tipo": "observacion",
+            "descripcion": "Nota con repuestos inválidos",
+            "repuestos": [{"nombre": "Filtro", "cantidad": 1}],
+        },
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 422
+    assert db_ordenes.scalar(select(func.count()).select_from(BitacoraOrden)) == 0
+
+
+@pytest.mark.parametrize("descripcion", ["", " ", "\t\n"])
+def test_post_bitacora_descripcion_vacia_devuelve_422(
+    api_ordenes: TestClient, descripcion: str,
+):
+    respuesta = api_ordenes.post(
+        "/ordenes/1/bitacora",
+        json={"tipo": "observacion", "descripcion": descripcion},
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 422
+
+
+@pytest.mark.parametrize("repuestos", [
+    [{"nombre": "", "cantidad": 1}],
+    [{"nombre": "Filtro", "cantidad": 0}],
+    [{"nombre": "Filtro", "cantidad": -1}],
+])
+def test_post_bitacora_repuesto_invalido_devuelve_422(
+    api_ordenes: TestClient, repuestos: list[dict],
+):
+    respuesta = api_ordenes.post(
+        "/ordenes/1/bitacora",
+        json={"tipo": "accion", "descripcion": "Acción", "repuestos": repuestos},
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 422
+
+
+def test_post_bitacora_rechaza_campos_controlados_por_el_servidor(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        json={
+            "tipo": "observacion",
+            "descripcion": "Válida",
+            "autor_usuario_id": 1,
+            "creado_en": "2030-01-01T00:00:00Z",
+        },
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 422
+    assert db_ordenes.scalar(select(func.count()).select_from(BitacoraOrden)) == 0
+
+
+def test_post_bitacora_orden_inexistente_devuelve_404(api_ordenes: TestClient):
+    respuesta = api_ordenes.post(
+        "/ordenes/999/bitacora",
+        json={"tipo": "observacion", "descripcion": "No existe"},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Orden no encontrada"}
+
+
+def test_post_bitacora_sin_token_devuelve_401(api_ordenes: TestClient):
+    respuesta = api_ordenes.post(
+        "/ordenes/1/bitacora",
+        json={"tipo": "observacion", "descripcion": "Sin token"},
+    )
+
+    assert respuesta.status_code == 401
+    assert respuesta.headers["www-authenticate"] == "Bearer"
+
+
+def test_post_bitacora_fallo_persistencia_revierte(
+    api_ordenes: TestClient, db_ordenes: Session, monkeypatch: pytest.MonkeyPatch,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+
+    def fallar_commit() -> None:
+        raise SQLAlchemyError("commit fallido")
+
+    monkeypatch.setattr(db_ordenes, "commit", fallar_commit)
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        json={"tipo": "observacion", "descripcion": "Fallará"},
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 500
+    assert db_ordenes.scalar(select(func.count()).select_from(BitacoraOrden)) == 0
+
+
+def test_get_bitacora_orden_cronologica_con_repuestos_y_aislamiento(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+    otra = _crear_orden(db_ordenes, usuario_cliente=20, mecanico_id=60)
+    db_ordenes.add_all([
+        BitacoraOrden(
+            bitacora_id=5, orden_id=orden.orden_id, autor_usuario_id=50,
+            tipo="accion", descripcion="Reemplazo de bomba",
+        ),
+        BitacoraOrden(
+            bitacora_id=2, orden_id=orden.orden_id, autor_usuario_id=50,
+            tipo="observacion", descripcion="Revisión inicial",
+        ),
+        BitacoraOrden(
+            bitacora_id=9, orden_id=otra.orden_id, autor_usuario_id=60,
+            tipo="observacion", descripcion="Otra orden",
+        ),
+    ])
+    db_ordenes.commit()
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    registros = respuesta.json()
+    assert [r["bitacora_id"] for r in registros] == [2, 5]
+    campos = {
+        "bitacora_id", "orden_id", "autor_usuario_id", "tipo",
+        "descripcion", "creado_en", "repuestos",
+    }
+    for registro in registros:
+        assert set(registro) == campos
+        assert registro["orden_id"] == orden.orden_id
+        assert registro["repuestos"] == []
+
+
+def test_get_bitacora_sin_entradas_devuelve_lista_vacia(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == []
+
+
+@pytest.mark.parametrize("usuario_id,roles", [
+    (99, (NombreRol.ADMINISTRADOR,)),
+    (10, (NombreRol.CLIENTE,)),
+    (50, (NombreRol.MECANICO,)),
+])
+def test_get_bitacora_visible_por_rol(
+    api_ordenes: TestClient, db_ordenes: Session,
+    usuario_id: int, roles: tuple[NombreRol, ...],
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+    db_ordenes.add(BitacoraOrden(
+        orden_id=orden.orden_id, autor_usuario_id=50,
+        tipo="observacion", descripcion="Nota",
+    ))
+    db_ordenes.commit()
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        headers=_headers_para(usuario_id, *roles),
+    )
+
+    assert respuesta.status_code == 200
+    assert len(respuesta.json()) == 1
+
+
+def test_get_bitacora_mecanico_ajeno_recibe_404(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=60)
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Orden no encontrada"}
+
+
+def test_get_bitacora_orden_inexistente_devuelve_404(api_ordenes: TestClient):
+    respuesta = api_ordenes.get(
+        "/ordenes/999/bitacora",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Orden no encontrada"}
+
+
+def test_get_bitacora_sin_token_devuelve_401(api_ordenes: TestClient):
+    respuesta = api_ordenes.get("/ordenes/1/bitacora")
+
+    assert respuesta.status_code == 401
+    assert respuesta.headers["www-authenticate"] == "Bearer"
 
 
 def _crear_vehiculo(db: Session, usuario_cliente: int) -> Vehiculo:

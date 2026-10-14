@@ -261,6 +261,8 @@ base PostgreSQL de MS2:
 | Estado → Orden | `EstadoOrden 1:N OrdenTrabajo`; FK `orden_trabajo.estado_codigo` |
 | Orden → HistorialEstado | `OrdenTrabajo 1:N HistorialEstado`; FK `historial_estado.orden_id` |
 | Orden → HistorialAsignacion | `OrdenTrabajo 1:N HistorialAsignacion`; FK `historial_asignacion.orden_id` |
+| Orden → BitacoraOrden | `OrdenTrabajo 1:N BitacoraOrden`; FK `bitacora_orden.orden_id` |
+| BitacoraOrden → BitacoraRepuesto | `BitacoraOrden 1:N BitacoraRepuesto`; FK `bitacora_repuesto.bitacora_id` |
 | Estado → HistorialEstado | `estado_anterior` opcional y `estado_nuevo` obligatorio apuntan al catálogo local `estado_orden` |
 
 Un ingreso abierto puede asociarse a más de una orden cuando una nueva atención
@@ -281,6 +283,7 @@ tienen ni deben tener FK física entre bases de microservicios:
 | `historial_asignacion.mecanico_anterior_id` / `mecanico_nuevo_id` | Responsables anterior y nuevo |
 | `historial_asignacion.administrador_id` | Administrador que asignó o reasignó |
 | `historial_estado.actor_usuario_id` | Usuario que originó el cambio cuando `origen=usuario` |
+| `bitacora_orden.autor_usuario_id` | Mecánico que registró la entrada de la bitácora |
 | `entregado_por_id` | Usuario que registró la entrega física; lo fija `POST /api/ordenes/{id}/entrega` |
 | `diagnostico_autor_id`, `devuelto_por_id` | Referencias previstas por el modelo para etapas posteriores; todavía no tienen endpoints |
 
@@ -705,6 +708,66 @@ necesariamente el mecánico asignado. No se consultan nombres en MS1.
     "actor_usuario_id": 50, "origen": "usuario", "fecha_hora": "2026-09-28T11:00:00-03:00",
     "observacion": "Inicia evaluación técnica" }
 ]
+```
+
+### GET `/api/ordenes/{orden_id}/bitacora`
+
+Devuelve la bitácora de trabajo del mecánico: las observaciones y acciones
+registradas para la orden, cada una con su autor y, en las acciones, los
+repuestos utilizados. A diferencia del historial, una entrada **no** exige un
+cambio de estado (RF-11).
+
+Reutiliza la visibilidad del detalle: Administrador ve todas las órdenes,
+Cliente las de sus vehículos y Mecánico las actualmente asignadas; una orden
+ajena y una inexistente responden el mismo `404`. Ordena por `creado_en ASC` y,
+si coinciden las fechas, por `bitacora_id ASC`. Una orden visible sin entradas
+devuelve `[]`.
+
+Cada entrada contiene `bitacora_id`, `orden_id`, `autor_usuario_id` (referencia
+lógica a MS1), `tipo` (`observacion` o `accion`), `descripcion`, `creado_en` y
+`repuestos` (lista, `[]` en observaciones). Cada repuesto trae `nombre` y
+`cantidad`; son texto libre: MS2 **no** referencia el catálogo de MS3 (§8).
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Body | — |
+| Respuesta OK | `200` con lista de `BitacoraRespuesta` |
+| Errores | `401` JWT ausente/inválido · `404` orden inexistente o no visible · `422` identificador inválido · `500` consulta · `502` MS2 no disponible |
+
+```json
+// Response 200
+[
+  { "bitacora_id": 77, "orden_id": 31, "autor_usuario_id": 50, "tipo": "accion",
+    "descripcion": "Se reemplazaron las pastillas delanteras",
+    "creado_en": "2026-09-28T12:15:00-03:00",
+    "repuestos": [ { "nombre": "Pastillas de freno", "cantidad": 2 } ] }
+]
+```
+
+### POST `/api/ordenes/{orden_id}/bitacora`
+
+Registra una entrada de la bitácora del mecánico responsable. `tipo` es
+`observacion` (nota libre) o `accion` (trabajo realizado). Solo una acción puede
+declarar `repuestos`; enviarlos con `tipo=observacion` responde `422`. El
+`autor_usuario_id` y `creado_en` los fija el servidor desde el JWT.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Mecánico asignado |
+| Body | `{"tipo": "observacion"\|"accion", "descripcion": string no vacío, "repuestos"?: [{"nombre": string 1..120, "cantidad": int > 0}]}` (máx. 50 repuestos) |
+| Respuesta OK | `201` con `BitacoraRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Mecánico o no asignado · `404` orden inexistente · `422` body inválido (repuestos en una observación, cantidad ≤ 0, etc.) · `500` persistencia · `502` MS2 no disponible |
+
+```json
+// Request
+{ "tipo": "accion", "descripcion": "Se reemplazaron las pastillas delanteras",
+  "repuestos": [ { "nombre": "Pastillas de freno", "cantidad": 2 } ] }
+// Response 201
+{ "bitacora_id": 77, "orden_id": 31, "autor_usuario_id": 50, "tipo": "accion",
+  "descripcion": "Se reemplazaron las pastillas delanteras",
+  "creado_en": "2026-09-28T12:15:00-03:00",
+  "repuestos": [ { "nombre": "Pastillas de freno", "cantidad": 2 } ] }
 ```
 
 ### Coordinación de decisiones de presupuesto (SCRUM-438)

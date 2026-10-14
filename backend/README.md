@@ -228,6 +228,28 @@ El **stock no se edita** por estos endpoints: cambia solo con movimientos de
 inventario. Un proveedor no puede tener dos repuestos con el mismo nombre
 (migración `0005_ms3`: índice único `(proveedor_id, lower(nombre))`).
 
+### Inventario y stock (MS3)
+
+- **stock**: unidades físicas. Solo lo cambian `ingreso`, `ajuste` y `consumo`.
+- **comprometido**: reservado para órdenes (compromisos − liberaciones − consumos, por orden).
+- **disponible** = stock − comprometido. No se ofrecen las mismas unidades a dos órdenes (§4.6).
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /inventario/movimientos` | `{"clave_operacion", "repuesto_id", "tipo", "cantidad", "orden_id"?}`. Ingreso/ajuste: Administrador. Compromiso/consumo/liberación (con `orden_id`): Mecánico o Administrador. `409` si no alcanza el stock. La misma `clave_operacion` reenviada devuelve el original (`200`, `repetido: true`) sin descontar dos veces |
+| `GET /inventario/movimientos?repuesto_id=&orden_id=&tipo=` | Historial de movimientos |
+| `GET /inventario/stock/{repuesto_id}` | Stock, comprometido por orden, disponible y si está bajo el umbral |
+| `GET /inventario/alertas` | Repuestos con stock < umbral efectivo (igual no es alerta), los que más faltan primero |
+| `GET` / `PUT /inventario/umbral-general` | Ver o cambiar (Administrador) el umbral general; cierra el vigente y deja historial |
+| `GET /inventario/historial-umbral?repuesto_id=&solo_general=` | Cambios de umbral |
+
+Cada movimiento responde `alerta: {activa, nueva}`; `nueva` indica que ese
+movimiento dejó el repuesto bajo su umbral (para avisar una sola vez; el envío
+del aviso lo hará MS1). Todas las operaciones de stock bloquean el repuesto
+(`SELECT ... FOR UPDATE`): dos consumos simultáneos nunca dejan stock negativo.
+La aprobación de un presupuesto también descuenta lo comprometido por otras
+órdenes al decidir si faltan repuestos.
+
 ### Pruebas de rollback y consistencia de presupuestos (MS3)
 
 `services/ms3_presupuestos/tests/test_rollback_consistencia.py` (requiere

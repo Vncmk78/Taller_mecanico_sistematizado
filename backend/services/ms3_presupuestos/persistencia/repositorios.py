@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Generic, TypeVar
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import case, exists, func, select
 from sqlalchemy.sql import Select
 from sqlalchemy.orm import Session
 
@@ -208,6 +208,53 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
             select(MovimientoInventario).where(MovimientoInventario.clave_operacion == clave)
         )
 
+    def comprometido_por_orden(self, repuesto_id: int) -> dict[int, int]:
+        """Unidades reservadas y aún no usadas, por orden.
+
+        Por orden: compromisos − liberaciones − consumos (nunca menos de 0:
+        un consumo mayor que lo reservado toma el resto del stock libre).
+        """
+        saldo = func.sum(case(
+            (MovimientoInventario.tipo == "compromiso", MovimientoInventario.cantidad),
+            (MovimientoInventario.tipo.in_(("liberacion", "consumo")), -MovimientoInventario.cantidad),
+            else_=0,
+        ))
+        filas = self.sesion.execute(
+            select(MovimientoInventario.orden_id, saldo)
+            .where(MovimientoInventario.repuesto_id == repuesto_id,
+                   MovimientoInventario.orden_id.is_not(None))
+            .group_by(MovimientoInventario.orden_id)
+        ).all()
+        return {orden: int(valor) for orden, valor in filas if valor and valor > 0}
+
+    def _filtro(self, *, repuesto_id: int | None, orden_id: int | None, tipo: str | None) -> Select:
+        consulta = select(MovimientoInventario)
+        if repuesto_id is not None:
+            consulta = consulta.where(MovimientoInventario.repuesto_id == repuesto_id)
+        if orden_id is not None:
+            consulta = consulta.where(MovimientoInventario.orden_id == orden_id)
+        if tipo is not None:
+            consulta = consulta.where(MovimientoInventario.tipo == tipo)
+        return consulta
+
+    def buscar(
+        self, *, repuesto_id: int | None = None, orden_id: int | None = None,
+        tipo: str | None = None, desde: int = 0, limite: int = 50,
+    ) -> Sequence[MovimientoInventario]:
+        """Más recientes primero."""
+        limite = max(1, min(limite, LIMITE_MAXIMO))
+        consulta = (self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo)
+                    .order_by(MovimientoInventario.fecha_hora.desc(),
+                              MovimientoInventario.movimiento_id.desc())
+                    .offset(max(desde, 0)).limit(limite))
+        return self.sesion.scalars(consulta).all()
+
+    def contar_busqueda(
+        self, *, repuesto_id: int | None = None, orden_id: int | None = None, tipo: str | None = None,
+    ) -> int:
+        consulta = self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo)
+        return self.sesion.scalar(select(func.count()).select_from(consulta.subquery())) or 0
+
     def de_orden(self, orden_id: int) -> Sequence[MovimientoInventario]:
         consulta = (
             select(MovimientoInventario)
@@ -224,6 +271,13 @@ class RepositorioParametros(RepositorioBase[ParametroInventario]):
     def vigente(self) -> ParametroInventario | None:
         return self.sesion.scalar(
             select(ParametroInventario).where(ParametroInventario.vigente_hasta.is_(None))
+        )
+
+    def vigente_para_actualizar(self) -> ParametroInventario | None:
+        """El vigente con FOR UPDATE: dos cambios simultáneos no abren dos vigentes."""
+        return self.sesion.scalar(
+            select(ParametroInventario).where(ParametroInventario.vigente_hasta.is_(None))
+            .with_for_update().execution_options(populate_existing=True)
         )
 
 

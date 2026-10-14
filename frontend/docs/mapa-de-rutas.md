@@ -76,6 +76,7 @@ Layout: `AdminLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | --- | --- | --- |
 | `/admin` | `AdminDashboardPage` | Funcional |
 | `/admin/ordenes` | `AdminOrdersPage` | Placeholder ("Estructura en construcción") |
+| `/admin/ordenes/:id` | `AdminOrderDetailPage` | Funcional (acciones de orden con confirmación) |
 | `/admin/clientes` | `AdminClientsPage` | Placeholder |
 | `/admin/vehiculos` | `AdminVehiclesPage` | Funcional |
 | `/admin/vehiculos/:id` | `AdminVehicleDetailPage` | Funcional |
@@ -96,10 +97,10 @@ Layout: `ClientLayout` → `RoleLayout` (variante `topnav`). Aplica
 | `/client/agendar` | `div` inline en `AppRoutes` | Provisional ("Próximamente") |
 | `/client/servicios` | `ClientServicesPage` | Funcional |
 | `/client/ordenes` | `ClientOrdersPage` | Funcional |
-| `/client/ordenes/:id` | `ClientOrderDetailPage` | Funcional |
+| `/client/ordenes/:id` | `ClientOrderDetailPage` | Funcional (acciones de orden con confirmación) |
 | `/client/ordenes/:id/evidencias` | `ClientOrderEvidencePage` | Funcional |
 | `/client/presupuestos` | `ClientBudgetsPage` | Funcional |
-| `/client/presupuestos/:ordenId` | `ClientBudgetDetailPage` | Funcional |
+| `/client/presupuestos/:ordenId` | `ClientBudgetDetailPage` | Funcional (decisión de presupuesto con confirmación) |
 
 ### Portal mecánico (`/mechanic`)
 
@@ -112,7 +113,7 @@ Layout: `MechanicLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | `/mechanic/vehiculos` | `MechanicVehiclesPage` | Funcional |
 | `/mechanic/vehiculos/:id` | `MechanicVehicleDetailPage` | Funcional |
 | `/mechanic/ordenes` | `MechanicOrdersPage` | Funcional |
-| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional |
+| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional (acciones de orden con confirmación) |
 | `/mechanic/estados` | `MechanicStatusPage` | Funcional (avance de estado con confirmación) |
 
 ## Menús por rol

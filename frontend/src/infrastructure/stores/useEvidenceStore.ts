@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Evidencia } from '@/domain/entities/Evidencia';
-import { initialAsyncStatus, type AsyncStatus, mergeById } from '@/infrastructure/stores/asyncCollection';
+import type { Evidencia, EvidenciaEntradaCrear } from '@/domain/entities/Evidencia';
+import { initialAsyncStatus, type AsyncStatus, mergeById, upsertById } from '@/infrastructure/stores/asyncCollection';
 import {
     getApiErrorMessage,
     getApiErrorRequestId,
@@ -16,13 +16,41 @@ export interface FetchEvidenciasResult {
     failed: boolean;
 }
 
-interface EvidenceState extends AsyncStatus {
+export type EvidenciaUploadStatus = 'idle' | 'uploading' | 'success' | 'error';
+
+export interface EvidenciaUploadState {
+    uploadStatus: EvidenciaUploadStatus;
+    /** Porcentaje de subida (0-100) mientras `uploadStatus === 'uploading'`. */
+    uploadProgress: number;
+    uploadError: string | null;
+    uploadRequestId: string | null;
+    uploadIsOffline: boolean;
+}
+
+export const initialUploadState: EvidenciaUploadState = {
+    uploadStatus: 'idle',
+    uploadProgress: 0,
+    uploadError: null,
+    uploadRequestId: null,
+    uploadIsOffline: false,
+};
+
+interface EvidenceState extends AsyncStatus, EvidenciaUploadState {
     evidencias: Evidencia[];
     /** Evidencias visibles de una orden. */
     fetchByOrder: (
         ordenId: string,
         loader: (ordenId: string) => Promise<Evidencia[]>
     ) => Promise<FetchEvidenciasResult>;
+    /** Sube una evidencia y la agrega a la caché; null si falló (ver upload*). */
+    subir: (
+        entrada: EvidenciaEntradaCrear,
+        loader: (
+            entrada: EvidenciaEntradaCrear,
+            onProgress: (porcentaje: number) => void
+        ) => Promise<Evidencia>
+    ) => Promise<Evidencia | null>;
+    resetUpload: () => void;
     reset: () => void;
 }
 
@@ -31,6 +59,7 @@ interface EvidenceState extends AsyncStatus {
 export const useEvidenceStore = create<EvidenceState>((set, get) => ({
     evidencias: [],
     ...initialAsyncStatus,
+    ...initialUploadState,
 
     fetchByOrder: async (ordenId, loader) => {
         try {
@@ -56,5 +85,36 @@ export const useEvidenceStore = create<EvidenceState>((set, get) => ({
         }
     },
 
-    reset: () => set({ evidencias: [], ...initialAsyncStatus }),
+    subir: async (entrada, loader) => {
+        // Un solo envío a la vez: evita subidas duplicadas por doble clic.
+        if (get().uploadStatus === 'uploading') return null;
+
+        set({ uploadStatus: 'uploading', uploadProgress: 0, uploadError: null, uploadRequestId: null, uploadIsOffline: false });
+        try {
+            const evidencia = await loader(entrada, (porcentaje) =>
+                set({ uploadProgress: porcentaje })
+            );
+            set((state) => ({
+                evidencias: upsertById(state.evidencias, evidencia),
+                uploadStatus: 'success',
+                uploadProgress: 100,
+                uploadError: null,
+                uploadRequestId: null,
+                uploadIsOffline: false,
+            }));
+            return evidencia;
+        } catch (err) {
+            set({
+                uploadStatus: 'error',
+                uploadError: getApiErrorMessage(err),
+                uploadRequestId: getApiErrorRequestId(err),
+                uploadIsOffline: isOfflineError(err),
+            });
+            return null;
+        }
+    },
+
+    resetUpload: () => set({ ...initialUploadState }),
+
+    reset: () => set({ evidencias: [], ...initialAsyncStatus, ...initialUploadState }),
 }));

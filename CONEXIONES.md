@@ -741,3 +741,52 @@ ejecuta durante el trabajo.
 Verificación frontend: `npm test` **536 passed** (76 archivos), `npm run lint`
 0 warnings / 0 errors (213 archivos), `npx tsc -p tsconfig.app.json --noEmit`
 sin errores.
+
+## Carga de evidencia con progreso, éxito y error (2026-10-14)
+
+Feature de frontend (sin cambios de backend): el contrato de subida ya existía
+(`POST /api/evidencias`, multipart, solo Mecánico/Administrador; el Cliente recibe
+`403`). Se implementó la subida con retroalimentación de progreso real, éxito y
+error en los portales de **Mecánico** y **Administrador**, y se reutiliza la
+lectura existente del portal Cliente.
+
+### Gateway / contrato
+
+- No se tocó el backend: `POST /api/evidencias` (multipart `archivo`, `orden_id`,
+  `contexto`, `presupuesto_id` opcional, `visible_cliente`) ya estaba documentado
+  en la Gateway (**22 endpoints**). El Cliente recibe `403`; fuera de alcance
+  `404`; reglas de negocio `422`; almacenamiento/órdenes `503`.
+
+### Frontend
+
+- Capas: `domain/entities/Evidencia.ts` (+ `EvidenciaEntradaCrear`,
+  `TAMANO_MAXIMO_EVIDENCIA_BYTES` = 12 MiB alineado con el límite de la Gateway y
+  `esContentTypeEvidenciaPermitido`), `domain/ports/EvidenciaPort.ts`
+  (`crear(entrada, onProgress)`), `infrastructure/api/EvidenciaService.ts`
+  (multipart con `onUploadProgress`), `infrastructure/stores/useEvidenceStore.ts`
+  (estado `uploadStatus`/`uploadProgress`/`uploadError`/`uploadRequestId`/
+  `uploadIsOffline`, `subir` con guard anti-duplicado y `upsertById`).
+- UI: `ProgressBar` (barra accesible), `hook useEvidenceUpload`,
+  `EvidenceUploadForm` (validación de tipo/tamaño, contexto presupuesto resuelto
+  con `PresupuestoService.getByOrder`, éxito con `Alert`+toast, error/sin conexión
+  con `Referencia`) y `OrderEvidenceSection`; `OrderEvidencePage` reúne la sección
+  en la ruta propia. Integrado en `MechanicOrderDetailPage` y
+  `AdminOrderDetailPage`, y en `/mechanic/ordenes/:id/evidencias` y
+  `/admin/ordenes/:id/evidencias`.
+- Contexto `presupuesto`: la evidencia se asocia al presupuesto de la orden y
+  queda **siempre visible al cliente**; si la orden no tiene presupuesto no se
+  envía y se avisa.
+- El portal Cliente sigue en **solo lectura** (`POST /api/evidencias` → `403`).
+
+### Pruebas
+
+- Frontend: `EvidenciaService.test.ts` (crear multipart + progreso),
+  `useEvidenceStore.test.ts` (subir/duplicado/errores), `ProgressBar.test.tsx`,
+  `EvidenceUploadForm.test.tsx` (éxito, progreso, validaciones, error del
+  servidor, sin conexión y presupuesto) y `OrderEvidencePage.test.tsx` (sección,
+  vacío y `404`); `MechanicOrderDetailPage.test.tsx` y
+  `AdminOrderDetailPage.test.tsx` actualizados.
+
+Verificación frontend: `npm test` **557 passed** (80 archivos), `npm run lint`
+0 warnings / 0 errors (223 archivos), `npx tsc -p tsconfig.app.json --noEmit`
+sin errores.

@@ -2,10 +2,12 @@ import type {
     ContextoEvidencia,
     EstadoEvidencia,
     Evidencia,
+    EvidenciaEntradaCrear,
     TipoArchivoEvidencia,
     UrlDescarga,
 } from '@/domain/entities/Evidencia';
 import type { EvidenciaPort } from '@/domain/ports/EvidenciaPort';
+import type { AxiosProgressEvent } from 'axios';
 import apiClient from '../config/apiClient';
 
 // Contrato HTTP de MS4 (evidencia multimedia) a través de la API Gateway. El
@@ -64,6 +66,34 @@ class EvidenciaService implements EvidenciaPort {
     async getDownloadUrl(evidenciaId: string): Promise<UrlDescarga> {
         const { data } = await apiClient.get<UrlDescargaApi>(`/evidencias/${evidenciaId}/descarga`);
         return { url: data.url, expiraEn: data.expira_en };
+    }
+
+    async crear(
+        entrada: EvidenciaEntradaCrear,
+        onProgress?: (porcentaje: number) => void
+    ): Promise<Evidencia> {
+        const form = new FormData();
+        form.append('archivo', entrada.archivo);
+        form.append('orden_id', entrada.ordenId);
+        form.append('contexto', entrada.contexto);
+        if (entrada.presupuestoId) {
+            form.append('presupuesto_id', entrada.presupuestoId);
+        }
+        if (entrada.visibleCliente !== undefined) {
+            form.append('visible_cliente', String(entrada.visibleCliente));
+        }
+
+        // No se fija `Content-Type`: axios lo elimina para FormData y deja que el
+        // navegador agregue el boundary del multipart.
+        const { data } = await apiClient.post<EvidenciaApi>('/evidencias', form, {
+            onUploadProgress: (evento: AxiosProgressEvent) => {
+                if (!onProgress) return;
+                const total = evento.total ?? 0;
+                if (total <= 0) return;
+                onProgress(Math.min(100, Math.round((evento.loaded / total) * 100)));
+            },
+        });
+        return mapEvidenciaApi(data);
     }
 }
 

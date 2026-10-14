@@ -15,11 +15,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Generic, TypeVar
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
+from sqlalchemy.sql import Select
 from sqlalchemy.orm import Session
 
 from services.ms3_presupuestos.db import Base
 from services.ms3_presupuestos.models import (
+    HistorialUmbral,
+    ItemPresupuesto,
     MovimientoInventario,
     ParametroInventario,
     Presupuesto,
@@ -80,6 +83,33 @@ class RepositorioProveedores(RepositorioBase[Proveedor]):
     def buscar_por_nombre(self, nombre: str) -> Proveedor | None:
         return self.sesion.scalar(select(Proveedor).where(Proveedor.nombre == nombre))
 
+    def con_nombre_similar(self, nombre: str, *, excepto: int | None = None) -> Proveedor | None:
+        """Mismo nombre sin distinguir mayúsculas ni espacios extremos."""
+        consulta = select(Proveedor).where(func.lower(Proveedor.nombre) == nombre.strip().lower())
+        if excepto is not None:
+            consulta = consulta.where(Proveedor.proveedor_id != excepto)
+        return self.sesion.scalar(consulta)
+
+    def _filtro(self, texto: str | None) -> Select:
+        consulta = select(Proveedor)
+        if texto:
+            patron = f"%{texto.strip().lower()}%"
+            consulta = consulta.where(
+                func.lower(Proveedor.nombre).like(patron) | func.lower(Proveedor.contacto).like(patron)
+            )
+        return consulta
+
+    def buscar(self, *, texto: str | None = None, desde: int = 0, limite: int = 50) -> Sequence[Proveedor]:
+        limite = max(1, min(limite, LIMITE_MAXIMO))
+        consulta = (self._filtro(texto).order_by(func.lower(Proveedor.nombre), Proveedor.proveedor_id)
+                    .offset(max(desde, 0)).limit(limite))
+        return self.sesion.scalars(consulta).all()
+
+    def contar_busqueda(self, *, texto: str | None = None) -> int:
+        return self.sesion.scalar(
+            select(func.count()).select_from(self._filtro(texto).subquery())
+        ) or 0
+
 
 class RepositorioRepuestos(RepositorioBase[Repuesto]):
     modelo = Repuesto
@@ -105,6 +135,61 @@ class RepositorioRepuestos(RepositorioBase[Repuesto]):
         if repuesto is None:
             raise RecursoNoEncontrado(f"Repuesto {repuesto_id} no existe")
         return repuesto
+
+    def con_nombre_similar(
+        self, proveedor_id: int, nombre: str, *, excepto: int | None = None
+    ) -> Repuesto | None:
+        """Repuesto del MISMO proveedor con el mismo nombre (sin distinguir mayúsculas)."""
+        consulta = select(Repuesto).where(
+            Repuesto.proveedor_id == proveedor_id,
+            func.lower(Repuesto.nombre) == nombre.strip().lower(),
+        )
+        if excepto is not None:
+            consulta = consulta.where(Repuesto.repuesto_id != excepto)
+        return self.sesion.scalar(consulta)
+
+    def _filtro(
+        self, *, proveedor_id: int | None, texto: str | None,
+        solo_bajo_umbral: bool, umbral_general: int | None,
+    ) -> Select:
+        consulta = select(Repuesto)
+        if proveedor_id is not None:
+            consulta = consulta.where(Repuesto.proveedor_id == proveedor_id)
+        if texto:
+            consulta = consulta.where(func.lower(Repuesto.nombre).like(f"%{texto.strip().lower()}%"))
+        if solo_bajo_umbral:
+            # Sin umbral general vigente, solo cuentan los umbrales particulares.
+            efectivo = func.coalesce(Repuesto.umbral_particular, umbral_general)
+            consulta = consulta.where(efectivo.is_not(None), Repuesto.stock < efectivo)
+        return consulta
+
+    def buscar(
+        self, *, proveedor_id: int | None = None, texto: str | None = None,
+        solo_bajo_umbral: bool = False, umbral_general: int | None = None,
+        desde: int = 0, limite: int = 50,
+    ) -> Sequence[Repuesto]:
+        limite = max(1, min(limite, LIMITE_MAXIMO))
+        consulta = self._filtro(proveedor_id=proveedor_id, texto=texto,
+                                solo_bajo_umbral=solo_bajo_umbral, umbral_general=umbral_general)
+        consulta = (consulta.order_by(func.lower(Repuesto.nombre), Repuesto.repuesto_id)
+                    .offset(max(desde, 0)).limit(limite))
+        return self.sesion.scalars(consulta).all()
+
+    def contar_busqueda(
+        self, *, proveedor_id: int | None = None, texto: str | None = None,
+        solo_bajo_umbral: bool = False, umbral_general: int | None = None,
+    ) -> int:
+        consulta = self._filtro(proveedor_id=proveedor_id, texto=texto,
+                                solo_bajo_umbral=solo_bajo_umbral, umbral_general=umbral_general)
+        return self.sesion.scalar(select(func.count()).select_from(consulta.subquery())) or 0
+
+    def tiene_historial(self, repuesto_id: int) -> bool:
+        """¿Aparece en movimientos, presupuestos o cambios de umbral? Entonces no se borra."""
+        return bool(self.sesion.scalar(select(
+            exists().where(MovimientoInventario.repuesto_id == repuesto_id)
+            | exists().where(ItemPresupuesto.repuesto_id == repuesto_id)
+            | exists().where(HistorialUmbral.repuesto_id == repuesto_id)
+        )))
 
     def bajo_umbral(self, umbral_general: int) -> Sequence[Repuesto]:
         """Repuestos con stock < umbral efectivo (particular o, si falta, general)."""

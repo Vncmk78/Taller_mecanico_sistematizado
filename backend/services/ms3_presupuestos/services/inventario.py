@@ -38,6 +38,7 @@ from services.ms3_presupuestos.persistencia import (
     RecursoNoEncontrado,
     UnidadDeTrabajo,
 )
+from services.ms3_presupuestos.persistencia.repositorios import FiltroRepuestos
 from services.ms3_presupuestos.schemas.inventario import (
     AlertaRepuesto,
     AlertaStock,
@@ -98,7 +99,8 @@ def disponible_para_orden(uow: UnidadDeTrabajo, repuesto: Repuesto, orden_id: in
 
 def alertas(uow: UnidadDeTrabajo) -> tuple[int | None, list[AlertaRepuesto]]:
     general = umbral_general(uow)
-    bajo = uow.repuestos.buscar(solo_bajo_umbral=True, umbral_general=general, limite=200)
+    bajo = uow.repuestos.buscar(
+        FiltroRepuestos(solo_bajo_umbral=True, umbral_general=general), limite=200)
     lista = []
     for r in bajo:
         efectivo = umbral_efectivo(r, general)

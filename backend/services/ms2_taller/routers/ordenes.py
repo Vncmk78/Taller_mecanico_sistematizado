@@ -16,6 +16,8 @@ from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
     CambioEstadoSolicitud,
+    CancelacionClienteSolicitud,
+    EntregaSolicitud,
     HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
@@ -32,10 +34,12 @@ from services.ms2_taller.services.ordenes import (
     asignar_mecanico,
     aplicar_decision_presupuesto,
     cambiar_estado_orden,
+    cancelar_orden_cliente,
     crear_orden,
     listar_ordenes,
     obtener_historial_orden,
     obtener_orden_visible,
+    registrar_entrega,
 )
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import AplicacionDecisionRespuesta, DecisionOrdenSolicitud
@@ -230,10 +234,11 @@ def consultar_historial_orden(
     response_model=OrdenRespuesta,
     summary="Cambiar el estado de una orden",
     description=(
-        "La primera asignación (1 → 2) y la primera aprobación de presupuesto "
-        "(3 → 4/5) requieren sus operaciones específicas y no admiten PATCH directo. "
+        "La primera asignación (1 → 2), la primera aprobación de presupuesto "
+        "(3 → 4/5) y la entrega física (6 → 7) requieren sus operaciones "
+        "específicas y no admiten PATCH directo. "
         "Los demás pares conservan su comportamiento; este endpoint no garantiza "
-        "las precondiciones pendientes de envío, repuestos, finalización, entrega o cancelación."
+        "las precondiciones pendientes de envío, repuestos, finalización o cancelación."
     ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
@@ -354,4 +359,132 @@ def actualizar_mecanico_responsable(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible asignar el mecánico",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/entrega",
+    response_model=OrdenRespuesta,
+    summary="Registrar la entrega física de una orden lista",
+    description=(
+        "Cierra el ciclo normal (6 → 7): registra la fecha de entrega y el "
+        "usuario que la autorizó. Solo el Administrador puede invocarla. "
+        "Reemplaza al PATCH directo 6 → 7, que responde 409."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden no está Lista o ya es terminal"
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Observación de entrega vacía"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def registrar_entrega_orden(
+    orden_id: int,
+    body: EntregaSolicitud,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> OrdenTrabajo:
+    try:
+        return registrar_entrega(
+            db,
+            orden_id=orden_id,
+            principal=principal,
+            observacion=body.observacion,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except OrdenObservacionInvalidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la entrega",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/cancelacion",
+    response_model=OrdenRespuesta,
+    summary="Cancelar una orden a solicitud de su cliente propietario",
+    description=(
+        "El cliente dueño del vehículo cancela una orden no terminal "
+        "(1/2/3 → 8). El motivo es obligatorio y se audita en el historial. "
+        "Una orden inexistente o ajena responde 404."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Cliente"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada o ajena"},
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden ya avanzó o es terminal"
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Motivo de cancelación vacío"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def cancelar_orden_como_cliente(
+    orden_id: int,
+    body: CancelacionClienteSolicitud,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> OrdenTrabajo:
+    try:
+        return cancelar_orden_cliente(
+            db,
+            orden_id=orden_id,
+            principal=principal,
+            motivo=body.motivo,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except OrdenObservacionInvalidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible cancelar la orden",
         ) from exc

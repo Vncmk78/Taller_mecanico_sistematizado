@@ -281,7 +281,8 @@ tienen ni deben tener FK física entre bases de microservicios:
 | `historial_asignacion.mecanico_anterior_id` / `mecanico_nuevo_id` | Responsables anterior y nuevo |
 | `historial_asignacion.administrador_id` | Administrador que asignó o reasignó |
 | `historial_estado.actor_usuario_id` | Usuario que originó el cambio cuando `origen=usuario` |
-| `diagnostico_autor_id`, `entregado_por_id`, `devuelto_por_id` | Referencias previstas por el modelo para etapas posteriores; no tienen endpoints de Semana 3 |
+| `entregado_por_id` | Usuario que registró la entrega física; lo fija `POST /api/ordenes/{id}/entrega` |
+| `diagnostico_autor_id`, `devuelto_por_id` | Referencias previstas por el modelo para etapas posteriores; todavía no tienen endpoints |
 
 La validación remota de que el `mecanico_id` existe, está activo y tiene rol
 Mecánico todavía no dispone de un contrato implementado entre MS2 y MS1. El
@@ -746,15 +747,16 @@ No se reserva stock ni hay transacción SQL entre ambos servicios.
 
 Cambia el estado de una orden validando rol, catálogo oficial (1 a 8) y la
 transición declarada por el dominio. Rechaza con `409` la primera asignación
-(`1 → 2`), que debe realizarse por `PUT /api/ordenes/{orden_id}/mecanico`, y la
+(`1 → 2`), que debe realizarse por `PUT /api/ordenes/{orden_id}/mecanico`; la
 primera aprobación (`3 → 4/5`), que exige una decisión verificada mediante
-`POST /api/ordenes/{orden_id}/decisiones-presupuesto`. También rechaza estos
+`POST /api/ordenes/{orden_id}/decisiones-presupuesto`; y la entrega física
+(`6 → 7`), que exige `POST /api/ordenes/{orden_id}/entrega`. También rechaza estos
 cambios para Administrador o usuarios multirrol, sin modificar estado ni historial.
 
 Los demás pares conservan el comportamiento existente y **no están completamente
 protegidos por sus precondiciones funcionales**: permanecen pendientes los flujos
-de envío inicial, disponibilidad posterior de repuestos, finalización, entrega
-física y cancelación independiente. El Administrador supera el control de rol;
+de envío inicial, disponibilidad posterior de repuestos, finalización y
+cancelación independiente. El Administrador supera el control de rol;
 el Mecánico solo sobre las órdenes que tiene asignadas. `Entregado` y
 `Cancelado` son terminales y rechazan cualquier cambio. El estado y el historial
 se actualizan en la misma transacción.
@@ -778,6 +780,53 @@ valida en el servicio de MS2 y no cambia las precondiciones de cada transición.
 { "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 6,
   "mecanico_actual_id": 50, "creado_por_id": 99,
   "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T11:00:00-03:00" }
+```
+
+### POST `/api/ordenes/{orden_id}/entrega`
+
+Registra la entrega física de una orden `Listo` y la deja en `Entregado`
+(`6 → 7`). Es exclusivo del Administrador y reemplaza al PATCH directo, que
+responde `409`. En la misma transacción MS2 actualiza el estado, fija
+`entregado_en` y `entregado_por_id` con la identidad del JWT y agrega el
+`HistorialEstado` con origen `usuario`.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador |
+| Body | `{"observacion"?: string no vacío}` |
+| Respuesta OK | `200` con `OrdenRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` la orden no está `Listo` o ya es terminal · `422` observación vacía · `500` persistencia · `502` MS2 no disponible |
+
+```json
+// Request
+{ "observacion": "Entregado al cliente" }
+// Response 200
+{ "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 7,
+  "mecanico_actual_id": 50, "creado_por_id": 99,
+  "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-29T09:00:00-03:00" }
+```
+
+### POST `/api/ordenes/{orden_id}/cancelacion`
+
+Cancela una orden a solicitud de su cliente propietario. Solo el Cliente dueño
+del vehículo puede invocarlo y únicamente mientras la orden no sea terminal
+(`1`, `2` o `3`). El `motivo` es obligatorio y se registra como observación del
+`HistorialEstado` junto con el cambio de estado.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Cliente |
+| Body | `{"motivo": string no vacío}` |
+| Respuesta OK | `200` con `OrdenRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `404` orden inexistente o ajena · `409` la orden ya avanzó o es terminal · `422` motivo vacío · `500` persistencia · `502` MS2 no disponible |
+
+```json
+// Request
+{ "motivo": "El cliente ya no desea el servicio" }
+// Response 200
+{ "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 8,
+  "mecanico_actual_id": null, "creado_por_id": 99,
+  "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T12:00:00-03:00" }
 ```
 
 ## Evidencias multimedia (MS4)

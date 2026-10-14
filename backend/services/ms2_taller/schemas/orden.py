@@ -40,6 +40,29 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime
 
 
+class EntregaSolicitud(BaseModel):
+    """Datos controlables al registrar la entrega física de una orden."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    observacion: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Comentario opcional de la entrega.",
+    )
+
+
+class CancelacionClienteSolicitud(BaseModel):
+    """Motivo obligatorio con el que el cliente cancela su orden."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    motivo: str = Field(
+        min_length=1,
+        description="Motivo de la cancelación; no puede estar vacío.",
+    )
+
+
 class CambioEstadoSolicitud(BaseModel):
     """Datos controlables al solicitar un cambio de estado de una orden."""
 

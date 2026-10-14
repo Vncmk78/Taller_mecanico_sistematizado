@@ -835,6 +835,300 @@ def test_motivo_valido_no_habilita_cancelacion_desde_estado_no_permitido(
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
+def test_post_entrega_administrador_registra_fecha_usuario_e_historial(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    orden_id = orden.orden_id
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden_id}/entrega",
+        json={"observacion": "  Entregado al cliente  "},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["estado_codigo"] == ENTREGADO
+
+    orden = db_ordenes.get(OrdenTrabajo, orden_id)
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == ENTREGADO
+    assert orden.entregado_en is not None
+    assert orden.entregado_por_id == 99
+    historial = db_ordenes.scalar(select(HistorialEstado))
+    assert historial.estado_anterior == LISTO
+    assert historial.estado_nuevo == ENTREGADO
+    assert historial.actor_usuario_id == 99
+    assert historial.origen == "usuario"
+    assert historial.observacion == "Entregado al cliente"
+
+
+def test_post_entrega_sin_observacion_es_valida(api_ordenes: TestClient, db_ordenes: Session):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        json={},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 200
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == ENTREGADO
+
+
+@pytest.mark.parametrize("usuario,roles", [
+    (50, (NombreRol.MECANICO,)),
+    (10, (NombreRol.CLIENTE,)),
+    (99, (NombreRol.CLIENTE, NombreRol.MECANICO)),
+])
+def test_post_entrega_no_administrador_recibe_403(
+    api_ordenes: TestClient, db_ordenes: Session,
+    usuario: int, roles: tuple[NombreRol, ...],
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        json={},
+        headers=_headers_para(usuario, *roles),
+    )
+    assert respuesta.status_code == 403
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == LISTO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+@pytest.mark.parametrize("estado_actual", [RECIBIDO, EN_REPARACION, ENTREGADO, CANCELADO])
+def test_post_entrega_desde_estado_no_listo_devuelve_409(
+    api_ordenes: TestClient, db_ordenes: Session, estado_actual: int,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=estado_actual,
+    )
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        json={},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 409
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == estado_actual
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_post_entrega_orden_inexistente_devuelve_404(api_ordenes: TestClient):
+    respuesta = api_ordenes.post(
+        "/ordenes/999/entrega",
+        json={},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Orden no encontrada"}
+
+
+def test_post_entrega_sin_token_devuelve_401(api_ordenes: TestClient):
+    respuesta = api_ordenes.post("/ordenes/1/entrega", json={})
+    assert respuesta.status_code == 401
+    assert respuesta.headers["www-authenticate"] == "Bearer"
+
+
+@pytest.mark.parametrize("observacion", ["", " ", "\t\n"])
+def test_post_entrega_observacion_vacia_devuelve_422(
+    api_ordenes: TestClient, observacion: str,
+):
+    respuesta = api_ordenes.post(
+        "/ordenes/1/entrega",
+        json={"observacion": observacion},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 422
+
+
+def test_patch_estado_entrega_6_a_7_reservado_a_operacion_especifica(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden.orden_id}/estado",
+        json={"estado_destino": ENTREGADO},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 409
+    assert "operación específica" in respuesta.json()["detail"]
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == LISTO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_post_entrega_fallo_persistencia_revierte(
+    api_ordenes: TestClient, db_ordenes: Session, monkeypatch: pytest.MonkeyPatch,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+
+    def fallar_commit() -> None:
+        raise SQLAlchemyError("commit fallido")
+
+    monkeypatch.setattr(db_ordenes, "commit", fallar_commit)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        json={},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 500
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == LISTO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+@pytest.mark.parametrize("estado_actual", [
+    RECIBIDO, ESPERANDO_DIAGNOSTICO, ESPERANDO_APROBACION_PRESUPUESTO,
+])
+def test_post_cancelacion_cliente_propietario_cancela(
+    api_ordenes: TestClient, db_ordenes: Session, estado_actual: int,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, estado_codigo=estado_actual,
+    )
+    orden_id = orden.orden_id
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden_id}/cancelacion",
+        json={"motivo": "  Ya no deseo el servicio  "},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 200
+    assert respuesta.json()["estado_codigo"] == CANCELADO
+    historial = db_ordenes.scalar(select(HistorialEstado))
+    assert historial.estado_anterior == estado_actual
+    assert historial.estado_nuevo == CANCELADO
+    assert historial.actor_usuario_id == 10
+    assert historial.origen == "usuario"
+    assert historial.observacion == "Ya no deseo el servicio"
+
+    repetida = api_ordenes.post(
+        f"/ordenes/{orden_id}/cancelacion",
+        json={"motivo": "Otra vez"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert repetida.status_code == 409
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
+
+
+def test_post_cancelacion_cliente_ajeno_devuelve_404(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={"motivo": "No es mi orden"},
+        headers=_headers_para(20, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 404
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_post_cancelacion_persona_no_cliente_recibe_403(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    for usuario, roles in ((99, (NombreRol.ADMINISTRADOR,)), (50, (NombreRol.MECANICO,))):
+        respuesta = api_ordenes.post(
+            f"/ordenes/{orden.orden_id}/cancelacion",
+            json={"motivo": "Intento"},
+            headers=_headers_para(usuario, *roles),
+        )
+        assert respuesta.status_code == 403
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_post_cancelacion_cliente_multirrol_propietario_cancela(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=60)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={"motivo": "Cambié de opinión"},
+        headers=_headers_para(10, NombreRol.CLIENTE, NombreRol.MECANICO),
+    )
+    assert respuesta.status_code == 200
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == CANCELADO
+
+
+@pytest.mark.parametrize("motivo", ["", " ", "\t\n"])
+def test_post_cancelacion_motivo_vacio_devuelve_422(
+    api_ordenes: TestClient, db_ordenes: Session, motivo: str,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={"motivo": motivo},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 422
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_post_cancelacion_motivo_ausente_devuelve_422(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 422
+
+
+def test_post_cancelacion_estado_no_permitido_devuelve_409(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, estado_codigo=EN_REPARACION)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={"motivo": "Fuera de plazo"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 409
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == EN_REPARACION
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_post_cancelacion_orden_inexistente_devuelve_404(api_ordenes: TestClient):
+    respuesta = api_ordenes.post(
+        "/ordenes/999/cancelacion",
+        json={"motivo": "No existe"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 404
+    assert respuesta.json() == {"detail": "Orden no encontrada"}
+
+
+def test_post_cancelacion_sin_token_devuelve_401(api_ordenes: TestClient):
+    respuesta = api_ordenes.post("/ordenes/1/cancelacion", json={"motivo": "x"})
+    assert respuesta.status_code == 401
+    assert respuesta.headers["www-authenticate"] == "Bearer"
+
+
+def test_post_cancelacion_rechaza_campos_controlados(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={"motivo": "Válido", "estado_codigo": CANCELADO, "actor_usuario_id": 1},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 422
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == RECIBIDO
+
+
 def test_patch_estado_mecanico_no_asignado_recibe_403(
     api_ordenes: TestClient,
     db_ordenes: Session,

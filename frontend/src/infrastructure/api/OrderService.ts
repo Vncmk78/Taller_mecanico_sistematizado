@@ -78,6 +78,28 @@ class OrderService implements OrderPort {
         });
         return mapOrdenApi(data);
     }
+
+    async asignarMecanico(ordenId: string, mecanicoId: string, observacion?: string): Promise<Order> {
+        const { data } = await apiClient.put<OrdenRespuesta>(`/ordenes/${ordenId}/mecanico`, {
+            mecanico_id: Number(mecanicoId),
+            observacion: observacion?.trim() || undefined,
+        });
+        return mapOrdenApi(data);
+    }
+
+    async registrarEntrega(ordenId: string, observacion?: string): Promise<Order> {
+        const { data } = await apiClient.post<OrdenRespuesta>(`/ordenes/${ordenId}/entrega`, {
+            observacion: observacion?.trim() || undefined,
+        });
+        return mapOrdenApi(data);
+    }
+
+    async cancelarComoCliente(ordenId: string, motivo: string): Promise<Order> {
+        const { data } = await apiClient.post<OrdenRespuesta>(`/ordenes/${ordenId}/cancelacion`, {
+            motivo: motivo.trim(),
+        });
+        return mapOrdenApi(data);
+    }
 }
 
 export const orderService = new OrderService();

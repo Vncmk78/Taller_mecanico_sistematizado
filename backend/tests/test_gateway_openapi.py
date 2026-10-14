@@ -1,6 +1,6 @@
 """Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 18 endpoints reales de Auth,
+Verifican que `/openapi.json` publica los 20 endpoints reales de Auth,
 Vehículos, Órdenes y Evidencias con sus contratos y seguridad, que el proxy
 genérico no aparece, y que las copias de `gateway/contratos` no se
 desactualizan respecto a los esquemas reales de MS1, MS2 y MS4.
@@ -35,6 +35,8 @@ from services.ms2_taller.schemas.vehiculo import (
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
     CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
+    CancelacionClienteSolicitud as Ms2CancelacionClienteSolicitud,
+    EntregaSolicitud as Ms2EntregaSolicitud,
     HistorialEstadoRespuesta as Ms2HistorialEstadoRespuesta,
     OrdenCrear as Ms2OrdenCrear,
     OrdenRespuesta as Ms2OrdenRespuesta,
@@ -62,6 +64,8 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes/{orden_id}/mecanico", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
+    ("/api/ordenes/{orden_id}/entrega", "post"),
+    ("/api/ordenes/{orden_id}/cancelacion", "post"),
     ("/api/evidencias", "post"),
     ("/api/evidencias", "get"),
     ("/api/evidencias/{evidencia_id}", "get"),
@@ -82,6 +86,8 @@ _PROTEGIDOS = {
     "/api/ordenes/{orden_id}/mecanico",
     "/api/ordenes/{orden_id}/historial",
     "/api/ordenes/{orden_id}/estado",
+    "/api/ordenes/{orden_id}/entrega",
+    "/api/ordenes/{orden_id}/cancelacion",
     "/api/evidencias",
     "/api/evidencias/{evidencia_id}",
     "/api/evidencias/{evidencia_id}/descarga",
@@ -167,6 +173,8 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/estado", "patch"),
+        ("/api/ordenes/{orden_id}/entrega", "post"),
+        ("/api/ordenes/{orden_id}/cancelacion", "post"),
         ("/api/evidencias", "post"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
@@ -224,6 +232,8 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
             "put",
         ): "AsignacionMecanicoActualizar",
         ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
+        ("/api/ordenes/{orden_id}/entrega", "post"): "EntregaSolicitud",
+        ("/api/ordenes/{orden_id}/cancelacion", "post"): "CancelacionClienteSolicitud",
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"): "DecisionOrdenSolicitud",
     }
     for (ruta, metodo), ref in con_cuerpo.items():
@@ -278,6 +288,14 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (
             contratos_ordenes.CambioEstadoSolicitud,
             Ms2CambioEstadoSolicitud,
+        ),
+        (
+            contratos_ordenes.EntregaSolicitud,
+            Ms2EntregaSolicitud,
+        ),
+        (
+            contratos_ordenes.CancelacionClienteSolicitud,
+            Ms2CancelacionClienteSolicitud,
         ),
         (
             contratos_ordenes.HistorialEstadoRespuesta,
@@ -353,6 +371,8 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "AsignacionMecanicoActualizar",
         "OrdenRespuesta",
         "CambioEstadoSolicitud",
+        "EntregaSolicitud",
+        "CancelacionClienteSolicitud",
         "HistorialEstadoRespuesta",
         "EvidenciaSubida",
         "EvidenciaRespuesta",

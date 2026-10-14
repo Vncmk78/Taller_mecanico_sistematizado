@@ -112,8 +112,11 @@ ruta no existe.
 | `GET /api/ordenes` | ⚠️ de sus vehículos | ⚠️ asignadas | ✅ todas |
 | `GET /api/ordenes/{id}` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
 | `PUT /api/ordenes/{id}/mecanico` | ❌ | ❌ | ✅ |
-| `GET /api/ordenes/{id}/historial` | — | — | — |
-| Cambio general de estado | — | — | — |
+| `GET /api/ordenes/{id}/historial` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
+| `PATCH /api/ordenes/{id}/estado` | ❌ 403 | ⚠️ solo asignadas | ✅ cualquiera |
+| `POST /api/ordenes/{id}/entrega` | ❌ 403 | ❌ 403 | ✅ |
+| `POST /api/ordenes/{id}/cancelacion` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
+| `POST /api/ordenes/{id}/decisiones-presupuesto` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
 
 Detalles que condicionan la matriz:
 
@@ -133,6 +136,17 @@ Detalles que condicionan la matriz:
 - `mecanico_id` es hoy una **referencia lógica** a MS1: **no** se valida en el
   servidor que exista, esté activo ni tenga el rol `mecanico`, ni se aplica un
   máximo de órdenes activas.
+- **Cambio general de estado** (`PATCH /api/ordenes/{id}/estado`): solo el
+  Administrador, o el Mecánico asignado a esa orden, con `403` en otro caso. Los
+  pares `1 → 2`, `3 → 4/5` y `6 → 7` están reservados a sus operaciones
+  específicas y responden `409`; pasar a `Cancelado` exige motivo no vacío.
+- **Entrega física** (`POST /api/ordenes/{id}/entrega`): exclusiva del
+  Administrador. Cierra `6 → 7`, registra `entregado_en` y `entregado_por_id` con
+  la identidad del JWT y el historial. El PATCH `6 → 7` responde `409`.
+- **Cancelación del cliente** (`POST /api/ordenes/{id}/cancelacion`): solo el
+  Cliente propietario del vehículo mientras la orden esté en `1`, `2` o `3`. El
+  motivo es obligatorio; una orden inexistente o ajena responde `404` y una orden
+  ya avanzada o terminal `409`.
 
 ### 4.4 Presupuestos, repuestos, proveedores e inventario (MS3)
 

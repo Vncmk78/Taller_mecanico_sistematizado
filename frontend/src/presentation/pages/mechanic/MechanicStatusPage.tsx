@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ClipboardList } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
-import { AVANCES_MECANICO, ESTADOS_ORDEN, ordenStatusLabel } from '@/domain/entities/Order';
+import { ESTADOS_ORDEN, ordenStatusLabel } from '@/domain/entities/Order';
+import { destinosAvanceMecanico } from '@/domain/entities/OrderActions';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
@@ -45,7 +46,7 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
     const updateOrder = useOrderStore((s) => s.updateOrder);
     const { showToast } = useToast();
 
-    const avances = AVANCES_MECANICO[order.estadoCodigo] ?? [];
+    const avances = destinosAvanceMecanico(order.estadoCodigo);
 
     const confirmarAvance = async () => {
         if (!destino) return;
@@ -232,16 +233,17 @@ export function MechanicStatusPage() {
         ].join(' ')
     );
 
-    // Una orden es accionable cuando AVANCES_MECANICO define algún avance para su
-    // estado; el resto depende del cliente o del administrador y se lista aparte
-    // para no mostrar un selector sin opciones. La partición se hace sobre la
-    // página actual, así la paginación sigue siendo la de useOrderListFilters.
+    // Una orden es accionable cuando el catálogo centralizado define algún
+    // avance para su estado (destinosAvanceMecanico); el resto depende del
+    // cliente o del administrador y se lista aparte para no mostrar un selector
+    // sin opciones. La partición se hace sobre la página actual, así la
+    // paginación sigue siendo la de useOrderListFilters.
     const actionable = useMemo(
-        () => pagedOrders.filter((o) => (AVANCES_MECANICO[o.estadoCodigo]?.length ?? 0) > 0),
+        () => pagedOrders.filter((o) => destinosAvanceMecanico(o.estadoCodigo).length > 0),
         [pagedOrders]
     );
     const closed = useMemo(
-        () => pagedOrders.filter((o) => (AVANCES_MECANICO[o.estadoCodigo]?.length ?? 0) === 0),
+        () => pagedOrders.filter((o) => destinosAvanceMecanico(o.estadoCodigo).length === 0),
         [pagedOrders]
     );
 

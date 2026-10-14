@@ -31,7 +31,13 @@ _EJEMPLO_RESPUESTA: dict[str, object] = {
 
 _EJEMPLO_CAMBIAR_ESTADO: dict[str, object] = {
     "estado_destino": 6,
-    "observacion": "Trabajo autorizado finalizado",
+    "observacion": "Inicia evaluación técnica",
+}
+
+_EJEMPLO_ENTREGA: dict[str, object] = {"observacion": "Entregado al cliente"}
+
+_EJEMPLO_CANCELACION_CLIENTE: dict[str, object] = {
+    "motivo": "El cliente ya no desea el servicio"
 }
 
 _EJEMPLO_HISTORIAL: dict[str, object] = {
@@ -136,6 +142,39 @@ class CambioEstadoSolicitud(BaseModel):
         min_length=1,
         description="Obligatoria al pasar a Cancelado; opcional en los demás destinos.",
         examples=["Inicia evaluación técnica"],
+    )
+
+
+class EntregaSolicitud(BaseModel):
+    """Datos controlables al registrar la entrega física de una orden."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra="forbid",
+        json_schema_extra={"examples": [_EJEMPLO_ENTREGA]},
+    )
+
+    observacion: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Comentario opcional registrado con la entrega.",
+        examples=["Entregado al cliente"],
+    )
+
+
+class CancelacionClienteSolicitud(BaseModel):
+    """Motivo obligatorio con el que el cliente cancela su orden."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra="forbid",
+        json_schema_extra={"examples": [_EJEMPLO_CANCELACION_CLIENTE]},
+    )
+
+    motivo: str = Field(
+        min_length=1,
+        description="Motivo de la cancelación; no puede estar vacío.",
+        examples=["El cliente ya no desea el servicio"],
     )
 
 

@@ -96,8 +96,8 @@ _TAGS = [
     {
         "name": "Órdenes",
         "description": (
-            "Creación, consulta, historial, cambio de estado y asignación "
-            "inicial de órdenes (MS2)."
+            "Creación, consulta, historial, cambio de estado, asignación "
+            "inicial, entrega física y cancelación del cliente (MS2)."
         ),
     },
     {
@@ -132,6 +132,8 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
+    ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
+    ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
     ("EvidenciaSubida", contratos_evidencias.EvidenciaSubida),
     ("EvidenciaRespuesta", contratos_evidencias.EvidenciaRespuesta),
@@ -769,10 +771,12 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "transición declarada por el dominio. La primera asignación (1 → 2) "
                     "requiere PUT /api/ordenes/{orden_id}/mecanico; la primera aprobación "
                     "(3 → 4/5) requiere POST /api/ordenes/{orden_id}/decisiones-presupuesto "
-                    "con una decisión verificada de MS3. El PATCH directo responde 409 "
-                    "en esos tres pares, también para Administrador y usuarios multirrol. "
+                    "con una decisión verificada de MS3; y la entrega física (6 → 7) "
+                    "requiere POST /api/ordenes/{orden_id}/entrega. "
+                    "El PATCH directo responde 409 en esos tres pares, también para "
+                    "Administrador y usuarios multirrol. "
                     "Los otros pares mantienen su comportamiento y las brechas de "
-                    "precondiciones de envío, stock posterior, finalización, entrega y "
+                    "precondiciones de envío, stock posterior, finalización y "
                     "cancelación siguen pendientes. Administrador por rol; "
                     "Mecánico solo en órdenes que tiene asignadas. Una orden "
                     "Entregada o Cancelada es terminal y rechaza cualquier "
@@ -794,6 +798,62 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 requiere_auth=True,
                 con_orden_id=True,
                 descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/entrega": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar la entrega física de una orden lista",
+                descripcion=(
+                    "Cierra el ciclo normal (6 → 7): registra la fecha de entrega "
+                    "y la identidad que la autorizó. Solo el Administrador puede "
+                    "invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. "
+                    "Una orden que no está Lista o ya es terminal responde 409. "
+                    "Registra el historial en la misma transacción."
+                ),
+                operation_id="registrar_entrega_orden",
+                cuerpo="EntregaSolicitud",
+                respuestas_ok={
+                    "200": _respuesta("Orden entregada.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "La orden no está Lista o ya es terminal",
+                    "422": "Observación de entrega vacía",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/cancelacion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Cancelar una orden a solicitud de su cliente propietario",
+                descripcion=(
+                    "El cliente dueño del vehículo cancela una orden no terminal "
+                    "(1/2/3 → 8). El motivo es obligatorio y se audita en el "
+                    "historial junto con el estado. Una orden inexistente o ajena "
+                    "responde 404 sin revelar cuál; una orden ya avanzada o "
+                    "terminal responde 409."
+                ),
+                operation_id="cancelar_orden_cliente",
+                cuerpo="CancelacionClienteSolicitud",
+                respuestas_ok={
+                    "200": _respuesta("Orden cancelada.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Cliente",
+                    "409": "La orden ya avanzó o es terminal",
+                    "422": "Motivo de cancelación vacío o datos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada o ajena.",
                 esquema_404=error_404_recurso,
             )
         },
@@ -904,7 +964,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 18 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 20 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:

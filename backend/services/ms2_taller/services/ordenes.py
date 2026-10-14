@@ -10,7 +10,7 @@ no está disponible.
 
 from __future__ import annotations
 
-from sqlalchemy import false, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
@@ -51,6 +51,7 @@ _OPERACIONES_ESPECIFICAS_POR_EVENTO = {
         "POST /ordenes/{orden_id}/decisiones-presupuesto",
     EventoOrden.PRIMERA_APROBACION_SIN_REPUESTOS:
         "POST /ordenes/{orden_id}/decisiones-presupuesto",
+    EventoOrden.ENTREGA_FISICA: "POST /ordenes/{orden_id}/entrega",
 }
 
 
@@ -450,6 +451,133 @@ def cambiar_estado_orden(
         raise PersistenciaOrdenError(
             "No fue posible cambiar el estado de la orden"
         ) from exc
+
+
+def registrar_entrega(
+    db: Session,
+    *,
+    orden_id: int,
+    principal: PrincipalAutenticado,
+    observacion: str | None = None,
+) -> OrdenTrabajo:
+    """Registra la entrega física de una orden lista (``6 -> 7``).
+
+    Solo el Administrador cierra el ciclo normal. La fecha de entrega la genera
+    la base de datos y el usuario que la registra queda auditado junto al
+    historial de estado dentro de la misma transacción.
+    """
+
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise OrdenEstadoNoAutorizadoError(
+            "Se requiere rol Administrador para registrar la entrega"
+        )
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.ENTREGA_FISICA
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        estado_anterior = orden.estado_codigo
+        orden.estado_codigo = destino
+        # La base evalúa now() para respetar la restricción entregado_en>=creado_en.
+        orden.entregado_en = func.now()
+        orden.entregado_por_id = principal.usuario_id
+        registrar_historial_estado(
+            db,
+            orden_id=orden.orden_id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id,
+            origen="usuario",
+            observacion=observacion,
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (
+        OrdenNoEncontradaError,
+        OrdenEstadoNoAutorizadoError,
+        OrdenObservacionInvalidaError,
+        OrdenTransicionNoPermitidaError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible registrar la entrega de la orden"
+        ) from exc
+
+
+def cancelar_orden_cliente(
+    db: Session,
+    *,
+    orden_id: int,
+    principal: PrincipalAutenticado,
+    motivo: str,
+) -> OrdenTrabajo:
+    """Cancela la orden a solicitud de su cliente propietario (estados 1 a 3).
+
+    El cliente solo cancela sus propias órdenes mientras el taller no haya
+    iniciado la reparación; el motivo es obligatorio y se audita como
+    observación del historial. Una orden ajena responde el mismo recurso ausente.
+    """
+
+    if NombreRol.CLIENTE not in principal.roles:
+        raise OrdenEstadoNoAutorizadoError("Se requiere rol Cliente")
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        propietario = db.scalar(
+            select(Cliente.usuario_id)
+            .join(Vehiculo, Vehiculo.cliente_id == Cliente.cliente_id)
+            .where(Vehiculo.vehiculo_id == orden.vehiculo_id)
+        )
+        if propietario != principal.usuario_id:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.CANCELACION_SOLICITADA_CONFIRMADA
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        estado_anterior = orden.estado_codigo
+        orden.estado_codigo = destino
+        registrar_historial_estado(
+            db,
+            orden_id=orden.orden_id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id,
+            origen="usuario",
+            observacion=motivo,
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (
+        OrdenNoEncontradaError,
+        OrdenEstadoNoAutorizadoError,
+        OrdenTransicionNoPermitidaError,
+        OrdenObservacionInvalidaError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible cancelar la orden") from exc
 
 
 def aplicar_decision_presupuesto(

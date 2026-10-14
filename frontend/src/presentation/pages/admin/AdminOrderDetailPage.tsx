@@ -3,6 +3,7 @@ import { ArrowLeft, ClipboardX } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
+import { OrderEvidenceSection } from '@/presentation/components/evidence/OrderEvidenceSection';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -90,6 +91,13 @@ export function AdminOrderDetailPage() {
             />
 
             <OrderStatusAndHistory order={order} />
+
+            <OrderEvidenceSection
+                orderId={order.id}
+                canUpload
+                moreHref={`/admin/ordenes/${order.id}/evidencias`}
+                className="mt-6"
+            />
 
             <OrderActionsPanel order={order} className="mt-6" />
         </div>

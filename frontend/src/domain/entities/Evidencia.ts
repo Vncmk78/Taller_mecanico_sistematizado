@@ -42,6 +42,28 @@ export interface UrlDescarga {
     expiraEn: number;
 }
 
+/**
+ * Datos para subir una evidencia (POST /evidencias, multipart). El backend
+ * resuelve el autor del JWT; la respuesta es la evidencia ya confirmada.
+ * `presupuestoId` solo viaja con contexto `presupuesto` (y es obligatorio en
+ * ese caso); en ese contexto la evidencia siempre es visible para el cliente.
+ */
+export interface EvidenciaEntradaCrear {
+    ordenId: string;
+    archivo: File;
+    contexto: ContextoEvidencia;
+    presupuestoId?: string | null;
+    visibleCliente?: boolean;
+}
+
+/** Límite del Gateway para `/api/evidencias` (multipart): 12 MiB. */
+export const TAMANO_MAXIMO_EVIDENCIA_BYTES = 12 * 1024 * 1024;
+
+/** true si el content_type corresponde a una foto o video aceptado por MS4. */
+export function esContentTypeEvidenciaPermitido(contentType: string): boolean {
+    return contentType.startsWith('image/') || contentType.startsWith('video/');
+}
+
 /** true si la evidencia es una imagen mostrable en un `<img>`. */
 export function esImagen(evidencia: Evidencia): boolean {
     return evidencia.tipoArchivo === 'foto' || evidencia.contentType.startsWith('image/');

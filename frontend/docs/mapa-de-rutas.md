@@ -27,6 +27,8 @@ Roles del sistema: `administrador`, `cliente`, `mecanico`.
 ├── /admin  (solo administrador, AdminLayout/RoleLayout sidebar)
 │   ├── /admin                → Dashboard (índice)
 │   ├── /admin/ordenes        → Gestión de Órdenes
+│   ├── /admin/ordenes/:id    → Detalle de la orden
+│   ├── /admin/ordenes/:id/evidencias → Evidencia multimedia de la orden
 │   ├── /admin/clientes       → Clientes
 │   ├── /admin/vehiculos      → Catálogo de vehículos
 │   ├── /admin/vehiculos/:id  → Ficha técnica del vehículo
@@ -52,6 +54,7 @@ Roles del sistema: `administrador`, `cliente`, `mecanico`.
     ├── /mechanic/vehiculos/:id → Detalle del vehículo
     ├── /mechanic/ordenes     → Mis Órdenes
     ├── /mechanic/ordenes/:id → Detalle de la orden
+    ├── /mechanic/ordenes/:id/evidencias → Evidencia multimedia de la orden
     └── /mechanic/estados     → Actualizar Estados
 
 * (cualquier otra ruta)      → / (fallback)
@@ -76,7 +79,8 @@ Layout: `AdminLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | --- | --- | --- |
 | `/admin` | `AdminDashboardPage` | Funcional |
 | `/admin/ordenes` | `AdminOrdersPage` | Placeholder ("Estructura en construcción") |
-| `/admin/ordenes/:id` | `AdminOrderDetailPage` | Funcional (acciones de orden con confirmación) |
+| `/admin/ordenes/:id` | `AdminOrderDetailPage` | Funcional (acciones de orden con confirmación + evidencia multimedia) |
+| `/admin/ordenes/:id/evidencias` | `OrderEvidencePage` | Funcional (subida con progreso/éxito/error) |
 | `/admin/clientes` | `AdminClientsPage` | Placeholder |
 | `/admin/vehiculos` | `AdminVehiclesPage` | Funcional |
 | `/admin/vehiculos/:id` | `AdminVehicleDetailPage` | Funcional |
@@ -113,7 +117,8 @@ Layout: `MechanicLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | `/mechanic/vehiculos` | `MechanicVehiclesPage` | Funcional |
 | `/mechanic/vehiculos/:id` | `MechanicVehicleDetailPage` | Funcional |
 | `/mechanic/ordenes` | `MechanicOrdersPage` | Funcional |
-| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional (acciones de orden con confirmación + bitácora de trabajo) |
+| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional (acciones de orden con confirmación + bitácora de trabajo + evidencia multimedia) |
+| `/mechanic/ordenes/:id/evidencias` | `OrderEvidencePage` | Funcional (subida con progreso/éxito/error) |
 | `/mechanic/estados` | `MechanicStatusPage` | Funcional (avance de estado con confirmación) |
 
 ## Menús por rol
@@ -159,5 +164,10 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
   solo lo asignado al mecánico, y las vistas comparan contra `user.id`
   (`mechanicScope.ts`). Además `logout`/`clearSession` purgan las cachés
   compartidas de órdenes y vehículos.
+- La **evidencia multimedia** del personal reutiliza `OrderEvidenceSection` en
+  el detalle de la orden (Admin y Mecánico) y `OrderEvidencePage` en la ruta
+  propia `/…/ordenes/:id/evidencias`. La subida (Mecánico/Administrador) muestra
+  progreso real, éxito y error; el Cliente solo ve
+  `/client/ordenes/:id/evidencias` en modo lectura.
 - Las rutas de vehículos y sus componentes los aportó el resto del equipo y se
   integraron en la promoción a `main` (commit de merge `ea2b439`).

@@ -106,9 +106,9 @@ export function ClientVehicleFormPage() {
     return (
     <div className="p-10 animate-fade-in flex justify-center">
         <GlassCard className="w-full max-w-[600px] p-10">
-        <h2 className="text-2xl font-bold mb-2 text-center flex items-center justify-center gap-3">
-            <Car className="w-6 h-6 text-primary-orange" /> Registrar Nuevo Vehículo
-        </h2>
+        <h1 className="text-2xl font-bold mb-2 text-center flex items-center justify-center gap-3">
+            <Car className="w-6 h-6 text-primary-orange" aria-hidden /> Registrar Nuevo Vehículo
+        </h1>
         <p className="text-text-muted text-sm text-center mb-8">
             Complete los datos del vehículo. La patente debe ser única en el sistema.
         </p>

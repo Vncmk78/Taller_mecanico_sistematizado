@@ -19,7 +19,7 @@ export function ClientBudgetsPage() {
     return (
         <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
             <div className="mb-6">
-                <h2 className="text-3xl font-bold mb-1">Mis Presupuestos</h2>
+                <h1 className="text-3xl font-bold mb-1">Mis Presupuestos</h1>
                 <p className="text-text-muted">
                     Revise, apruebe o rechace las cotizaciones de sus órdenes de servicio.
                 </p>

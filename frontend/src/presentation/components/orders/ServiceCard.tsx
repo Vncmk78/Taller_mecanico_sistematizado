@@ -72,6 +72,7 @@ export function ServiceCard({
                     </Link>
                     <Link
                         to={vehiclePath}
+                        aria-label="Ver ficha del vehículo"
                         className="flex items-center justify-center gap-2 bg-surface border border-border-custom text-primary-blue py-2.5 rounded-lg text-sm hover:bg-bg-secondary transition-colors no-underline"
                         title="Ver ficha del vehículo"
                     >
@@ -81,6 +82,7 @@ export function ServiceCard({
                     {evidencePath && (
                         <Link
                             to={evidencePath}
+                            aria-label="Ver evidencia multimedia"
                             className="flex items-center justify-center gap-2 bg-surface border border-border-custom text-primary-blue py-2.5 rounded-lg text-sm hover:bg-bg-secondary transition-colors no-underline"
                             title="Ver evidencia multimedia"
                         >

@@ -44,7 +44,11 @@ export function AppNavLink({ to, label, icon, end, variant }: AppNavLinkProps) {
         `${baseClasses[variant]} ${isActive ? activeClasses[variant] : idleClasses[variant]}`
       }
     >
-      {icon}
+      {icon ? (
+        <span aria-hidden className="inline-flex shrink-0">
+          {icon}
+        </span>
+      ) : null}
       {label}
     </NavLink>
   );

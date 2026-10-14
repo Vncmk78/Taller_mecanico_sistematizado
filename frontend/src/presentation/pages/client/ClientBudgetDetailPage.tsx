@@ -168,7 +168,7 @@ export function ClientBudgetDetailPage() {
                 to="/client/presupuestos"
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
             >
-                <ArrowLeft className="w-4 h-4" /> Volver a mis presupuestos
+                <ArrowLeft className="w-4 h-4" aria-hidden /> Volver a mis presupuestos
             </Link>
 
             {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
@@ -190,10 +190,10 @@ export function ClientBudgetDetailPage() {
 
             <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
                 <div>
-                    <h2 className="text-3xl font-bold mb-2 flex items-center gap-3">
+                    <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
                         <Wrench className="w-6 h-6 text-text-muted" aria-hidden />
                         Servicio n° {presupuesto.orderId}
-                    </h2>
+                    </h1>
                     <p className="text-text-muted">
                         Versión {mostrada?.numero ?? presupuesto.ultimaVersion} de {presupuesto.cantidadVersiones} ·
                         Emitida el {formatDateTime(presupuesto.creadoEn)}
@@ -204,10 +204,10 @@ export function ClientBudgetDetailPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <section className="lg:col-span-2 card p-6">
-                    <h3 className="text-xl font-bold flex items-center gap-2 mb-5 pb-4 border-b border-border-custom">
+                    <h2 className="text-xl font-bold flex items-center gap-2 mb-5 pb-4 border-b border-border-custom">
                         <FileText className="w-5 h-5 text-text-muted" aria-hidden />
                         Detalle del presupuesto
-                    </h3>
+                    </h2>
 
                     {mostrada && mostrada.esModificacion && (
                         <Alert tone="info" className="mb-4">
@@ -238,7 +238,7 @@ export function ClientBudgetDetailPage() {
                 </section>
 
                 <section className="card p-6 flex flex-col">
-                    <h3 className="text-xl font-bold mb-4">Su decisión</h3>
+                    <h2 className="text-xl font-bold mb-4">Su decisión</h2>
 
                     {pendiente ? (
                         <>

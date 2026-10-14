@@ -24,6 +24,7 @@ from collections.abc import Iterable, Sequence
 from decimal import Decimal
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import object_session
 
 from services.ms3_presupuestos.models import (
     DecisionPresupuesto,
@@ -37,6 +38,7 @@ from services.ms3_presupuestos.persistencia import (
     ReglaDeDatosViolada,
     UnidadDeTrabajo,
 )
+from services.ms3_presupuestos.persistencia.repositorios import RepositorioMovimientos
 from services.ms3_presupuestos.schemas.presupuesto import (
     DecisionSalida,
     ItemEntrada,
@@ -267,19 +269,28 @@ def _exigir_ultima(presupuesto: Presupuesto, version: VersionPresupuesto) -> Non
 
 
 def _repuestos_faltantes(version: VersionPresupuesto) -> list[RepuestoFaltante]:
-    """Repuestos de la versión cuyo stock no cubre la cantidad presupuestada."""
+    """Repuestos de la versión cuya disponibilidad no cubre lo presupuestado.
+
+    Disponible para la orden = stock − lo comprometido por OTRAS órdenes
+    (§4.6: no ofrecer a la vez las mismas unidades a dos órdenes).
+    """
+    movimientos = RepositorioMovimientos(object_session(version))
+    orden_id = version.presupuesto.orden_id
     requerido: dict[int, Decimal] = defaultdict(Decimal)
     repuestos = {}
     for item in version.items:
         if item.repuesto is not None:
             requerido[item.repuesto_id] += item.cantidad
             repuestos[item.repuesto_id] = item.repuesto
-    return [
-        RepuestoFaltante(repuesto_id=rid, nombre=repuestos[rid].nombre,
-                         requerido=_dos_decimales(cantidad), disponible=repuestos[rid].stock)
-        for rid, cantidad in sorted(requerido.items())
-        if repuestos[rid].stock < cantidad
-    ]
+    faltantes = []
+    for rid, cantidad in sorted(requerido.items()):
+        de_otras = sum(c for o, c in movimientos.comprometido_por_orden(rid).items() if o != orden_id)
+        disponible = repuestos[rid].stock - de_otras
+        if disponible < cantidad:
+            faltantes.append(RepuestoFaltante(
+                repuesto_id=rid, nombre=repuestos[rid].nombre,
+                requerido=_dos_decimales(cantidad), disponible=disponible))
+    return faltantes
 
 
 # ----------------------------------------------------------------- lectura --

@@ -269,6 +269,24 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         expect(screen.queryByText('Orden n° 102')).not.toBeInTheDocument();
     });
 
+    it('offline deshabilita el avance y avisa que falta conexión', async () => {
+        useOrderStore.setState({ orders: [ordEnReparacion], isOffline: true });
+        vi.mocked(orderService.getOrders).mockRejectedValue(axiosNetworkError);
+
+        renderPage();
+        await screen.findByText('Orden n° 101');
+
+        fireEvent.change(screen.getByLabelText('Siguiente estado de la orden 101'), {
+            target: { value: '6' },
+        });
+
+        expect(screen.getByRole('button', { name: /Confirmar avance/ })).toBeDisabled();
+        expect(
+            screen.getByText(/para actualizar el estado necesita estar conectado/)
+        ).toBeInTheDocument();
+        expect(orderService.cambiarEstado).not.toHaveBeenCalled();
+    });
+
     it('no muestra una orden asignada a otro mecánico aunque la caché la traiga', async () => {
         useOrderStore.setState({ orders: [ordEnReparacion, ordDeOtro], status: 'success' });
         vi.mocked(orderService.getOrders).mockResolvedValue([]);

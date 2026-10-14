@@ -6,6 +6,7 @@ import type { User, UsuarioListado } from '@/domain/entities/User';
 import { authService } from '@/infrastructure/api/AuthService';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { OrderActionsPanel } from './OrderActionsPanel';
 
@@ -60,6 +61,7 @@ function renderPanel(order: Order) {
 beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
+    useOrderStore.setState({ isOffline: false });
     vi.mocked(authService.listarUsuarios).mockResolvedValue(MECANICOS);
 });
 
@@ -131,7 +133,7 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         );
     });
 
-    it('el mecánico no asignado ve su acción bloqueada y el asignado habilitada', () => {
+    it('el mecánico no asignado ve su acción bloqueada y el asignado solo con destino', () => {
         useAuthStore.setState({ user: sesion('mecanico', '60'), token: 't', isAuthenticated: true });
         const noAsignada = renderPanel(orden({ estadoCodigo: 5, mecanicoActualId: '50' }));
         expect(screen.getByRole('button', { name: 'Avanzar estado' })).toBeDisabled();
@@ -139,6 +141,75 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
 
         useAuthStore.setState({ user: sesion('mecanico', '50'), token: 't', isAuthenticated: true });
         renderPanel(orden({ estadoCodigo: 5, mecanicoActualId: '50' }));
+
+        const boton = screen.getByRole('button', { name: 'Avanzar estado' });
+        expect(boton).toBeDisabled();
+
+        fireEvent.change(screen.getByLabelText('Siguiente estado de la orden 101'), {
+            target: { value: '6' },
+        });
         expect(screen.getByRole('button', { name: 'Avanzar estado' })).toBeEnabled();
+    });
+
+    it('el mecánico asignado confirma el avance recién después del diálogo', async () => {
+        useAuthStore.setState({ user: sesion('mecanico', '50'), token: 't', isAuthenticated: true });
+        vi.mocked(orderService.cambiarEstado).mockResolvedValue(orden({ estadoCodigo: 6 }));
+
+        renderPanel(orden({ estadoCodigo: 5, mecanicoActualId: '50' }));
+
+        fireEvent.change(screen.getByLabelText('Siguiente estado de la orden 101'), {
+            target: { value: '6' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Avanzar estado' }));
+
+        const dialog = await screen.findByRole('dialog', {
+            name: '¿Confirmar el avance de estado?',
+        });
+        expect(screen.getByText(/pasará de En reparación a Listo/)).toBeInTheDocument();
+        expect(orderService.cambiarEstado).not.toHaveBeenCalled();
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Avanzar estado' }));
+
+        await waitFor(() => expect(orderService.cambiarEstado).toHaveBeenCalledWith('101', 6, ''));
+    });
+
+    it('el administrador asigna un mecánico recién tras confirmar en el diálogo', async () => {
+        useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
+        vi.mocked(orderService.asignarMecanico).mockResolvedValue(
+            orden({ estadoCodigo: 2, mecanicoActualId: '50' })
+        );
+
+        renderPanel(orden({ estadoCodigo: 1 }));
+
+        const boton = screen.getByRole('button', { name: 'Asignar mecánico' });
+        await screen.findByRole('option', { name: 'Martín Herrera' });
+        expect(boton).toBeDisabled();
+
+        fireEvent.change(screen.getByLabelText('Mecánico para la orden 101'), {
+            target: { value: '50' },
+        });
+        expect(boton).toBeEnabled();
+        fireEvent.click(boton);
+
+        const dialog = await screen.findByRole('dialog', { name: '¿Confirmar la asignación?' });
+        expect(screen.getByText(/quedará a cargo de Martín Herrera/)).toBeInTheDocument();
+        expect(orderService.asignarMecanico).not.toHaveBeenCalled();
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Asignar mecánico' }));
+
+        await waitFor(() =>
+            expect(orderService.asignarMecanico).toHaveBeenCalledWith('101', '50', '')
+        );
+    });
+
+    it('sin conexión deshabilita las acciones y avisa al usuario', () => {
+        useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
+        useOrderStore.setState({ isOffline: true });
+
+        renderPanel(orden({ estadoCodigo: 1 }));
+
+        expect(screen.getByRole('button', { name: 'Asignar mecánico' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Cancelar orden' })).toBeDisabled();
+        expect(screen.getByText(/para modificar el estado de la orden necesita estar conectado/)).toBeInTheDocument();
     });
 });

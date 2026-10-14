@@ -657,3 +657,38 @@ Nota: al correr desde una consola de Python en Windows, el keep-alive de httpx
 contra uvicorn se cae al reutilizar el socket (WinError 10054); el script usó
 `httpx.Limits(max_keepalive_connections=1, keepalive_expiry=0)`. Correr pytest
 solo también exige que el puerto 5432 esté libre y las 3 bases migradas.
+
+## Confirmaciones y bloqueo offline en acciones que modifican estado (2026-10-13)
+
+Auditoría de cierre: toda acción de la interfaz que cambia el estado de una orden
+pide confirmación antes de llamar a la API y queda deshabilitada sin conexión.
+
+| Acción (muta estado) | Dónde | Confirmación |
+| --- | --- | --- |
+| Avance de estado (mecánico) | `OrderActionsPanel.tsx`, `MechanicStatusPage.tsx` | `ConfirmDialog` con origen → destino |
+| Asignar mecánico (admin) | `OrderActionsPanel.tsx` | `ConfirmDialog` |
+| Registrar entrega (admin) | `OrderActionsPanel.tsx` | `ConfirmDialog` |
+| Cancelar orden / solicitud (admin, cliente) | `OrderActionsPanel.tsx` | `ConfirmDialog` + motivo obligatorio |
+| Aprobar / rechazar presupuesto (cliente) | `ApproveBudgetDialog`, `RejectBudgetDialog` | diálogo + revisión / motivo obligatorio |
+
+Cambios de esta ronda (sin cambios de backend; la confirmación es responsabilidad
+de la UI):
+
+- `OrderActionsPanel.tsx`: el botón de cada acción solo se habilita cuando su
+  entrada requerida está completa (`destino` para el avance, `mecanicoId` para la
+  asignación) y hay conexión; se muestra un `Alert` de "sin conexión"; el toast de
+  éxito usa el tono `success`.
+- `MechanicStatusPage.tsx`: "Confirmar avance" se deshabilita si no hay destino o
+  si el store está offline, con el mismo aviso de conexión en la tarjeta.
+
+Pruebas nuevas/ajustadas:
+
+- `OrderActionsPanel.test.tsx`: 9 casos. Además de la matriz ya cubierta, ahora
+  verifica que asignar mecánico y avanzar estado abren el diálogo, **no** llaman
+  al servicio antes de confirmar y lo llaman después; que sin selección el botón
+  está deshabilitado; y que offline deshabilita las acciones y avisa.
+- `MechanicStatusPage.test.tsx`: 32 casos; agrega el bloqueo offline del avance.
+
+Verificación frontend: `npm test` **515 passed** (72 archivos), `npm run lint`
+0 warnings / 0 errors (203 archivos), `npx tsc -p tsconfig.app.json --noEmit`
+sin errores.

@@ -113,7 +113,7 @@ Layout: `MechanicLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | `/mechanic/vehiculos` | `MechanicVehiclesPage` | Funcional |
 | `/mechanic/vehiculos/:id` | `MechanicVehicleDetailPage` | Funcional |
 | `/mechanic/ordenes` | `MechanicOrdersPage` | Funcional |
-| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional (acciones de orden con confirmación) |
+| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional (acciones de orden con confirmación + bitácora de trabajo) |
 | `/mechanic/estados` | `MechanicStatusPage` | Funcional (avance de estado con confirmación) |
 
 ## Menús por rol
@@ -149,6 +149,10 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
 - `/mechanic/historial` se eliminó: no existe endpoint de historial por mecánico
   (MS2 solo expone `GET /api/ordenes/{id}/historial`) y el historial completo ya
   se consulta en `/mechanic/ordenes/:id`.
+- La bitácora de trabajo (`OrderBitacoraSection`) vive dentro de
+  `/mechanic/ordenes/:id`: no tiene ruta propia. El mecánico registra
+  observaciones y acciones (con repuestos) contra `POST /api/ordenes/{id}/bitacora`
+  y todos los roles la consultan con `GET /api/ordenes/{id}/bitacora`.
 - `MechanicHistoryPage.tsx` y `MechanicPortalPage.tsx` se eliminaron por ser
   código muerto (sin rutas asociadas). `ClientPortalPage.tsx` sigue huérfana.
 - El portal del mecánico acota sus datos en dos barreras: la Gateway ya devuelve

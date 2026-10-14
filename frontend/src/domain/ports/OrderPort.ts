@@ -1,3 +1,4 @@
+import type { BitacoraEntradaCrear, BitacoraEntry } from '../entities/Bitacora';
 import type { Order } from '../entities/Order';
 import type { OrderHistoryEntry } from '../entities/OrderHistory';
 
@@ -8,6 +9,10 @@ export interface OrderPort {
     getOrderById(id: string): Promise<Order>;
     /** Historial de cambios de estado de una orden (el servidor filtra por rol). */
     getOrderHistory(ordenId: string): Promise<OrderHistoryEntry[]>;
+    /** Bitácora de trabajo del mecánico de una orden (GET /ordenes/{id}/bitacora). */
+    getOrderBitacora(ordenId: string): Promise<BitacoraEntry[]>;
+    /** Registra una entrada de bitácora (POST /ordenes/{id}/bitacora). */
+    registrarBitacora(ordenId: string, entrada: BitacoraEntradaCrear): Promise<BitacoraEntry>;
     /** Cambia el estado de una orden (PATCH /ordenes/{id}/estado). */
     cambiarEstado(
         ordenId: string,

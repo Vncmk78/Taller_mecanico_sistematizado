@@ -39,6 +39,8 @@ esquemas reales del microservicio.
 | `OrderService.getOrders` | GET | `/api/ordenes` | órdenes (admin, cliente, mecánico) | Filtra por rol | OK |
 | `OrderService.getOrderById` | GET | `/api/ordenes/{id}` | detalle de orden | Alcance por rol | OK |
 | `OrderService.getOrderHistory` | GET | `/api/ordenes/{id}/historial` | historial en detalle de orden | Alcance por rol | OK |
+| `OrderService.getOrderBitacora` | GET | `/api/ordenes/{id}/bitacora` | bitácora en el detalle del mecánico | Alcance por rol | OK |
+| `OrderService.registrarBitacora` | POST | `/api/ordenes/{id}/bitacora` | detalle del mecánico (formulario) | Mecánico asignado | OK (201; 403/422 de negocio) |
 | `OrderService.cambiarEstado` | PATCH | `/api/ordenes/{id}/estado` | `MechanicStatusPage` | Administrador o mecánico asignado | OK |
 | `PresupuestoService.getByOrder` | GET | `/api/presupuestos?orden_id={id}` | `/client/presupuestos`, detalle de presupuesto | Cliente (solo versiones enviadas) | OK (lista acotada; sin ítems) |
 | `PresupuestoService.getById` | GET | `/api/presupuestos/{presupuesto_id}` | `/client/presupuestos/{ordenId}` | Cliente (propio) | OK (404 fuera de alcance) |
@@ -143,6 +145,7 @@ nombres. La interfaz muestra el identificador real en lugar de datos simulados:
 | Propietario del vehículo | `VehiculoRespuesta.cliente_id` (perfil Cliente de MS2) | `Cliente #<cliente_id>` |
 | Mecánico de la orden | `OrdenRespuesta.mecanico_actual_id` | `Mecánico <id>`, o `Sin asignar` |
 | Actor del cambio de estado | `HistorialEstado.actor_usuario_id` | Identificador numérico |
+| Autor de una entrada de bitácora | `BitacoraRespuesta.autor_usuario_id` | `Usuario <id>` |
 | Patente del vehículo en la orden | No viene en `OrdenRespuesta` | Se resuelve desde la caché de vehículos del portal |
 
 `cliente_id` (MS2) y `usuario_id` (MS1, el de la sesión) son espacios de
@@ -198,9 +201,34 @@ Reglas que se aplican en listados, detalles e historial:
   mostrar un "no encontrado" que no es cierto.
 - En el historial de la orden, un fallo muestra "No fue posible mostrar el
   historial de estados de esta orden." en lugar del vacío "Aún no hay registros".
+- En la bitácora, un fallo muestra "No se pudo cargar la bitácora de trabajo." en
+  lugar del vacío "Sin entradas en la bitácora.".
 
 Componentes compartidos por los tres portales: `EmptyState` (vacío),
 `ErrorState` (error reintentable), `RetryButton` y `OfflineBanner`.
+
+## Bitácora de trabajo (MS2, RF-11)
+
+El detalle del mecánico incluye la bitácora de la orden: observaciones y acciones
+registradas, con sus repuestos. A diferencia del historial de estados, una entrada
+no exige un cambio de estado, así que se usa para documentar el trabajo sin mover
+la orden. `OrderBitacoraSection` reúne el listado (`OrderBitacoraTimeline`) y el
+formulario (`BitacoraForm`).
+
+Reglas reflejadas en la interfaz:
+
+- El formulario solo lo ve el rol Mecánico (`canWrite={user?.role === 'mecanico'}`);
+  el backend igual responde `403` si no está asignado.
+- `tipo` es `accion` u `observacion`. Solo una acción puede declarar `repuestos`:
+  al elegir "observación" el formulario oculta y limpia las filas, para no enviar
+  un body que MS2 rechazaría con `422`.
+- La descripción es obligatoria (mínimo 1 carácter tras recortar) y el nombre de
+  cada repuesto admite hasta 120 caracteres (el mismo tope del contrato). La
+  cantidad debe ser un entero mayor que 0.
+- El envío se bloquea sin conexión, con el mismo criterio offline que las demás
+  acciones, y publica la entrada confirmada en `useOrderBitacoraStore`.
+- Los repuestos son **texto libre** (nombre y cantidad): el contrato no referencia
+  el catálogo de MS3, así que la vista no ofrece autocompletado de repuestos.
 
 ## Errores reales del backend
 
@@ -247,6 +275,9 @@ la referencia al archivo del backend del que salió cada uno, y se prueban contr
 - `OrdenRespuesta.mecanico_actual_id` y los campos del historial
   (`estado_anterior`, `actor_usuario_id`, `observacion`) pueden llegar en `null` y
   el mapeo los conserva como `null`/`undefined`, sin inventar valores.
+- `BitacoraCrear.repuestos` es opcional y por defecto `[]`; el servicio lo
+  normaliza a lista vacía al mapear y solo las acciones pueden traer repuestos.
+  Los `BitacoraRespuesta` los devuelven siempre como lista (vacía en observaciones).
 - `UsuarioRespuesta.roles` es una lista. El dominio tiene un único `role` y hoy
   gana el primero (`roles[0]`), que es el que define el portal de ingreso. Queda
   fijado con una prueba en `AuthService.test.ts`; si el backend llegara a entregar

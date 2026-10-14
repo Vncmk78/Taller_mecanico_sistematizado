@@ -161,7 +161,10 @@ Detalles que condicionan la matriz:
 | Aprobar o rechazar (`POST .../versiones/{n}/decision`) | ✅ solo dueño | ❌ 403 | ❌ 403 |
 | Listar / ver proveedores y repuestos (`GET /proveedores`, `/repuestos`, con `bajo_umbral`) | ❌ 403 | ✅ | ✅ |
 | Crear, modificar o eliminar proveedores y repuestos (`POST`/`PATCH`/`DELETE`) | ❌ 403 | ❌ 403 | ✅ |
-| Inventario (movimientos y umbral general) | — | — | — |
+| Consultar movimientos, stock, alertas, umbral e historial (`GET /inventario/...`) | ❌ 403 | ✅ | ✅ |
+| Compromiso, consumo y liberación de una orden (`POST /inventario/movimientos`) | ❌ 403 | ✅ | ✅ |
+| Ingreso y ajuste de stock (`POST /inventario/movimientos`) | ❌ 403 | ❌ 403 | ✅ |
+| Cambiar el umbral general (`PUT /inventario/umbral-general`) | ❌ 403 | ❌ 403 | ✅ |
 
 - Guards en `services/ms3_presupuestos/routers/presupuestos.py` (`requerir_roles`).
 - **Propiedad del cliente:** MS3 no conoce al dueño del vehículo (§8). Llama a
@@ -173,7 +176,7 @@ Detalles que condicionan la matriz:
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).
 - El cliente no ve el catálogo: ve el repuesto y su proveedor dentro de su presupuesto (§4.3).
-- Inventario (movimientos y umbral general) sigue sin router.
+- Pendiente: limitar al mecánico a mover stock solo de las órdenes que tiene asignadas (dato de MS2).
 
 ### 4.5 Evidencias multimedia (MS4)
 

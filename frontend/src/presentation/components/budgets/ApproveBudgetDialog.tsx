@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, X } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Alert } from '@/presentation/components/ui/Alert';
+import { useDialogFocus } from '@/presentation/hooks/useDialogFocus';
 import { formatMoneyCLP } from '@/presentation/utils/budgetDisplay';
 
 interface ApproveBudgetDialogProps {
@@ -31,6 +32,7 @@ export function ApproveBudgetDialog({
     onCancel,
 }: ApproveBudgetDialogProps) {
     const [revisado, setRevisado] = useState(false);
+    const { ref: dialogRef, handleKeyDown: handleDialogKeyDown } = useDialogFocus<HTMLDivElement>();
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -48,10 +50,13 @@ export function ApproveBudgetDialog({
             }}
         >
             <div
+                ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Aprobar presupuesto"
-                className="card relative w-full max-w-[480px] p-8"
+                tabIndex={-1}
+                onKeyDown={handleDialogKeyDown}
+                className="card relative w-full max-w-[480px] p-8 outline-none"
             >
                 <button
                     type="button"
@@ -60,11 +65,11 @@ export function ApproveBudgetDialog({
                     disabled={isLoading}
                     className="absolute right-4 top-4 text-text-muted hover:text-text-main bg-transparent border-none cursor-pointer disabled:opacity-50"
                 >
-                    <X className="w-5 h-5" />
+                    <X className="w-5 h-5" aria-hidden />
                 </button>
 
                 <div className="w-16 h-16 rounded-full mx-auto mb-5 flex items-center justify-center bg-status-green/10">
-                    <CheckCircle2 className="w-8 h-8 text-status-green" />
+                    <CheckCircle2 className="w-8 h-8 text-status-green" aria-hidden />
                 </div>
 
                 <h3 className="text-2xl font-bold tracking-tight text-text-main text-center">

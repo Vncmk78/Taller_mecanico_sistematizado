@@ -1,11 +1,19 @@
 interface VehicleListSkeletonProps {
     count?: number;
     className?: string;
+    /** Texto que anuncian los lectores de pantalla mientras se cargan los datos. */
+    label?: string;
 }
 
-export function VehicleListSkeleton({ count = 6, className = '' }: VehicleListSkeletonProps) {
+export function VehicleListSkeleton({
+    count = 6,
+    className = '',
+    label = 'Cargando vehículos...',
+}: VehicleListSkeletonProps) {
     return (
-    <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 ${className}`}>
+    <div role="status" aria-busy="true" aria-live="polite" className={className}>
+        <span className="sr-only">{label}</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" aria-hidden>
         {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="card p-0 overflow-hidden animate-pulse">
             <div className="h-[140px] bg-bg-secondary" />
@@ -17,6 +25,7 @@ export function VehicleListSkeleton({ count = 6, className = '' }: VehicleListSk
             </div>
         </div>
         ))}
+        </div>
     </div>
     );
 }

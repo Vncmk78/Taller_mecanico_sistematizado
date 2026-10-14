@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Download, X } from 'lucide-react';
 import { contextoEvidenciaLabel, esImagen, esVideo, type Evidencia } from '@/domain/entities/Evidencia';
 import { Button } from '@/presentation/components/ui/Button';
+import { useDialogFocus } from '@/presentation/hooks/useDialogFocus';
 import { formatBytes } from '@/presentation/utils/evidenceDisplay';
 import { formatDateTime } from '@/presentation/utils/orderDisplay';
 
@@ -17,6 +18,8 @@ interface EvidencePreviewDialogProps {
  * obtenida; el usuario puede abrir el archivo original para descargarlo.
  */
 export function EvidencePreviewDialog({ evidencia, url, onClose }: EvidencePreviewDialogProps) {
+    const { ref: dialogRef, handleKeyDown: handleDialogKeyDown } = useDialogFocus<HTMLDivElement>();
+
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') onClose();
@@ -37,10 +40,13 @@ export function EvidencePreviewDialog({ evidencia, url, onClose }: EvidencePrevi
             }}
         >
             <div
+                ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-label={`Vista previa de ${evidencia.nombreOriginal}`}
-                className="card relative w-full max-w-[760px] p-5"
+                tabIndex={-1}
+                onKeyDown={handleDialogKeyDown}
+                className="card relative w-full max-w-[760px] p-5 outline-none"
             >
                 <button
                     type="button"
@@ -48,7 +54,7 @@ export function EvidencePreviewDialog({ evidencia, url, onClose }: EvidencePrevi
                     onClick={onClose}
                     className="absolute right-4 top-4 z-10 text-text-muted hover:text-text-main bg-transparent border-none cursor-pointer"
                 >
-                    <X className="w-5 h-5" />
+                    <X className="w-5 h-5" aria-hidden />
                 </button>
 
                 <div className="rounded-xl overflow-hidden bg-bg-secondary flex items-center justify-center max-h-[65vh]">

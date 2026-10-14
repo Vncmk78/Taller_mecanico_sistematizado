@@ -69,7 +69,7 @@ export function ClientOrderEvidencePage() {
                 to={`/client/ordenes/${id}`}
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
             >
-                <ArrowLeft className="w-4 h-4" /> Volver al detalle del servicio
+                <ArrowLeft className="w-4 h-4" aria-hidden /> Volver al detalle del servicio
             </Link>
 
             {isOffline && (
@@ -77,10 +77,10 @@ export function ClientOrderEvidencePage() {
             )}
 
             <div className="mb-6">
-                <h2 className="text-3xl font-bold mb-1 flex items-center gap-3">
+                <h1 className="text-3xl font-bold mb-1 flex items-center gap-3">
                     <Images className="w-6 h-6 text-text-muted" aria-hidden />
                     Evidencia multimedia
-                </h2>
+                </h1>
                 <p className="text-text-muted">
                     Servicio n° {id}
                     {order ? ` · ${order.vehiculo ?? `Vehículo N°${order.vehicleId}`}` : ''}

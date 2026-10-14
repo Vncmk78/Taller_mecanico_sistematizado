@@ -226,6 +226,12 @@ Nota: el login consume la **API Gateway** (`POST /auth/login`). Si ni la Gateway
 el `auth-service` están desplegados, se muestra el error de credenciales. Las vistas
 de vehículos usan datos mock mientras MS2 no esté disponible.
 
+### Accesibilidad
+
+La revisión básica de accesibilidad del portal Cliente (criterios WCAG 2.1 A/AA,
+hallazgos y correcciones aplicadas) está documentada en
+[`docs/revision-accesibilidad.md`](docs/revision-accesibilidad.md).
+
 ## Cómo ejecutar el proyecto localmente
 
 Requisitos: **Node.js 18+**.

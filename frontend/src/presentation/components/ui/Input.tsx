@@ -21,7 +21,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         )}
         <div className="relative flex items-center">
           {icon && (
-            <span className="absolute left-4 text-text-muted text-lg">
+            <span aria-hidden className="absolute left-4 text-text-muted text-lg">
               {icon}
             </span>
           )}

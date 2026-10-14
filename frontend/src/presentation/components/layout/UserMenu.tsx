@@ -23,7 +23,7 @@ export function UserMenu({ userName, subtitle, onLogout, prepend }: UserMenuProp
         className="ml-2 sm:ml-5 text-primary-orange cursor-pointer text-lg bg-transparent border-none hover:text-primary-orange-hover transition-colors"
         title="Cerrar Sesión"
       >
-        <LogOut className="w-5 h-5" />
+        <LogOut className="w-5 h-5" aria-hidden />
       </button>
     </div>
   );

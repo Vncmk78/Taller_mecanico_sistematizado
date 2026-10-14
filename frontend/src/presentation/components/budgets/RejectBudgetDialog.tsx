@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Alert } from '@/presentation/components/ui/Alert';
+import { useDialogFocus } from '@/presentation/hooks/useDialogFocus';
 
 interface RejectBudgetDialogProps {
     /** true cuando rechazar cancelará el servicio (antes de la primera aprobación). */
@@ -32,6 +33,7 @@ export function RejectBudgetDialog({
     const [motivo, setMotivo] = useState('');
     const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
     const [localError, setLocalError] = useState<string | null>(null);
+    const { ref: dialogRef, handleKeyDown: handleDialogKeyDown } = useDialogFocus<HTMLDivElement>();
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -67,10 +69,13 @@ export function RejectBudgetDialog({
             }}
         >
             <div
+                ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Rechazar presupuesto"
-                className="card relative w-full max-w-[480px] p-8"
+                tabIndex={-1}
+                onKeyDown={handleDialogKeyDown}
+                className="card relative w-full max-w-[480px] p-8 outline-none"
             >
                 <button
                     type="button"
@@ -79,7 +84,7 @@ export function RejectBudgetDialog({
                     disabled={isLoading}
                     className="absolute right-4 top-4 text-text-muted hover:text-text-main bg-transparent border-none cursor-pointer disabled:opacity-50"
                 >
-                    <X className="w-5 h-5" />
+                    <X className="w-5 h-5" aria-hidden />
                 </button>
 
                 <h3 className="text-2xl font-bold tracking-tight text-text-main">Rechazar presupuesto</h3>

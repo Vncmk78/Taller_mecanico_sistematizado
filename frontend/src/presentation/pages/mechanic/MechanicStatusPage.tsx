@@ -44,6 +44,7 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const updateOrder = useOrderStore((s) => s.updateOrder);
+    const isOffline = useOrderStore((s) => s.isOffline);
     const { showToast } = useToast();
 
     const avances = destinosAvanceMecanico(order.estadoCodigo);
@@ -126,7 +127,7 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
                     </label>
                     <Button
                         variant="primary"
-                        disabled={!destino}
+                        disabled={!destino || isOffline}
                         onClick={() => setConfirming(true)}
                         className="shrink-0"
                     >
@@ -135,6 +136,13 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
                         </span>
                     </Button>
                 </div>
+
+                {isOffline && (
+                    <Alert tone="warning" className="mt-4">
+                        Sin conexión: para actualizar el estado necesita estar conectado. Restablezca la
+                        conexión e inténtelo nuevamente.
+                    </Alert>
+                )}
 
                 {error && <Alert tone="error" className="mt-4">{error}</Alert>}
 

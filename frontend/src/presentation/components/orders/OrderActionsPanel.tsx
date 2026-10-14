@@ -69,6 +69,7 @@ interface OrderActionsPanelContentProps {
 
 function OrderActionsPanelContent({ order, actor, acciones, className }: OrderActionsPanelContentProps) {
     const updateOrder = useOrderStore((s) => s.updateOrder);
+    const isOffline = useOrderStore((s) => s.isOffline);
     const { showToast } = useToast();
 
     const [pending, setPending] = useState<AccionOrden | null>(null);
@@ -109,6 +110,12 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
         setObservacion('');
         setMotivo('');
         setMecanicoId('');
+    };
+
+    const puedeConfirmar = (accion: AccionOrden) => {
+        if (accion.id === 'avanzar_estado') return destino !== '';
+        if (accion.id === 'asignar_mecanico') return !loadingMecanicos && mecanicoId !== '';
+        return true;
     };
 
     const ejecutar = async () => {
@@ -155,7 +162,8 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
 
             updateOrder(actualizada);
             showToast(
-                `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`
+                `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`,
+                'success'
             );
             setPending(null);
             resetCampos();
@@ -182,6 +190,13 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
             {error && (
                 <Alert tone="error" className="mb-4">
                     {error}
+                </Alert>
+            )}
+
+            {isOffline && (
+                <Alert tone="warning" className="mb-4">
+                    Sin conexión: para modificar el estado de la orden necesita estar conectado.
+                    Restablezca la conexión e inténtelo nuevamente.
                 </Alert>
             )}
 
@@ -293,7 +308,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
 
                             <Button
                                 variant={accion.id === 'cancelar' ? 'danger' : 'primary'}
-                                disabled={!accion.habilitada}
+                                disabled={!accion.habilitada || isOffline || !puedeConfirmar(accion)}
                                 onClick={() => abrir(accion)}
                                 className="self-start"
                             >

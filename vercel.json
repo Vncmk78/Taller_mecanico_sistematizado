@@ -26,18 +26,27 @@
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services.ms2_taller.main:app",
+      "bindings": [
+        { "type": "service", "service": "ms-presupuestos", "format": "url", "env": "MS2_MS3_URL" }
+      ],
       "rewrites": [{ "source": "/ms2/(.*)", "destination": "/$1" }]
     },
     "ms-presupuestos": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services.ms3_presupuestos.main:app",
+      "bindings": [
+        { "type": "service", "service": "ms-taller", "format": "url", "env": "MS3_MS2_URL" }
+      ],
       "rewrites": [{ "source": "/ms3/(.*)", "destination": "/$1" }]
     },
     "ms-evidencias": {
       "root": "backend",
       "framework": "fastapi",
       "entrypoint": "services.ms4_evidencias.main:app",
+      "bindings": [
+        { "type": "service", "service": "ms-taller", "format": "url", "env": "MS4_MS2_URL" }
+      ],
       "rewrites": [{ "source": "/ms4/(.*)", "destination": "/$1" }]
     }
   },

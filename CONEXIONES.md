@@ -82,6 +82,8 @@ Base: `https://tallerconect.vercel.app`
 | `GET` | `/api/ordenes/{id}` | Detalle de una orden visible | Bearer |
 | `PUT` | `/api/ordenes/{id}/mecanico` | Asigna o reasigna el mecánico responsable | Bearer |
 | `GET` | `/api/ordenes/{id}/historial` | Historial de estados de una orden | Bearer |
+| `GET` | `/api/ordenes/{id}/bitacora` | Bitácora de trabajo del mecánico de una orden | Bearer |
+| `POST` | `/api/ordenes/{id}/bitacora` | Registra una entrada en la bitácora (mecánico) | Bearer |
 | `PATCH` | `/api/ordenes/{id}/estado` | Cambia el estado de una orden | Bearer |
 
 > Regla del gateway: llama siempre por **primer segmento**. Endpoints de
@@ -691,4 +693,51 @@ Pruebas nuevas/ajustadas:
 
 Verificación frontend: `npm test` **515 passed** (72 archivos), `npm run lint`
 0 warnings / 0 errors (203 archivos), `npx tsc -p tsconfig.app.json --noEmit`
+sin errores.
+
+## Bitácora de trabajo del mecánico (RF-11) (2026-10-14)
+
+Feature completo en las tres capas. A diferencia del historial de estados, cada
+entrada **no** exige un cambio de estado: documenta lo que el mecánico observa o
+ejecuta durante el trabajo.
+
+### Backend (MS2)
+
+- Tablas nuevas: `bitacora_orden` (`bitacora_id`, `orden_id` FK, `autor_usuario_id`,
+  `tipo`, `descripcion`, `creado_en`) y `bitacora_repuesto` (`repuesto_bitacora_id`,
+  `bitacora_id` FK, `nombre`, `cantidad`). Migración `0007_bitacora_orden_ms2`
+  (head `0007_ms2`).
+- `tipo` ∈ {`observacion`, `accion`}; solo una acción puede registrar repuestos
+  (si no, `422`). Los repuestos son texto libre + cantidad: MS2 **no** referencia
+  el catálogo de MS3 (§8).
+- Endpoints `GET /ordenes/{id}/bitacora` (`200`, lista) y
+  `POST /ordenes/{id}/bitacora` (`201`), autorizados para el mecánico responsable.
+
+### Gateway
+
+- `gateway/openapi.py` documenta las dos operaciones (**22 endpoints** en total)
+  y `gateway/contratos/ordenes.py` copia los contratos `BitacoraRespuesta`,
+  `BitacoraCrear` y `RepuestoBitacoraEntrada/Respuesta`.
+
+### Frontend
+
+- `OrderService.getOrderBitacora` / `registrarBitacora`; caché
+  `useOrderBitacoraStore` (con `addEntry`) y hook `useOrderBitacora`.
+- `OrderBitacoraTimeline` (etiqueta de tipo, descripción, repuestos, autor y
+  fecha) y `BitacoraForm` (RHF + Zod: tipo, descripción y repuestos dinámicos)
+  se reúnen en `OrderBitacoraSection`, integrado en el detalle del mecánico. El
+  formulario oculta y limpia los repuestos al elegir "observación" y se bloquea
+  sin conexión; la acción solo la ve el rol mecánico.
+
+### Pruebas
+
+- Backend: 24 casos de bitácora en `test_ordenes_api.py`.
+- Gateway: set de operaciones y contratos actualizado en `test_gateway_openapi.py`,
+  `test_gateway_openapi_ejemplos.py` y `test_migraciones_decisiones.py`.
+- Frontend: `OrderService.test.ts`, `useOrderBitacoraStore.test.ts`,
+  `OrderBitacoraTimeline.test.tsx`, `BitacoraForm.test.tsx`,
+  `OrderBitacoraSection.test.tsx` y `MechanicOrderDetailPage.test.tsx`.
+
+Verificación frontend: `npm test` **536 passed** (76 archivos), `npm run lint`
+0 warnings / 0 errors (213 archivos), `npx tsc -p tsconfig.app.json --noEmit`
 sin errores.

@@ -36,6 +36,7 @@ from services.ms2_taller.db import Base
 from services.ms2_taller.models.estado_orden import RECIBIDO
 
 if TYPE_CHECKING:
+    from services.ms2_taller.models.bitacora_orden import BitacoraOrden
     from services.ms2_taller.models.estado_orden import EstadoOrden
     from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
     from services.ms2_taller.models.historial_estado import HistorialEstado
@@ -160,6 +161,16 @@ class OrdenTrabajo(Base):
         cascade="save-update, merge",
         passive_deletes="all",
         order_by="HistorialAsignacion.fecha_hora",
+        lazy="selectin",
+    )
+
+    # 1:N con la bitácora del mecánico (observaciones, acciones y repuestos).
+    # Misma política de trazabilidad: las entradas no se borran.
+    bitacora: Mapped[list["BitacoraOrden"]] = relationship(
+        back_populates="orden",
+        cascade="save-update, merge",
+        passive_deletes="all",
+        order_by="BitacoraOrden.bitacora_id",
         lazy="selectin",
     )
 

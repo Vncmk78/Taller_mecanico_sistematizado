@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardX } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
+import { OrderBitacoraSection } from '@/presentation/components/orders/OrderBitacoraSection';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -12,6 +13,7 @@ import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { useOrderDetail } from '@/presentation/hooks/useOrderDetail';
 import { orderService } from '@/infrastructure/api/OrderService';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
@@ -21,6 +23,7 @@ export function MechanicOrderDetailPage() {
         orderService.getOrderById(oid)
     );
     const { isOffline, error, requestId } = useOrderStore();
+    const user = useAuthStore((s) => s.user);
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     if (loading) {
@@ -87,6 +90,8 @@ export function MechanicOrderDetailPage() {
             />
 
             <OrderStatusAndHistory order={order} />
+
+            <OrderBitacoraSection order={order} canWrite={user?.role === 'mecanico'} />
 
             <OrderActionsPanel order={order} className="mt-6" />
         </div>

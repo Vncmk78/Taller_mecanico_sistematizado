@@ -1,3 +1,4 @@
+import type { BitacoraEntradaCrear, BitacoraEntry, RepuestoBitacora, TipoBitacora } from '@/domain/entities/Bitacora';
 import type { Order } from '@/domain/entities/Order';
 import type { OrderHistoryEntry } from '@/domain/entities/OrderHistory';
 import type { OrderPort } from '@/domain/ports/OrderPort';
@@ -55,6 +56,45 @@ interface HistorialEstadoApi {
     observacion?: string | null;
 }
 
+// Contrato de BitacoraRespuesta (MS2) para /ordenes/{id}/bitacora. Los repuestos
+// van anidados con texto libre y cantidad: no referencian el catálogo de MS3.
+interface RepuestoBitacoraApi {
+    nombre: string;
+    cantidad: number;
+}
+
+interface BitacoraApi {
+    bitacora_id: number;
+    orden_id: number;
+    autor_usuario_id: number;
+    tipo: TipoBitacora;
+    descripcion: string;
+    creado_en: string;
+    repuestos: RepuestoBitacoraApi[];
+}
+
+function mapBitacoraApi(b: BitacoraApi): BitacoraEntry {
+    return {
+        id: String(b.bitacora_id),
+        ordenId: String(b.orden_id),
+        autorUsuarioId: String(b.autor_usuario_id),
+        tipo: b.tipo,
+        descripcion: b.descripcion,
+        creadoEn: b.creado_en,
+        repuestos: b.repuestos.map(
+            (r): RepuestoBitacora => ({ nombre: r.nombre, cantidad: r.cantidad })
+        ),
+    };
+}
+
+// Cuerpo de BitacoraCrear: solo tipo y descripcion son obligatorios; repuestos
+// solo se admite para tipo "accion" (el backend responde 422 si no).
+interface BitacoraCrearApi {
+    tipo: TipoBitacora;
+    descripcion: string;
+    repuestos: RepuestoBitacoraApi[];
+}
+
 class OrderService implements OrderPort {
     async getOrders(): Promise<Order[]> {
         const { data } = await apiClient.get<OrdenRespuesta[]>('/ordenes');
@@ -69,6 +109,24 @@ class OrderService implements OrderPort {
     async getOrderHistory(ordenId: string): Promise<OrderHistoryEntry[]> {
         const { data } = await apiClient.get<HistorialEstadoApi[]>(`/ordenes/${ordenId}/historial`);
         return data.map(mapHistorialApi);
+    }
+
+    async getOrderBitacora(ordenId: string): Promise<BitacoraEntry[]> {
+        const { data } = await apiClient.get<BitacoraApi[]>(`/ordenes/${ordenId}/bitacora`);
+        return data.map(mapBitacoraApi);
+    }
+
+    async registrarBitacora(ordenId: string, entrada: BitacoraEntradaCrear): Promise<BitacoraEntry> {
+        const cuerpo: BitacoraCrearApi = {
+            tipo: entrada.tipo,
+            descripcion: entrada.descripcion.trim(),
+            repuestos: (entrada.repuestos ?? []).map((r) => ({
+                nombre: r.nombre.trim(),
+                cantidad: r.cantidad,
+            })),
+        };
+        const { data } = await apiClient.post<BitacoraApi>(`/ordenes/${ordenId}/bitacora`, cuerpo);
+        return mapBitacoraApi(data);
     }
 
     async cambiarEstado(ordenId: string, estadoDestino: number, observacion?: string): Promise<Order> {

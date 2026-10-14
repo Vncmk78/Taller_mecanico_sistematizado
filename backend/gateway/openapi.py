@@ -96,8 +96,9 @@ _TAGS = [
     {
         "name": "Órdenes",
         "description": (
-            "Creación, consulta, historial, cambio de estado, asignación "
-            "inicial, entrega física y cancelación del cliente (MS2)."
+            "Creación, consulta, historial, bitácora de trabajo, cambio de "
+            "estado, asignación inicial, entrega física y cancelación del "
+            "cliente (MS2)."
         ),
     },
     {
@@ -135,6 +136,10 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
     ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
+    ("RepuestoBitacoraEntrada", contratos_ordenes.RepuestoBitacoraEntrada),
+    ("RepuestoBitacoraRespuesta", contratos_ordenes.RepuestoBitacoraRespuesta),
+    ("BitacoraCrear", contratos_ordenes.BitacoraCrear),
+    ("BitacoraRespuesta", contratos_ordenes.BitacoraRespuesta),
     ("EvidenciaSubida", contratos_evidencias.EvidenciaSubida),
     ("EvidenciaRespuesta", contratos_evidencias.EvidenciaRespuesta),
     ("UrlDescargaRespuesta", contratos_evidencias.UrlDescargaRespuesta),
@@ -762,6 +767,64 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             )
         },
+        "/api/ordenes/{orden_id}/bitacora": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar la bitácora de trabajo de una orden",
+                descripcion=(
+                    "Devuelve todos los registros por fecha/hora e identificador "
+                    "ascendente, con el autor, el tipo (observación o acción), el "
+                    "texto y los repuestos utilizados. Aplica la misma visibilidad "
+                    "del detalle: Administrador ve todas; Cliente sus vehículos; "
+                    "Mecánico sus órdenes asignadas; multirol combina los alcances. "
+                    "Una orden inexistente o ajena responde 404; una visible sin "
+                    "registros devuelve []."
+                ),
+                operation_id="consultar_bitacora_orden",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Bitácora de trabajo de la orden.",
+                        {"type": "array", "items": _ref("BitacoraRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de orden inválido",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            ),
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar una observación o acción en la bitácora",
+                descripcion=(
+                    "Registra lo que el mecánico observa o ejecuta sobre una orden "
+                    "sin cambiar su estado. Una observación es una nota libre; una "
+                    "acción puede declarar los repuestos utilizados (texto libre y "
+                    "cantidad). Solo el mecánico asignado o un administrador pueden "
+                    "registrarla. No acepta estado, actor ni fecha en el cuerpo."
+                ),
+                operation_id="registrar_bitacora_orden",
+                cuerpo="BitacoraCrear",
+                respuestas_ok={
+                    "201": _respuesta(
+                        "Entrada registrada.", _ref("BitacoraRespuesta")
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere ser el mecánico asignado o Administrador",
+                    "422": "Tipo, descripción o repuestos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada o ajena.",
+                esquema_404=error_404_recurso,
+            ),
+        },
         "/api/ordenes/{orden_id}/estado": {
             "patch": _operacion(
                 tag="Órdenes",
@@ -964,7 +1027,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 20 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 22 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:

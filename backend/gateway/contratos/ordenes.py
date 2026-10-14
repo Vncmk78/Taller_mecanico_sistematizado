@@ -209,3 +209,117 @@ class HistorialEstadoRespuesta(BaseModel):
         description="Observación opcional registrada con el cambio.",
         examples=["Inicia evaluación técnica"],
     )
+
+
+_EJEMPLO_REPUESTO_BITACORA: dict[str, object] = {
+    "nombre": "Pastillas de freno",
+    "cantidad": 2,
+}
+
+_EJEMPLO_BITACORA_CREAR: dict[str, object] = {
+    "tipo": "accion",
+    "descripcion": "Se reemplazaron las pastillas delanteras",
+    "repuestos": [_EJEMPLO_REPUESTO_BITACORA],
+}
+
+_EJEMPLO_BITACORA: dict[str, object] = {
+    "bitacora_id": 77,
+    "orden_id": 31,
+    "autor_usuario_id": 50,
+    "tipo": "accion",
+    "descripcion": "Se reemplazaron las pastillas delanteras",
+    "creado_en": "2026-09-28T12:15:00-03:00",
+    "repuestos": [_EJEMPLO_REPUESTO_BITACORA],
+}
+
+
+class RepuestoBitacoraEntrada(BaseModel):
+    """Repuesto utilizado en una acción, indicado por nombre y cantidad."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra="forbid",
+        json_schema_extra={"examples": [_EJEMPLO_REPUESTO_BITACORA]},
+    )
+
+    nombre: str = Field(
+        min_length=1,
+        max_length=120,
+        description=(
+            "Nombre libre del repuesto. La bitácora no referencia el catálogo "
+            "de MS3: las bases están aisladas."
+        ),
+        examples=["Pastillas de freno"],
+    )
+    cantidad: int = Field(
+        gt=0,
+        description="Unidades utilizadas; debe ser un entero positivo.",
+        examples=[2],
+    )
+
+
+class BitacoraCrear(BaseModel):
+    """Datos que el mecánico aporta al registrar una entrada de la bitácora."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra="forbid",
+        json_schema_extra={"examples": [_EJEMPLO_BITACORA_CREAR]},
+    )
+
+    tipo: Literal["observacion", "accion"] = Field(
+        description=(
+            "Tipo de entrada: 'observacion' es una nota libre y 'accion' un "
+            "trabajo realizado que puede declarar repuestos."
+        ),
+        examples=["accion"],
+    )
+    descripcion: str = Field(
+        min_length=1,
+        description="Texto de la observación o de la acción realizada.",
+        examples=["Se reemplazaron las pastillas delanteras"],
+    )
+    repuestos: list[RepuestoBitacoraEntrada] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Repuestos utilizados; solo válido cuando tipo es 'accion'.",
+    )
+
+
+class RepuestoBitacoraRespuesta(BaseModel):
+    """Repuesto utilizado en una acción tal como lo devuelve MS2."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [_EJEMPLO_REPUESTO_BITACORA]})
+
+    nombre: str = Field(description="Nombre libre del repuesto.", examples=["Pastillas de freno"])
+    cantidad: int = Field(description="Unidades utilizadas.", examples=[2])
+
+
+class BitacoraRespuesta(BaseModel):
+    """Entrada de la bitácora de trabajo de una orden expuesta por MS2."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [_EJEMPLO_BITACORA]})
+
+    bitacora_id: int = Field(
+        description="Identificador de la entrada de la bitácora.", examples=[77]
+    )
+    orden_id: int = Field(description="Orden a la que pertenece.", examples=[31])
+    autor_usuario_id: int = Field(
+        description="Referencia lógica al usuario de MS1 que registró la entrada.",
+        examples=[50],
+    )
+    tipo: Literal["observacion", "accion"] = Field(
+        description="Tipo de entrada: 'observacion' o 'accion'.",
+        examples=["accion"],
+    )
+    descripcion: str = Field(
+        description="Texto de la observación o de la acción realizada.",
+        examples=["Se reemplazaron las pastillas delanteras"],
+    )
+    creado_en: datetime = Field(
+        description="Fecha y hora de creación, generada por la base."
+    )
+    repuestos: list[RepuestoBitacoraRespuesta] = Field(
+        default_factory=list,
+        description="Repuestos utilizados en la acción; vacío en una observación.",
+    )

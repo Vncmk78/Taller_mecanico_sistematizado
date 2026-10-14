@@ -7,6 +7,8 @@ aparece en este archivo, su tabla no entra en las migraciones.
 Modelos iniciales (INT-13, Semana 1): Cliente, Vehiculo.
 Semana 3: EstadoOrden (catálogo), IngresoVehiculo, OrdenTrabajo, HistorialEstado,
 HistorialAsignacion (auditoría de responsables).
+Bitácora del mecánico: BitacoraOrden y BitacoraRepuesto (observaciones, acciones
+y repuestos utilizados sin cambiar el estado de la orden).
 Referencia: lámina 04-mer-erd, recuadro "BD MS2 | Vehículos, órdenes y capacidad".
 """
 from __future__ import annotations
@@ -19,6 +21,7 @@ from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
+from services.ms2_taller.models.bitacora_orden import BitacoraOrden, BitacoraRepuesto
 
 __all__ = [
     "Base",
@@ -29,4 +32,6 @@ __all__ = [
     "OrdenTrabajo",
     "HistorialEstado",
     "HistorialAsignacion",
+    "BitacoraOrden",
+    "BitacoraRepuesto",
 ]

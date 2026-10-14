@@ -214,15 +214,31 @@ Lectura: Mecánico y Administrador. Escritura: solo Administrador. Cliente → `
 
 | Método y ruta | Qué hace |
 |---|---|
-| `GET /proveedores?q=&desde=&limite=` | Lista / busca por nombre o contacto |
+| `GET /proveedores?q=&con_repuestos=&desde=&limite=` | Lista / busca por nombre o contacto; `con_repuestos=true/false` |
 | `GET /proveedores/{id}` | Detalle con sus repuestos |
 | `POST /proveedores` · `PATCH /proveedores/{id}` | Alta y cambios (`409` si el nombre ya existe, sin distinguir mayúsculas) |
 | `DELETE /proveedores/{id}` | Solo si no tiene repuestos (`409`) |
-| `GET /repuestos?proveedor_id=&q=&bajo_umbral=&desde=&limite=` | Lista con `umbral_efectivo` y `bajo_umbral`; `bajo_umbral=true` = alerta de stock bajo |
+| `GET /repuestos?proveedor_id=&q=&bajo_umbral=&con_stock=&ordenar=&desde=&limite=` | Lista con `umbral_efectivo` y `bajo_umbral`; `bajo_umbral=true` = alerta de stock bajo; `con_stock=true/false`; `ordenar=nombre\|stock_asc\|stock_desc` |
 | `GET /repuestos/{id}` | Detalle |
 | `POST /repuestos` | Alta `{"proveedor_id", "nombre", "stock_inicial", "umbral_particular"}`; el stock inicial deja un movimiento `ingreso` |
 | `PATCH /repuestos/{id}` | Nombre, proveedor o `umbral_particular` (`null` = volver al general); cada cambio de umbral queda en `historial_umbral` |
 | `DELETE /repuestos/{id}` | Solo si nunca tuvo movimientos, presupuestos ni cambios de umbral (`409`) |
+
+**Búsqueda (`q`)**: "contiene el texto" sin distinguir mayúsculas ni tildes
+(`bujia` encuentra `Bujía`); `%` y `_` se buscan literalmente. La migración
+`0006_ms3` instala `pg_trgm` y `unaccent` (extensiones *trusted*: no requieren
+superusuario, funcionan en Neon), crea `ms3_normalizar(text)` y estos índices:
+
+| Índice | Para qué |
+|---|---|
+| `ix_repuesto_nombre_trgm`, `ix_proveedor_nombre_trgm`, `ix_proveedor_contacto_trgm` | GIN de trigramas: `q` (`LIKE '%texto%'`) |
+| `ix_repuesto_nombre_orden`, `ix_proveedor_nombre_orden` | Listar ordenado por nombre y paginar |
+| `uq_proveedor_nombre_ci` | Proveedor único sin distinguir mayúsculas |
+| `uq_repuesto_proveedor_nombre` (0005), `ix_repuesto_proveedor_id` | Filtro por proveedor |
+
+Con 100.000 repuestos, buscar `q=bujia modelo 4242` tarda ~9 ms con el índice y
+~217 ms sin él. `test_busquedas_catalogo.py` verifica con `EXPLAIN` que la
+consulta real del repositorio usa cada índice.
 
 El **stock no se edita** por estos endpoints: cambia solo con movimientos de
 inventario. Un proveedor no puede tener dos repuestos con el mismo nombre

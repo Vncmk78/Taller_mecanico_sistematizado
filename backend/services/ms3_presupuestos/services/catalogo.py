@@ -26,6 +26,7 @@ from services.ms3_presupuestos.models import (
     Repuesto,
 )
 from services.ms3_presupuestos.persistencia import ConflictoDeDatos, UnidadDeTrabajo
+from services.ms3_presupuestos.persistencia.repositorios import FiltroRepuestos, OrdenRepuestos
 from services.ms3_presupuestos.schemas.catalogo import (
     ProveedorActualizar,
     ProveedorDetalle,
@@ -71,10 +72,12 @@ def eliminar_proveedor(uow: UnidadDeTrabajo, proveedor_id: int) -> None:
 
 
 def listar_proveedores(
-    uow: UnidadDeTrabajo, *, texto: str | None, desde: int, limite: int
+    uow: UnidadDeTrabajo, *, texto: str | None, con_repuestos: bool | None = None,
+    desde: int, limite: int,
 ) -> tuple[int, Sequence[Proveedor]]:
-    return (uow.proveedores.contar_busqueda(texto=texto),
-            uow.proveedores.buscar(texto=texto, desde=desde, limite=limite))
+    return (uow.proveedores.contar_busqueda(texto=texto, con_repuestos=con_repuestos),
+            uow.proveedores.buscar(texto=texto, con_repuestos=con_repuestos,
+                                   desde=desde, limite=limite))
 
 
 def _exigir_proveedor_libre(uow: UnidadDeTrabajo, nombre: str, *, excepto: int | None = None) -> None:
@@ -157,12 +160,14 @@ def umbral_general(uow: UnidadDeTrabajo) -> int | None:
 def listar_repuestos(
     uow: UnidadDeTrabajo, *, proveedor_id: int | None, texto: str | None,
     solo_bajo_umbral: bool, desde: int, limite: int,
+    con_stock: bool | None = None, orden: OrdenRepuestos = "nombre",
 ) -> tuple[int, int | None, Sequence[Repuesto]]:
     general = umbral_general(uow)
-    filtros = dict(proveedor_id=proveedor_id, texto=texto,
-                   solo_bajo_umbral=solo_bajo_umbral, umbral_general=general)
-    return (uow.repuestos.contar_busqueda(**filtros), general,
-            uow.repuestos.buscar(**filtros, desde=desde, limite=limite))
+    filtro = FiltroRepuestos(proveedor_id=proveedor_id, texto=texto,
+                             solo_bajo_umbral=solo_bajo_umbral, umbral_general=general,
+                             con_stock=con_stock, orden=orden)
+    return (uow.repuestos.contar_busqueda(filtro), general,
+            uow.repuestos.buscar(filtro, desde=desde, limite=limite))
 
 
 def _exigir_repuesto_libre(

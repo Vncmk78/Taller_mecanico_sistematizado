@@ -1,6 +1,6 @@
 """Endpoints de proveedores (MS3, RF-15: distribuidores de repuestos).
 
-    GET    /proveedores?q=&desde=&limite=     listar / buscar (nombre o contacto)
+    GET    /proveedores?q=&con_repuestos=&desde=&limite=   listar / buscar (nombre o contacto)
     GET    /proveedores/{proveedor_id}        detalle con sus repuestos
     POST   /proveedores                       crear            (Administrador)
     PATCH  /proveedores/{proveedor_id}        modificar        (Administrador)
@@ -44,12 +44,16 @@ IdProveedor = Path(gt=0, description="proveedor_id")
 @router.get("", response_model=PaginaProveedores, summary="Listar o buscar proveedores",
             responses={**_401, **_403}, dependencies=[Depends(_lectura)])
 def listar(
-    q: str | None = Query(default=None, max_length=120, description="Texto en nombre o contacto"),
+    q: str | None = Query(default=None, max_length=120,
+                          description="Texto en nombre o contacto (sin distinguir mayúsculas ni tildes)"),
+    con_repuestos: bool | None = Query(default=None,
+                                       description="true: solo con repuestos · false: sin repuestos"),
     desde: int = Query(default=0, ge=0),
     limite: int = Query(default=50, ge=1, le=LIMITE_MAXIMO),
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
 ) -> PaginaProveedores:
-    total, proveedores = casos.listar_proveedores(uow, texto=q, desde=desde, limite=limite)
+    total, proveedores = casos.listar_proveedores(uow, texto=q, con_repuestos=con_repuestos,
+                                                  desde=desde, limite=limite)
     return PaginaProveedores(total=total, desde=desde, limite=limite,
                              proveedores=[casos.a_proveedor(p) for p in proveedores])
 

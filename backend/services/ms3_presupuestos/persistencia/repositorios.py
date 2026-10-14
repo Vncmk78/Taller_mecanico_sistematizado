@@ -13,7 +13,8 @@ Reglas del patrón en este servicio:
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Generic, TypeVar
+from dataclasses import dataclass
+from typing import Generic, Literal, TypeVar
 
 from sqlalchemy import case, exists, func, select
 from sqlalchemy.sql import Select
@@ -33,6 +34,33 @@ from services.ms3_presupuestos.models import (
 from services.ms3_presupuestos.persistencia.errores import RecursoNoEncontrado
 
 ModeloT = TypeVar("ModeloT", bound=Base)
+
+OrdenRepuestos = Literal["nombre", "stock_asc", "stock_desc"]
+
+
+def contiene_texto(columna, texto: str):
+    """`columna` contiene `texto` sin distinguir mayúsculas ni tildes.
+
+    Usa ms3_normalizar() (lower + unaccent, migración 0006_ms3) en ambos lados,
+    que es la misma expresión de los índices GIN de trigramas: así PostgreSQL
+    puede usar el índice para '%texto%'. Los comodines del usuario (% y _) se
+    escapan: buscar "10%" busca literalmente "10%".
+    """
+    escapado = texto.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    patron = func.concat("%", func.ms3_normalizar(escapado), "%")
+    return func.ms3_normalizar(columna).like(patron, escape="\\")
+
+
+@dataclass(frozen=True)
+class FiltroRepuestos:
+    """Filtros combinables de la búsqueda de repuestos (todos opcionales)."""
+
+    proveedor_id: int | None = None
+    texto: str | None = None
+    solo_bajo_umbral: bool = False
+    umbral_general: int | None = None
+    con_stock: bool | None = None          # True: stock > 0 · False: stock = 0
+    orden: OrdenRepuestos = "nombre"
 
 LIMITE_MAXIMO = 200
 
@@ -90,24 +118,29 @@ class RepositorioProveedores(RepositorioBase[Proveedor]):
             consulta = consulta.where(Proveedor.proveedor_id != excepto)
         return self.sesion.scalar(consulta)
 
-    def _filtro(self, texto: str | None) -> Select:
+    def _filtro(self, texto: str | None, con_repuestos: bool | None) -> Select:
         consulta = select(Proveedor)
-        if texto:
-            patron = f"%{texto.strip().lower()}%"
-            consulta = consulta.where(
-                func.lower(Proveedor.nombre).like(patron) | func.lower(Proveedor.contacto).like(patron)
-            )
+        if texto and texto.strip():
+            # Índices ix_proveedor_nombre_trgm / ix_proveedor_contacto_trgm.
+            consulta = consulta.where(contiene_texto(Proveedor.nombre, texto)
+                                      | contiene_texto(Proveedor.contacto, texto))
+        if con_repuestos is not None:
+            tiene = exists().where(Repuesto.proveedor_id == Proveedor.proveedor_id)
+            consulta = consulta.where(tiene if con_repuestos else ~tiene)
         return consulta
 
-    def buscar(self, *, texto: str | None = None, desde: int = 0, limite: int = 50) -> Sequence[Proveedor]:
+    def buscar(self, *, texto: str | None = None, con_repuestos: bool | None = None,
+               desde: int = 0, limite: int = 50) -> Sequence[Proveedor]:
         limite = max(1, min(limite, LIMITE_MAXIMO))
-        consulta = (self._filtro(texto).order_by(func.lower(Proveedor.nombre), Proveedor.proveedor_id)
+        # Orden = índice ix_proveedor_nombre_orden (lower(nombre), proveedor_id).
+        consulta = (self._filtro(texto, con_repuestos)
+                    .order_by(func.lower(Proveedor.nombre), Proveedor.proveedor_id)
                     .offset(max(desde, 0)).limit(limite))
         return self.sesion.scalars(consulta).all()
 
-    def contar_busqueda(self, *, texto: str | None = None) -> int:
+    def contar_busqueda(self, *, texto: str | None = None, con_repuestos: bool | None = None) -> int:
         return self.sesion.scalar(
-            select(func.count()).select_from(self._filtro(texto).subquery())
+            select(func.count()).select_from(self._filtro(texto, con_repuestos).subquery())
         ) or 0
 
 
@@ -148,40 +181,39 @@ class RepositorioRepuestos(RepositorioBase[Repuesto]):
             consulta = consulta.where(Repuesto.repuesto_id != excepto)
         return self.sesion.scalar(consulta)
 
-    def _filtro(
-        self, *, proveedor_id: int | None, texto: str | None,
-        solo_bajo_umbral: bool, umbral_general: int | None,
-    ) -> Select:
+    @staticmethod
+    def _filtro(f: FiltroRepuestos) -> Select:
         consulta = select(Repuesto)
-        if proveedor_id is not None:
-            consulta = consulta.where(Repuesto.proveedor_id == proveedor_id)
-        if texto:
-            consulta = consulta.where(func.lower(Repuesto.nombre).like(f"%{texto.strip().lower()}%"))
-        if solo_bajo_umbral:
+        if f.proveedor_id is not None:
+            # Índice ix_repuesto_proveedor_id (y uq_repuesto_proveedor_nombre).
+            consulta = consulta.where(Repuesto.proveedor_id == f.proveedor_id)
+        if f.texto and f.texto.strip():
+            # Índice ix_repuesto_nombre_trgm.
+            consulta = consulta.where(contiene_texto(Repuesto.nombre, f.texto))
+        if f.con_stock is not None:
+            consulta = consulta.where(Repuesto.stock > 0 if f.con_stock else Repuesto.stock == 0)
+        if f.solo_bajo_umbral:
             # Sin umbral general vigente, solo cuentan los umbrales particulares.
-            efectivo = func.coalesce(Repuesto.umbral_particular, umbral_general)
+            efectivo = func.coalesce(Repuesto.umbral_particular, f.umbral_general)
             consulta = consulta.where(efectivo.is_not(None), Repuesto.stock < efectivo)
         return consulta
 
-    def buscar(
-        self, *, proveedor_id: int | None = None, texto: str | None = None,
-        solo_bajo_umbral: bool = False, umbral_general: int | None = None,
-        desde: int = 0, limite: int = 50,
-    ) -> Sequence[Repuesto]:
+    def buscar(self, filtro: FiltroRepuestos = FiltroRepuestos(), *,
+               desde: int = 0, limite: int = 50) -> Sequence[Repuesto]:
         limite = max(1, min(limite, LIMITE_MAXIMO))
-        consulta = self._filtro(proveedor_id=proveedor_id, texto=texto,
-                                solo_bajo_umbral=solo_bajo_umbral, umbral_general=umbral_general)
-        consulta = (consulta.order_by(func.lower(Repuesto.nombre), Repuesto.repuesto_id)
-                    .offset(max(desde, 0)).limit(limite))
+        orden = {
+            # Índice ix_repuesto_nombre_orden (lower(nombre), repuesto_id).
+            "nombre": (func.lower(Repuesto.nombre), Repuesto.repuesto_id),
+            "stock_asc": (Repuesto.stock, func.lower(Repuesto.nombre), Repuesto.repuesto_id),
+            "stock_desc": (Repuesto.stock.desc(), func.lower(Repuesto.nombre), Repuesto.repuesto_id),
+        }[filtro.orden]
+        consulta = self._filtro(filtro).order_by(*orden).offset(max(desde, 0)).limit(limite)
         return self.sesion.scalars(consulta).all()
 
-    def contar_busqueda(
-        self, *, proveedor_id: int | None = None, texto: str | None = None,
-        solo_bajo_umbral: bool = False, umbral_general: int | None = None,
-    ) -> int:
-        consulta = self._filtro(proveedor_id=proveedor_id, texto=texto,
-                                solo_bajo_umbral=solo_bajo_umbral, umbral_general=umbral_general)
-        return self.sesion.scalar(select(func.count()).select_from(consulta.subquery())) or 0
+    def contar_busqueda(self, filtro: FiltroRepuestos = FiltroRepuestos()) -> int:
+        return self.sesion.scalar(
+            select(func.count()).select_from(self._filtro(filtro).subquery())
+        ) or 0
 
     def tiene_historial(self, repuesto_id: int) -> bool:
         """¿Aparece en movimientos, presupuestos o cambios de umbral? Entonces no se borra."""

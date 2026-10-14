@@ -97,8 +97,10 @@ export function ClientVehicleDetailPage() {
                 to="/client/vehiculos"
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
             >
-                <ArrowLeft className="w-4 h-4" /> Volver a mis vehículos
+                <ArrowLeft className="w-4 h-4" aria-hidden /> Volver a mis vehículos
             </Link>
+
+            <h1 className="sr-only">Ficha del vehículo {vehicle.brand} {vehicle.model}</h1>
 
             {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
@@ -116,12 +118,12 @@ export function ClientVehicleDetailPage() {
                         to="/client/agendar"
                         className="bg-primary-blue text-white py-3 rounded-lg font-bold text-center flex items-center justify-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors"
                     >
-                        <CalendarPlus className="w-4 h-4" /> Agendar mantención para este vehículo
+                        <CalendarPlus className="w-4 h-4" aria-hidden /> Agendar mantención para este vehículo
                     </Link>
                 </div>
 
                 <div className="card">
-                    <h3 className="text-xl font-semibold flex items-center justify-between gap-2 mb-4 pb-4 border-b border-border-custom">
+                    <h2 className="text-xl font-semibold flex items-center justify-between gap-2 mb-4 pb-4 border-b border-border-custom">
                         <span className="flex items-center gap-2">
                             <ClipboardList className="w-5 h-5 text-text-muted" aria-hidden />
                             Historial de Órdenes
@@ -131,7 +133,7 @@ export function ClientVehicleDetailPage() {
                                 {vehicleOrders.length} {vehicleOrders.length === 1 ? 'orden' : 'órdenes'}
                             </span>
                         )}
-                    </h3>
+                    </h2>
 
                     {ordersStatus === 'loading' ? (
                         <p className="text-text-muted text-sm py-6 text-center">

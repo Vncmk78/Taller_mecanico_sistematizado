@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardX } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
+import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -89,6 +90,8 @@ export function AdminOrderDetailPage() {
             />
 
             <OrderStatusAndHistory order={order} />
+
+            <OrderActionsPanel order={order} className="mt-6" />
         </div>
     );
 }

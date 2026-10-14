@@ -218,11 +218,16 @@ def test_decidir_falla_despues_del_bloqueo_por_trigger(
     pid = confirmado(presupuesto_enviado).presupuesto_id
     antes = _foto(db, pid)
 
-    def falla(version: Any) -> list:
+    refresh_original = db.refresh
+
+    def falla(version: Any, *a: Any, **k: Any) -> None:
+        refresh_original(version, *a, **k)
         assert version.bloqueada_en is not None   # el trigger ya bloqueó
         raise FallaSimulada("después de la decisión y el bloqueo")
 
-    monkeypatch.setattr(casos, "_repuestos_faltantes", falla)
+    # La evaluación de stock ahora ocurre antes del INSERT para conservarla
+    # en la decisión. Inyectar después de refresh mantiene esta prueba de rollback.
+    monkeypatch.setattr(db, "refresh", falla)
     with pytest.raises(FallaSimulada):
         casos.decidir_version(uow, presupuesto_id=pid, numero=1,
                               cliente_usuario_id=datos.CLIENTE_ID, decision="aprobado",

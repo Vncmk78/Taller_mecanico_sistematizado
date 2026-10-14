@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { orderService } from '@/infrastructure/api/OrderService';
 import apiClient from '@/infrastructure/config/apiClient';
 import {
+  bitacoraEntradaReal,
   historialEstadoDeCreacion,
   historialEstadoReal,
   ordenRespuestaConMecanico,
@@ -15,6 +16,7 @@ vi.mock('@/infrastructure/config/apiClient', () => ({
   default: {
     get: vi.fn(),
     patch: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -125,6 +127,33 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
       observacion: undefined,
     });
   });
+
+  it('cambiarEstado trata la observación de solo espacios como ausente', async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: ordenApi });
+
+    await orderService.cambiarEstado('3', 2, '   ');
+
+    // CambioEstadoSolicitud declara min_length=1 con str_strip_whitespace, así que
+    // mandar "   " llegaría al backend como "" y respondería 422. Omitirla lo evita.
+    expect(apiClient.patch).toHaveBeenCalledWith('/ordenes/3/estado', {
+      estado_destino: 2,
+      observacion: undefined,
+    });
+  });
+
+  it('cambiarEstado envía solo estado_destino y observacion, sin campos extra', async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: ordenApi });
+
+    await orderService.cambiarEstado('3', 6, 'Listo');
+
+    // El modelo de MS2 tiene extra="forbid": mandar orden_id o actor_usuario_id
+    // desde el cliente lo haría rechazar con 422. El rol y el id del mecánico los
+    // saca MS2 del JWT.
+    const cuerpo = vi.mocked(apiClient.patch).mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(cuerpo).sort()).toEqual(['estado_destino', 'observacion']);
+    expect(cuerpo.estado_destino).toBe(6);
+    expect(typeof cuerpo.estado_destino).toBe('number');
+  });
 });
 
 // Cuerpos literales de gateway/contratos/ordenes.py, los mismos que valida
@@ -218,5 +247,64 @@ describe('OrderService: mapeo contra el payload real de la Gateway', () => {
     // mapeo no debe inventar un actor para poder pintar la línea de tiempo.
     expect(entry.origen).toBe('sistema');
     expect(entry.actorUsuarioId).toBeNull();
+  });
+});
+
+// Cuerpos literales de gateway/contratos/ordenes.py:214-233, los mismos que
+// valida backend/tests/test_gateway_openapi.py contra los esquemas reales.
+describe('OrderService: Bitácora de trabajo (contrato HTTP de MS2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('getOrderBitacora consulta GET /ordenes/{id}/bitacora y traduce la entrada', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: [bitacoraEntradaReal] });
+
+    const entries = await orderService.getOrderBitacora('31');
+
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/31/bitacora');
+    expect(entries[0]).toEqual({
+      id: '77',
+      ordenId: '31',
+      autorUsuarioId: '50',
+      tipo: 'accion',
+      descripcion: 'Se reemplazaron las pastillas delanteras',
+      creadoEn: '2026-09-28T12:15:00-03:00',
+      repuestos: [{ nombre: 'Pastillas de freno', cantidad: 2 }],
+    });
+  });
+
+  it('registrarBitacora publica POST /ordenes/{id}/bitacora recortando espacios', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ data: bitacoraEntradaReal });
+
+    const entry = await orderService.registrarBitacora('31', {
+      tipo: 'accion',
+      descripcion: '  Se reemplazaron las pastillas delanteras  ',
+      repuestos: [{ nombre: '  Pastillas de freno ', cantidad: 2 }],
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith('/ordenes/31/bitacora', {
+      tipo: 'accion',
+      descripcion: 'Se reemplazaron las pastillas delanteras',
+      repuestos: [{ nombre: 'Pastillas de freno', cantidad: 2 }],
+    });
+    expect(entry.id).toBe('77');
+  });
+
+  // El modelo de MS2 tiene extra="forbid" y repuestos por defecto []; enviarlo
+  // vacío en una observación es válido.
+  it('registrarBitacora normaliza los repuestos omitidos a una lista vacía', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { ...bitacoraEntradaReal, tipo: 'observacion', repuestos: [] },
+    });
+
+    const entry = await orderService.registrarBitacora('31', {
+      tipo: 'observacion',
+      descripcion: 'El cliente reporta ruido al frenar',
+    });
+
+    expect(entry.repuestos).toEqual([]);
+    const cuerpo = vi.mocked(apiClient.post).mock.calls[0][1] as Record<string, unknown>;
+    expect(cuerpo.repuestos).toEqual([]);
   });
 });

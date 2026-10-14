@@ -164,6 +164,8 @@ reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
 | `PUT /presupuestos/{id}/versiones/{n}/items` | Reemplaza los ítems de un borrador (`409` si ya fue enviada) |
 | `POST /presupuestos/{id}/versiones/{n}/envio` | **Administrador**: envía la última versión (con ítems y precios); queda congelada |
 | `POST /presupuestos/{id}/versiones/{n}/decision` | **Cliente dueño**: `{"decision": "aprobado"}` o `{"decision": "rechazado", "motivo": "...", "confirmar_cancelacion": true}` |
+| `GET /presupuestos/decisiones/{decision_id}` | **Cliente responsable**: hecho persistido que MS2 verifica antes de aplicar la decisión |
+| `POST /presupuestos/decisiones/{decision_id}/aplicacion` | **Cliente responsable**: reintenta la misma decisión, sin crear otra |
 
 Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
 la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
@@ -173,8 +175,14 @@ si el primer presupuesto fue rechazado (servicio cancelado) no se crean más
 versiones (`409`). Las versiones anteriores, sus ítems y decisiones nunca se
 modifican: la base lo impide además con los triggers de `0003_ms3`.
 
-Envío y decisión son **transaccionales**: bloquean el presupuesto (`SELECT ... FOR UPDATE`),
-validan y escriben todo junto; si algo falla no queda nada a medias. Responden
+Envío y decisión son **transaccionales dentro de MS3**: bloquean el presupuesto
+(`SELECT ... FOR UPDATE`), validan y escriben todo junto. Tras confirmar la
+primera decisión, MS3 solicita su aplicación en MS2. Un fallo posterior no
+revierte la decisión: responde `503` con `decision_id` y la ruta de reintento.
+MS2 verifica el hecho con el JWT original y confirma estado e historial en su
+propia transacción, con idempotencia persistida. Véase
+[el contrato de coordinación](docs/maquina-estados-ordenes.md#61-primera-decisión-de-presupuesto-scrum-397-y-scrum-438).
+Responden
 `efecto_en_orden`, lo que corresponde aplicar a la orden en MS2 (§4.2):
 
 | Operación | `efecto_en_orden` |
@@ -255,6 +263,18 @@ curl localhost:8004/health/storage
 
 `/health/storage` responde 200 cuando el bucket S3 responde y 503 con un mensaje
 genérico en cualquier otro caso (sin filtrar endpoint ni claves).
+
+Endpoints de negocio (por la Gateway, con `Authorization: Bearer <token>`):
+`POST /api/evidencias` (multipart), `GET /api/evidencias?orden_id=`,
+`GET /api/evidencias/{evidencia_id}` y `GET /api/evidencias/{evidencia_id}/descarga`
+(URL prefirmada de 5 minutos). Contratos, permisos por rol y ejemplos de uso
+(`curl` y `fetch`) en
+[`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md#evidencias-multimedia-ms4).
+
+```bash
+# Pruebas de MS4 (las que usan MinIO real se omiten si no está levantado)
+python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py -q
+```
 
 ## API Gateway
 

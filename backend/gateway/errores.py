@@ -35,6 +35,9 @@ TIEMPO_AGOTADO = "TIEMPO_AGOTADO"
 GATEWAY_SATURADA = "GATEWAY_SATURADA"
 ERROR_MICROSERVICIO = "ERROR_MICROSERVICIO"
 ERROR_INTERNO = "ERROR_INTERNO"
+# El body supera el límite por prefijo (checklist 4.2); se responde sin leerlo
+# ni llamar al microservicio.
+CUERPO_DEMASIADO_GRANDE = "CUERPO_DEMASIADO_GRANDE"
 # Estado HTTP no previsto (por ejemplo, un 400 lanzado por la propia app).
 ERROR_HTTP = "ERROR_HTTP"
 
@@ -42,6 +45,7 @@ ERROR_HTTP = "ERROR_HTTP"
 _CODIGOS_POR_ESTADO: dict[int, str] = {
     404: RUTA_NO_ENCONTRADA,
     405: METODO_NO_PERMITIDO,
+    413: CUERPO_DEMASIADO_GRANDE,
     502: MICROSERVICIO_INALCANZABLE,
     503: GATEWAY_SATURADA,
     504: TIEMPO_AGOTADO,
@@ -52,9 +56,12 @@ _CODIGOS_POR_ESTADO: dict[int, str] = {
 # genera FastAPI ("Not Found", "Method Not Allowed").
 MENSAJE_RUTA_NO_ENCONTRADA = "Ruta no encontrada"
 MENSAJE_METODO_NO_PERMITIDO = "Método no permitido"
+# Genérico: no revela el límite exacto del prefijo.
+MENSAJE_CUERPO_DEMASIADO_GRANDE = "El cuerpo de la petición supera el tamaño permitido"
 _DETALLES_POR_ESTADO: dict[int, str] = {
     404: MENSAJE_RUTA_NO_ENCONTRADA,
     405: MENSAJE_METODO_NO_PERMITIDO,
+    413: MENSAJE_CUERPO_DEMASIADO_GRANDE,
 }
 
 _MENSAJE_ERROR_INTERNO = "Ocurrió un error inesperado en la Gateway."
@@ -64,6 +71,7 @@ MENSAJE_TIEMPO_AGOTADO = (
 )
 MENSAJE_GATEWAY_SATURADA = "La Gateway está ocupada. Intente más tarde."
 MENSAJE_ERROR_MICROSERVICIO = "El servicio respondió con un error inesperado."
+MENSAJE_CONTENT_LENGTH_INVALIDA = "La cabecera Content-Length es inválida"
 
 
 def mapear_error_httpx(exc: httpx.RequestError) -> tuple[int, str, str]:

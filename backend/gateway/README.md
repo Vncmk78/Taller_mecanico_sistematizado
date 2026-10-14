@@ -22,9 +22,9 @@ gateway/
 ├── esquemas.py      Modelos Pydantic del formato común (errores)
 ├── errores.py       Formato común de errores + middleware del 500 (dentro de CORS)
 ├── middleware.py    Cabecera X-Request-ID en cada petición
-├── openapi.py       Reescribe el Swagger con los contratos reales de MS1 y MS2
+├── openapi.py       Reescribe el Swagger con los contratos reales de MS1, MS2 y MS4
 ├── openapi_ejemplos.py Ejemplos reales, respuestas comunes y X-Request-ID
-├── contratos/       Copias de los contratos HTTP de MS1 y MS2 (para documentar)
+├── contratos/       Copias de los contratos HTTP de MS1, MS2 y MS4 (para documentar)
 └── routers/
     ├── health.py    GET /  y  GET /api/health (endpoints propios de la Gateway)
     └── proxy.py     Reenvío de /api/* hacia los microservicios
@@ -33,7 +33,7 @@ gateway/
 ## Documentación
 
 El Swagger de la Gateway publica los contratos reales que enruta (Auth,
-Vehículos y Órdenes), con sus esquemas, ejemplos y el botón Authorize:
+Vehículos, Órdenes y Evidencias), con sus esquemas, ejemplos y el botón Authorize:
 
 - `GET /docs` — Swagger UI.
 - `GET /openapi.json` — esquema OpenAPI completo.
@@ -91,6 +91,13 @@ Contrato único de solicitudes, respuestas y errores de la Gateway.
   Gateway y del microservicio. Si no viene, o viene con más de 128 caracteres
   o con caracteres que no sean letras, números o guiones, la Gateway genera un
   UUID y lo usa.
+- Límite de body por prefijo (checklist 4.2): 1 MiB para los prefijos JSON y
+  12 MiB para `evidencias`. Superarlo responde `413` (`CUERPO_DEMASIADO_GRANDE`,
+  mensaje genérico) sin leer el body ni llamar al microservicio;
+  `Content-Length` no numérica responde `400`. El multipart conserva su
+  `Content-Type` con el `boundary`. No hay streaming hacia MS4 (riesgo 4.3
+  acotado por el límite): los videos van por el flujo C (POST prefirmado,
+  Semana 6+).
 
 El reenvío usa un único cliente HTTPX compartido (`gateway/cliente_http.py`),
 creado de forma perezosa y cerrado en el lifespan de la app, con timeouts por
@@ -135,6 +142,7 @@ este cuerpo:
 | `MICROSERVICIO_INALCANZABLE` | 502 | El microservicio destino no responde (mensaje genérico, sin URL interna) |
 | `TIEMPO_AGOTADO` | 504 | El microservicio recibió la petición pero tardó más que el timeout en responder |
 | `GATEWAY_SATURADA` | 503 | El pool de conexiones de la Gateway está lleno |
+| `CUERPO_DEMASIADO_GRANDE` | 413 | Body mayor al límite por prefijo (checklist 4.2); se responde sin leerlo ni llamar al microservicio |
 | `ERROR_MICROSERVICIO` | (del ms) | 4xx/5xx del microservicio sin body JSON, reemplazado por el formato común |
 | `ERROR_INTERNO` | 500 | Error no controlado (mensaje genérico, sin traza) |
 | `ERROR_HTTP` | otro | Estado HTTP no previsto (p. ej. un 400) |
@@ -203,6 +211,8 @@ expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 | `GATEWAY_TIMEOUT_WRITE_SECONDS` | `15.0` | Espera al enviar el body (si no, 504) |
 | `GATEWAY_TIMEOUT_POOL_SECONDS` | `5.0` | Espera por una conexión libre del pool (si no, 503) |
 | `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` | `60.0` | read/write ampliados para el prefijo `evidencias` |
+| `GATEWAY_MAX_BODY_BYTES` | `1048576` | Límite de body (bytes) para los prefijos JSON (1 MiB); superarlo responde `413` |
+| `GATEWAY_MAX_BODY_ARCHIVOS_BYTES` | `12582912` | Límite de body (bytes) para `evidencias` (12 MiB: foto de 10 MB + margen del multipart) |
 | `GATEWAY_HEALTH_TIMEOUT_SECONDS` | `2.0` | Timeout por servicio en `GET /api/health/servicios` |
 | `GATEWAY_CORS_ORIGINS` | `http://localhost:5173` | Orígenes permitidos (coma o JSON) |
 | `GATEWAY_CORS_ALLOW_CREDENTIALS` | `true` | Permite cookies/Authorization cross-origin |
@@ -210,5 +220,5 @@ expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 ## Pruebas
 
 ```bash
-pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py tests/test_gateway_formato.py tests/test_gateway_openapi.py -v
+pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py tests/test_gateway_formato.py tests/test_gateway_openapi.py tests/test_gateway_evidencias.py -v
 ```

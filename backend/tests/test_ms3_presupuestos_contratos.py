@@ -30,6 +30,8 @@ RUTAS = {
     ("post", "/presupuestos/{presupuesto_id}/versiones"),
     ("post", "/presupuestos/{presupuesto_id}/versiones/{numero}/envio"),
     ("post", "/presupuestos/{presupuesto_id}/versiones/{numero}/decision"),
+    ("get", "/presupuestos/decisiones/{decision_id}"),
+    ("post", "/presupuestos/decisiones/{decision_id}/aplicacion"),
 }
 
 

@@ -89,6 +89,33 @@ export const historialEstadoDeCreacion = {
     observacion: null,
 };
 
+/** Ejemplo real de gateway/contratos/ordenes.py:214 (_EJEMPLO_REPUESTO_BITACORA). */
+export const repuestoBitacoraReal = {
+    nombre: 'Pastillas de freno',
+    cantidad: 2,
+};
+
+/** Ejemplo real de gateway/contratos/ordenes.py:225 (_EJEMPLO_BITACORA). */
+export const bitacoraEntradaReal = {
+    bitacora_id: 77,
+    orden_id: 31,
+    autor_usuario_id: 50,
+    tipo: 'accion' as const,
+    descripcion: 'Se reemplazaron las pastillas delanteras',
+    creado_en: '2026-09-28T12:15:00-03:00',
+    repuestos: [repuestoBitacoraReal],
+};
+
+/**
+ * Ejemplo real de gateway/contratos/ordenes.py:219 (_EJEMPLO_BITACORA_CREAR).
+ * Una acción sin repuestos no declara el campo; el backend lo completa en [].
+ */
+export const bitacoraCrearObservacion = {
+    tipo: 'observacion' as const,
+    descripcion: 'El cliente reporta ruido al frenar',
+    repuestos: [],
+};
+
 /** Ejemplo real de gateway/contratos/auth.py:37 (_EJEMPLO_TOKEN). */
 export const tokenRespuestaReal = {
     access_token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3In0.firma',
@@ -201,6 +228,50 @@ export const contrasenaDemasiadoLarga = { detail: 'La contraseña no puede super
 /** 500 manejado por la ruta de MS2: llega con `detail` y sin bloque `error`. */
 export const consultaVehiculosFallida = { detail: 'No fue posible consultar los vehículos' };
 export const consultaOrdenesFallida = { detail: 'No fue posible consultar las órdenes' };
+
+// --- Cambios de estado de una orden (PATCH /api/ordenes/{id}/estado) ---
+// Los cinco literales que el frontend puede recibir al avanzar un estado. La
+// autorización se valida antes que la transición (ms2_taller/services/ordenes.py:357
+// antes de la 363), así que una orden reasignada devuelve 403 y no 409.
+
+/**
+ * 409 de `validar_transicion` cuando el par no está en la tabla
+ * (ms2_taller/domain/transiciones_orden.py:158-161). El ejemplo es el que el
+ * propio backend documenta en shared/openapi_ordenes.py:271-279.
+ */
+export const transicionNoPermitida = {
+    detail: 'Transición no permitida: Recibido -> En reparación',
+};
+/**
+ * 409 de `validar_estado_no_terminal` para los estados 7 y 8
+ * (transiciones_orden.py:164-172).
+ */
+export const estadoTerminalNoTransicionable = {
+    detail: 'El estado Entregado es terminal y no admite transiciones',
+};
+/**
+ * 403 de `OrdenEstadoNoAutorizadoError`: el token es de un mecánico distinto al
+ * `mecanico_actual_id` de la orden (ms2_taller/services/ordenes.py:357-360).
+ */
+export const sinPermisoCambiarEstado = {
+    detail: 'No tienes permiso para cambiar el estado de esta orden',
+};
+/** 404 de la ruta de MS2 cuando la orden no existe. */
+export const ordenNoEncontrada = { detail: 'Orden no encontrada' };
+/**
+ * 422 de validación de FastAPI sobre `CambioEstadoSolicitud`
+ * (ms2_taller/schemas/orden.py:42-50). El modelo tiene `extra="forbid"`, así que
+ * enviar `orden_id` o `actor_usuario_id` desde el frontend lo rechazaría.
+ */
+export const cambioEstadoBodyInvalido = {
+    detail: [
+        {
+            loc: ['body', 'estado_destino'],
+            msg: 'Input should be greater than 0',
+            type: 'greater_than',
+        },
+    ],
+};
 
 /** 422 de validación de FastAPI: `detail` como lista de { loc, msg, type }. */
 export const validacionPydantic = {

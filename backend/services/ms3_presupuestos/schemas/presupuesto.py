@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from shared.contratos_decisiones import AplicacionDecisionRespuesta
 
 TipoItem = Literal["repuesto", "mano_de_obra"]
 EstadoVersion = Literal["borrador", "enviada", "aprobada", "rechazada"]
@@ -121,6 +122,7 @@ class ItemSalida(BaseModel):
 class DecisionSalida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    decision_id: int
     decision: Literal["aprobado", "rechazado"]
     cliente_usuario_id: int
     fecha_hora: datetime
@@ -176,11 +178,14 @@ class RepuestoFaltante(BaseModel):
 class ResultadoOperacion(BaseModel):
     """Resultado de enviar o decidir: el presupuesto y lo que implica para la orden.
 
-    MS3 no cambia el estado de la orden (vive en MS2, §8): informa el efecto
-    que corresponde según §4.2 para que se aplique en MS2. `null` = la orden
-    no cambia (p. ej. envío o rechazo de una modificación posterior).
+    El estado vive en MS2 (§8). Tras confirmar una decisión inicial, el router
+    solicita su aplicación y devuelve aplicacion_en_orden; un fallo responde
+    503 con la decisión persistida y una ruta de reintento. `null` en el efecto
+    conserva su significado previo para envío/rechazo de modificaciones.
     """
 
     presupuesto: PresupuestoDetalle
     efecto_en_orden: EfectoOrden | None
     repuestos_faltantes: list[RepuestoFaltante] = []
+    decision_id: int | None = None
+    aplicacion_en_orden: AplicacionDecisionRespuesta | None = None

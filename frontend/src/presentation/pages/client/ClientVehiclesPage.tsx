@@ -51,14 +51,14 @@ export function ClientVehiclesPage() {
     <div className="p-10 animate-fade-in">
         <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
         <div>
-            <h2 className="text-3xl font-bold mb-1">Mis Vehículos</h2>
+            <h1 className="text-3xl font-bold mb-1">Mis Vehículos</h1>
             <p className="text-text-muted">Consulte la ficha técnica y el historial de sus vehículos registrados</p>
         </div>
         <Link
             to="/client/vehiculos/nuevo"
             className="bg-primary-blue text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors shrink-0"
         >
-            <Plus className="w-4 h-4" /> Añadir vehículo
+            <Plus className="w-4 h-4" aria-hidden /> Añadir vehículo
         </Link>
         </div>
 

@@ -3,12 +3,13 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los 14 endpoints reales que enruta la Gateway hacia MS1 (Autenticación) y MS2
-(Vehículos y Órdenes), con sus esquemas (`gateway/contratos`), la seguridad
-`bearerAuth` y el formato común de errores de la Gateway (`gateway.esquemas`).
+los endpoints reales que enruta la Gateway hacia MS1 (Autenticación), MS2
+(Vehículos y Órdenes) y MS4 (Evidencias), con sus esquemas
+(`gateway/contratos`), la seguridad `bearerAuth` y el formato común de errores
+de la Gateway (`gateway.esquemas`).
 
-Los endpoints todavía no implementados (presupuestos, evidencias e integración
-con facturación) no se publican como contratos.
+Incluye el contrato mínimo de decisiones MS3–MS2; los contratos generales de
+presupuestos e integración con facturación conservan su alcance previo.
 """
 from __future__ import annotations
 
@@ -17,17 +18,22 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
 from gateway.openapi_ejemplos import agregar_ejemplos_gateway
 from shared.openapi_ordenes import agregar_ejemplos_ordenes
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta, DecisionAplicacionPendiente,
+    DecisionOrdenSolicitud, DecisionPresupuestoVerificada,
+)
 
 _TITULO = "SGTM — API Gateway"
 _VERSION = "0.1.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia MS1 (Autenticación y \
-Usuarios) y MS2 (Vehículos y Órdenes).
+Usuarios), MS2 (Vehículos y Órdenes) y MS4 (Evidencias multimedia).
 
 ## URL base
 
@@ -59,6 +65,7 @@ de validación, `detail` es una lista de errores de Pydantic.
 |---|---|---|
 | 404 | `RUTA_NO_ENCONTRADA` | La ruta no existe |
 | 405 | `METODO_NO_PERMITIDO` | El método no existe en esa ruta |
+| 413 | `CUERPO_DEMASIADO_GRANDE` | El body supera el límite (1 MiB; 12 MiB en `/api/evidencias`) |
 | 500 | `ERROR_INTERNO` o `ERROR_MICROSERVICIO` | Error no controlado o respuesta no JSON |
 | 502 | `MICROSERVICIO_INALCANZABLE` | El microservicio no respondió |
 | 503 | `GATEWAY_SATURADA` | El pool de conexiones está agotado |
@@ -89,9 +96,21 @@ _TAGS = [
     {
         "name": "Órdenes",
         "description": (
-            "Creación, consulta, historial, cambio de estado y asignación "
-            "inicial de órdenes (MS2)."
+            "Creación, consulta, historial, bitácora de trabajo, cambio de "
+            "estado, asignación inicial, entrega física y cancelación del "
+            "cliente (MS2)."
         ),
+    },
+    {
+        "name": "Evidencias",
+        "description": (
+            "Subida de fotos y videos de una orden, consulta por rol y "
+            "descarga con URL prefirmada de corta duración (MS4)."
+        ),
+    },
+    {
+        "name": "Presupuestos",
+        "description": "Consulta y reintento de la decisión inicial de presupuesto (MS3).",
     },
     {
         "name": "Gateway",
@@ -114,7 +133,20 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
+    ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
+    ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
+    ("RepuestoBitacoraEntrada", contratos_ordenes.RepuestoBitacoraEntrada),
+    ("RepuestoBitacoraRespuesta", contratos_ordenes.RepuestoBitacoraRespuesta),
+    ("BitacoraCrear", contratos_ordenes.BitacoraCrear),
+    ("BitacoraRespuesta", contratos_ordenes.BitacoraRespuesta),
+    ("EvidenciaSubida", contratos_evidencias.EvidenciaSubida),
+    ("EvidenciaRespuesta", contratos_evidencias.EvidenciaRespuesta),
+    ("UrlDescargaRespuesta", contratos_evidencias.UrlDescargaRespuesta),
+    ("DecisionOrdenSolicitud", DecisionOrdenSolicitud),
+    ("DecisionPresupuestoVerificada", DecisionPresupuestoVerificada),
+    ("AplicacionDecisionRespuesta", AplicacionDecisionRespuesta),
+    ("DecisionAplicacionPendiente", DecisionAplicacionPendiente),
 ]
 
 _PARAMETRO_X_REQUEST_ID: dict[str, object] = {
@@ -151,6 +183,27 @@ _PARAMETRO_ORDEN_ID: dict[str, object] = {
 }
 
 
+_PARAMETRO_EVIDENCIA_ID: dict[str, object] = {
+    "name": "evidencia_id",
+    "in": "path",
+    "required": True,
+    "description": "Identificador (UUID) de la evidencia.",
+    "schema": {
+        "type": "string",
+        "format": "uuid",
+        "example": "3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f",
+    },
+}
+
+_PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
+    "name": "orden_id",
+    "in": "query",
+    "required": True,
+    "description": "Orden de trabajo (MS2) cuyas evidencias se listan.",
+    "schema": {"type": "integer", "format": "int64", "minimum": 1, "example": 31},
+}
+
+
 def _ref(nombre: str) -> dict[str, object]:
     return {"$ref": f"#/components/schemas/{nombre}"}
 
@@ -179,6 +232,8 @@ def _operacion(
     requiere_auth: bool,
     con_vehiculo_id: bool = False,
     con_orden_id: bool = False,
+    parametros_extra: list[dict[str, object]] | None = None,
+    cuerpo_multipart: str | None = None,
     descripcion_404: str = (
         "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA)."
     ),
@@ -189,6 +244,7 @@ def _operacion(
         parametros.append(_PARAMETRO_VEHICULO_ID)
     if con_orden_id:
         parametros.append(_PARAMETRO_ORDEN_ID)
+    parametros.extend(parametros_extra or [])
 
     errores: dict[str, dict[str, object]] = {
         **{
@@ -243,7 +299,162 @@ def _operacion(
             "required": True,
             "content": {"application/json": {"schema": _ref(cuerpo)}},
         }
+    if cuerpo_multipart is not None:
+        operacion["requestBody"] = {
+            "required": True,
+            "content": {"multipart/form-data": {"schema": _ref(cuerpo_multipart)}},
+        }
     return operacion
+
+
+def _operacion_evidencias(**kwargs: object) -> dict[str, object]:
+    """Operación de MS4: además del 503 de la Gateway, MS4 responde 503 propio.
+
+    MS4 devuelve `{"detail": ...}` con 503 cuando el almacenamiento (MinIO/S3)
+    o MS2 (verificación de la orden) no responden; por eso el 503 de estas
+    operaciones admite ambos formatos en lugar de la respuesta reutilizable.
+    """
+    operacion = _operacion(tag="Evidencias", requiere_auth=True, **kwargs)  # type: ignore[arg-type]
+    operacion["responses"]["503"] = _respuesta(
+        (
+            "No disponible. MS4 responde {'detail': ...} si el almacenamiento "
+            "o el servicio de órdenes no responden; la Gateway responde "
+            "GATEWAY_SATURADA si su pool está agotado."
+        ),
+        {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
+    )
+    return operacion
+
+
+def _caminos_evidencias() -> dict[str, dict[str, object]]:
+    error_404_ms4: dict[str, object] = {
+        "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")],
+    }
+    subir = _operacion_evidencias(
+        resumen="Subir una evidencia de una orden",
+        descripcion=(
+            "Formulario multipart con el archivo y sus datos. Solo Mecánico "
+            "(de una orden que atiende) o Administrador; un Cliente recibe 403 "
+            "antes de procesar el archivo. MS4 verifica la orden contra MS2 con "
+            "el mismo JWT antes de guardar nada. El autor sale del token y el "
+            "`X-Request-ID` queda registrado con la evidencia. La Gateway "
+            "rechaza con 413 un body mayor a 12 MiB."
+        ),
+        operation_id="subir_evidencia",
+        cuerpo=None,
+        cuerpo_multipart="EvidenciaSubida",
+        respuestas_ok={
+            "201": _respuesta("Evidencia guardada.", _ref("EvidenciaRespuesta"))
+        },
+        errores_ms={
+            "401": "JWT ausente o inválido",
+            "403": "Se requiere rol Mecánico o Administrador",
+            "422": "Archivo vacío, tipo no permitido o datos del formulario inválidos",
+        },
+        descripcion_404=(
+            "Orden no encontrada: no existe o no es visible para el usuario "
+            "(no se revela cuál de las dos)."
+        ),
+        esquema_404=error_404_ms4,
+    )
+    subir["responses"]["413"] = _respuesta(
+        "La Gateway rechazó el body por superar el límite (CUERPO_DEMASIADO_GRANDE).",
+        _ref("ErrorRespuesta"),
+    )
+    return {
+        "/api/evidencias": {
+            "post": subir,
+            "get": _operacion_evidencias(
+                resumen="Listar las evidencias de una orden",
+                descripcion=(
+                    "MS4 verifica primero que la orden sea visible para el "
+                    "usuario (MS2). Cliente: solo las visibles para él, "
+                    "confirmadas y no eliminadas. Mecánico: todas las no "
+                    "eliminadas de las órdenes que atiende. Administrador: "
+                    "todas, incluidas las eliminadas. En un usuario multirol "
+                    "rige el alcance más amplio. Orden de creación ascendente."
+                ),
+                operation_id="listar_evidencias",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_ORDEN_ID_QUERY],
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Evidencias de la orden.",
+                        {"type": "array", "items": _ref("EvidenciaRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Falta orden_id o no es un entero positivo",
+                },
+                descripcion_404="Orden no encontrada o no visible.",
+                esquema_404=error_404_ms4,
+            ),
+        },
+        "/api/evidencias/{evidencia_id}": {
+            "get": _operacion_evidencias(
+                resumen="Consultar una evidencia",
+                descripcion=(
+                    "Aplica la misma visibilidad del listado. Una evidencia "
+                    "inexistente, eliminada o fuera del alcance responde el "
+                    "mismo 404, sin revelar su existencia."
+                ),
+                operation_id="consultar_evidencia",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_EVIDENCIA_ID],
+                respuestas_ok={
+                    "200": _respuesta("Evidencia encontrada.", _ref("EvidenciaRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de evidencia inválido (no es UUID)",
+                },
+                descripcion_404="Evidencia no encontrada.",
+                esquema_404=error_404_ms4,
+            )
+        },
+        "/api/evidencias/{evidencia_id}/descarga": {
+            "get": _operacion_evidencias(
+                resumen="Obtener la URL de descarga de una evidencia",
+                descripcion=(
+                    "Devuelve una URL prefirmada del almacenamiento que vence "
+                    "en `expira_en` segundos (5 minutos por defecto) y fuerza "
+                    "el tipo validado y la descarga como adjunto. El cliente la "
+                    "abre directamente (no pasa por la Gateway) y pide una "
+                    "nueva cuando vence. La respuesta lleva `Cache-Control: "
+                    "no-store` y `X-Content-Type-Options: nosniff`. Mismo 404 "
+                    "que el detalle."
+                ),
+                operation_id="descargar_evidencia",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_EVIDENCIA_ID],
+                respuestas_ok={
+                    "200": {
+                        **_respuesta(
+                            "URL prefirmada de corta duración.",
+                            _ref("UrlDescargaRespuesta"),
+                        ),
+                        "headers": {
+                            "Cache-Control": {
+                                "description": "La URL no se debe cachear.",
+                                "schema": {"type": "string", "example": "no-store"},
+                            },
+                            "X-Content-Type-Options": {
+                                "description": "El navegador no adivina el tipo.",
+                                "schema": {"type": "string", "example": "nosniff"},
+                            },
+                        },
+                    }
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de evidencia inválido (no es UUID)",
+                },
+                descripcion_404="Evidencia no encontrada.",
+                esquema_404=error_404_ms4,
+            )
+        },
+    }
 
 
 def _caminos_documentados() -> dict[str, dict[str, object]]:
@@ -253,7 +464,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
         "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")],
     }
 
-    return {
+    caminos = {
         "/api/auth/register": {
             "post": _operacion(
                 tag="Autenticación",
@@ -528,10 +739,12 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 tag="Órdenes",
                 resumen="Consultar el historial de estados de una orden",
                 descripcion=(
-                    "Devuelve los cambios de estado de una orden, en orden "
-                    "cronológico, con el actor que los registró y su "
-                    "observación. Aplica la misma visibilidad del detalle: una "
-                    "orden inexistente o ajena responde 404."
+                    "Devuelve todos los registros por fecha/hora e identificador "
+                    "ascendente, con el actor, origen y observación. Aplica la "
+                    "misma visibilidad del detalle: Administrador ve todas; "
+                    "Cliente sus vehículos; Mecánico sus órdenes asignadas; "
+                    "multirol combina los alcances. Una orden inexistente o "
+                    "ajena responde 404; una visible sin registros devuelve []."
                 ),
                 operation_id="consultar_historial_orden",
                 cuerpo=None,
@@ -554,16 +767,85 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             )
         },
+        "/api/ordenes/{orden_id}/bitacora": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar la bitácora de trabajo de una orden",
+                descripcion=(
+                    "Devuelve todos los registros por fecha/hora e identificador "
+                    "ascendente, con el autor, el tipo (observación o acción), el "
+                    "texto y los repuestos utilizados. Aplica la misma visibilidad "
+                    "del detalle: Administrador ve todas; Cliente sus vehículos; "
+                    "Mecánico sus órdenes asignadas; multirol combina los alcances. "
+                    "Una orden inexistente o ajena responde 404; una visible sin "
+                    "registros devuelve []."
+                ),
+                operation_id="consultar_bitacora_orden",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Bitácora de trabajo de la orden.",
+                        {"type": "array", "items": _ref("BitacoraRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de orden inválido",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            ),
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar una observación o acción en la bitácora",
+                descripcion=(
+                    "Registra lo que el mecánico observa o ejecuta sobre una orden "
+                    "sin cambiar su estado. Una observación es una nota libre; una "
+                    "acción puede declarar los repuestos utilizados (texto libre y "
+                    "cantidad). Solo el mecánico asignado o un administrador pueden "
+                    "registrarla. No acepta estado, actor ni fecha en el cuerpo."
+                ),
+                operation_id="registrar_bitacora_orden",
+                cuerpo="BitacoraCrear",
+                respuestas_ok={
+                    "201": _respuesta(
+                        "Entrada registrada.", _ref("BitacoraRespuesta")
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere ser el mecánico asignado o Administrador",
+                    "422": "Tipo, descripción o repuestos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada o ajena.",
+                esquema_404=error_404_recurso,
+            ),
+        },
         "/api/ordenes/{orden_id}/estado": {
             "patch": _operacion(
                 tag="Órdenes",
                 resumen="Cambiar el estado de una orden",
                 descripcion=(
                     "Cambia el estado validando rol, catálogo oficial y "
-                    "transición declarada por el dominio. Administrador siempre; "
+                    "transición declarada por el dominio. La primera asignación (1 → 2) "
+                    "requiere PUT /api/ordenes/{orden_id}/mecanico; la primera aprobación "
+                    "(3 → 4/5) requiere POST /api/ordenes/{orden_id}/decisiones-presupuesto "
+                    "con una decisión verificada de MS3; y la entrega física (6 → 7) "
+                    "requiere POST /api/ordenes/{orden_id}/entrega. "
+                    "El PATCH directo responde 409 en esos tres pares, también para "
+                    "Administrador y usuarios multirrol. "
+                    "Los otros pares mantienen su comportamiento y las brechas de "
+                    "precondiciones de envío, stock posterior, finalización y "
+                    "cancelación siguen pendientes. Administrador por rol; "
                     "Mecánico solo en órdenes que tiene asignadas. Una orden "
                     "Entregada o Cancelada es terminal y rechaza cualquier "
-                    "cambio. Registra el historial en la misma transacción."
+                    "cambio. Pasar a Cancelado exige una observación o motivo no vacío; "
+                    "en los demás destinos es opcional. Registra el historial "
+                    "en la misma transacción."
                 ),
                 operation_id="cambiar_estado_orden",
                 cuerpo="CambioEstadoSolicitud",
@@ -573,8 +855,8 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador o ser el mecánico asignado",
-                    "409": "Transición no permitida o terminal",
-                    "422": "Estado de destino desconocido o datos inválidos",
+                    "409": "Transición no permitida, terminal o reservada a una operación específica",
+                    "422": "Estado de destino desconocido, cancelación sin motivo o datos inválidos",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
@@ -582,7 +864,135 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             )
         },
+        "/api/ordenes/{orden_id}/entrega": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar la entrega física de una orden lista",
+                descripcion=(
+                    "Cierra el ciclo normal (6 → 7): registra la fecha de entrega "
+                    "y la identidad que la autorizó. Solo el Administrador puede "
+                    "invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. "
+                    "Una orden que no está Lista o ya es terminal responde 409. "
+                    "Registra el historial en la misma transacción."
+                ),
+                operation_id="registrar_entrega_orden",
+                cuerpo="EntregaSolicitud",
+                respuestas_ok={
+                    "200": _respuesta("Orden entregada.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "La orden no está Lista o ya es terminal",
+                    "422": "Observación de entrega vacía",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/cancelacion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Cancelar una orden a solicitud de su cliente propietario",
+                descripcion=(
+                    "El cliente dueño del vehículo cancela una orden no terminal "
+                    "(1/2/3 → 8). El motivo es obligatorio y se audita en el "
+                    "historial junto con el estado. Una orden inexistente o ajena "
+                    "responde 404 sin revelar cuál; una orden ya avanzada o "
+                    "terminal responde 409."
+                ),
+                operation_id="cancelar_orden_cliente",
+                cuerpo="CancelacionClienteSolicitud",
+                respuestas_ok={
+                    "200": _respuesta("Orden cancelada.", _ref("OrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Cliente",
+                    "409": "La orden ya avanzó o es terminal",
+                    "422": "Motivo de cancelación vacío o datos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada o ajena.",
+                esquema_404=error_404_recurso,
+            )
+        },
     }
+    caminos["/api/ordenes/{orden_id}"]["get"]["parameters"].append({
+        "name": "solo_propietario", "in": "query", "required": False,
+        "schema": {"type": "boolean", "default": False},
+        "description": "Exige propiedad como Cliente aunque el JWT incluya otros roles.",
+    })
+    caminos["/api/ordenes/{orden_id}"]["get"]["responses"]["200"]["headers"] = {
+        "X-Orden-Propiedad-Verificada": {
+            "description": "Solo con solo_propietario=true y propiedad confirmada por MS2.",
+            "schema": {"type": "string", "enum": ["true"]},
+        },
+    }
+    caminos.update(_caminos_decisiones(error_404_recurso))
+    return caminos
+
+
+def _caminos_decisiones(error_404: dict[str, object]) -> dict[str, dict[str, object]]:
+    aplicada = {"decision_id": 9, "orden_id": 31, "estado_aplicado": 8, "historial_id": 40}
+    hecho = {"decision_id": 9, "orden_id": 31, "cliente_usuario_id": 42,
+             "decision": "rechazado", "primera_decision": True,
+             "repuestos_disponibles": None, "motivo": "No autorizo el servicio"}
+    parametros_decision = {"name": "decision_id", "in": "path", "required": True,
+                           "schema": {"type": "integer", "exclusiveMinimum": 0}}
+    operaciones = {}
+    for ruta, metodo, tag, resumen, descripcion, contrato, cuerpo, errores in (
+        ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post", "Órdenes",
+         "Aplicar una decisión de presupuesto",
+         "Cliente propietario. Verifica el hecho en MS3 con el JWT original, deriva el evento "
+         "y guarda estado e historial atómicamente. Repetir decision_id devuelve la aplicación "
+         "registrada sin nuevas escrituras. No acepta actor, stock ni destino en el body.",
+         "AplicacionDecisionRespuesta", "DecisionOrdenSolicitud",
+         {"409": "Estado/evento incompatible o decisión no aplicable", "503": "MS3 no verificable"}),
+        ("/api/presupuestos/decisiones/{decision_id}", "get", "Presupuestos",
+         "Consultar una decisión persistida",
+         "Solo el cliente que decidió. Devuelve el hecho y la disponibilidad guardada al aprobar; "
+         "no recalcula stock ni consulta MS2. Una aprobación histórica sin evaluación responde 409.",
+         "DecisionPresupuestoVerificada", None, {"409": "Decisión histórica sin evaluación de stock"}),
+        ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post", "Presupuestos",
+         "Reintentar la aplicación de una decisión",
+         "Solo el cliente responsable. Reutiliza la decisión existente y su JWT, sin crear "
+         "otra decisión. Un 503 identifica la decisión registrada cuya aplicación no se confirmó.",
+         "AplicacionDecisionRespuesta", None,
+         {"409": "No es una decisión inicial aplicable", "503": "Aplicación no confirmada en MS2"}),
+    ):
+        operacion = _operacion(
+            tag=tag, resumen=resumen, descripcion=descripcion,
+            operation_id={
+                "/api/ordenes/{orden_id}/decisiones-presupuesto": "aplicar_decision_presupuesto",
+                "/api/presupuestos/decisiones/{decision_id}": "consultar_decision_presupuesto",
+                "/api/presupuestos/decisiones/{decision_id}/aplicacion": "reintentar_aplicacion_decision",
+            }[ruta],
+            cuerpo=cuerpo, respuestas_ok={"200": _respuesta(resumen, _ref(contrato))},
+            errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente",
+                        "422": "Datos inválidos", **errores},
+            requiere_auth=True, con_orden_id=ruta.startswith("/api/ordenes"),
+            descripcion_404="Orden o decisión inexistente o ajena", esquema_404=error_404,
+        )
+        if "{decision_id}" in ruta:
+            operacion["parameters"].append(parametros_decision)
+        media = operacion["responses"]["200"]["content"]["application/json"]
+        media["examples"] = {"ejemplo": {"value": hecho if metodo == "get" else aplicada}}
+        if cuerpo:
+            operacion["requestBody"]["content"]["application/json"]["examples"] = {
+                "referencia": {"value": {"decision_id": 9}},
+            }
+        if "503" in errores:
+            esquema_503 = "DecisionAplicacionPendiente" if ruta.startswith("/api/presupuestos") else "ErrorDetalle"
+            operacion["responses"]["503"] = _respuesta(
+                errores["503"] + "; o pool de Gateway agotado",
+                {"oneOf": [_ref(esquema_503), _ref("ErrorRespuesta")]},
+            )
+        operaciones[ruta] = {metodo: operacion}
+    return operaciones
 
 
 def _esquemas_documentados() -> dict[str, dict[str, object]]:
@@ -617,7 +1027,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 14 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 22 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:
@@ -630,7 +1040,11 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         routes=app.routes,
         tags=_TAGS,
     )
-    esquema["paths"] = {**esquema["paths"], **_caminos_documentados()}
+    esquema["paths"] = {
+        **esquema["paths"],
+        **_caminos_documentados(),
+        **_caminos_evidencias(),
+    }
 
     componentes = esquema.setdefault("components", {})
     componentes["securitySchemes"] = {

@@ -11,7 +11,7 @@ Estructura del servicio (Semana 4):
     schemas/         contratos Pydantic de entrada/salida
     services/        reglas de negocio y transacciones
     models/          modelos ORM (MER, recuadro "BD MS3")
-    alembic/         migraciones propias (0001 → 0003)
+    alembic/         migraciones propias (0001 → 0004)
 
 Los endpoints de negocio se agregan en routers/ y se registran en ROUTERS.
 """
@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session
 
 from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
-from services.ms3_presupuestos.integracion_ms2 import ServicioOrdenesNoDisponible
+from services.ms3_presupuestos.integracion_ms2 import DecisionAplicacionPendienteError, ServicioOrdenesNoDisponible
+from shared.contratos_decisiones import DecisionAplicacionPendiente
 from services.ms3_presupuestos.persistencia import ErrorDePersistencia
 from services.ms3_presupuestos.routers import ROUTERS
 
@@ -60,6 +61,18 @@ def _ms2_no_disponible(_: Request, __: ServicioOrdenesNoDisponible) -> JSONRespo
         status_code=503,
         content={"detail": "No fue posible validar la orden con el servicio de órdenes"},
     )
+
+
+@app.exception_handler(DecisionAplicacionPendienteError)
+def _decision_aplicacion_pendiente(_: Request, exc: DecisionAplicacionPendienteError) -> JSONResponse:
+    respuesta = DecisionAplicacionPendiente(
+        detail="La decisión quedó registrada; no se pudo confirmar su aplicación en MS2. "
+               "Reintente la misma decisión, sin volver a aprobar ni rechazar.",
+        decision_id=exc.decision_id, orden_id=exc.orden_id,
+        reintento=f"/api/presupuestos/decisiones/{exc.decision_id}/aplicacion",
+        estado_ms2=exc.estado_ms2, detalle_ms2=exc.detalle_ms2,
+    )
+    return JSONResponse(status_code=503, content=respuesta.model_dump())
 
 
 @app.get("/health", tags=["health"])

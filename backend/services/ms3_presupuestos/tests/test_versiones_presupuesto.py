@@ -18,16 +18,18 @@ from sqlalchemy.orm import Session
 from services.ms3_presupuestos import datos_prueba as datos
 from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
-from services.ms3_presupuestos.integracion_ms2 import obtener_verificador_ordenes
+from services.ms3_presupuestos.integracion_ms2 import obtener_coordinador_ordenes, obtener_verificador_ordenes
 from services.ms3_presupuestos.main import app
 from services.ms3_presupuestos.models import (
     ItemPresupuesto,
+    DecisionPresupuesto,
     Presupuesto,
     Repuesto,
     VersionPresupuesto,
 )
 from services.ms3_presupuestos.tests import fabricas
 from shared.auth import NombreRol, crear_token_acceso
+from shared.contratos_decisiones import AplicacionDecisionRespuesta
 
 
 def _cabecera(rol: NombreRol, usuario_id: int) -> dict[str, str]:
@@ -52,6 +54,8 @@ class _OrdenesDelCliente:
         if orden_id not in self.propias:
             raise OrdenNoVisible(orden_id)
 
+    verificar_propiedad = verificar_acceso
+
 
 @pytest.fixture
 def ms2() -> _OrdenesDelCliente:
@@ -60,14 +64,23 @@ def ms2() -> _OrdenesDelCliente:
 
 @pytest.fixture
 def api(db: Session, ms2: _OrdenesDelCliente) -> Iterator[TestClient]:
+    class CoordinadorFalso:
+        def aplicar(self, orden_id: int, decision_id: int, token: str) -> AplicacionDecisionRespuesta:
+            decision = db.get(DecisionPresupuesto, decision_id)
+            destino = 8 if decision.decision == "rechazado" else (5 if decision.repuestos_disponibles else 4)
+            return AplicacionDecisionRespuesta(decision_id=decision_id, orden_id=orden_id,
+                                               estado_aplicado=destino, historial_id=1)
+
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[obtener_verificador_ordenes] = lambda: ms2
+    app.dependency_overrides[obtener_coordinador_ordenes] = CoordinadorFalso
     try:
         with TestClient(app) as cliente:
             yield cliente
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(obtener_verificador_ordenes, None)
+        app.dependency_overrides.pop(obtener_coordinador_ordenes, None)
 
 
 def _foto(db: Session, presupuesto_id: int) -> list[tuple]:

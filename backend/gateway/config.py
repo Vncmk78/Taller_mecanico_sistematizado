@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -46,6 +46,17 @@ class GatewaySettings(BaseSettings):
     # Timeout por servicio del health check (GET /api/health/servicios). Corto
     # a propósito: un servicio caído no debe bloquear la respuesta agregada.
     HEALTH_TIMEOUT_SECONDS: float = 2.0
+
+    # Límites de tamaño de body de la Gateway (checklist 4.2 y
+    # estudio-almacenamiento-objetos.md §6). La Gateway rechaza con 413 los
+    # bodies mayores antes de leerlos o llamar al microservicio.
+    # 1 MiB para los prefijos JSON (MS1/MS2/MS3): una búsqueda en el repo
+    # (Semana 5) no encontró ningún endpoint de esos servicios ni del frontend
+    # que reciba bodies grandes; sus bodies son JSON de tamaño acotado.
+    MAX_BODY_BYTES: int = Field(default=1 * 1024 * 1024, gt=0)
+    # 12 MiB para "evidencias" (MS4): un multipart con una foto de hasta 10 MB
+    # (checklist 1.3) más el margen de la frontera y metadatos del multipart.
+    MAX_BODY_ARCHIVOS_BYTES: int = Field(default=12 * 1024 * 1024, gt=0)
 
     # CORS: orígenes desde los que se permite consumir la Gateway (web, móvil,
     # herramientas de prueba). En desarrollo el frontend corre en localhost:5173.

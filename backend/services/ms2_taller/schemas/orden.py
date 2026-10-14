@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -39,6 +40,29 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime
 
 
+class EntregaSolicitud(BaseModel):
+    """Datos controlables al registrar la entrega física de una orden."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    observacion: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Comentario opcional de la entrega.",
+    )
+
+
+class CancelacionClienteSolicitud(BaseModel):
+    """Motivo obligatorio con el que el cliente cancela su orden."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    motivo: str = Field(
+        min_length=1,
+        description="Motivo de la cancelación; no puede estar vacío.",
+    )
+
+
 class CambioEstadoSolicitud(BaseModel):
     """Datos controlables al solicitar un cambio de estado de una orden."""
 
@@ -47,7 +71,11 @@ class CambioEstadoSolicitud(BaseModel):
     # Sin tope superior: el catálogo oficial (1 a 8) lo valida el dominio, que
     # es quien conoce los estados y las transiciones permitidas.
     estado_destino: int = Field(gt=0)
-    observacion: str | None = Field(default=None, min_length=1)
+    observacion: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Obligatoria al pasar a Cancelado; opcional en los demás destinos.",
+    )
 
 
 class HistorialEstadoRespuesta(BaseModel):
@@ -60,6 +88,6 @@ class HistorialEstadoRespuesta(BaseModel):
     estado_anterior: int | None
     estado_nuevo: int
     actor_usuario_id: int | None
-    origen: str
+    origen: Literal["usuario", "sistema"]
     fecha_hora: datetime
     observacion: str | None

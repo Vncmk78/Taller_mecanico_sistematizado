@@ -18,7 +18,7 @@ algo, manda esta matriz.
 | MS1 | 8001 | Autenticación y usuarios | Endpoints de negocio implementados |
 | MS2 | 8002 | Vehículos y órdenes de trabajo | Endpoints implementados |
 | MS3 | 8003 | Presupuestos, repuestos, proveedores, inventario | Endpoints iniciales de `/presupuestos` |
-| MS4 | 8004 | Evidencias multimedia | **Sin endpoints de negocio** |
+| MS4 | 8004 | Evidencias multimedia | Endpoints de recepción y consulta implementados; la visibilidad se valida contra MS2 |
 
 La Gateway **no valida el JWT**: se limita a reenviar la petición. Toda decisión de
 autorización ocurre en el microservicio que atiende la ruta.
@@ -32,7 +32,7 @@ autorización ocurre en el microservicio que atiende la ruta.
 | `services/ms2_taller/services/ordenes.py` → `_filtro_visibilidad` | La visibilidad de órdenes por rol, con soporte multirol |
 | `services/ms2_taller/dependencies.py` → `resolver_cliente_actual` | El guard de vehículos: exige rol Cliente y perfil local |
 | `services/ms3_presupuestos/dependencies.py` → `requerir_roles` | Guard de "al menos uno de estos roles"; lo usa `routers/presupuestos.py` (Mecánico o Administrador) |
-| `services/ms4_evidencias/dependencies.py` → `obtener_principal_actual` | Valida el token en MS4 (lista, sin endpoints que la usen) |
+| `services/ms4_evidencias/dependencies.py` → `obtener_principal_actual` / `obtener_token_bearer` | Validan el token en MS4; el segundo reenvía el JWT a MS2 para validar la orden (§4.5) |
 | [`modelo-evidencias.md`](modelo-evidencias.md) §Reglas de visibilidad | La visibilidad de evidencias por rol, en detalle |
 | [`maquina-estados-ordenes.md`](maquina-estados-ordenes.md) | Los ocho estados y sus transiciones |
 
@@ -112,8 +112,11 @@ ruta no existe.
 | `GET /api/ordenes` | ⚠️ de sus vehículos | ⚠️ asignadas | ✅ todas |
 | `GET /api/ordenes/{id}` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
 | `PUT /api/ordenes/{id}/mecanico` | ❌ | ❌ | ✅ |
-| `GET /api/ordenes/{id}/historial` | — | — | — |
-| Cambio general de estado | — | — | — |
+| `GET /api/ordenes/{id}/historial` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
+| `PATCH /api/ordenes/{id}/estado` | ❌ 403 | ⚠️ solo asignadas | ✅ cualquiera |
+| `POST /api/ordenes/{id}/entrega` | ❌ 403 | ❌ 403 | ✅ |
+| `POST /api/ordenes/{id}/cancelacion` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
+| `POST /api/ordenes/{id}/decisiones-presupuesto` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
 
 Detalles que condicionan la matriz:
 
@@ -133,6 +136,17 @@ Detalles que condicionan la matriz:
 - `mecanico_id` es hoy una **referencia lógica** a MS1: **no** se valida en el
   servidor que exista, esté activo ni tenga el rol `mecanico`, ni se aplica un
   máximo de órdenes activas.
+- **Cambio general de estado** (`PATCH /api/ordenes/{id}/estado`): solo el
+  Administrador, o el Mecánico asignado a esa orden, con `403` en otro caso. Los
+  pares `1 → 2`, `3 → 4/5` y `6 → 7` están reservados a sus operaciones
+  específicas y responden `409`; pasar a `Cancelado` exige motivo no vacío.
+- **Entrega física** (`POST /api/ordenes/{id}/entrega`): exclusiva del
+  Administrador. Cierra `6 → 7`, registra `entregado_en` y `entregado_por_id` con
+  la identidad del JWT y el historial. El PATCH `6 → 7` responde `409`.
+- **Cancelación del cliente** (`POST /api/ordenes/{id}/cancelacion`): solo el
+  Cliente propietario del vehículo mientras la orden esté en `1`, `2` o `3`. El
+  motivo es obligatorio; una orden inexistente o ajena responde `404` y una orden
+  ya avanzada o terminal `409`.
 
 ### 4.4 Presupuestos, repuestos, proveedores e inventario (MS3)
 
@@ -162,13 +176,26 @@ Detalles que condicionan la matriz:
 
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
-| Recepción (subir) | 📐 | 📐 ⚠️ solo de órdenes que atiende | 📐 ✅ |
-| Consulta | 📐 ⚠️ las visibles para cliente | 📐 ⚠️ las de órdenes que atiende | 📐 ✅ todas, incluidas eliminadas |
+| Recepción (subir) | ❌ 403 | ⚠️ solo de órdenes que atiende (se valida contra MS2) | ✅ |
+| Consulta | ⚠️ las visibles para cliente, de sus órdenes (MS2) | ⚠️ las de órdenes que atiende (se valida contra MS2) | ✅ todas, incluidas las eliminadas |
 | Cambiar `visible_cliente` | 📐 ❌ | 📐 ⚠️ salvo contexto `presupuesto` | 📐 ✅ |
 | Eliminar | 📐 ❌ | 📐 ⚠️ solo las propias | 📐 ✅ |
 
-Todas las capacidades de MS4 están marcadas 📐: **la regla está definida, el
-endpoint no existe**. El detalle vigente está en
+Implementado en la Semana 5 (`routers/evidencias.py`, controles 3.1, 3.2, 3.3
+y 3.4): la subida (`POST /evidencias`) exige rol **Mecánico o Administrador** y
+el `403` se resuelve antes de leer el archivo. La pertenencia de la orden se
+valida **contra MS2** (`services/ms4_evidencias/integracion_ms2.py`, mismo
+contrato que MS3): MS4 reenvía el MISMO JWT a `GET {MS2_URL}/ordenes/{orden_id}`
+en subir, listar, detalle y descarga; si MS2 responde 404/403 → `404` (orden
+ajena o inexistente, sin enumerar) y si MS2 no responde → `503`. En
+detalle/descarga el **Administrador no consulta a MS2** (auditoría: ve todo,
+incluidas las eliminadas). La consulta aplica los tres filtros acumulativos del
+cliente (`visible_cliente = true`, `estado = confirmada`, `eliminada_en IS
+NULL`), el listado del administrador **incluye las eliminadas**, y la evidencia
+ajena responde el **mismo 404** que una inexistente (no enumeración). Cambiar
+`visible_cliente` y eliminar siguen sin endpoint (📐).
+
+El detalle vigente está en
 [`modelo-evidencias.md`](modelo-evidencias.md) §Reglas de visibilidad, que esta
 matriz no sustituye:
 
@@ -218,15 +245,22 @@ a esta matriz:
 
 ### 6.2 Autorización y visibilidad de evidencias por rol
 
-- Reutilizar `obtener_principal_actual` de `services/ms4_evidencias/dependencies.py`.
-  **No** reimplementar la validación del token: `shared/auth.py` es el contrato único.
-- Reutilizar el patrón de `_filtro_visibilidad` de MS2 para el alcance por
-  `mecanico_actual_id` y por vehículo del cliente, en lugar de inventar otro criterio.
+- Reutilizar `obtener_principal_actual` y `obtener_token_bearer` de
+  `services/ms4_evidencias/dependencies.py`. **No** reimplementar la validación
+  del token: `shared/auth.py` es el contrato único.
+- La pertenencia de la orden al solicitante (dueño del vehículo / mecánico que
+  la atiende) la decide MS2 con su `_filtro_visibilidad`: MS4 reenvía el mismo
+  JWT a `GET {MS2_URL}/ordenes/{orden_id}`
+  (`services/ms4_evidencias/integracion_ms2.py`, mismo contrato de MS3) —
+  implementado en `routers/evidencias.py`.
 - Respetar los tres filtros acumulativos del cliente: `visible_cliente = true`,
   `estado = confirmada` y `eliminada_en IS NULL`.
-- Aplicar la misma no enumeración de MS2: evidencia fuera del alcance → `404`, no
-  `403`.
+- Aplicar la misma no enumeración de MS2: orden o evidencia fuera del alcance →
+  `404`, no `403`; en detalle/descarga el 404 de una evidencia ajena es IDÉNTICO
+  al de una evidencia inexistente.
 - Aplicar la regla multirol por unión, nunca por intersección.
+- El administrador ve todas las evidencias, incluidas las eliminadas, y **no
+  consulta a MS2** en detalle/descarga (auditoría).
 
 ## 7. Qué no autoriza este documento
 

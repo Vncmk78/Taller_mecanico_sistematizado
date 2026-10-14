@@ -8,8 +8,8 @@ todas las operaciones:
   microservicios, referenciables por nombre desde `openapi.json`;
 * `components.responses`: las respuestas comunes (`NoAutenticado`, `ErrorInterno`,
   `ServicioNoDisponible`, `GatewaySaturada` y `TiempoAgotado`);
-* ejemplos de request y de response en las operaciones de Auth y Vehículos (las
-  de Órdenes ya las documenta `shared.openapi_ordenes.py`);
+* ejemplos de request y de response en las operaciones de Auth, Vehículos y
+  Evidencias (las de Órdenes ya las documenta `shared.openapi_ordenes.py`);
 * la cabecera `X-Request-ID` en las respuestas de todo `/api` y los ejemplos de
   los health checks.
 
@@ -27,9 +27,11 @@ from copy import deepcopy
 from typing import Any
 
 from gateway.errores import (
+    CUERPO_DEMASIADO_GRANDE,
     ERROR_INTERNO,
     ERROR_MICROSERVICIO,
     GATEWAY_SATURADA,
+    MENSAJE_CUERPO_DEMASIADO_GRANDE,
     MENSAJE_ERROR_MICROSERVICIO,
     MENSAJE_GATEWAY_SATURADA,
     MENSAJE_METODO_NO_PERMITIDO,
@@ -146,6 +148,17 @@ _EJEMPLOS_ERROR_GATEWAY: dict[str, dict[str, Any]] = {
         ),
         "El cuerpo nunca muestra la excepción interna.",
     ),
+    "error_cuerpo_demasiado_grande": _ejemplo(
+        "413: el body supera el límite del prefijo",
+        _error_gateway(
+            codigo=CUERPO_DEMASIADO_GRANDE,
+            estado=413,
+            detalle=MENSAJE_CUERPO_DEMASIADO_GRANDE,
+            ruta="/api/evidencias",
+        ),
+        "La Gateway lo rechaza sin leer el body ni llamar al microservicio "
+        "(1 MiB en general, 12 MiB en /api/evidencias).",
+    ),
 }
 
 _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
@@ -207,6 +220,33 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         },
         "Pydantic v2 devuelve una lista de errores; `loc` indica el campo.",
     ),
+    "detalle_orden_no_encontrada": _ejemplo(
+        "404 de MS4: orden inexistente o no visible para el usuario",
+        {"detail": "Orden no encontrada"},
+        "MS4 pregunta a MS2 por la orden con el mismo JWT; no revela si existe.",
+    ),
+    "detalle_evidencia_no_encontrada": _ejemplo(
+        "404 de MS4: evidencia inexistente, eliminada o fuera de alcance",
+        {"detail": "Evidencia no encontrada"},
+        "Una evidencia ajena y una inexistente responden exactamente lo mismo.",
+    ),
+    "detalle_tipo_archivo_no_permitido": _ejemplo(
+        "422 de MS4: el archivo no es imagen ni video",
+        {"detail": "Tipo de archivo no permitido"},
+    ),
+    "detalle_archivo_vacio": _ejemplo(
+        "422 de MS4: archivo de 0 bytes",
+        {"detail": "El archivo no puede estar vacío"},
+    ),
+    "detalle_almacenamiento_no_disponible": _ejemplo(
+        "503 de MS4: el almacenamiento de archivos no responde",
+        {"detail": "El almacenamiento de evidencias no está disponible"},
+        "No se guarda ninguna fila ni queda archivo suelto.",
+    ),
+    "detalle_ordenes_no_disponible": _ejemplo(
+        "503 de MS4: MS2 no respondió al verificar la orden",
+        {"detail": "El servicio de órdenes no está disponible"},
+    ),
     "detalle_validacion_vehiculo_422": _ejemplo(
         "422 de validación del body de vehículo",
         {
@@ -243,6 +283,39 @@ _VEHICULO_EJEMPLO: dict[str, Any] = {
 _VEHICULO_ACTUALIZADO_EJEMPLO: dict[str, Any] = {
     **_VEHICULO_EJEMPLO,
     "modelo": "Corolla Cross",
+}
+
+_EVIDENCIA_EJEMPLO: dict[str, Any] = {
+    "evidencia_id": "3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f",
+    "orden_id": 31,
+    "presupuesto_id": None,
+    "contexto": "diagnostico",
+    "tipo_archivo": "foto",
+    "visible_cliente": False,
+    "estado": "confirmada",
+    "nombre_original": "frenos delanteros.jpg",
+    "content_type": "image/jpeg",
+    "tamano_bytes": 482133,
+    "creada_en": "2026-10-07T10:15:00-03:00",
+}
+
+_EVIDENCIA_VISIBLE_EJEMPLO: dict[str, Any] = {
+    **_EVIDENCIA_EJEMPLO,
+    "evidencia_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "contexto": "resultado_final",
+    "visible_cliente": True,
+    "nombre_original": "entrega.jpg",
+    "tamano_bytes": 391220,
+    "creada_en": "2026-10-08T17:40:00-03:00",
+}
+
+_URL_DESCARGA_EJEMPLO: dict[str, Any] = {
+    "url": (
+        "https://almacenamiento.taller.example/evidencias/ordenes/31/"
+        "3f2b8c1e5d4a4e6b9c7d1a2b3c4d5e6f.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+        "&X-Amz-Expires=300&X-Amz-Signature=..."
+    ),
+    "expira_en": 300,
 }
 
 _EJEMPLOS_AUTENTICACION: dict[str, Any] = {
@@ -416,6 +489,92 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
         },
     },
 }
+
+_EJEMPLOS_503_EVIDENCIAS: dict[str, Any] = {
+    "almacenamiento_no_disponible": _ref_ejemplo("detalle_almacenamiento_no_disponible"),
+    "ordenes_no_disponible": _ref_ejemplo("detalle_ordenes_no_disponible"),
+    "gateway_saturada": _ref_ejemplo("error_gateway_saturada"),
+}
+
+_EJEMPLOS_OPERACIONES.update(
+    {
+        ("/api/evidencias", "post"): {
+            "respuestas": {
+                "201": {
+                    "evidencia_guardada": {
+                        "summary": "Foto de diagnóstico guardada (oculta al cliente)",
+                        "value": _EVIDENCIA_EJEMPLO,
+                    }
+                },
+                "401": _EJEMPLOS_AUTENTICACION,
+                "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+                "404": {"orden_no_encontrada": _ref_ejemplo("detalle_orden_no_encontrada")},
+                "413": {"cuerpo_demasiado_grande": _ref_ejemplo("error_cuerpo_demasiado_grande")},
+                "422": {
+                    "tipo_no_permitido": _ref_ejemplo("detalle_tipo_archivo_no_permitido"),
+                    "archivo_vacio": _ref_ejemplo("detalle_archivo_vacio"),
+                },
+                "503": _EJEMPLOS_503_EVIDENCIAS,
+            },
+        },
+        ("/api/evidencias", "get"): {
+            "respuestas": {
+                "200": {
+                    "vista_mecanico": {
+                        "summary": "Mecánico o Administrador: todas las de la orden",
+                        "value": [_EVIDENCIA_EJEMPLO, _EVIDENCIA_VISIBLE_EJEMPLO],
+                    },
+                    "vista_cliente": {
+                        "summary": "Cliente dueño: solo las visibles para él",
+                        "value": [_EVIDENCIA_VISIBLE_EJEMPLO],
+                    },
+                    "sin_evidencias": {"summary": "Orden sin evidencias", "value": []},
+                },
+                "401": _EJEMPLOS_AUTENTICACION,
+                "404": {"orden_no_encontrada": _ref_ejemplo("detalle_orden_no_encontrada")},
+                "503": _EJEMPLOS_503_EVIDENCIAS,
+            },
+        },
+        ("/api/evidencias/{evidencia_id}", "get"): {
+            "respuestas": {
+                "200": {
+                    "evidencia": {
+                        "summary": "Evidencia consultada",
+                        "value": _EVIDENCIA_EJEMPLO,
+                    }
+                },
+                "401": _EJEMPLOS_AUTENTICACION,
+                "404": {
+                    "evidencia_no_encontrada": _ref_ejemplo(
+                        "detalle_evidencia_no_encontrada"
+                    )
+                },
+                "503": _EJEMPLOS_503_EVIDENCIAS,
+            },
+        },
+        ("/api/evidencias/{evidencia_id}/descarga", "get"): {
+            "respuestas": {
+                "200": {
+                    "url_prefirmada": {
+                        "summary": "URL de descarga que vence en 5 minutos",
+                        "description": (
+                            "La firma es ficticia. El cliente abre la URL tal cual; "
+                            "si vence, pide otra a este endpoint."
+                        ),
+                        "value": _URL_DESCARGA_EJEMPLO,
+                    }
+                },
+                "401": _EJEMPLOS_AUTENTICACION,
+                "404": {
+                    "evidencia_no_encontrada": _ref_ejemplo(
+                        "detalle_evidencia_no_encontrada"
+                    )
+                },
+                "503": _EJEMPLOS_503_EVIDENCIAS,
+            },
+        },
+    }
+)
 
 _CABECERA_X_REQUEST_ID: dict[str, Any] = {
     "description": (

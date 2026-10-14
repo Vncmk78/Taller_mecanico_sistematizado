@@ -40,7 +40,11 @@ Roles del sistema: `administrador`, `cliente`, `mecanico`.
 │   ├── /client/vehiculos/:id → Detalle del vehículo
 │   ├── /client/agendar       → Agendar Mantención (provisional)
 │   ├── /client/servicios     → Estado del Servicio
-│   └── /client/presupuestos  → Presupuestos
+│   ├── /client/ordenes       → Mis Órdenes
+│   ├── /client/ordenes/:id   → Detalle y seguimiento del servicio
+│   ├── /client/ordenes/:id/evidencias → Evidencia multimedia del servicio
+│   ├── /client/presupuestos  → Presupuestos
+│   └── /client/presupuestos/:ordenId → Detalle y decisión del presupuesto
 │
 └── /mechanic  (solo mecanico, MechanicLayout/RoleLayout sidebar)
     ├── /mechanic             → Panel (índice)
@@ -72,6 +76,7 @@ Layout: `AdminLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | --- | --- | --- |
 | `/admin` | `AdminDashboardPage` | Funcional |
 | `/admin/ordenes` | `AdminOrdersPage` | Placeholder ("Estructura en construcción") |
+| `/admin/ordenes/:id` | `AdminOrderDetailPage` | Funcional (acciones de orden con confirmación) |
 | `/admin/clientes` | `AdminClientsPage` | Placeholder |
 | `/admin/vehiculos` | `AdminVehiclesPage` | Funcional |
 | `/admin/vehiculos/:id` | `AdminVehicleDetailPage` | Funcional |
@@ -90,8 +95,12 @@ Layout: `ClientLayout` → `RoleLayout` (variante `topnav`). Aplica
 | `/client/vehiculos/nuevo` | `ClientVehicleFormPage` | Funcional |
 | `/client/vehiculos/:id` | `ClientVehicleDetailPage` | Funcional |
 | `/client/agendar` | `div` inline en `AppRoutes` | Provisional ("Próximamente") |
-| `/client/servicios` | `ClientServicesPage` | Placeholder |
-| `/client/presupuestos` | `ClientBudgetsPage` | Placeholder |
+| `/client/servicios` | `ClientServicesPage` | Funcional |
+| `/client/ordenes` | `ClientOrdersPage` | Funcional |
+| `/client/ordenes/:id` | `ClientOrderDetailPage` | Funcional (acciones de orden con confirmación) |
+| `/client/ordenes/:id/evidencias` | `ClientOrderEvidencePage` | Funcional |
+| `/client/presupuestos` | `ClientBudgetsPage` | Funcional |
+| `/client/presupuestos/:ordenId` | `ClientBudgetDetailPage` | Funcional (decisión de presupuesto con confirmación) |
 
 ### Portal mecánico (`/mechanic`)
 
@@ -104,7 +113,7 @@ Layout: `MechanicLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | `/mechanic/vehiculos` | `MechanicVehiclesPage` | Funcional |
 | `/mechanic/vehiculos/:id` | `MechanicVehicleDetailPage` | Funcional |
 | `/mechanic/ordenes` | `MechanicOrdersPage` | Funcional |
-| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional |
+| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional (acciones de orden con confirmación + bitácora de trabajo) |
 | `/mechanic/estados` | `MechanicStatusPage` | Funcional (avance de estado con confirmación) |
 
 ## Menús por rol
@@ -140,6 +149,10 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
 - `/mechanic/historial` se eliminó: no existe endpoint de historial por mecánico
   (MS2 solo expone `GET /api/ordenes/{id}/historial`) y el historial completo ya
   se consulta en `/mechanic/ordenes/:id`.
+- La bitácora de trabajo (`OrderBitacoraSection`) vive dentro de
+  `/mechanic/ordenes/:id`: no tiene ruta propia. El mecánico registra
+  observaciones y acciones (con repuestos) contra `POST /api/ordenes/{id}/bitacora`
+  y todos los roles la consultan con `GET /api/ordenes/{id}/bitacora`.
 - `MechanicHistoryPage.tsx` y `MechanicPortalPage.tsx` se eliminaron por ser
   código muerto (sin rutas asociadas). `ClientPortalPage.tsx` sigue huérfana.
 - El portal del mecánico acota sus datos en dos barreras: la Gateway ya devuelve

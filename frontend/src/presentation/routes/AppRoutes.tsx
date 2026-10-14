@@ -19,8 +19,10 @@ import { ClientVehicleFormPage } from '@/presentation/pages/client/ClientVehicle
 import { ClientVehicleDetailPage } from '@/presentation/pages/client/ClientVehicleDetailPage';
 import { ClientServicesPage } from '@/presentation/pages/client/ClientServicesPage';
 import { ClientBudgetsPage } from '@/presentation/pages/client/ClientBudgetsPage';
+import { ClientBudgetDetailPage } from '@/presentation/pages/client/ClientBudgetDetailPage';
 import { ClientOrdersPage } from '@/presentation/pages/client/ClientOrdersPage';
 import { ClientOrderDetailPage } from '@/presentation/pages/client/ClientOrderDetailPage';
+import { ClientOrderEvidencePage } from '@/presentation/pages/client/ClientOrderEvidencePage';
 import { MechanicDashboardPage } from '@/presentation/pages/mechanic/MechanicDashboardPage';
 import { MechanicVehiclesPage } from '@/presentation/pages/mechanic/MechanicVehiclesPage';
 import { MechanicVehicleDetailPage } from '@/presentation/pages/mechanic/MechanicVehicleDetailPage';
@@ -78,7 +80,9 @@ export function AppRoutes() {
         <Route path="servicios" element={<ClientServicesPage />} />
         <Route path="ordenes" element={<ClientOrdersPage />} />
         <Route path="ordenes/:id" element={<ClientOrderDetailPage />} />
+        <Route path="ordenes/:id/evidencias" element={<ClientOrderEvidencePage />} />
         <Route path="presupuestos" element={<ClientBudgetsPage />} />
+        <Route path="presupuestos/:ordenId" element={<ClientBudgetDetailPage />} />
       </Route>
 
       <Route

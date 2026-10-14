@@ -26,8 +26,16 @@ os.environ.setdefault(
     "clave-secreta-exclusiva-para-pruebas-de-ms3-123456",
 )
 os.environ.setdefault(
+    "MS3_DATABASE_URL",
+    "sqlite+pysqlite:////tmp/sgtm_ms3_config_only.db",
+)
+os.environ.setdefault(
     "MS4_JWT_SECRET_KEY",
     "clave-secreta-exclusiva-para-pruebas-de-ms4-123456",
+)
+os.environ.setdefault(
+    "MS4_DATABASE_URL",
+    "sqlite+pysqlite:////tmp/sgtm_ms4_config_only.db",
 )
 
 import pytest

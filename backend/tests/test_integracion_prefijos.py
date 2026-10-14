@@ -426,7 +426,8 @@ def test_token_alterado_devuelve_401(ecosistema):
 
 
 # ---------------------------------------------------------------------------
-# MS3 / MS4 — /presupuestos ya tiene endpoints (Semana 5); el resto aún no
+# MS3 / MS4 — /presupuestos y /evidencias ya tienen endpoints (Semana 5);
+# el resto de prefijos aún no
 # ---------------------------------------------------------------------------
 
 
@@ -459,15 +460,14 @@ def test_ms3_responde_404_propio_por_cada_prefijo(ecosistema, prefijo):
     assert ultima_llamada() == ("ms3_presupuestos", "GET", f"/{prefijo}")
 
 
-def test_ms4_responde_404_propio(ecosistema):
+def test_evidencias_sin_token_llega_a_ms4_y_responde_401_propio(ecosistema):
     gw, _, _ = ecosistema
 
     respuesta = gw.get("/api/evidencias")
 
-    assert respuesta.status_code == 404
-    cuerpo = respuesta.json()
-    assert cuerpo == {"detail": "Not Found"}
-    assert "error" not in cuerpo
+    # El 401 lo genera la app real de MS4 (/evidencias exige JWT), no la Gateway.
+    assert respuesta.status_code == 401
+    assert respuesta.headers["www-authenticate"] == "Bearer"
     assert ultima_llamada() == ("ms4_evidencias", "GET", "/evidencias")
 
 
@@ -555,11 +555,10 @@ def _verificar_ms3(gw: TestClient, sesion_ms1: Session, sesion_ms2: Session) -> 
 
 
 def _verificar_ms4(gw: TestClient, sesion_ms1: Session, sesion_ms2: Session) -> None:
-    """MS4: solo él responde el 404 FastAPI propio (sin clave "error")."""
+    """MS4: solo él responde el 401 de /evidencias sin token (JWT exigido)."""
     respuesta = gw.get("/api/evidencias")
-    assert respuesta.status_code == 404
-    assert respuesta.json() == {"detail": "Not Found"}
-    assert "error" not in respuesta.json()
+    assert respuesta.status_code == 401
+    assert respuesta.headers["www-authenticate"] == "Bearer"
     assert ultima_llamada() == ("ms4_evidencias", "GET", "/evidencias")
 
 
@@ -578,8 +577,8 @@ def test_cada_servicio_produce_algo_que_solo_el_genera(
     """Una petición proxied responde algo que SOLO ese microservicio produce.
 
     MS1 → el perfil del usuario autenticado; MS2 → el vehículo recién creado
-    (201 + patente); MS3 → su página de presupuestos; MS4 → su 404 FastAPI
-    propio, sin la clave "error" de la Gateway.
+    (201 + patente); MS3 → su página de presupuestos; MS4 → su 401 propio de
+    `/evidencias` sin token (JWT exigido), distinto del 404 de la Gateway.
     """
     gw, sesion_ms1, sesion_ms2 = ecosistema
     verificador(gw, sesion_ms1, sesion_ms2)

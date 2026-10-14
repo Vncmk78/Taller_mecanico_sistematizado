@@ -20,9 +20,11 @@ export function ordenStatusLabel(codigo: number): string {
 // de MS2 (transiciones_orden.py), pero recortadas al avance que la vista puede
 // realizar: la aprobación del presupuesto y la entrega física las gestionan el
 // cliente y el administrador, y cancelar corresponde al cliente. El backend
-// conserva la autoridad final con validar_transicion.
+// conserva la autoridad final sobre permisos, operaciones y precondiciones.
+// La primera asignación (1 -> 2) usa la operación administrativa específica.
+// Los flujos de envío (2 -> 3) y stock posterior (4 -> 5) siguen pendientes
+// de sus contratos funcionales; mostrarlos no garantiza esas precondiciones.
 export const AVANCES_MECANICO: Record<number, number[]> = {
-    1: [2], // Recibido -> Esperando diagnóstico
     2: [3], // Esperando diagnóstico -> Esperando aprobación de presupuesto
     4: [5], // Esperando repuestos -> En reparación
     5: [6], // En reparación -> Listo

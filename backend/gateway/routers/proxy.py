@@ -11,12 +11,17 @@ from __future__ import annotations
 import logging
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, status
 from fastapi.responses import Response
 
 from gateway.cliente_http import obtener_cliente, timeout_para
+from gateway.config import settings
 from gateway.errores import (
+    CUERPO_DEMASIADO_GRANDE,
+    ERROR_HTTP,
     ERROR_MICROSERVICIO,
+    MENSAJE_CONTENT_LENGTH_INVALIDA,
+    MENSAJE_CUERPO_DEMASIADO_GRANDE,
     MENSAJE_ERROR_MICROSERVICIO,
     MENSAJE_METODO_NO_PERMITIDO,
     MENSAJE_RUTA_NO_ENCONTRADA,
@@ -65,13 +70,72 @@ _CATALOGO_NO_JSON: dict[int, tuple[str, str]] = {
 }
 
 
+class _CuerpoDemasiadoGrande(Exception):
+    """Interna del proxy: el body supera el límite del prefijo (checklist 4.2)."""
+
+    def __init__(self, limite: int, declarado: int | None) -> None:
+        super().__init__(limite, declarado)
+        self.limite = limite
+        self.declarado = declarado
+
+
+class _ContentLengthInvalida(Exception):
+    """Interna del proxy: `Content-Length` no es un número válido."""
+
+
+def limite_para(prefijo: str) -> int:
+    """Límite de body a rechazar para un prefijo (checklist 4.2).
+
+    `evidencias` admite hasta `MAX_BODY_ARCHIVOS_BYTES` (multipart con la foto
+    de 10 MB del checklist 1.3); el resto de los prefijos (JSON de MS1/MS2/MS3)
+    usan `MAX_BODY_BYTES`, ver estudio-almacenamiento-objetos.md §6.
+    """
+    if prefijo == "evidencias":
+        return settings.MAX_BODY_ARCHIVOS_BYTES
+    return settings.MAX_BODY_BYTES
+
+
+async def _leer_cuerpo_limitado(request: Request, limite: int) -> bytes:
+    """Lee el body con tope de `limite` bytes, sin pasarse nunca.
+
+    - Con `Content-Length` numérica mayor al límite responde de inmediato (el
+      propio microservicio nunca se entera de la petición, checklist 4.2).
+    - `Content-Length` no numérica se rechaza con 400 (código ERROR_HTTP).
+    - Sin `Content-Length` (chunked) se usa `request.stream()` y se corta en
+      cuanto se supera el límite: nunca se acumulan más de `limite + un trozo`
+      bytes (riesgo 4.3 acotado por el límite).
+    """
+    content_length = request.headers.get("content-length")
+    declarado: int | None = None
+    if content_length is not None:
+        try:
+            declarado = int(content_length.strip())
+        except ValueError:
+            raise _ContentLengthInvalida() from None
+        if declarado > limite:
+            raise _CuerpoDemasiadoGrande(limite, declarado)
+
+    acumulado = bytearray()
+    async for trozo in request.stream():
+        acumulado.extend(trozo)
+        if len(acumulado) > limite:
+            raise _CuerpoDemasiadoGrande(limite, declarado)
+    return bytes(acumulado)
+
+
 @router.api_route(
     "/api/{ruta:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     include_in_schema=False,
 )
 async def proxy(ruta: str, request: Request) -> Response:
-    """Reenvía la petición `/api/*` al microservicio que corresponda."""
+    """Reenvía la petición `/api/*` al microservicio que corresponda.
+
+    El body se lee con tope por prefijo (`limite_para`): 413/400 antes de
+    llamar al microservicio (checklist 4.2). NO hay streaming real hacia MS4
+    (riesgo 4.3): la Gateway carga el multipart en memoria hasta el límite; los
+    videos no entran por acá, usan el flujo C (POST prefirmado, Semana 6+).
+    """
     primer_segmento = ruta.split("/", 1)[0].lower()
     base = resolver_microservicio(ruta)
     if base is None:
@@ -108,7 +172,36 @@ async def proxy(ruta: str, request: Request) -> Response:
     if host_original and "x-forwarded-host" not in cabeceras:
         cabeceras["x-forwarded-host"] = host_original
 
-    cuerpo = await request.body()
+    try:
+        cuerpo = await _leer_cuerpo_limitado(request, limite_para(primer_segmento))
+    except _CuerpoDemasiadoGrande as exc:
+        # Solo prefijo, límite y request_id: nunca el contenido del body.
+        logger.info(
+            "Body sobre el límite para '%s' (límite=%s, declarado=%s, request_id=%s)",
+            primer_segmento,
+            exc.limite,
+            exc.declarado,
+            request_id,
+        )
+        return respuesta_error(
+            request,
+            estado=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            codigo=CUERPO_DEMASIADO_GRANDE,
+            detalle=MENSAJE_CUERPO_DEMASIADO_GRANDE,
+        )
+    except _ContentLengthInvalida:
+        # Loguea el prefijo y el request_id: nunca la cabecera ni el body.
+        logger.warning(
+            "Content-Length inválida en '/%s' (request_id=%s)",
+            primer_segmento,
+            request_id,
+        )
+        return respuesta_error(
+            request,
+            estado=status.HTTP_400_BAD_REQUEST,
+            codigo=ERROR_HTTP,
+            detalle=MENSAJE_CONTENT_LENGTH_INVALIDA,
+        )
 
     try:
         respuesta = await obtener_cliente().request(

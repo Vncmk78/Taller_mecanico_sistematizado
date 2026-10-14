@@ -51,6 +51,7 @@ class FakeS3:
         self.objetos[clave] = {
             "data": fileobj.read(),
             "content_type": (ExtraArgs or {}).get("ContentType"),
+            "metadata": (ExtraArgs or {}).get("Metadata"),
         }
 
     def get_object(self, Bucket, Key):

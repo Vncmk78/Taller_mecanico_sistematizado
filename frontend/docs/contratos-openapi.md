@@ -6,7 +6,8 @@ fuentes de verdad del backend:
 
 - `backend/docs/contratos-api-gateway.md`
 - Swagger del API Gateway (`backend/gateway/openapi.py`)
-- Rutas reales de `backend/services/ms1_auth` y `backend/services/ms2_taller`
+- Rutas reales de `backend/services/ms1_auth`, `backend/services/ms2_taller` y
+  `backend/services/ms3_presupuestos`
 
 Todas las llamadas salen de la capa de infraestructura `src/infrastructure/api/`
 a través del cliente `src/infrastructure/config/apiClient.ts`, con base
@@ -18,6 +19,11 @@ contratos con ejemplos y respuestas comunes. Verificado contra la implementació
 real de `backend/services/ms1_auth` y `backend/services/ms2_taller`, y contra
 `backend/gateway/contratos/`. Las diferencias encontradas están en "Registro de
 discrepancias entre el frontend y el contrato de la API".
+
+Fecha del flujo de presupuestos: 13 oct 2026 (Sprint 3, Semana 6). Se agregan las
+llamadas de `PresupuestoService` contra MS3 (`ms3_presupuestos`), verificadas
+contra `backend/docs/contratos-api-gateway.md` (SCRUM-438) y los routers y
+esquemas reales del microservicio.
 
 ## Inventario de endpoints consumidos
 
@@ -33,12 +39,101 @@ discrepancias entre el frontend y el contrato de la API".
 | `OrderService.getOrders` | GET | `/api/ordenes` | órdenes (admin, cliente, mecánico) | Filtra por rol | OK |
 | `OrderService.getOrderById` | GET | `/api/ordenes/{id}` | detalle de orden | Alcance por rol | OK |
 | `OrderService.getOrderHistory` | GET | `/api/ordenes/{id}/historial` | historial en detalle de orden | Alcance por rol | OK |
+| `OrderService.getOrderBitacora` | GET | `/api/ordenes/{id}/bitacora` | bitácora en el detalle del mecánico | Alcance por rol | OK |
+| `OrderService.registrarBitacora` | POST | `/api/ordenes/{id}/bitacora` | detalle del mecánico (formulario) | Mecánico asignado | OK (201; 403/422 de negocio) |
 | `OrderService.cambiarEstado` | PATCH | `/api/ordenes/{id}/estado` | `MechanicStatusPage` | Administrador o mecánico asignado | OK |
+| `PresupuestoService.getByOrder` | GET | `/api/presupuestos?orden_id={id}` | `/client/presupuestos`, detalle de presupuesto | Cliente (solo versiones enviadas) | OK (lista acotada; sin ítems) |
+| `PresupuestoService.getById` | GET | `/api/presupuestos/{presupuesto_id}` | `/client/presupuestos/{ordenId}` | Cliente (propio) | OK (404 fuera de alcance) |
+| `PresupuestoService.decidir` | POST | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/decision` | `/client/presupuestos/{ordenId}` | Cliente (propio) | OK (201; 409/422 de negocio) |
+| `EvidenciaService.getByOrder` | GET | `/api/evidencias?orden_id={id}` | `/client/ordenes/{id}/evidencias` | Cliente (visibles de sus órdenes) | OK (404 fuera de alcance) |
+| `EvidenciaService.getById` | GET | `/api/evidencias/{evidencia_id}` | (detalle puntual de evidencia) | Cliente (misma visibilidad) | OK (404 fuera de alcance) |
+| `EvidenciaService.getDownloadUrl` | GET | `/api/evidencias/{evidencia_id}/descarga` | `/client/ordenes/{id}/evidencias` | Cliente (misma visibilidad) | OK (URL prefirmada efímera) |
 
 El alcance por rol lo aplica el microservicio, no el frontend: el navegador
 recibe únicamente las filas que corresponden al usuario autenticado. Por eso las
 vistas ya no aplican filtros de identidad en modo offline (la caché conserva la
 misma respuesta que devolvió la Gateway).
+
+## Flujo de presupuestos (MS3)
+
+El portal del Cliente permite ver y decidir sobre los presupuestos de sus
+órdenes. El contrato de MS3 no ofrece un listado global para el cliente, así que
+`/client/presupuestos` se deriva de las órdenes del cliente: se toman las órdenes
+que ya pasaron a una etapa con presupuesto y se resuelve cada una con
+`GET /api/presupuestos?orden_id={id}` (llamadas en paralelo en
+`useClientBudgets`). El detalle (`GET /api/presupuestos/{id}`) es el único que
+trae versiones e ítems; por eso la vista de decisión exige el detalle completo y
+un fallo al traerlo no se disfraza de "sin presupuesto".
+
+La decisión se envía con `POST /api/presupuestos/{presupuesto_id}/versiones/{numero}/decision`:
+
+```json
+{ "decision": "rechazado", "motivo": "El costo me parece elevado", "confirmar_cancelacion": true }
+```
+
+Reglas reflejadas en la interfaz:
+
+- Un rechazo **antes de la primera aprobación** (`version_vigente === null`) exige
+  `motivo` **y** `confirmar_cancelacion: true`, porque cancela el servicio; la UI
+  muestra esa advertencia y no deja confirmar sin aceptarla.
+- Solo se puede decidir sobre la versión enviada pendiente
+  (`versionPendiente`); las versiones aprobadas o ya rechazadas se muestran en
+  modo lectura.
+- `201` devuelve `presupuesto`, `efecto_en_orden`, `decision_id` y
+  `aplicacion_en_orden`; el efecto sobre la orden se muestra al usuario
+  (`EFECTO_EN_ORDEN_LABEL`).
+- `503` significa que la decisión quedó guardada pero la aplicación en la orden
+  sigue pendiente (reintento contra
+  `POST /api/presupuestos/decisiones/{decision_id}/aplicacion`), así que **no** se
+  trata como fallo de conexión ni se invita a repetir la decisión.
+
+### Confirmaciones y validaciones antes de decidir
+
+El contrato no impone estas reglas; son del frontend para no enviar decisiones
+incompletas, duplicadas o sobre una versión ya caducada:
+
+- **Aprobación explícita**: el diálogo muestra el total y exige marcar "He
+  revisado las partidas y el total" antes de habilitar la confirmación, porque
+  aprobar autoriza el cobro y no se puede deshacer.
+- **Motivo de rechazo**: debe tener al menos 5 caracteres (además de ser
+  obligatorio siempre); MS3 solo exige que no venga vacío.
+- **Versión vigente**: se recuerda el número de la versión pendiente al abrir el
+  diálogo y se vuelve a comparar antes de enviar. Si cambió, la interfaz no envía
+  la decisión, refresca el detalle y avisa al cliente. Lo mismo hace un `409` real
+  del backend (conflicto de estado de versión).
+- **Presupuesto sin partidas**: no se ofrece aprobar (solo rechazar o contactar al
+  taller).
+- **Sin conexión**: se bloquean aprobar y rechazar con un aviso, en vez de enviar
+  una decisión que el servidor no podría registrar.
+- **Doble envío**: se bloquea la decisión mientras hay una petición en curso.
+
+## Evidencia multimedia (MS4)
+
+El portal del Cliente muestra en `/client/ordenes/{id}/evidencias` las fotos y
+videos del servicio. El contrato de MS4 nunca devuelve el archivo: la
+`EvidenciaRespuesta` trae solo metadatos (`evidencia_id`, `contexto`,
+`tipo_archivo`, `visible_cliente`, `estado`, `nombre_original`, `content_type`,
+`tamano_bytes`, `creada_en`) y jamás la clave del objeto, el `sha256` ni el autor.
+Para verlo o bajarlo hay que pedir una **URL prefirmada**:
+
+| Caso | Endpoint | Resultado |
+| --- | --- | --- |
+| Listar evidencias de la orden | `GET /api/evidencias?orden_id={id}` | Lista (200). Las del cliente llegan ya filtradas por `visible_cliente = true`, `estado = confirmada` y no eliminadas. |
+| Detalle de una evidencia | `GET /api/evidencias/{evidencia_id}` | 200 o 404 (mismo 404 para ajena e inexistente: no enumera). |
+| Ver / descargar el archivo | `GET /api/evidencias/{evidencia_id}/descarga` | URL prefirmada con vigencia (`expira_en`). |
+
+Reglas reflejadas en la interfaz:
+
+- El Cliente es **solo lectura**: `POST /api/evidencias` (subida) responde `403`
+  para su rol, así que la vista no ofrece subir.
+- La **URL prefirmada es efímera y no se cachea**: se pide al momento de mostrar
+  la miniatura y al descargar; el store guarda solo los metadatos
+  (`useEvidenceStore`).
+- Si la URL falla, la tarjeta muestra un estado reintentable en vez de una imagen
+  rota. Sin conexión se conservan los metadatos desde la caché.
+- Un `404` en el listado se trata como **orden fuera de alcance**, distinto de una
+  lista vacía (`200 []`), para no mostrar "no encontrado" ante una orden ajena y
+  tampoco "sin evidencia" ante un fallo.
 
 ## Campos que la Gateway expone y el frontend no puede nombrar
 
@@ -50,6 +145,7 @@ nombres. La interfaz muestra el identificador real en lugar de datos simulados:
 | Propietario del vehículo | `VehiculoRespuesta.cliente_id` (perfil Cliente de MS2) | `Cliente #<cliente_id>` |
 | Mecánico de la orden | `OrdenRespuesta.mecanico_actual_id` | `Mecánico <id>`, o `Sin asignar` |
 | Actor del cambio de estado | `HistorialEstado.actor_usuario_id` | Identificador numérico |
+| Autor de una entrada de bitácora | `BitacoraRespuesta.autor_usuario_id` | `Usuario <id>` |
 | Patente del vehículo en la orden | No viene en `OrdenRespuesta` | Se resuelve desde la caché de vehículos del portal |
 
 `cliente_id` (MS2) y `usuario_id` (MS1, el de la sesión) son espacios de
@@ -70,6 +166,8 @@ requieran):
 | `PUT /api/ordenes/{id}/mecanico` | MS2 | Asignación/reasignación de mecánico (Admin). Sin vista aún. |
 | `PATCH /api/vehiculos/{id}` | MS2 | Edición de vehículo. Sin vista aún. |
 | `POST /api/auth/register` | MS1 | Registro de usuario. Sin vista aún. |
+| `POST /api/presupuestos/decisiones/{decision_id}/aplicacion` | MS3 | Reintento de aplicación de una decisión tras `503`. Sin vista dedicada: el flujo actual informa el `503` y conserva el `decision_id`. |
+| `POST /api/evidencias` | MS4 | Subida multipart de evidencia (solo Mecánico/Administrador; el Cliente recibe `403`). Sin vista en el portal Cliente. |
 
 ## Estados de carga, vacío y error
 
@@ -103,9 +201,34 @@ Reglas que se aplican en listados, detalles e historial:
   mostrar un "no encontrado" que no es cierto.
 - En el historial de la orden, un fallo muestra "No fue posible mostrar el
   historial de estados de esta orden." en lugar del vacío "Aún no hay registros".
+- En la bitácora, un fallo muestra "No se pudo cargar la bitácora de trabajo." en
+  lugar del vacío "Sin entradas en la bitácora.".
 
 Componentes compartidos por los tres portales: `EmptyState` (vacío),
 `ErrorState` (error reintentable), `RetryButton` y `OfflineBanner`.
+
+## Bitácora de trabajo (MS2, RF-11)
+
+El detalle del mecánico incluye la bitácora de la orden: observaciones y acciones
+registradas, con sus repuestos. A diferencia del historial de estados, una entrada
+no exige un cambio de estado, así que se usa para documentar el trabajo sin mover
+la orden. `OrderBitacoraSection` reúne el listado (`OrderBitacoraTimeline`) y el
+formulario (`BitacoraForm`).
+
+Reglas reflejadas en la interfaz:
+
+- El formulario solo lo ve el rol Mecánico (`canWrite={user?.role === 'mecanico'}`);
+  el backend igual responde `403` si no está asignado.
+- `tipo` es `accion` u `observacion`. Solo una acción puede declarar `repuestos`:
+  al elegir "observación" el formulario oculta y limpia las filas, para no enviar
+  un body que MS2 rechazaría con `422`.
+- La descripción es obligatoria (mínimo 1 carácter tras recortar) y el nombre de
+  cada repuesto admite hasta 120 caracteres (el mismo tope del contrato). La
+  cantidad debe ser un entero mayor que 0.
+- El envío se bloquea sin conexión, con el mismo criterio offline que las demás
+  acciones, y publica la entrada confirmada en `useOrderBitacoraStore`.
+- Los repuestos son **texto libre** (nombre y cantidad): el contrato no referencia
+  el catálogo de MS3, así que la vista no ofrece autocompletado de repuestos.
 
 ## Errores reales del backend
 
@@ -152,6 +275,9 @@ la referencia al archivo del backend del que salió cada uno, y se prueban contr
 - `OrdenRespuesta.mecanico_actual_id` y los campos del historial
   (`estado_anterior`, `actor_usuario_id`, `observacion`) pueden llegar en `null` y
   el mapeo los conserva como `null`/`undefined`, sin inventar valores.
+- `BitacoraCrear.repuestos` es opcional y por defecto `[]`; el servicio lo
+  normaliza a lista vacía al mapear y solo las acciones pueden traer repuestos.
+  Los `BitacoraRespuesta` los devuelven siempre como lista (vacía en observaciones).
 - `UsuarioRespuesta.roles` es una lista. El dominio tiene un único `role` y hoy
   gana el primero (`roles[0]`), que es el que define el portal de ingreso. Queda
   fijado con una prueba en `AuthService.test.ts`; si el backend llegara a entregar
@@ -159,6 +285,11 @@ la referencia al archivo del backend del que salió cada uno, y se prueban contr
 - Las fechas llegan con offset `-03:00`. El mapeo las conserva tal cual y
   `orderDisplay.ts` las formatea con `es-CL`; Vitest corre con
   `TZ: America/Santiago` para que el texto esperado sea estable.
+- MS3 serializa `Decimal` (precios y cantidades de ítems de presupuesto) como
+  texto, por ejemplo `"38990.00"`. `PresupuestoService` los convierte a `number`
+  al mapear y `budgetDisplay.ts` los muestra en CLP sin decimales
+  (`formatMoneyCLP`, `es-CL`/`CLP`). La conversión se prueba en
+  `PresupuestoService.test.ts` con los valores en texto del contrato.
 
 ## Registro de discrepancias entre el frontend y el contrato de la API
 

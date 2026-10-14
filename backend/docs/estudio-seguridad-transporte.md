@@ -328,12 +328,13 @@ Usa prefijo `_` para lo privado, pero no hay `__all__`. Funciona, y los
 *Recomendación:* declarar `__all__` si se decide centralizar las dependencias del
 punto 7.1.
 
-### 7.4 MS4 tiene `obtener_principal_actual` sin usar
+### 7.4 CORREGIDO: MS4 tenía `obtener_principal_actual` sin usar
 
-El propio docstring lo dice: la dependencia está lista y ningún endpoint la
-consume todavía, a la espera de los endpoints de recepción y consulta de
-evidencias. No es un defecto; queda registrado para que no se interprete como
-código muerto por error.
+Este estudio se escribió antes de los endpoints de evidencias (Semana 5):
+la nota original registraba que la dependencia estaba lista y ningún endpoint la
+consumía todavía. Desde la Semana 5 todos los endpoints de `routers/evidencias.py`
+la usan, junto con `obtener_token_bearer` (que reenvía el JWT a MS2 para validar
+la orden). Ya no hay código muerto.
 
 ### 7.5 CORREGIDO: el `ErrorBoundary` volcaba el token de acceso en la consola
 

@@ -35,8 +35,8 @@ app = FastAPI(
     openapi_tags=[
         {"name": "health", "description": "Healthchecks del servicio (proceso y base)."},
         {"name": "presupuestos", "description": "Presupuesto único por orden: versiones, ítems, envío y decisión del cliente."},
-        {"name": "repuestos", "description": "Catálogo de repuestos y stock (en desarrollo)."},
-        {"name": "proveedores", "description": "Proveedores de repuestos (en desarrollo)."},
+        {"name": "repuestos", "description": "Catálogo de repuestos, stock y alerta de stock bajo."},
+        {"name": "proveedores", "description": "Proveedores (distribuidores) de repuestos."},
         {"name": "inventario", "description": "Movimientos de inventario y umbrales (en desarrollo)."},
     ],
 )

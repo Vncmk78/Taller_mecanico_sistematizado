@@ -6,6 +6,8 @@ import { orderService } from '@/infrastructure/api/OrderService';
 import { useOrderBitacoraStore } from '@/infrastructure/stores/useOrderBitacoraStore';
 import { useOrderHistoryStore } from '@/infrastructure/stores/useOrderHistoryStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
+import { evidenciaService } from '@/infrastructure/api/EvidenciaService';
+import { useEvidenceStore } from '@/infrastructure/stores/useEvidenceStore';
 import { MechanicOrderDetailPage } from './MechanicOrderDetailPage';
 
 vi.mock('@/infrastructure/api/OrderService', () => ({
@@ -14,6 +16,15 @@ vi.mock('@/infrastructure/api/OrderService', () => ({
         getOrderById: vi.fn(),
         getOrderHistory: vi.fn(),
         getOrderBitacora: vi.fn(),
+    },
+}));
+
+vi.mock('@/infrastructure/api/EvidenciaService', () => ({
+    evidenciaService: {
+        getByOrder: vi.fn(),
+        getById: vi.fn(),
+        getDownloadUrl: vi.fn(),
+        crear: vi.fn(),
     },
 }));
 
@@ -48,7 +59,9 @@ describe('MechanicOrderDetailPage: detalle desde el portal del mecánico', () =>
         useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
         useOrderHistoryStore.setState({ entries: [], status: 'idle', error: null, isOffline: false });
         useOrderBitacoraStore.setState({ entries: [], status: 'idle', error: null, isOffline: false });
+        useEvidenceStore.getState().reset();
         vi.clearAllMocks();
+        vi.mocked(evidenciaService.getByOrder).mockResolvedValue([]);
     });
 
     it('muestra el panel, el historial y la bitácora de la orden', async () => {
@@ -61,6 +74,7 @@ describe('MechanicOrderDetailPage: detalle desde el portal del mecánico', () =>
         expect(await screen.findByText('Orden de trabajo n° 101')).toBeInTheDocument();
         expect(await screen.findByRole('list', { name: 'Ciclo de estados de la orden' })).toBeInTheDocument();
         expect(await screen.findByText('Bitácora de trabajo')).toBeInTheDocument();
+        expect(await screen.findByText('Evidencias')).toBeInTheDocument();
     });
 
     it('muestra la orden no encontrada con el link de regreso', async () => {

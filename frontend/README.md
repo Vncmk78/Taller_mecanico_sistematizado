@@ -199,6 +199,36 @@ y arquitectura hexagonal.
   `ClientOrderEvidencePage.test.tsx` (listado, vacío, `404`, error, *offline*,
   vista previa/descarga y reintento de URL) y `evidenceDisplay.test.ts`.
 
+### Tarea 14 — Carga de evidencia con progreso, éxito y error
+- **Subida de evidencia (MS4, Mecánico y Administrador)**: el personal sube fotos
+  o videos con `POST /api/evidencias` (multipart) desde el detalle de la orden y
+  desde rutas propias **`/admin/ordenes/:id/evidencias`** y
+  **`/mechanic/ordenes/:id/evidencias`**.
+  - **Progreso real** con la barra accesible `ProgressBar` (`role="progressbar"`),
+    alimentada por `onUploadProgress` de axios (no una animación simulada).
+  - **Éxito** confirmado con `Alert` + toast y la evidencia nueva entra a la caché
+    (`upsertById`); **error** diferenciado: validación local (tipo/tamaño), error
+    del servidor (con `Referencia` si el contrato da `request_id`) y **sin
+    conexión**.
+  - Formulario con `archivo`, `contexto` (`diagnostico`/`presupuesto`/
+    `reparacion`/`resultado_final`) y `visible_cliente`; en contexto
+    **presupuesto** se resuelve el presupuesto de la orden
+    (`GET /api/presupuestos?orden_id={id}`), se asocia y queda visible al cliente.
+  - Un envío a la vez (`subir` ignora un segundo intento en curso) y límite de
+    **12 MiB** alineado con el cuerpo de la Gateway.
+  - El Cliente sigue siendo **solo lectura** (`POST /api/evidencias` → `403`).
+- Capas: `domain/entities/Evidencia.ts` (`EvidenciaEntradaCrear`,
+  `TAMANO_MAXIMO_EVIDENCIA_BYTES`, `esContentTypeEvidenciaPermitido`),
+  `domain/ports/EvidenciaPort.ts`, `infrastructure/api/EvidenciaService.ts`
+  (`crear`), `infrastructure/stores/useEvidenceStore.ts` (estado de subida),
+  `presentation/hooks/useEvidenceUpload.ts`,
+  `presentation/components/ui/ProgressBar.tsx` y
+  `presentation/components/evidence/*` (`EvidenceUploadForm`,
+  `OrderEvidenceSection`), con `OrderEvidencePage` como página compartida.
+- Pruebas: `EvidenciaService.test.ts` (crear multipart + progreso),
+  `useEvidenceStore.test.ts` (subir/errores), `ProgressBar.test.tsx`,
+  `EvidenceUploadForm.test.tsx` y `OrderEvidencePage.test.tsx`.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -218,6 +248,7 @@ El mapa completo de rutas está documentado en
 | `/client/ordenes` (+ `/:id`) | Órdenes del cliente y detalle de estado y seguimiento | Funcional |
 | `/client/presupuestos` (+ `/:ordenId`) | Presupuestos: lista y detalle con aprobación/rechazo | Funcional |
 | `/client/ordenes/:id/evidencias` | Evidencia multimedia del servicio (fotos y videos visibles) | Funcional |
+| `/admin/ordenes/:id/evidencias` y `/mechanic/ordenes/:id/evidencias` | Evidencia multimedia con carga (progreso/éxito/error) para el personal | Funcional |
 | `/mechanic` | Portal Mecánico (dashboard) | Funcional (solo rol mecánico) |
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |

@@ -4,8 +4,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import { authService } from '@/infrastructure/api/AuthService';
 import { orderService } from '@/infrastructure/api/OrderService';
+import { evidenciaService } from '@/infrastructure/api/EvidenciaService';
 import { mockOrderHistory } from '@/infrastructure/mocks/orders.history.mock';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useEvidenceStore } from '@/infrastructure/stores/useEvidenceStore';
 import { useOrderHistoryStore } from '@/infrastructure/stores/useOrderHistoryStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
@@ -25,6 +27,15 @@ vi.mock('@/infrastructure/api/OrderService', () => ({
 
 vi.mock('@/infrastructure/api/AuthService', () => ({
     authService: { listarUsuarios: vi.fn() },
+}));
+
+vi.mock('@/infrastructure/api/EvidenciaService', () => ({
+    evidenciaService: {
+        getByOrder: vi.fn(),
+        getById: vi.fn(),
+        getDownloadUrl: vi.fn(),
+        crear: vi.fn(),
+    },
 }));
 
 const orden: Order = {
@@ -66,7 +77,9 @@ describe('AdminOrderDetailPage: detalle con panel e historial', () => {
         useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
         useOrderHistoryStore.setState({ entries: [], status: 'idle', error: null, isOffline: false });
         useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
+        useEvidenceStore.getState().reset();
         vi.clearAllMocks();
+        vi.mocked(evidenciaService.getByOrder).mockResolvedValue([]);
     });
 
     it('muestra el panel con los datos y el historial integrado', async () => {

@@ -115,6 +115,23 @@ def test_respuesta_del_microservicio_no_se_altera(
     assert respuesta.json() == cuerpo
 
 
+def test_401_conserva_www_authenticate(
+    gateway: TestClient, api_mock: respx.MockRouter
+) -> None:
+    api_mock.get(f"{settings.MS1_URL}/auth/me").mock(
+        return_value=httpx.Response(
+            401,
+            json={"detail": "Token inválido o expirado"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    )
+
+    respuesta = gateway.get("/api/auth/me")
+
+    assert respuesta.status_code == 401
+    assert respuesta.headers["www-authenticate"] == "Bearer"
+
+
 def test_prefijo_desconocido_devuelve_404_sin_llamar_ms(
     gateway: TestClient, api_mock: respx.MockRouter
 ) -> None:

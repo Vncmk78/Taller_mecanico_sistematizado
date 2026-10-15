@@ -607,9 +607,9 @@ def _observar_cabecera_www_authenticate(
 ) -> None:
     """Anota si la Gateway conserva la cabecera `WWW-Authenticate` del 401.
 
-    No es un caso que pueda fallar: el proxy reenvía el cuerpo y el estado pero
-    solo la cabecera `content-type` de la respuesta. RFC 9110 pide que un 401
-    incluya `WWW-Authenticate`, así que conviene tenerlo visible al operate.
+    No es un caso que pueda fallar: comprueba de forma informativa que el proxy
+    reenvía la cabecera de respuesta `WWW-Authenticate`, como pide RFC 9110 para
+    un 401.
     """
     directo = cliente.get(f"{MS1_URL}/auth/me")
     por_gateway = cliente.get(f"{GATEWAY_URL}/api/auth/me")

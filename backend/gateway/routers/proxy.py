@@ -2,8 +2,9 @@
 
 Captura cualquier petición bajo `/api/` que la Gateway no responda por sí
 misma (índice y healthcheck) y la reenvía al microservicio que indica la
-tabla de enrutamiento (`gateway.rutas`). La lógica no cambia respecto al
-proxy original: solo se movió a un router propio.
+tabla de enrutamiento (`gateway.rutas`). Devuelve el estado, el cuerpo y las
+cabeceras de respuesta del microservicio (salvo las hop-by-hop), de modo que
+un `401` conserva su `WWW-Authenticate`.
 """
 from __future__ import annotations
 
@@ -35,6 +36,11 @@ _CABECERAS_PROHIBIDAS = {
     "trailers",
     "upgrade",
 }
+
+# Cabeceras de la respuesta del microservicio que no se reenvían al cliente:
+# las mismas hop-by-hop del salto local y, además, `content-encoding`, que
+# httpx ya aplicó al decodificar el cuerpo.
+_CABECERAS_RESPUESTA_PROHIBIDAS = _CABECERAS_PROHIBIDAS | {"content-encoding"}
 
 
 @router.api_route(
@@ -84,8 +90,11 @@ async def proxy(ruta: str, request: Request) -> Response:
             detalle=MENSAJE_SERVICIO_CAIDO,
         )
 
-    tipo_contenido = respuesta.headers.get("content-type")
-    cabeceras_respuesta = {"content-type": tipo_contenido} if tipo_contenido else {}
+    cabeceras_respuesta = {
+        clave: valor
+        for clave, valor in respuesta.headers.items()
+        if clave.lower() not in _CABECERAS_RESPUESTA_PROHIBIDAS
+    }
     return Response(
         content=respuesta.content,
         status_code=respuesta.status_code,

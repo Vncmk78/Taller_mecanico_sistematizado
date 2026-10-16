@@ -33,6 +33,7 @@ from services.ms1_auth.services.autenticacion import (
     roles_del_usuario,
 )
 from shared.auth import NombreRol, PrincipalAutenticado, crear_token_acceso
+from shared.errores_auth import error_no_autenticado
 
 router_auth = APIRouter(prefix="/auth", tags=["autenticación y usuarios"])
 
@@ -97,7 +98,7 @@ def login(
             user=_serializar_usuario(usuario),
         )
     except CredencialesInvalidasError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        raise error_no_autenticado(str(exc)) from exc
     except ConfiguracionRolesError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

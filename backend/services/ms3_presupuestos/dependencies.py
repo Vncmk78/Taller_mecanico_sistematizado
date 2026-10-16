@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,7 @@ from shared.auth import (
     TokenInvalidoError,
     validar_token_acceso,
 )
+from shared.errores_auth import error_no_autenticado, error_sin_permiso
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -42,7 +43,7 @@ def obtener_principal_actual(
     """Valida el Bearer JWT y devuelve la identidad (usuario_id y roles)."""
 
     if credenciales is None:
-        raise _error_no_autenticado("No se proporcionó un token de acceso")
+        raise error_no_autenticado()
     try:
         return validar_token_acceso(
             credenciales.credentials,
@@ -50,7 +51,7 @@ def obtener_principal_actual(
             algoritmo=settings.JWT_ALGORITHM,
         )
     except TokenInvalidoError as exc:
-        raise _error_no_autenticado("Token inválido o expirado") from exc
+        raise error_no_autenticado() from exc
 
 
 def requerir_roles(
@@ -64,10 +65,7 @@ def requerir_roles(
         principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     ) -> PrincipalAutenticado:
         if not permitidos & principal.roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permiso para realizar esta operación",
-            )
+            raise error_sin_permiso()
         return principal
 
     return dependencia
@@ -76,11 +74,3 @@ def requerir_roles(
 def obtener_unidad_de_trabajo(db: Session = Depends(get_db)) -> UnidadDeTrabajo:
     """Unidad de trabajo de la petición, sobre la sesión que abre y cierra get_db."""
     return UnidadDeTrabajo(db)
-
-
-def _error_no_autenticado(detalle: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=detalle,
-        headers={"WWW-Authenticate": "Bearer"},
-    )

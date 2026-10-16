@@ -19,6 +19,7 @@ from shared.auth import (
     TokenInvalidoError,
     validar_token_acceso,
 )
+from shared.errores_auth import error_no_autenticado, error_sin_permiso
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -29,7 +30,7 @@ def obtener_principal_actual(
     """Valida el Bearer JWT mediante el contrato puro compartido."""
 
     if credenciales is None:
-        raise _error_no_autenticado("No se proporcionó un token de acceso")
+        raise error_no_autenticado()
     try:
         return validar_token_acceso(
             credenciales.credentials,
@@ -37,7 +38,7 @@ def obtener_principal_actual(
             algoritmo=settings.JWT_ALGORITHM,
         )
     except TokenInvalidoError as exc:
-        raise _error_no_autenticado("Token inválido o expirado") from exc
+        raise error_no_autenticado() from exc
 
 
 def resolver_cliente_actual(
@@ -47,10 +48,7 @@ def resolver_cliente_actual(
     """Resuelve el perfil local sin crearlo ni consultar la base de MS1."""
 
     if NombreRol.CLIENTE not in principal.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
-        )
+        raise error_sin_permiso()
 
     try:
         cliente = buscar_cliente_por_usuario_id(db, principal.usuario_id)
@@ -67,10 +65,3 @@ def resolver_cliente_actual(
         )
     return cliente
 
-
-def _error_no_autenticado(detalle: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=detalle,
-        headers={"WWW-Authenticate": "Bearer"},
-    )

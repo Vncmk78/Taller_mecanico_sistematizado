@@ -52,6 +52,7 @@ from services.ms2_taller.services.ordenes import (
 )
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import AplicacionDecisionRespuesta, DecisionOrdenSolicitud
+from shared.errores_auth import error_sin_permiso
 
 router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
 
@@ -115,10 +116,7 @@ def registrar_orden(
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> OrdenTrabajo:
     if NombreRol.ADMINISTRADOR not in principal.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
-        )
+        raise error_sin_permiso()
 
     try:
         return crear_orden(db, body.vehiculo_id, principal.usuario_id)
@@ -433,10 +431,7 @@ def actualizar_mecanico_responsable(
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> OrdenTrabajo:
     if NombreRol.ADMINISTRADOR not in principal.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
-        )
+        raise error_sin_permiso()
     if (
         NombreRol.MECANICO in principal.roles
         and body.mecanico_id == principal.usuario_id

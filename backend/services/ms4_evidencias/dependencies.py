@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from services.ms4_evidencias.config import settings
@@ -22,6 +22,7 @@ from shared.auth import (
     TokenInvalidoError,
     validar_token_acceso,
 )
+from shared.errores_auth import error_no_autenticado
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -32,7 +33,7 @@ def obtener_principal_actual(
     """Valida el Bearer JWT mediante el contrato puro compartido."""
 
     if credenciales is None:
-        raise _error_no_autenticado("No se proporcionó un token de acceso")
+        raise error_no_autenticado()
     try:
         return validar_token_acceso(
             credenciales.credentials,
@@ -40,7 +41,7 @@ def obtener_principal_actual(
             algoritmo=settings.JWT_ALGORITHM,
         )
     except TokenInvalidoError as exc:
-        raise _error_no_autenticado("Token inválido o expirado") from exc
+        raise error_no_autenticado() from exc
 
 
 def obtener_token_bearer(
@@ -48,16 +49,8 @@ def obtener_token_bearer(
 ) -> str:
     """JWT tal como llegó: MS4 lo reenvía a MS2 para validar la orden (§8)."""
     if credenciales is None:
-        raise _error_no_autenticado("No se proporcionó un token de acceso")
+        raise error_no_autenticado()
     return credenciales.credentials
-
-
-def _error_no_autenticado(detalle: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=detalle,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
 
 
 @lru_cache

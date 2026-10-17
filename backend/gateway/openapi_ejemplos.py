@@ -164,12 +164,12 @@ _EJEMPLOS_ERROR_GATEWAY: dict[str, dict[str, Any]] = {
 _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
     "detalle_token_ausente": _ejemplo(
         "401 sin cabecera Authorization",
-        {"detail": "No se proporcionó un token de acceso"},
-        "MS1 y MS2 responden además WWW-Authenticate: Bearer.",
+        {"detail": "No autenticado"},
+        "Los microservicios responden además WWW-Authenticate: Bearer.",
     ),
     "detalle_token_invalido": _ejemplo(
         "401 con token inválido o expirado",
-        {"detail": "Token inválido o expirado"},
+        {"detail": "No autenticado"},
     ),
     "detalle_credenciales_invalidas": _ejemplo(
         "401 de login con credenciales incorrectas",

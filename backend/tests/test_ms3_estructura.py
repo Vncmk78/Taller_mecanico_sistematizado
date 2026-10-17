@@ -4,7 +4,7 @@ Verifican que el esqueleto del servicio quedó coherente, sin requerir PostgreSQ
 
 - `/health` responde 200 y `/health/db` usa la sesión inyectada por `get_db`.
 - La documentación OpenAPI declara las secciones del servicio.
-- Alembic tiene UNA sola cadena lineal 0001_ms3 → 0002_ms3 → 0003_ms3.
+- Alembic tiene UNA sola cadena lineal 0001_ms3 → 0002_ms3 → 0003_ms3 → 0004_ms3.
 - Todos los modelos del MER quedan registrados en `Base.metadata`.
 - El guard `requerir_roles` responde 401 sin token / token inválido,
   403 con un rol no permitido y 200 con el rol correcto.
@@ -90,9 +90,9 @@ def test_modelos_del_mer_registrados_en_la_metadata() -> None:
 
 def test_alembic_tiene_una_sola_cadena_lineal() -> None:
     script = ScriptDirectory.from_config(Config(RUTA_ALEMBIC))
-    assert script.get_heads() == ["0003_ms3"]
+    assert script.get_heads() == ["0006_ms3"]
     cadena = [rev.revision for rev in script.walk_revisions("base", "heads")]
-    assert list(reversed(cadena)) == ["0001_ms3", "0002_ms3", "0003_ms3"]
+    assert list(reversed(cadena)) == ["0001_ms3", "0002_ms3", "0003_ms3", "0004_ms3", "0005_ms3", "0006_ms3"]
 
 
 # --------------------------------------------------------------------------- #
@@ -155,3 +155,20 @@ def test_guard_rol_permitido_responde_200_con_la_identidad() -> None:
     )
     assert respuesta.status_code == 200
     assert respuesta.json() == {"usuario_id": 42}
+
+
+# --------------------------------------------------------------------------- #
+# 4) Documentación publicada detrás de un prefijo (/ms3 en Vercel)            #
+# --------------------------------------------------------------------------- #
+
+def test_swagger_y_redoc_cargan_su_propia_especificacion_con_url_relativa() -> None:
+    """En Vercel el MS3 vive en /ms3: "/openapi.json" absoluto cargaba la de la Gateway."""
+    with TestClient(app) as cliente:
+        for ruta in ("/docs", "/redoc"):
+            html = cliente.get(ruta).text
+            assert "'openapi.json'" in html or '"openapi.json"' in html, ruta
+            assert "'/openapi.json'" not in html and '"/openapi.json"' not in html, ruta
+        especificacion = cliente.get("/openapi.json")
+    assert especificacion.status_code == 200
+    servidores = [s["url"] for s in especificacion.json()["servers"]]
+    assert servidores == [".", "/api"]

@@ -177,6 +177,23 @@ def nueva_version(
     return version
 
 
+def nueva_version_siguiente(
+    db: Session, presupuesto: Presupuesto, *, items: Iterable[ItemPresupuesto] | None = None
+) -> VersionPresupuesto:
+    """Versión número siguiente en BORRADOR; es_modificacion si ya hubo aprobación."""
+    version = VersionPresupuesto(
+        numero=presupuesto.siguiente_numero, creado_por_id=datos.MECANICO_ID,
+        es_modificacion=presupuesto.version_vigente is not None,
+    )
+    version.items += list(items) if items is not None else [
+        ItemPresupuesto(tipo="mano_de_obra", descripcion="Trabajo adicional",
+                        cantidad=Decimal("1"), precio_unitario=Decimal("15000"))
+    ]
+    presupuesto.versiones.append(version)
+    db.flush()
+    return version
+
+
 def enviar(db: Session, version: VersionPresupuesto) -> VersionPresupuesto:
     """Marca la versión como enviada (desde aquí queda congelada por trigger).
 

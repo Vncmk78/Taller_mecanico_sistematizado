@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import type { CreateVehicleInput } from '@/domain/ports/VehiclePort';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
 import {
     initialAsyncStatus,
     type AsyncStatus,
@@ -15,6 +14,7 @@ import {
 interface FetchVehicleResult {
     vehicle: Vehicle | null;
     notFound: boolean;
+    failed: boolean;
 }
 
 interface VehicleState extends AsyncStatus {
@@ -23,14 +23,19 @@ interface VehicleState extends AsyncStatus {
     fetchVehicleById: (id: string, loader: (id: string) => Promise<Vehicle>) => Promise<FetchVehicleResult>;
     patentExists: (patent: string) => boolean;
     addVehicle: (input: CreateVehicleInput, clientId: string) => Promise<Vehicle>;
+    /**
+     * Vacía la caché y vuelve al estado inicial. Se invoca al cerrar sesión: la
+     * caché es compartida entre portales y sin esto el siguiente usuario que
+     * iniciara sesión en el mismo navegador vería los vehículos del anterior.
+     */
+    reset: () => void;
 }
 
-// Caché en memoria compartida entre portales. Se inicializa con datos de
-// demostración para que la UI nunca quede vacía ante fallos de red o mientras
-// algún endpoint de MS2 aún no está disponible. La lógica de estados, merge y
-// offline vive en asyncCollection (fetchCollection / fetchItemById).
+// Caché en memoria compartida entre portales, inicialmente vacía: solo contiene
+// respuestas reales de la Gateway. La lógica de estados, merge y offline vive en
+// asyncCollection (fetchCollection / fetchItemById).
 export const useVehicleStore = create<VehicleState>((set, get) => ({
-    vehicles: mockVehicles,
+    vehicles: [],
     ...initialAsyncStatus,
 
     fetchVehicles: (loader) =>
@@ -48,7 +53,7 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
             () => get().vehicles,
             (state, vehicle) => ({ vehicles: upsertById(state.vehicles, vehicle) })
         );
-        return { vehicle: result.item, notFound: result.notFound };
+        return { vehicle: result.item, notFound: result.notFound, failed: result.failed };
     },
 
     patentExists: (patent) =>
@@ -69,4 +74,6 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
         }));
         return vehiculo;
     },
+
+    reset: () => set({ vehicles: [], ...initialAsyncStatus }),
 }));

@@ -6,6 +6,7 @@ export interface UseVehicleDetailResult {
     vehicle: Vehicle | undefined;
     loading: boolean;
     notFound: boolean;
+    failed: boolean;
     refetch: () => void;
 }
 
@@ -19,11 +20,11 @@ export function useVehicleDetail(
 ): UseVehicleDetailResult {
     const vehicles = useVehicleStore((s) => s.vehicles);
     const fetchVehicleById = useVehicleStore((s) => s.fetchVehicleById);
-    const { item, loading, notFound, refetch } = useCollectionDetail<Vehicle>({
+    const { item, loading, notFound, failed, refetch } = useCollectionDetail<Vehicle>({
         id,
         items: vehicles,
         fetchById: fetchVehicleById,
         loader,
     });
-    return { vehicle: item, loading, notFound, refetch };
+    return { vehicle: item, loading, notFound, failed, refetch };
 }

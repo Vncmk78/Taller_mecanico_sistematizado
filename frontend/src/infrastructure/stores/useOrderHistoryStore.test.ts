@@ -64,4 +64,15 @@ describe('useOrderHistoryStore: caché del historial por orden', () => {
         expect(state.status).toBe('error');
         expect(state.entries.map((e) => e.id)).toEqual(['h2']);
     });
+
+    it('un error del servidor no se marca offline', async () => {
+        await useOrderHistoryStore.getState().fetchOrderHistory('101', async () => {
+            throw { isAxiosError: true, response: { status: 500, data: {} } };
+        });
+
+        const state = useOrderHistoryStore.getState();
+        expect(state.isOffline).toBe(false);
+        expect(state.status).toBe('error');
+        expect(state.error).toMatch(/El servidor tuvo un problema/);
+    });
 });

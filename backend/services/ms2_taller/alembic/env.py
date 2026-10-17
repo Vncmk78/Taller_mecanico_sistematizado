@@ -38,6 +38,16 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Ejecuta las migraciones conectándose a la base propia de MS2."""
+    # Igual que MS3: permite migrar un esquema de pruebas con conexión inyectada.
+    conexion_externa = config.attributes.get("connection")
+    if conexion_externa is not None:
+        context.configure(
+            connection=conexion_externa, target_metadata=target_metadata, compare_type=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     with engine.connect() as connection:
         context.configure(
             connection=connection,

@@ -69,6 +69,7 @@ describe('RoleLayout: layout y navegación reutilizable', () => {
     expect(screen.getByRole('link', { name: 'Mis Vehículos' })).toBeInTheDocument();
     expect(screen.queryByText('Portal Administrador')).not.toBeInTheDocument();
     expect(screen.getByText('Portal del cliente')).toBeInTheDocument();
+    expect(screen.getByText('cliente@taller.cl')).toBeInTheDocument();
   });
 
   it('navega a la vista correspondiente con un clic en el enlace', async () => {

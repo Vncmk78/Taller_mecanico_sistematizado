@@ -8,7 +8,7 @@ export function ClientDashboardPage() {
     return (
     <div className="animate-fade-in text-center flex flex-col items-center justify-center min-h-[60vh] gap-8">
         <div>
-        <h2 className="text-4xl font-bold mb-2">Bienvenido{user?.full_name ? `, ${user.full_name}` : ''}</h2>
+        <h1 className="text-4xl font-bold mb-2">Bienvenido{user?.full_name ? `, ${user.full_name}` : ''}</h1>
         <p className="text-text-muted text-lg">Mantenga el control total sobre la salud de sus vehículos.</p>
         </div>
         <div className="flex gap-6">
@@ -16,7 +16,7 @@ export function ClientDashboardPage() {
             to="/client/vehiculos"
             className="card w-[280px] p-8 text-center no-underline text-text-main hover:-translate-y-1 transition-transform"
         >
-            <Car className="w-10 h-10 mx-auto mb-4 text-primary-blue" />
+            <Car className="w-10 h-10 mx-auto mb-4 text-primary-blue" aria-hidden />
             <h3 className="font-semibold mb-1">Mis Vehículos</h3>
             <p className="text-text-muted text-sm">Consulte sus vehículos registrados</p>
         </Link>
@@ -24,7 +24,7 @@ export function ClientDashboardPage() {
             to="/client/agendar"
             className="card w-[280px] p-8 text-center no-underline text-text-main hover:-translate-y-1 transition-transform"
         >
-            <CalendarPlus className="w-10 h-10 mx-auto mb-4 text-status-green" />
+            <CalendarPlus className="w-10 h-10 mx-auto mb-4 text-status-green" aria-hidden />
             <h3 className="font-semibold mb-1">Agendar Mantención</h3>
             <p className="text-text-muted text-sm">Solicite una nueva hora de atención</p>
         </Link>

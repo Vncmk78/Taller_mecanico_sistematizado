@@ -54,6 +54,15 @@ def obtener_principal_actual(
         raise error_no_autenticado() from exc
 
 
+def obtener_token_bearer(
+    credenciales: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    """JWT tal como llegó: MS3 lo reenvía a MS2 para validar la orden (§8)."""
+    if credenciales is None:
+        raise error_no_autenticado()
+    return credenciales.credentials
+
+
 def requerir_roles(
     *roles_permitidos: NombreRol,
 ) -> Callable[[PrincipalAutenticado], PrincipalAutenticado]:

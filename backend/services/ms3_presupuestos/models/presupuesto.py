@@ -248,6 +248,10 @@ class DecisionPresupuesto(Base):
             name="rechazo_con_motivo",
         ),
         CheckConstraint("cliente_usuario_id > 0", name="cliente_positivo"),
+        CheckConstraint(
+            "decision = 'aprobado' or repuestos_disponibles is null",
+            name="stock_solo_aprobacion",
+        ),
     )
 
     decision_id: Mapped[int] = mapped_column(primary_key=True)
@@ -265,6 +269,9 @@ class DecisionPresupuesto(Base):
         server_default=func.now(),
     )
     motivo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Instantánea de la evaluación, no una reserva de stock. Nullable para las
+    # decisiones previas a SCRUM-438: no conocemos su disponibilidad histórica.
+    repuestos_disponibles: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     version: Mapped["VersionPresupuesto"] = relationship(back_populates="decision")
 

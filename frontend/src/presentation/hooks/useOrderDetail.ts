@@ -6,6 +6,7 @@ export interface UseOrderDetailResult {
     order: Order | undefined;
     loading: boolean;
     notFound: boolean;
+    failed: boolean;
     refetch: () => void;
 }
 
@@ -19,11 +20,11 @@ export function useOrderDetail(
 ): UseOrderDetailResult {
     const orders = useOrderStore((s) => s.orders);
     const fetchOrderById = useOrderStore((s) => s.fetchOrderById);
-    const { item, loading, notFound, refetch } = useCollectionDetail<Order>({
+    const { item, loading, notFound, failed, refetch } = useCollectionDetail<Order>({
         id,
         items: orders,
         fetchById: fetchOrderById,
         loader,
     });
-    return { order: item, loading, notFound, refetch };
+    return { order: item, loading, notFound, failed, refetch };
 }

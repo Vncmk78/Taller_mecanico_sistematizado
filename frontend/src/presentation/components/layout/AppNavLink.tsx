@@ -21,7 +21,7 @@ const baseClasses: Record<AppNavLinkProps['variant'], string> = {
   sidebar:
     'flex items-center gap-3.5 px-4 py-3.5 rounded-[10px] transition-all duration-200 text-base no-underline',
   topnav:
-    'flex items-center gap-2.5 px-4 py-2.5 rounded-[10px] transition-all duration-200 text-sm font-medium no-underline',
+    'flex items-center gap-2.5 px-3 sm:px-4 py-2.5 rounded-[10px] transition-all duration-200 text-sm font-medium no-underline whitespace-nowrap shrink-0',
 };
 
 const activeClasses: Record<AppNavLinkProps['variant'], string> = {
@@ -44,7 +44,11 @@ export function AppNavLink({ to, label, icon, end, variant }: AppNavLinkProps) {
         `${baseClasses[variant]} ${isActive ? activeClasses[variant] : idleClasses[variant]}`
       }
     >
-      {icon}
+      {icon ? (
+        <span aria-hidden className="inline-flex shrink-0">
+          {icon}
+        </span>
+      ) : null}
       {label}
     </NavLink>
   );

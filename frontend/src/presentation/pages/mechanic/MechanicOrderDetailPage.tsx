@@ -1,35 +1,68 @@
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ClipboardX } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
+import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
+import { OrderBitacoraSection } from '@/presentation/components/orders/OrderBitacoraSection';
+import { OrderEvidenceSection } from '@/presentation/components/evidence/OrderEvidenceSection';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Alert } from '@/presentation/components/ui/Alert';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
+import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { useOrderDetail } from '@/presentation/hooks/useOrderDetail';
 import { orderService } from '@/infrastructure/api/OrderService';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 export function MechanicOrderDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const { order, loading, notFound, refetch } = useOrderDetail(id, (oid) =>
+    const { order, loading, notFound, failed, refetch } = useOrderDetail(id, (oid) =>
         orderService.getOrderById(oid)
     );
-    const { isOffline, error } = useOrderStore();
+    const { isOffline, error, requestId } = useOrderStore();
+    const user = useAuthStore((s) => s.user);
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     if (loading) {
         return <LoadingState message="Cargando detalle de la orden..." className="p-10" />;
     }
 
+    // El fetch falló y no hay copia local: se muestra un error reintentable en
+    // lugar de un "no encontrada" que no es cierto.
+    if (failed) {
+        return (
+            <ErrorState
+                className="p-10"
+                title="No se pudo cargar el detalle de la orden"
+                message={error}
+                requestId={requestId}
+                onRetry={refetch}
+                action={
+                    <Link to="/mechanic/ordenes" className="text-primary-blue text-sm font-medium no-underline hover:underline">
+                        Volver a mis órdenes
+                    </Link>
+                }
+            />
+        );
+    }
+
     if (!order || notFound) {
         return (
-            <div className="p-10 text-text-muted">
-                Orden no encontrada.{' '}
-                <Link to="/mechanic/ordenes" className="text-primary-blue">
-                    Volver a mis órdenes
-                </Link>
-            </div>
+            <EmptyState
+                className="p-10"
+                icon={ClipboardX}
+                title="Orden no encontrada."
+                description="Verifique el número de orden o que siga asignada a su cuenta."
+                action={
+                    <Link to="/mechanic/ordenes" className="text-primary-blue text-sm font-medium no-underline hover:underline">
+                        Volver a mis órdenes
+                    </Link>
+                }
+            />
         );
     }
 
@@ -42,7 +75,14 @@ export function MechanicOrderDetailPage() {
                 <ArrowLeft className="w-4 h-4" /> Volver a mis órdenes
             </Link>
 
-            {isOffline && <OfflineBanner message={error} onRetry={refetch} className="mb-6" />}
+            {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
+
+            {/* Error del servidor con copia local en caché: se conserva la orden y se avisa. */}
+            {!isOffline && error && (
+                <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={refetch} />}>
+                    {error} Se muestran los últimos datos disponibles.
+                </Alert>
+            )}
 
             <OrderDetailPanel
                 order={order}
@@ -51,6 +91,17 @@ export function MechanicOrderDetailPage() {
             />
 
             <OrderStatusAndHistory order={order} />
+
+            <OrderBitacoraSection order={order} canWrite={user?.role === 'mecanico'} />
+
+            <OrderEvidenceSection
+                orderId={order.id}
+                canUpload={user?.role === 'mecanico'}
+                moreHref={`/mechanic/ordenes/${order.id}/evidencias`}
+                className="mt-6"
+            />
+
+            <OrderActionsPanel order={order} className="mt-6" />
         </div>
     );
 }

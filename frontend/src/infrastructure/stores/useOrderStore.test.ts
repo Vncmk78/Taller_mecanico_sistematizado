@@ -17,6 +17,7 @@ const o1b: Order = { ...base, estadoCodigo: 5 };
 const o2: Order = { ...base, id: '2', ingresoId: 2 };
 
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
+const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
 
 describe('useOrderStore: caché y estados del listado/detalle de órdenes', () => {
     beforeEach(() => {
@@ -73,6 +74,7 @@ describe('useOrderStore: caché y estados del listado/detalle de órdenes', () =
         });
 
         expect(result.notFound).toBe(true);
+        expect(result.failed).toBe(false);
         expect(result.order).toBeNull();
     });
 
@@ -84,8 +86,54 @@ describe('useOrderStore: caché y estados del listado/detalle de órdenes', () =
         });
 
         expect(result.notFound).toBe(false);
+        expect(result.failed).toBe(false);
         expect(result.order?.id).toBe('1');
         expect(useOrderStore.getState().isOffline).toBe(true);
         expect(useOrderStore.getState().error).not.toBeNull();
+    });
+
+    it('fetchOrders con error del servidor no queda offline', async () => {
+        useOrderStore.setState({ orders: [base] });
+
+        await useOrderStore.getState().fetchOrders(async () => {
+            throw axios500;
+        });
+
+        const state = useOrderStore.getState();
+        expect(state.status).toBe('error');
+        expect(state.isOffline).toBe(false);
+        expect(state.error).toMatch(/El servidor tuvo un problema/);
+        expect(state.orders.map((o) => o.id)).toEqual(['1']);
+    });
+
+    it('fetchOrderById sin caché local devuelve failed en vez de notFound', async () => {
+        const result = await useOrderStore.getState().fetchOrderById('9', async () => {
+            throw new Error('network');
+        });
+
+        expect(result.notFound).toBe(false);
+        expect(result.failed).toBe(true);
+        expect(result.order).toBeNull();
+    });
+
+    // La caché es compartida entre los tres portales, así que reset() es la vía
+    // por la que useAuthStore la purga al cerrar o descartar la sesión.
+    it('reset vacía la caché y devuelve los estados a su valor inicial', () => {
+        useOrderStore.setState({
+            orders: [base],
+            status: 'error',
+            error: 'Gateway saturada',
+            isOffline: true,
+            requestId: 'req-9',
+        });
+
+        useOrderStore.getState().reset();
+
+        const state = useOrderStore.getState();
+        expect(state.orders).toEqual([]);
+        expect(state.status).toBe('idle');
+        expect(state.error).toBeNull();
+        expect(state.isOffline).toBe(false);
+        expect(state.requestId).toBeNull();
     });
 });

@@ -2,31 +2,98 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
-from services.ms2_taller.dependencies import obtener_principal_actual
+from services.ms2_taller.dependencies import obtener_principal_actual, obtener_token_bearer
+from services.ms2_taller.integracion_ms3 import (
+    DecisionNoAplicableError, DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError,
+    VerificadorDecisiones, obtener_verificador_decisiones,
+)
+from services.ms2_taller.models.historial_estado import HistorialEstado
+from services.ms2_taller.models.bitacora_orden import BitacoraOrden
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
+from services.ms2_taller.schemas.bitacora import BitacoraCrear, BitacoraRespuesta
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
+    CambioEstadoSolicitud,
+    CancelacionClienteSolicitud,
+    EntregaSolicitud,
+    HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
 )
+from services.ms2_taller.services.bitacora import (
+    BitacoraEntradaInvalidaError,
+    BitacoraNoAutorizadaError,
+    BitacoraRepuestoInvalidoError,
+    listar_bitacora_orden,
+    registrar_entrada_bitacora,
+)
 from services.ms2_taller.services.ordenes import (
+    OrdenEstadoInvalidoError,
+    OrdenEstadoNoAutorizadoError,
     OrdenNoEncontradaError,
+    OrdenObservacionInvalidaError,
     OrdenTerminalError,
+    OrdenTransicionNoPermitidaError,
     PersistenciaOrdenError,
     VehiculoNoEncontradoError,
     asignar_mecanico,
+    aplicar_decision_presupuesto,
+    cambiar_estado_orden,
+    cancelar_orden_cliente,
     crear_orden,
     listar_ordenes,
+    obtener_historial_orden,
     obtener_orden_visible,
+    registrar_entrega,
 )
 from shared.auth import NombreRol, PrincipalAutenticado
+from shared.contratos_decisiones import AplicacionDecisionRespuesta, DecisionOrdenSolicitud
 from shared.errores_auth import error_sin_permiso
 
 router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
+
+
+@router_ordenes.post(
+    "/{orden_id}/decisiones-presupuesto", response_model=AplicacionDecisionRespuesta,
+    summary="Aplicar una decisión inicial de presupuesto verificada en MS3",
+    responses={
+        401: {"description": "JWT ausente o inválido"},
+        403: {"description": "Se requiere rol Cliente"},
+        404: {"description": "Orden o decisión inexistente o ajena"},
+        409: {"description": "Estado/evento incompatible o decisión no aplicable"},
+        422: {"description": "Referencia inválida o cancelación sin motivo"},
+        500: {"description": "Error de persistencia local"},
+        503: {"description": "No fue posible verificar la decisión en MS3"},
+    },
+)
+def aplicar_decision(
+    body: DecisionOrdenSolicitud, orden_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorDecisiones = Depends(obtener_verificador_decisiones),
+) -> AplicacionDecisionRespuesta:
+    try:
+        return aplicar_decision_presupuesto(
+            db, orden_id=orden_id, decision_id=body.decision_id,
+            principal=principal, token=token, verificador=verificador,
+        )
+    except (OrdenNoEncontradaError, DecisionNoVisibleError) as exc:
+        raise HTTPException(404, "Orden o decisión no encontrada") from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except (OrdenTransicionNoPermitidaError, DecisionNoAplicableError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except OrdenObservacionInvalidaError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ServicioPresupuestosNoDisponibleError as exc:
+        raise HTTPException(503, "No fue posible verificar la decisión en MS3") from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(500, "No fue posible aplicar la decisión") from exc
 
 
 @router_ordenes.post(
@@ -103,11 +170,25 @@ def consultar_ordenes(
 )
 def consultar_orden(
     orden_id: int,
+    response: Response,
+    solo_propietario: bool = Query(
+        default=False, description="Verificar propiedad del cliente, incluso con otros roles.",
+    ),
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> OrdenTrabajo:
     try:
-        return obtener_orden_visible(db, principal, orden_id)
+        if solo_propietario:
+            if NombreRol.CLIENTE not in principal.roles:
+                raise OrdenNoEncontradaError("Orden no encontrada")
+            # La visibilidad como personal no autoriza a decidir como cliente.
+            principal = PrincipalAutenticado(
+                principal.usuario_id, frozenset({NombreRol.CLIENTE}),
+            )
+        orden = obtener_orden_visible(db, principal, orden_id)
+        if solo_propietario:
+            response.headers["X-Orden-Propiedad-Verificada"] = "true"
+        return orden
     except OrdenNoEncontradaError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -117,6 +198,210 @@ def consultar_orden(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible consultar la orden",
+        ) from exc
+
+
+@router_ordenes.get(
+    "/{orden_id}/historial",
+    response_model=list[HistorialEstadoRespuesta],
+    summary="Consultar el historial de estados de una orden",
+    description=(
+        "Devuelve todos los registros por fecha/hora e identificador ascendente. "
+        "Aplica la misma visibilidad del detalle; sin registros devuelve []."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la consulta"
+        },
+    },
+)
+def consultar_historial_orden(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> list[HistorialEstado]:
+    try:
+        return obtener_historial_orden(db, principal, orden_id)
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar el historial de la orden",
+        ) from exc
+
+
+@router_ordenes.get(
+    "/{orden_id}/bitacora",
+    response_model=list[BitacoraRespuesta],
+    summary="Consultar la bitácora de trabajo de una orden",
+    description=(
+        "Devuelve todos los registros por fecha/hora e identificador ascendente, "
+        "con el autor, el tipo (observación o acción), el texto y los repuestos "
+        "utilizados. Aplica la misma visibilidad del detalle: Administrador ve "
+        "todas; Cliente sus vehículos; Mecánico sus órdenes asignadas; multirol "
+        "combina los alcances. Una orden inexistente o ajena responde 404; una "
+        "visible sin registros devuelve []."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la consulta"
+        },
+    },
+)
+def consultar_bitacora_orden(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> list[BitacoraOrden]:
+    try:
+        return listar_bitacora_orden(db, principal, orden_id)
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar la bitácora de la orden",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/bitacora",
+    response_model=BitacoraRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar una observación o acción en la bitácora",
+    description=(
+        "Registra lo que el mecánico observa o ejecuta sobre una orden sin "
+        "cambiar su estado. Una observación es una nota libre; una acción puede "
+        "declarar los repuestos utilizados (texto libre y cantidad). Solo el "
+        "mecánico asignado o un administrador pueden registrarla. No acepta "
+        "estado, actor ni fecha en el cuerpo."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Se requiere ser el mecánico asignado o Administrador"
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada o ajena"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Tipo, descripción o repuestos inválidos"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def registrar_bitacora_orden(
+    orden_id: int,
+    body: BitacoraCrear,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> BitacoraOrden:
+    try:
+        return registrar_entrada_bitacora(
+            db,
+            orden_id=orden_id,
+            principal=principal,
+            tipo=body.tipo,
+            descripcion=body.descripcion,
+            repuestos=[repuesto.model_dump() for repuesto in body.repuestos],
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except BitacoraNoAutorizadaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
+    except (BitacoraEntradaInvalidaError, BitacoraRepuestoInvalidoError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la entrada de la bitácora",
+        ) from exc
+
+
+@router_ordenes.patch(
+    "/{orden_id}/estado",
+    response_model=OrdenRespuesta,
+    summary="Cambiar el estado de una orden",
+    description=(
+        "La primera asignación (1 → 2), la primera aprobación de presupuesto "
+        "(3 → 4/5) y la entrega física (6 → 7) requieren sus operaciones "
+        "específicas y no admiten PATCH directo. "
+        "Los demás pares conservan su comportamiento; este endpoint no garantiza "
+        "las precondiciones pendientes de envío, repuestos, finalización o cancelación."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Se requiere rol Administrador o ser el mecánico asignado"
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_409_CONFLICT: {
+            "description": "Transición no permitida, terminal o reservada a una operación específica"
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Estado de destino desconocido, cancelación sin motivo o datos inválidos"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def cambiar_estado(
+    orden_id: int,
+    body: CambioEstadoSolicitud,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> OrdenTrabajo:
+    try:
+        return cambiar_estado_orden(
+            db,
+            orden_id=orden_id,
+            estado_destino=body.estado_destino,
+            principal=principal,
+            observacion=body.observacion,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except (OrdenEstadoInvalidoError, OrdenObservacionInvalidaError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible cambiar el estado de la orden",
         ) from exc
 
 
@@ -178,4 +463,132 @@ def actualizar_mecanico_responsable(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible asignar el mecánico",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/entrega",
+    response_model=OrdenRespuesta,
+    summary="Registrar la entrega física de una orden lista",
+    description=(
+        "Cierra el ciclo normal (6 → 7): registra la fecha de entrega y el "
+        "usuario que la autorizó. Solo el Administrador puede invocarla. "
+        "Reemplaza al PATCH directo 6 → 7, que responde 409."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden no está Lista o ya es terminal"
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Observación de entrega vacía"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def registrar_entrega_orden(
+    orden_id: int,
+    body: EntregaSolicitud,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> OrdenTrabajo:
+    try:
+        return registrar_entrega(
+            db,
+            orden_id=orden_id,
+            principal=principal,
+            observacion=body.observacion,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except OrdenObservacionInvalidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la entrega",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/cancelacion",
+    response_model=OrdenRespuesta,
+    summary="Cancelar una orden a solicitud de su cliente propietario",
+    description=(
+        "El cliente dueño del vehículo cancela una orden no terminal "
+        "(1/2/3 → 8). El motivo es obligatorio y se audita en el historial. "
+        "Una orden inexistente o ajena responde 404."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Cliente"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada o ajena"},
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden ya avanzó o es terminal"
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Motivo de cancelación vacío"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def cancelar_orden_como_cliente(
+    orden_id: int,
+    body: CancelacionClienteSolicitud,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> OrdenTrabajo:
+    try:
+        return cancelar_orden_cliente(
+            db,
+            orden_id=orden_id,
+            principal=principal,
+            motivo=body.motivo,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except OrdenObservacionInvalidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible cancelar la orden",
         ) from exc

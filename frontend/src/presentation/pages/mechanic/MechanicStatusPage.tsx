@@ -1,17 +1,354 @@
-import { RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, ClipboardList } from 'lucide-react';
+import type { Order } from '@/domain/entities/Order';
+import { ESTADOS_ORDEN, ordenStatusLabel } from '@/domain/entities/Order';
+import { destinosAvanceMecanico } from '@/domain/entities/OrderActions';
+import { getApiErrorMessage } from '@/infrastructure/api/errors';
+import { orderService } from '@/infrastructure/api/OrderService';
+import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
+import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { OrderStatusBadge } from '@/presentation/components/orders/OrderStatusBadge';
+import { OrderStateStepper } from '@/presentation/components/orders/OrderStateStepper';
+import { OrderListSkeleton } from '@/presentation/components/orders/OrderListSkeleton';
+import { OrderListToolbar } from '@/presentation/components/orders/OrderListToolbar';
+import { OrderPagination } from '@/presentation/components/orders/OrderPagination';
+import { Alert } from '@/presentation/components/ui/Alert';
+import { Button } from '@/presentation/components/ui/Button';
+import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
+import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { useToast } from '@/presentation/components/ui/toastContext';
+import { useOrderListFilters } from '@/presentation/hooks/useOrderListFilters';
+import {
+    filterOrdersByMechanic,
+    filterVehiclesByOrders,
+    puedeCambiarEstado,
+} from '@/presentation/utils/mechanicScope';
+import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
+
+interface OrderAdvanceCardProps {
+    order: Order;
+    patente?: string;
+    vehicleLabel?: string | null;
+    allowed: boolean;
+}
+
+function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanceCardProps) {
+    const [destino, setDestino] = useState('');
+    const [observacion, setObservacion] = useState('');
+    const [confirming, setConfirming] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState('');
+    const updateOrder = useOrderStore((s) => s.updateOrder);
+    const isOffline = useOrderStore((s) => s.isOffline);
+    const { showToast } = useToast();
+
+    const avances = destinosAvanceMecanico(order.estadoCodigo);
+
+    const confirmarAvance = async () => {
+        if (!destino) return;
+        setSubmitting(true);
+        setError('');
+        try {
+            const actualizada = await orderService.cambiarEstado(
+                order.id,
+                Number(destino),
+                observacion
+            );
+            updateOrder(actualizada);
+            showToast(
+                `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`,
+                'success'
+            );
+            setConfirming(false);
+            setDestino('');
+            setObservacion('');
+        } catch (err) {
+            setError(getApiErrorMessage(err, 'No se pudo actualizar el estado de la orden.'));
+            setConfirming(false);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    return (
+    <div className="card p-6">
+        <div className="flex justify-between items-start gap-3 flex-wrap mb-4">
+            <div>
+                <h3 className="text-lg font-semibold">Orden n° {order.id}</h3>
+                <p className="text-text-muted text-sm">
+                    {vehicleLabel}
+                    {patente && (
+                        <>
+                            {' '}
+                            · <span className="font-mono">{patente}</span>
+                        </>
+                    )}
+                </p>
+            </div>
+            <OrderStatusBadge estadoCodigo={order.estadoCodigo} />
+        </div>
+
+        <OrderStateStepper estadoCodigo={order.estadoCodigo} />
+
+        {allowed ? (
+            <>
+                <div className="mt-5 pt-5 border-t border-border-custom flex flex-col sm:flex-row gap-3 sm:items-end">
+                    <label className="flex flex-col gap-1 text-sm flex-1 min-w-40">
+                        <span className="text-text-muted">Siguiente estado</span>
+                        <select
+                            value={destino}
+                            onChange={(e) => setDestino(e.target.value)}
+                            aria-label={`Siguiente estado de la orden ${order.id}`}
+                            className="w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
+                        >
+                            <option value="">Seleccionar...</option>
+                            {avances.map((codigo) => (
+                                <option key={codigo} value={codigo}>
+                                    {ESTADOS_ORDEN[codigo]}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-sm flex-1">
+                        <span className="text-text-muted">Observación (opcional)</span>
+                        <input
+                            type="text"
+                            value={observacion}
+                            onChange={(e) => setObservacion(e.target.value)}
+                            placeholder="Comentario del avance..."
+                            aria-label={`Observación de la orden ${order.id}`}
+                            className="w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
+                        />
+                    </label>
+                    <Button
+                        variant="primary"
+                        disabled={!destino || isOffline}
+                        onClick={() => setConfirming(true)}
+                        className="shrink-0"
+                    >
+                        <span className="flex items-center gap-2">
+                            <Check className="w-4 h-4" /> Confirmar avance
+                        </span>
+                    </Button>
+                </div>
+
+                {isOffline && (
+                    <Alert tone="warning" className="mt-4">
+                        Sin conexión: para actualizar el estado necesita estar conectado. Restablezca la
+                        conexión e inténtelo nuevamente.
+                    </Alert>
+                )}
+
+                {error && <Alert tone="error" className="mt-4">{error}</Alert>}
+
+                <ConfirmDialog
+                    open={confirming}
+                    tone="primary"
+                    title="¿Confirmar el avance de estado?"
+                    description={`La orden n° ${order.id} pasará de ${ordenStatusLabel(order.estadoCodigo)} a ${destino ? ordenStatusLabel(Number(destino)) : ''}.${observacion ? `\nObservación: ${observacion}` : ''}`}
+                    confirmLabel="Avanzar estado"
+                    isLoading={submitting}
+                    onConfirm={confirmarAvance}
+                    onCancel={() => setConfirming(false)}
+                />
+            </>
+        ) : (
+            <p className="text-text-muted text-sm mt-5 pt-5 border-t border-border-custom">
+                Solo el mecánico asignado puede actualizar esta orden.
+            </p>
+        )}
+    </div>
+    );
+}
+
+interface ClosedOrderCardProps {
+    order: Order;
+    patente?: string;
+    vehicleLabel?: string | null;
+}
+
+/** Orden que ya no tiene ningún avance del mecánico: la cierra el cliente o el administrador. */
+function ClosedOrderCard({ order, patente, vehicleLabel }: ClosedOrderCardProps) {
+    return (
+    <div className="card p-6 opacity-80">
+        <div className="flex justify-between items-start gap-3 flex-wrap">
+            <div>
+                <h3 className="text-lg font-semibold">Orden n° {order.id}</h3>
+                <p className="text-text-muted text-sm">
+                    {vehicleLabel}
+                    {patente && (
+                        <>
+                            {' '}
+                            · <span className="font-mono">{patente}</span>
+                        </>
+                    )}
+                </p>
+            </div>
+            <OrderStatusBadge estadoCodigo={order.estadoCodigo} />
+        </div>
+        <p className="text-text-muted text-sm mt-4">
+            No hay avances disponibles para el mecánico en este estado.
+        </p>
+    </div>
+    );
+}
 
 export function MechanicStatusPage() {
-  return (
-    <div className="p-10 animate-fade-in">
-      <h2 className="text-3xl font-bold mb-2 tracking-tight">Actualizar Estados</h2>
-      <p className="text-text-muted text-lg mb-8">Mantén el flujo de las órdenes al día</p>
-      <div className="card p-16 text-center">
-        <RefreshCw className="w-12 h-12 text-text-muted mx-auto mb-4" />
-        <p className="text-text-muted text-lg mb-2">Estructura en construcción</p>
-        <p className="text-text-muted text-sm">
-          Aquí podrás registrar el avance de cada orden y su historial de estados.
-        </p>
-      </div>
+    const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
+    const { vehicles: allVehicles, fetchVehicles } = useVehicleStore();
+    const user = useAuthStore((s) => s.user);
+    const mechanicId = user?.id;
+
+    const loadOrders = () => fetchOrders(() => orderService.getOrders());
+
+    useEffect(() => {
+        loadOrders();
+        // Las tarjetas muestran patente y modelo, que solo se resuelven con los
+        // vehículos asignados cargados en la caché compartida.
+        fetchVehicles(() => vehicleService.getAssignedVehicles());
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const myOrders = filterOrdersByMechanic(orders, mechanicId);
+    const vehicles = filterVehiclesByOrders(allVehicles, myOrders);
+
+    const {
+        search,
+        setSearch,
+        estadoCodigo,
+        setEstadoCodigo,
+        page,
+        setPage,
+        pageSize,
+        setPageSize,
+        filteredOrders,
+        pagedOrders,
+        total,
+        pageCount,
+        rangeStart,
+        rangeEnd,
+    } = useOrderListFilters(myOrders, (o) =>
+        [
+            o.id,
+            orderPatente(o, vehicles) ?? '',
+            orderVehicleLabel(o, vehicles),
+            ordenStatusLabel(o.estadoCodigo),
+        ].join(' ')
+    );
+
+    // Una orden es accionable cuando el catálogo centralizado define algún
+    // avance para su estado (destinosAvanceMecanico); el resto depende del
+    // cliente o del administrador y se lista aparte para no mostrar un selector
+    // sin opciones. La partición se hace sobre la página actual, así la
+    // paginación sigue siendo la de useOrderListFilters.
+    const actionable = useMemo(
+        () => pagedOrders.filter((o) => destinosAvanceMecanico(o.estadoCodigo).length > 0),
+        [pagedOrders]
+    );
+    const closed = useMemo(
+        () => pagedOrders.filter((o) => destinosAvanceMecanico(o.estadoCodigo).length === 0),
+        [pagedOrders]
+    );
+
+    const isServerError = status === 'error' && !isOffline;
+    const emptyTitle = search.trim()
+        ? `No se encontraron órdenes para "${search}".`
+        : estadoCodigo !== 'all'
+            ? `No tienes órdenes en el estado "${ordenStatusLabel(estadoCodigo)}".`
+            : 'No tiene órdenes asignadas por el momento.';
+
+    return (
+    <div className="animate-fade-in p-10">
+        <h2 className="text-3xl font-bold mb-2 tracking-tight">Actualizar Estados</h2>
+        <p className="text-text-muted text-lg mb-6">Mantén el flujo de las órdenes al día</p>
+
+        <OrderListToolbar
+            className="mb-6"
+            search={search}
+            onSearchChange={setSearch}
+            estadoCodigo={estadoCodigo}
+            onEstadoChange={setEstadoCodigo}
+        />
+
+        {isOffline && <OfflineBanner message={error} onRetry={loadOrders} requestId={requestId} className="mb-6" />}
+
+        {isServerError && filteredOrders.length > 0 && (
+            <Alert tone="error" className="mb-6" action={<RetryButton tone="error" onClick={loadOrders} />}>
+                {error ?? 'No se pudieron cargar las órdenes.'} Se muestran los últimos datos disponibles.
+            </Alert>
+        )}
+
+        {status === 'loading' ? (
+            <OrderListSkeleton count={3} />
+        ) : isServerError && filteredOrders.length === 0 ? (
+            <ErrorState
+                title="No se pudieron cargar las órdenes"
+                message={error}
+                requestId={requestId}
+                onRetry={loadOrders}
+            />
+        ) : (
+            <>
+                <div className="space-y-6">
+                    {actionable.map((order) => (
+                        <OrderAdvanceCard
+                            key={order.id}
+                            order={order}
+                            patente={orderPatente(order, vehicles)}
+                            vehicleLabel={orderVehicleLabel(order, vehicles)}
+                            allowed={puedeCambiarEstado(order, user)}
+                        />
+                    ))}
+                    {filteredOrders.length === 0 && (
+                        <EmptyState
+                            icon={ClipboardList}
+                            title={emptyTitle}
+                            description={
+                                search.trim() || estadoCodigo !== 'all'
+                                    ? 'Pruebe con otro término de búsqueda o estado.'
+                                    : 'Las órdenes que se le asignen aparecerán aquí para poder avanzar su estado.'
+                            }
+                        />
+                    )}
+                </div>
+
+                {closed.length > 0 && (
+                    <section className="mt-10">
+                        <h3 className="text-lg font-semibold mb-1">Órdenes sin avance disponible</h3>
+                        <p className="text-text-muted text-sm mb-4">
+                            Sin acciones del mecánico disponibles en este estado.
+                        </p>
+                        <div className="space-y-6">
+                            {closed.map((order) => (
+                                <ClosedOrderCard
+                                    key={order.id}
+                                    order={order}
+                                    patente={orderPatente(order, vehicles)}
+                                    vehicleLabel={orderVehicleLabel(order, vehicles)}
+                                />
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                <OrderPagination
+                    className="pt-2 pb-4"
+                    page={page}
+                    pageCount={pageCount}
+                    onPageChange={setPage}
+                    pageSize={pageSize}
+                    onPageSizeChange={setPageSize}
+                    rangeStart={rangeStart}
+                    rangeEnd={rangeEnd}
+                    total={total}
+                />
+            </>
+        )}
     </div>
-  );
+    );
 }

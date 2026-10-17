@@ -13,7 +13,7 @@ import pytest
 import respx
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -25,7 +25,11 @@ from services.ms1_auth.main import app as ms1_app
 from services.ms2_taller.config import settings as ms2_settings
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as ms2_app
-from services.ms2_taller.models import Base, Cliente, Vehiculo
+from services.ms2_taller.models import Base, Cliente, EstadoOrden, HistorialEstado, OrdenTrabajo, Vehiculo
+from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN
+from shared.auth import NombreRol
+from test_ordenes_api import _crear_orden
+from test_usuarios_roles import _asignar_roles_bd
 
 
 @pytest.fixture
@@ -98,6 +102,39 @@ def gateway_integracion(
         )
         with TestClient(gateway_app) as gateway:
             yield gateway, ruta_ms2
+
+
+@pytest.mark.parametrize("estado,destino", [(1, 2), (3, 4), (3, 5)])
+def test_gateway_con_jwt_real_multirrol_no_elude_operaciones_especificas(
+    gateway_integracion, db_integracion_ms2: Session, db: Session, estado, destino,
+):
+    gateway, ruta_ms2 = gateway_integracion
+    datos = {
+        "email": "administrador.transiciones@example.com", "password": "ClaveSoloPruebas123!",
+        "full_name": "Administrador de prueba",
+    }
+    registro = gateway.post("/api/auth/register", json=datos)
+    assert registro.status_code == 201
+    usuario_id = registro.json()["id"]
+    _asignar_roles_bd(db, usuario_id, NombreRol.ADMINISTRADOR)
+    login = gateway.post("/api/auth/login", json={"email": datos["email"], "password": datos["password"]})
+    assert login.status_code == 200
+    assert set(login.json()["user"]["roles"]) == {"cliente", "administrador"}
+    db_integracion_ms2.add_all([
+        EstadoOrden(estado_codigo=codigo, nombre=nombre) for codigo, nombre in ESTADOS_ORDEN.items()
+    ])
+    db_integracion_ms2.commit()
+    orden = _crear_orden(db_integracion_ms2, usuario_cliente=usuario_id, estado_codigo=estado)
+    respuesta = gateway.patch(
+        f"/api/ordenes/{orden.orden_id}/estado", json={"estado_destino": destino},
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert respuesta.status_code == 409
+    assert "operación específica" in respuesta.json()["detail"]
+    assert ruta_ms2.calls.last.request.url.path == f"/ordenes/{orden.orden_id}/estado"
+    db_integracion_ms2.refresh(orden)
+    assert db_integracion_ms2.get(OrdenTrabajo, orden.orden_id).estado_codigo == estado
+    assert db_integracion_ms2.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
 @pytest.mark.parametrize("operacion", ["consulta_permitida", "creacion_prohibida"])

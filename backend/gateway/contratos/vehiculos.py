@@ -23,6 +23,7 @@ _EJEMPLO_ACTUALIZAR: dict[str, object] = {
 
 _EJEMPLO_RESPUESTA: dict[str, object] = {
     "vehiculo_id": 12,
+    "cliente_id": 7,
     "patente": "AB1234",
     "marca": "Toyota",
     "modelo": "Corolla",
@@ -110,6 +111,10 @@ class VehiculoRespuesta(BaseModel):
     model_config = ConfigDict(json_schema_extra={"examples": [_EJEMPLO_RESPUESTA]})
 
     vehiculo_id: int = Field(description="Identificador del vehículo.", examples=[12])
+    cliente_id: int = Field(
+        description="Identificador del perfil Cliente propietario en MS2.",
+        examples=[7],
+    )
     patente: str = Field(description="Patente del vehículo.", examples=["AB1234"])
     marca: str = Field(description="Marca.", examples=["Toyota"])
     modelo: str = Field(description="Modelo.", examples=["Corolla"])

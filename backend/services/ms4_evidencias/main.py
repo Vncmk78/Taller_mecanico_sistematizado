@@ -1,9 +1,9 @@
 """API del microservicio MS4: Evidencia Multimedia.
 
 Expone los healthchecks que verifican que el servicio levanta, que su conexión a
-PostgreSQL responde y que el bucket S3/MinIO de evidencias responde. Los
-endpoints de negocio (recepción y consulta de evidencias) los agregan los
-integrantes responsables de este servicio en la tarea correspondiente.
+PostgreSQL responde y que el bucket S3/MinIO de evidencias responde, más los
+endpoints de negocio de recepción y consulta de evidencias (módulos en
+routers/).
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from services.ms4_evidencias.config import settings
 from services.ms4_evidencias.db import get_db
+from services.ms4_evidencias.routers import ROUTERS
 from services.ms4_evidencias.services.almacenamiento import (
     crear_cliente_s3,
     verificar_bucket,
@@ -28,10 +29,13 @@ app = FastAPI(
         },
         {
             "name": "evidencias",
-            "description": "Recepción y consulta de evidencias (en desarrollo).",
+            "description": "Subida de fotos/videos y consulta: listado por orden, detalle y descarga con URL prefirmada.",
         },
     ],
 )
+
+for router in ROUTERS:
+    app.include_router(router)
 
 
 @app.get("/health", tags=["health"])

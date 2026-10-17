@@ -9,9 +9,8 @@ para que `main.py` lo registre sin tocar nada más:
     inventario.py    →  /inventario     (movimientos y umbral general)
 
 Las rutas coinciden con los prefijos que la Gateway ya envía a MS3
-(gateway/rutas.py). Los endpoints se implementan en la tarea de Semana 5
-"Implementar persistencia ORM y endpoints iniciales de presupuestos" y en
-"Implementar persistencia y endpoints de repuestos y proveedores".
+(gateway/rutas.py). Implementados (Semana 5): presupuestos.py, repuestos.py,
+proveedores.py e inventario.py (movimientos, stock, alertas y umbral general).
 
 Capas: router (HTTP) → services (reglas y transacción) → models (ORM).
 Un router nunca abre sesiones ni escribe SQL: recibe `db` por `get_db` y
@@ -21,6 +20,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-ROUTERS: list[APIRouter] = []
+from services.ms3_presupuestos.routers.inventario import router as router_inventario
+from services.ms3_presupuestos.routers.presupuestos import router as router_presupuestos
+from services.ms3_presupuestos.routers.proveedores import router as router_proveedores
+from services.ms3_presupuestos.routers.repuestos import router as router_repuestos
+
+ROUTERS: list[APIRouter] = [
+    router_presupuestos, router_repuestos, router_proveedores, router_inventario,
+]
 
 __all__ = ["ROUTERS"]

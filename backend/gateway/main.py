@@ -10,16 +10,31 @@ con su propia base PostgreSQL).
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from gateway.cliente_http import cerrar_cliente
 from gateway.config import settings
 from gateway.errores import ManejoErroresMiddleware, registrar_manejadores
 from gateway.middleware import RequestIdMiddleware
 from gateway.openapi import construir_openapi
 from gateway.routers import health, proxy
 
-app = FastAPI(title="SGTM — API Gateway", version="0.1.0")
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    """Ciclo de vida de la app.
+
+    El cliente HTTPX se crea de forma perezosa (gateway/cliente_http.py);
+    aquí solo se cierra al apagar.
+    """
+    yield
+    await cerrar_cliente()
+
+
+app = FastAPI(title="SGTM — API Gateway", version="0.1.0", lifespan=_lifespan)
 
 # El Swagger por defecto solo mostraría /api/{ruta}; se reescribe para
 # documentar los contratos reales de MS1 y MS2 (ver gateway/openapi.py).

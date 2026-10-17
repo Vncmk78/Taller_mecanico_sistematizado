@@ -148,6 +148,141 @@ def crear(body: ProveedorCrear, uow: UnidadDeTrabajo = Depends(obtener_unidad_de
     return registrar_proveedor(uow, body.nombre, body.contacto)   # 409 si el nombre ya existe
 ```
 
+### Endpoints de presupuestos (MS3)
+
+Requieren JWT. Por la Gateway se llaman con prefijo `/api`. El cliente solo ve
+presupuestos de **sus** órdenes (MS3 lo confirma con `GET {MS3_MS2_URL}/ordenes/{id}`
+reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /presupuestos` | Crea el presupuesto de una orden con su versión 1 en borrador (`409` si la orden ya tiene) |
+| `GET /presupuestos?orden_id=&desde=&limite=` | Lista paginada (más recientes primero) o el de una orden |
+| `GET /presupuestos/{id}` | Detalle con todas las versiones, ítems, totales y decisión |
+| `GET /presupuestos/{id}/versiones/{n}` | Una versión |
+| `POST /presupuestos/{id}/versiones` | Crea la versión siguiente **sin tocar las anteriores**: copia los ítems de la última (o de `{"copiar_de": n}`) o usa `{"items": [...]}` |
+| `PUT /presupuestos/{id}/versiones/{n}/items` | Reemplaza los ítems de un borrador (`409` si ya fue enviada) |
+| `POST /presupuestos/{id}/versiones/{n}/envio` | **Administrador**: envía la última versión (con ítems y precios); queda congelada |
+| `POST /presupuestos/{id}/versiones/{n}/decision` | **Cliente dueño**: `{"decision": "aprobado"}` o `{"decision": "rechazado", "motivo": "...", "confirmar_cancelacion": true}` |
+| `GET /presupuestos/decisiones/{decision_id}` | **Cliente responsable**: hecho persistido que MS2 verifica antes de aplicar la decisión |
+| `POST /presupuestos/decisiones/{decision_id}/aplicacion` | **Cliente responsable**: reintenta la misma decisión, sin crear otra |
+
+Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
+la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
+nueva versión es una modificación (`es_modificacion`) y, mientras no se apruebe,
+sigue vigente la última aprobada; solo puede haber un borrador abierto (`409`);
+si el primer presupuesto fue rechazado (servicio cancelado) no se crean más
+versiones (`409`). Las versiones anteriores, sus ítems y decisiones nunca se
+modifican: la base lo impide además con los triggers de `0003_ms3`.
+
+Envío y decisión son **transaccionales dentro de MS3**: bloquean el presupuesto
+(`SELECT ... FOR UPDATE`), validan y escriben todo junto. Tras confirmar la
+primera decisión, MS3 solicita su aplicación en MS2. Un fallo posterior no
+revierte la decisión: responde `503` con `decision_id` y la ruta de reintento.
+MS2 verifica el hecho con el JWT original y confirma estado e historial en su
+propia transacción, con idempotencia persistida. Véase
+[el contrato de coordinación](docs/maquina-estados-ordenes.md#61-primera-decisión-de-presupuesto-scrum-397-y-scrum-438).
+Responden
+`efecto_en_orden`, lo que corresponde aplicar a la orden en MS2 (§4.2):
+
+| Operación | `efecto_en_orden` |
+|---|---|
+| Primer envío | `esperando_aprobacion` |
+| Envío de una modificación posterior a una aprobación | `null` (la orden no cambia) |
+| Aprobar con stock suficiente | `en_reparacion` |
+| Aprobar con stock insuficiente | `esperando_repuestos` (+ `repuestos_faltantes`) |
+| Rechazar antes de la primera aprobación (exige `confirmar_cancelacion`) | `cancelado` |
+| Rechazar una modificación | `null` (sigue vigente la última aprobada) |
+
+```json
+POST /presupuestos
+{"orden_id": 1, "items": [
+  {"tipo": "repuesto", "repuesto_id": 1, "descripcion": "Pastillas", "cantidad": "1", "precio_unitario": "38990"},
+  {"tipo": "mano_de_obra", "descripcion": "Cambio de pastillas", "cantidad": "1.5", "precio_unitario": "20000"}
+]}
+```
+
+Montos y cantidades se devuelven como texto decimal (`"68990.00"`). Cada versión
+informa su `estado` (`borrador`, `enviada`, `aprobada`, `rechazada`) y el
+presupuesto su `version_vigente` (última aprobada). Capas: `routers/presupuestos.py`
+→ `services/presupuestos.py` (una transacción por caso de uso) →
+`persistencia/` (repositorio + unidad de trabajo) → modelos ORM.
+
+### Proveedores y repuestos (MS3)
+
+Lectura: Mecánico y Administrador. Escritura: solo Administrador. Cliente → `403`.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `GET /proveedores?q=&con_repuestos=&desde=&limite=` | Lista / busca por nombre o contacto; `con_repuestos=true/false` |
+| `GET /proveedores/{id}` | Detalle con sus repuestos |
+| `POST /proveedores` · `PATCH /proveedores/{id}` | Alta y cambios (`409` si el nombre ya existe, sin distinguir mayúsculas) |
+| `DELETE /proveedores/{id}` | Solo si no tiene repuestos (`409`) |
+| `GET /repuestos?proveedor_id=&q=&bajo_umbral=&con_stock=&ordenar=&desde=&limite=` | Lista con `umbral_efectivo` y `bajo_umbral`; `bajo_umbral=true` = alerta de stock bajo; `con_stock=true/false`; `ordenar=nombre\|stock_asc\|stock_desc` |
+| `GET /repuestos/{id}` | Detalle |
+| `POST /repuestos` | Alta `{"proveedor_id", "nombre", "stock_inicial", "umbral_particular"}`; el stock inicial deja un movimiento `ingreso` |
+| `PATCH /repuestos/{id}` | Nombre, proveedor o `umbral_particular` (`null` = volver al general); cada cambio de umbral queda en `historial_umbral` |
+| `DELETE /repuestos/{id}` | Solo si nunca tuvo movimientos, presupuestos ni cambios de umbral (`409`) |
+
+**Búsqueda (`q`)**: "contiene el texto" sin distinguir mayúsculas ni tildes
+(`bujia` encuentra `Bujía`); `%` y `_` se buscan literalmente. La migración
+`0006_ms3` instala `pg_trgm` y `unaccent` (extensiones *trusted*: no requieren
+superusuario, funcionan en Neon), crea `ms3_normalizar(text)` y estos índices:
+
+| Índice | Para qué |
+|---|---|
+| `ix_repuesto_nombre_trgm`, `ix_proveedor_nombre_trgm`, `ix_proveedor_contacto_trgm` | GIN de trigramas: `q` (`LIKE '%texto%'`) |
+| `ix_repuesto_nombre_orden`, `ix_proveedor_nombre_orden` | Listar ordenado por nombre y paginar |
+| `uq_proveedor_nombre_ci` | Proveedor único sin distinguir mayúsculas |
+| `uq_repuesto_proveedor_nombre` (0005), `ix_repuesto_proveedor_id` | Filtro por proveedor |
+
+Con 100.000 repuestos, buscar `q=bujia modelo 4242` tarda ~9 ms con el índice y
+~217 ms sin él. `test_busquedas_catalogo.py` verifica con `EXPLAIN` que la
+consulta real del repositorio usa cada índice.
+
+El **stock no se edita** por estos endpoints: cambia solo con movimientos de
+inventario. Un proveedor no puede tener dos repuestos con el mismo nombre
+(migración `0005_ms3`: índice único `(proveedor_id, lower(nombre))`).
+
+### Inventario y stock (MS3)
+
+- **stock**: unidades físicas. Solo lo cambian `ingreso`, `ajuste` y `consumo`.
+- **comprometido**: reservado para órdenes (compromisos − liberaciones − consumos, por orden).
+- **disponible** = stock − comprometido. No se ofrecen las mismas unidades a dos órdenes (§4.6).
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /inventario/movimientos` | `{"clave_operacion", "repuesto_id", "tipo", "cantidad", "orden_id"?}`. Ingreso/ajuste: Administrador. Compromiso/consumo/liberación (con `orden_id`): Mecánico o Administrador. `409` si no alcanza el stock. La misma `clave_operacion` reenviada devuelve el original (`200`, `repetido: true`) sin descontar dos veces |
+| `GET /inventario/movimientos?repuesto_id=&orden_id=&tipo=` | Historial de movimientos |
+| `GET /inventario/stock/{repuesto_id}` | Stock, comprometido por orden, disponible y si está bajo el umbral |
+| `GET /inventario/alertas` | Repuestos con stock < umbral efectivo (igual no es alerta), los que más faltan primero |
+| `GET` / `PUT /inventario/umbral-general` | Ver o cambiar (Administrador) el umbral general; cierra el vigente y deja historial |
+| `GET /inventario/historial-umbral?repuesto_id=&solo_general=` | Cambios de umbral |
+
+Cada movimiento responde `alerta: {activa, nueva}`; `nueva` indica que ese
+movimiento dejó el repuesto bajo su umbral (para avisar una sola vez; el envío
+del aviso lo hará MS1). Todas las operaciones de stock bloquean el repuesto
+(`SELECT ... FOR UPDATE`): dos consumos simultáneos nunca dejan stock negativo.
+La aprobación de un presupuesto también descuenta lo comprometido por otras
+órdenes al decidir si faltan repuestos.
+
+### Pruebas de rollback y consistencia de presupuestos (MS3)
+
+`services/ms3_presupuestos/tests/test_rollback_consistencia.py` (requiere
+PostgreSQL migrado; se omite si no hay base):
+
+- **Rollback por operación:** provoca un fallo en mitad de crear, editar,
+  crear versión, enviar y decidir (después de que ya se escribió algo) y compara
+  la "foto" de la base antes y después con SQL directo: debe ser idéntica, y la
+  sesión debe seguir usable.
+- **Concurrencia real:** dos o tres peticiones simultáneas con conexiones y
+  commits propios (dos decisiones, tres nuevas versiones, editar y enviar a la
+  vez): solo una gana, las demás reciben `409`. Corre en un esquema temporal
+  `prueba_concurrencia_*` que se migra y se borra al terminar.
+
+Si se quita el `FOR UPDATE` de `RepositorioPresupuestos.obtener_para_actualizar`,
+fallan las tres pruebas de concurrencia.
+
 ### Aislamiento de la base de MS3
 
 MS3 solo conoce su base (`MS3_DATABASE_URL`). Las órdenes (MS2) y los usuarios
@@ -186,6 +321,18 @@ curl localhost:8004/health/storage
 
 `/health/storage` responde 200 cuando el bucket S3 responde y 503 con un mensaje
 genérico en cualquier otro caso (sin filtrar endpoint ni claves).
+
+Endpoints de negocio (por la Gateway, con `Authorization: Bearer <token>`):
+`POST /api/evidencias` (multipart), `GET /api/evidencias?orden_id=`,
+`GET /api/evidencias/{evidencia_id}` y `GET /api/evidencias/{evidencia_id}/descarga`
+(URL prefirmada de 5 minutos). Contratos, permisos por rol y ejemplos de uso
+(`curl` y `fetch`) en
+[`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md#evidencias-multimedia-ms4).
+
+```bash
+# Pruebas de MS4 (las que usan MinIO real se omiten si no está levantado)
+python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py -q
+```
 
 ## API Gateway
 

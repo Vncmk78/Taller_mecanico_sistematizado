@@ -2,6 +2,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from '@/presentation/routes/AppRoutes';
 import { AuthProvider } from '@/presentation/components/auth/AuthProvider';
+import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { ErrorBoundary } from '@/presentation/components/ui/ErrorBoundary';
 import { RouteChangeFocus } from '@/presentation/components/layout/RouteChangeFocus';
 
@@ -20,8 +21,10 @@ function App() {
       <BrowserRouter>
         <ErrorBoundary>
           <AuthProvider>
-            <RouteChangeFocus />
-            <AppRoutes />
+            <ToastProvider>
+              <RouteChangeFocus />
+              <AppRoutes />
+            </ToastProvider>
           </AuthProvider>
         </ErrorBoundary>
       </BrowserRouter>

@@ -10,26 +10,49 @@ no está disponible.
 
 from __future__ import annotations
 
-from sqlalchemy import false, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
 from services.ms2_taller.domain.transiciones_orden import (
+    EstadoOrdenDesconocidoError,
     EventoOrden,
+    TRANSICIONES_PERMITIDAS,
+    TransicionOrdenNoPermitidaError,
     TransicionOrdenTerminalError,
     resolver_transicion,
     validar_estado_no_terminal,
+    validar_transicion,
 )
 from services.ms2_taller.models.cliente import Cliente
-from services.ms2_taller.models.estado_orden import RECIBIDO
+from services.ms2_taller.integracion_ms3 import (
+    DecisionNoAplicableError,
+    DecisionNoVisibleError,
+    ServicioPresupuestosNoDisponibleError,
+    VerificadorDecisiones,
+)
+from services.ms2_taller.models.estado_orden import CANCELADO, RECIBIDO
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.vehiculo import Vehiculo
 from shared.auth import NombreRol, PrincipalAutenticado
+from shared.contratos_decisiones import AplicacionDecisionRespuesta
+
+
+# Solo eventos con una operación existente que verifica su hecho de negocio.
+# Las demás brechas del PATCH se conservan pendientes de definición explícita.
+_OPERACIONES_ESPECIFICAS_POR_EVENTO = {
+    EventoOrden.PRIMERA_ASIGNACION: "PUT /ordenes/{orden_id}/mecanico",
+    EventoOrden.PRIMERA_APROBACION_CON_REPUESTOS:
+        "POST /ordenes/{orden_id}/decisiones-presupuesto",
+    EventoOrden.PRIMERA_APROBACION_SIN_REPUESTOS:
+        "POST /ordenes/{orden_id}/decisiones-presupuesto",
+    EventoOrden.ENTREGA_FISICA: "POST /ordenes/{orden_id}/entrega",
+}
 
 
 class VehiculoNoEncontradoError(Exception):
@@ -48,6 +71,22 @@ class PersistenciaOrdenError(Exception):
     """La operación sobre órdenes no pudo completarse de forma segura."""
 
 
+class OrdenEstadoInvalidoError(Exception):
+    """El estado de destino no pertenece al catálogo oficial de estados."""
+
+
+class OrdenTransicionNoPermitidaError(Exception):
+    """La transición solicitada no está permitida o la orden es terminal."""
+
+
+class OrdenEstadoNoAutorizadoError(Exception):
+    """La identidad autenticada no puede cambiar el estado de la orden."""
+
+
+class OrdenObservacionInvalidaError(Exception):
+    """La observación está vacía o falta el motivo de una cancelación."""
+
+
 def registrar_historial_estado(
     db: Session,
     *,
@@ -57,6 +96,7 @@ def registrar_historial_estado(
     actor_usuario_id: int | None,
     origen: str,
     observacion: str | None = None,
+    decision_presupuesto_id: int | None = None,
 ) -> HistorialEstado:
     """Agrega el cambio de estado a la sesión sin confirmar la transacción.
 
@@ -65,6 +105,19 @@ def registrar_historial_estado(
     persistir el historial junto con el resto de sus cambios de forma atómica.
     """
 
+    # Regla de negocio compartida por los cambios de estado, incluidos los
+    # iniciados por el sistema. El campo sigue admitiendo None en otros destinos.
+    if observacion is not None:
+        observacion = observacion.strip()
+        if not observacion:
+            raise OrdenObservacionInvalidaError(
+                "La observación no puede estar vacía ni contener solo espacios"
+            )
+    if estado_nuevo == CANCELADO and observacion is None:
+        raise OrdenObservacionInvalidaError(
+            "Toda transición a Cancelado requiere una observación o motivo no vacío"
+        )
+
     historial = HistorialEstado(
         orden_id=orden_id,
         estado_anterior=estado_anterior,
@@ -72,6 +125,7 @@ def registrar_historial_estado(
         actor_usuario_id=actor_usuario_id,
         origen=origen,
         observacion=observacion,
+        decision_presupuesto_id=decision_presupuesto_id,
     )
     db.add(historial)
     return historial
@@ -290,6 +344,336 @@ def obtener_orden_visible(
     if orden is None:
         raise OrdenNoEncontradaError("Orden no encontrada")
     return orden
+
+
+def obtener_historial_orden(
+    db: Session,
+    principal: PrincipalAutenticado,
+    orden_id: int,
+) -> list[HistorialEstado]:
+    """Devuelve el historial cronológico de una orden visible al principal.
+
+    Aplica la misma autorización por recurso del detalle: una orden inexistente
+    o ajena responde el mismo error de recurso ausente.
+    """
+
+    obtener_orden_visible(db, principal, orden_id)
+    try:
+        consulta = (
+            select(HistorialEstado)
+            .where(HistorialEstado.orden_id == orden_id)
+            # El orden por id desempata filas con la misma fecha_hora.
+            .order_by(HistorialEstado.fecha_hora, HistorialEstado.historial_id)
+        )
+        return list(db.scalars(consulta).all())
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible consultar el historial de la orden"
+        ) from exc
+
+
+def cambiar_estado_orden(
+    db: Session,
+    *,
+    orden_id: int,
+    estado_destino: int,
+    principal: PrincipalAutenticado,
+    observacion: str | None = None,
+) -> OrdenTrabajo:
+    """Valida rol, estructura y operaciones específicas antes del cambio directo.
+
+    El lock de la orden se conserva hasta el commit o rollback, de modo que una
+    operación concurrente observa el estado confirmado por la anterior. Dentro
+    de la misma transacción se actualiza ``estado_codigo`` y se registra el
+    historial con el actor autenticado y ``origen="usuario"``.
+    """
+
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        if not _puede_cambiar_estado(orden, principal):
+            raise OrdenEstadoNoAutorizadoError(
+                "No tienes permiso para cambiar el estado de esta orden"
+            )
+
+        try:
+            validar_transicion(orden.estado_codigo, estado_destino)
+        except EstadoOrdenDesconocidoError as exc:
+            raise OrdenEstadoInvalidoError(str(exc)) from exc
+        except TransicionOrdenNoPermitidaError as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        for (origen, evento), destino in TRANSICIONES_PERMITIDAS.items():
+            if origen == orden.estado_codigo and destino == estado_destino:
+                operacion = _OPERACIONES_ESPECIFICAS_POR_EVENTO.get(evento)
+                if operacion is not None:
+                    # Permitir 1->2 vía PATCH cuando la orden ya está asignada
+                    if (
+                        origen == 1  # RECIBIDO
+                        and evento == EventoOrden.PRIMERA_ASIGNACION
+                        and destino == 2  # ESPERANDO_DIAGNOSTICO
+                        and orden.mecanico_actual_id is not None
+                    ):
+                        operacion = None
+                    if operacion is not None:
+                        raise OrdenTransicionNoPermitidaError(
+                            f"Esta transición requiere la operación específica {operacion}"
+                        )
+
+        estado_anterior = orden.estado_codigo
+        orden.estado_codigo = estado_destino
+        registrar_historial_estado(
+            db,
+            orden_id=orden.orden_id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=estado_destino,
+            actor_usuario_id=principal.usuario_id,
+            origen="usuario",
+            observacion=observacion,
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (
+        OrdenNoEncontradaError,
+        OrdenEstadoNoAutorizadoError,
+        OrdenEstadoInvalidoError,
+        OrdenTransicionNoPermitidaError,
+        OrdenObservacionInvalidaError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible cambiar el estado de la orden"
+        ) from exc
+
+
+def registrar_entrega(
+    db: Session,
+    *,
+    orden_id: int,
+    principal: PrincipalAutenticado,
+    observacion: str | None = None,
+) -> OrdenTrabajo:
+    """Registra la entrega física de una orden lista (``6 -> 7``).
+
+    Solo el Administrador cierra el ciclo normal. La fecha de entrega la genera
+    la base de datos y el usuario que la registra queda auditado junto al
+    historial de estado dentro de la misma transacción.
+    """
+
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise OrdenEstadoNoAutorizadoError(
+            "Se requiere rol Administrador para registrar la entrega"
+        )
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.ENTREGA_FISICA
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        estado_anterior = orden.estado_codigo
+        orden.estado_codigo = destino
+        # La base evalúa now() para respetar la restricción entregado_en>=creado_en.
+        orden.entregado_en = func.now()
+        orden.entregado_por_id = principal.usuario_id
+        registrar_historial_estado(
+            db,
+            orden_id=orden.orden_id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id,
+            origen="usuario",
+            observacion=observacion,
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (
+        OrdenNoEncontradaError,
+        OrdenEstadoNoAutorizadoError,
+        OrdenObservacionInvalidaError,
+        OrdenTransicionNoPermitidaError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible registrar la entrega de la orden"
+        ) from exc
+
+
+def cancelar_orden_cliente(
+    db: Session,
+    *,
+    orden_id: int,
+    principal: PrincipalAutenticado,
+    motivo: str,
+) -> OrdenTrabajo:
+    """Cancela la orden a solicitud de su cliente propietario (estados 1 a 3).
+
+    El cliente solo cancela sus propias órdenes mientras el taller no haya
+    iniciado la reparación; el motivo es obligatorio y se audita como
+    observación del historial. Una orden ajena responde el mismo recurso ausente.
+    """
+
+    if NombreRol.CLIENTE not in principal.roles:
+        raise OrdenEstadoNoAutorizadoError("Se requiere rol Cliente")
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        propietario = db.scalar(
+            select(Cliente.usuario_id)
+            .join(Vehiculo, Vehiculo.cliente_id == Cliente.cliente_id)
+            .where(Vehiculo.vehiculo_id == orden.vehiculo_id)
+        )
+        if propietario != principal.usuario_id:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.CANCELACION_SOLICITADA_CONFIRMADA
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        estado_anterior = orden.estado_codigo
+        orden.estado_codigo = destino
+        registrar_historial_estado(
+            db,
+            orden_id=orden.orden_id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id,
+            origen="usuario",
+            observacion=motivo,
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (
+        OrdenNoEncontradaError,
+        OrdenEstadoNoAutorizadoError,
+        OrdenTransicionNoPermitidaError,
+        OrdenObservacionInvalidaError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible cancelar la orden") from exc
+
+
+def aplicar_decision_presupuesto(
+    db: Session, *, orden_id: int, decision_id: int,
+    principal: PrincipalAutenticado, token: str, verificador: VerificadorDecisiones,
+) -> AplicacionDecisionRespuesta:
+    """Verifica el hecho en MS3 y aplica una sola transición local auditada.
+
+    El bloqueo serializa decisiones sobre la misma orden. La referencia única
+    del historial hace durable el reintento incluso tras avanzar a otro estado.
+    MS3 ya confirmó su decisión antes de llamar a esta operación.
+    """
+    try:
+        if NombreRol.CLIENTE not in principal.roles:
+            raise OrdenEstadoNoAutorizadoError("Se requiere rol Cliente")
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        propietario = db.scalar(
+            select(Cliente.usuario_id).join(Vehiculo, Vehiculo.cliente_id == Cliente.cliente_id)
+            .where(Vehiculo.vehiculo_id == orden.vehiculo_id)
+        )
+        if propietario != principal.usuario_id:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        historial = db.scalar(select(HistorialEstado).where(
+            HistorialEstado.decision_presupuesto_id == decision_id,
+        ))
+        if historial is not None:
+            if historial.orden_id != orden_id or historial.actor_usuario_id != principal.usuario_id:
+                raise DecisionNoVisibleError("Decisión no encontrada")
+            respuesta = _aplicacion_de_historial(historial)
+            db.commit()  # Libera el lock sin modificar estado ni historial.
+            return respuesta
+
+        decision = verificador.consultar(decision_id, token)
+        if (decision.decision_id != decision_id or decision.orden_id != orden_id
+                or decision.cliente_usuario_id != principal.usuario_id):
+            raise DecisionNoVisibleError("Decisión no encontrada")
+        if not decision.primera_decision:
+            raise DecisionNoAplicableError("Una modificación no produce esta transición inicial")
+
+        if decision.decision == "rechazado":
+            evento = EventoOrden.RECHAZO_PRIMER_PRESUPUESTO
+        elif decision.repuestos_disponibles is True:
+            evento = EventoOrden.PRIMERA_APROBACION_CON_REPUESTOS
+        elif decision.repuestos_disponibles is False:
+            evento = EventoOrden.PRIMERA_APROBACION_SIN_REPUESTOS
+        else:
+            raise DecisionNoAplicableError("La aprobación no conserva una evaluación de stock")
+        try:
+            destino = resolver_transicion(orden.estado_codigo, evento)
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        historial = registrar_historial_estado(
+            db, orden_id=orden_id, estado_anterior=orden.estado_codigo, estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id, origen="usuario",
+            observacion=decision.motivo if decision.decision == "rechazado" else None,
+            decision_presupuesto_id=decision_id,
+        )
+        orden.estado_codigo = destino
+        db.flush()
+        respuesta = _aplicacion_de_historial(historial)
+        db.commit()
+        return respuesta
+    except (OrdenEstadoNoAutorizadoError, OrdenNoEncontradaError,
+            OrdenTransicionNoPermitidaError, OrdenObservacionInvalidaError,
+            DecisionNoVisibleError, DecisionNoAplicableError,
+            ServicioPresupuestosNoDisponibleError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible aplicar la decisión") from exc
+
+
+def _aplicacion_de_historial(historial: HistorialEstado) -> AplicacionDecisionRespuesta:
+    return AplicacionDecisionRespuesta(
+        decision_id=historial.decision_presupuesto_id, orden_id=historial.orden_id,
+        estado_aplicado=historial.estado_nuevo, historial_id=historial.historial_id,
+    )
+
+
+def _puede_cambiar_estado(
+    orden: OrdenTrabajo,
+    principal: PrincipalAutenticado,
+) -> bool:
+    """El Administrador o el Mecánico asignado pueden mover el estado."""
+
+    if NombreRol.ADMINISTRADOR in principal.roles:
+        return True
+    return (
+        NombreRol.MECANICO in principal.roles
+        and orden.mecanico_actual_id == principal.usuario_id
+    )
 
 
 def _filtro_visibilidad(

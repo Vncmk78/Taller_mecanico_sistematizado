@@ -1,9 +1,14 @@
 """Configuración de enrutamiento de la API Gateway.
 
-La tabla `RUTAS` decide a qué microservicio va cada prefijo de `/api/*`.
+El primer segmento decide el servicio: `/api/{prefijo}/...` se reenvía tal cual
+a `{servicio}/{prefijo}/...`. La tabla `RUTAS` fija esa correspondencia.
+
 MS1 (Autenticación) y MS2 (Vehículos y Órdenes) son las rutas iniciales de la
-Semana 1; MS3 y MS4 (Presupuestos y Evidencia Multimedia) ya existían y se
-conservan, pero su verificación es parte de la Semana 4.
+Semana 1; MS3 y MS4 (Presupuestos y Evidencia Multimedia) se conservan desde
+el inicio y se verifican en la Semana 4. Convención: MS3 publica bajo sus
+prefijos (`presupuestos`, `repuestos`, `proveedores`, `inventario`) y MS4 todo
+bajo `evidencias`; ningún servicio publica bajo `/ordenes/...` porque ese
+prefijo resuelve a MS2.
 """
 from __future__ import annotations
 

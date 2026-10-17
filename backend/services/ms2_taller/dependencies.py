@@ -41,6 +41,15 @@ def obtener_principal_actual(
         raise error_no_autenticado() from exc
 
 
+def obtener_token_bearer(
+    credenciales: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    """Reenvía la credencial original; las rutas también exigen el principal."""
+    if credenciales is None:
+        raise error_no_autenticado()
+    return credenciales.credentials
+
+
 def resolver_cliente_actual(
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     db: Session = Depends(get_db),

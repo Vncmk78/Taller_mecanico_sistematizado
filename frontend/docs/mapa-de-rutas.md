@@ -27,6 +27,8 @@ Roles del sistema: `administrador`, `cliente`, `mecanico`.
 ├── /admin  (solo administrador, AdminLayout/RoleLayout sidebar)
 │   ├── /admin                → Dashboard (índice)
 │   ├── /admin/ordenes        → Gestión de Órdenes
+│   ├── /admin/ordenes/:id    → Detalle de la orden
+│   ├── /admin/ordenes/:id/evidencias → Evidencia multimedia de la orden
 │   ├── /admin/clientes       → Clientes
 │   ├── /admin/vehiculos      → Catálogo de vehículos
 │   ├── /admin/vehiculos/:id  → Ficha técnica del vehículo
@@ -40,15 +42,20 @@ Roles del sistema: `administrador`, `cliente`, `mecanico`.
 │   ├── /client/vehiculos/:id → Detalle del vehículo
 │   ├── /client/agendar       → Agendar Mantención (provisional)
 │   ├── /client/servicios     → Estado del Servicio
-│   └── /client/presupuestos  → Presupuestos
+│   ├── /client/ordenes       → Mis Órdenes
+│   ├── /client/ordenes/:id   → Detalle y seguimiento del servicio
+│   ├── /client/ordenes/:id/evidencias → Evidencia multimedia del servicio
+│   ├── /client/presupuestos  → Presupuestos
+│   └── /client/presupuestos/:ordenId → Detalle y decisión del presupuesto
 │
 └── /mechanic  (solo mecanico, MechanicLayout/RoleLayout sidebar)
-    ├── /mechanic             → Dashboard (índice)
+    ├── /mechanic             → Panel (índice)
     ├── /mechanic/vehiculos   → Vehículos asignados
     ├── /mechanic/vehiculos/:id → Detalle del vehículo
     ├── /mechanic/ordenes     → Mis Órdenes
-    ├── /mechanic/estados     → Actualizar Estados
-    └── /mechanic/historial   → Actividades
+    ├── /mechanic/ordenes/:id → Detalle de la orden
+    ├── /mechanic/ordenes/:id/evidencias → Evidencia multimedia de la orden
+    └── /mechanic/estados     → Actualizar Estados
 
 * (cualquier otra ruta)      → / (fallback)
 ```
@@ -72,6 +79,8 @@ Layout: `AdminLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | --- | --- | --- |
 | `/admin` | `AdminDashboardPage` | Funcional |
 | `/admin/ordenes` | `AdminOrdersPage` | Placeholder ("Estructura en construcción") |
+| `/admin/ordenes/:id` | `AdminOrderDetailPage` | Funcional (acciones de orden con confirmación + evidencia multimedia) |
+| `/admin/ordenes/:id/evidencias` | `OrderEvidencePage` | Funcional (subida con progreso/éxito/error) |
 | `/admin/clientes` | `AdminClientsPage` | Placeholder |
 | `/admin/vehiculos` | `AdminVehiclesPage` | Funcional |
 | `/admin/vehiculos/:id` | `AdminVehicleDetailPage` | Funcional |
@@ -90,8 +99,12 @@ Layout: `ClientLayout` → `RoleLayout` (variante `topnav`). Aplica
 | `/client/vehiculos/nuevo` | `ClientVehicleFormPage` | Funcional |
 | `/client/vehiculos/:id` | `ClientVehicleDetailPage` | Funcional |
 | `/client/agendar` | `div` inline en `AppRoutes` | Provisional ("Próximamente") |
-| `/client/servicios` | `ClientServicesPage` | Placeholder |
-| `/client/presupuestos` | `ClientBudgetsPage` | Placeholder |
+| `/client/servicios` | `ClientServicesPage` | Funcional |
+| `/client/ordenes` | `ClientOrdersPage` | Funcional |
+| `/client/ordenes/:id` | `ClientOrderDetailPage` | Funcional (acciones de orden con confirmación) |
+| `/client/ordenes/:id/evidencias` | `ClientOrderEvidencePage` | Funcional |
+| `/client/presupuestos` | `ClientBudgetsPage` | Funcional |
+| `/client/presupuestos/:ordenId` | `ClientBudgetDetailPage` | Funcional (decisión de presupuesto con confirmación) |
 
 ### Portal mecánico (`/mechanic`)
 
@@ -100,12 +113,13 @@ Layout: `MechanicLayout` → `RoleLayout` (variante `sidebar`). Aplica
 
 | Ruta | Componente | Estado |
 | --- | --- | --- |
-| `/mechanic` | `MechanicDashboardPage` | Funcional |
+| `/mechanic` | `MechanicDashboardPage` | Funcional (indicadores calculados en el cliente) |
 | `/mechanic/vehiculos` | `MechanicVehiclesPage` | Funcional |
 | `/mechanic/vehiculos/:id` | `MechanicVehicleDetailPage` | Funcional |
-| `/mechanic/ordenes` | `MechanicOrdersPage` | Placeholder |
-| `/mechanic/estados` | `MechanicStatusPage` | Placeholder |
-| `/mechanic/historial` | `MechanicHistoryPage` | Placeholder |
+| `/mechanic/ordenes` | `MechanicOrdersPage` | Funcional |
+| `/mechanic/ordenes/:id` | `MechanicOrderDetailPage` | Funcional (acciones de orden con confirmación + bitácora de trabajo + evidencia multimedia) |
+| `/mechanic/ordenes/:id/evidencias` | `OrderEvidencePage` | Funcional (subida con progreso/éxito/error) |
+| `/mechanic/estados` | `MechanicStatusPage` | Funcional (avance de estado con confirmación) |
 
 ## Menús por rol
 
@@ -121,7 +135,7 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
 - *Mi Portal* (`/client`), *Mis Vehículos* (`/client/vehiculos`), *Agendar Mantención* (`/client/agendar`), *Estado del Servicio* (`/client/servicios`), *Presupuestos* (`/client/presupuestos`).
 
 **Mecánico** (sidebar):
-- *Mi Panel* (`/mechanic`), *Mis Órdenes* (`/mechanic/ordenes`), *Actualizar Estados* (`/mechanic/estados`), *Actividades* (`/mechanic/historial`), *Vehículos Asignados* (`/mechanic/vehiculos`).
+- *Mi Panel* (`/mechanic`), *Mis Órdenes* (`/mechanic/ordenes`), *Actualizar Estados* (`/mechanic/estados`), *Vehículos Asignados* (`/mechanic/vehiculos`).
 
 ## Reglas de navegación
 
@@ -134,9 +148,26 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
 ## Notas
 
 - Las vistas de vehículos (`/admin/vehiculos*`, `/client/vehiculos*`,
-  `/mechanic/vehiculos*`) consumen `useVehicleStore`: usan datos mock mientras
-  el servicio de vehículos (MS2 vía Gateway) no esté disponible.
-- `ClientPortalPage.tsx` y `MechanicPortalPage.tsx` son páginas heredadas que
-  ya no tienen rutas asociadas (candidatas a eliminar).
+  `/mechanic/vehiculos*`) consumen `useVehicleStore`, que se alimenta solo de
+  respuestas reales de la Gateway (MS2). Los datos mock viven únicamente en los
+  tests (`infrastructure/mocks/`).
+- `/mechanic/historial` se eliminó: no existe endpoint de historial por mecánico
+  (MS2 solo expone `GET /api/ordenes/{id}/historial`) y el historial completo ya
+  se consulta en `/mechanic/ordenes/:id`.
+- La bitácora de trabajo (`OrderBitacoraSection`) vive dentro de
+  `/mechanic/ordenes/:id`: no tiene ruta propia. El mecánico registra
+  observaciones y acciones (con repuestos) contra `POST /api/ordenes/{id}/bitacora`
+  y todos los roles la consultan con `GET /api/ordenes/{id}/bitacora`.
+- `MechanicHistoryPage.tsx` y `MechanicPortalPage.tsx` se eliminaron por ser
+  código muerto (sin rutas asociadas). `ClientPortalPage.tsx` sigue huérfana.
+- El portal del mecánico acota sus datos en dos barreras: la Gateway ya devuelve
+  solo lo asignado al mecánico, y las vistas comparan contra `user.id`
+  (`mechanicScope.ts`). Además `logout`/`clearSession` purgan las cachés
+  compartidas de órdenes y vehículos.
+- La **evidencia multimedia** del personal reutiliza `OrderEvidenceSection` en
+  el detalle de la orden (Admin y Mecánico) y `OrderEvidencePage` en la ruta
+  propia `/…/ordenes/:id/evidencias`. La subida (Mecánico/Administrador) muestra
+  progreso real, éxito y error; el Cliente solo ve
+  `/client/ordenes/:id/evidencias` en modo lectura.
 - Las rutas de vehículos y sus componentes los aportó el resto del equipo y se
   integraron en la promoción a `main` (commit de merge `ea2b439`).

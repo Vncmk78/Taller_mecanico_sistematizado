@@ -7,6 +7,14 @@ MER (recuadro "BD MS3"):
 Relación 1:N FÍSICA (misma base MS3): un proveedor abastece varios repuestos y
 cada repuesto tiene un proveedor.
 
+Índices de búsqueda (migración 0006_ms3):
+- ix_proveedor_nombre_trgm, ix_proveedor_contacto_trgm, ix_repuesto_nombre_trgm:
+  GIN de trigramas sobre ms3_normalizar(col) para "contiene el texto" sin
+  mayúsculas ni tildes. Solo existen en PostgreSQL (no se declaran aquí porque
+  dependen de pg_trgm y de la función ms3_normalizar de la migración).
+- ix_*_nombre_orden: listar ordenado por nombre y paginar.
+- uq_proveedor_nombre_ci: proveedor único sin distinguir mayúsculas.
+
 `stock` es la cantidad física disponible. Se actualiza junto con cada
 MovimientoInventario (ver inventario.py), que es el registro auditable de por qué
 cambió. `umbral_particular` vacío significa "usar el umbral general" (§4.6).
@@ -15,7 +23,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from services.ms3_presupuestos.db import Base
@@ -26,6 +34,11 @@ if TYPE_CHECKING:
 
 class Proveedor(Base):
     __tablename__ = "proveedor"
+
+    __table_args__ = (
+        Index("uq_proveedor_nombre_ci", text("lower(nombre)"), unique=True),
+        Index("ix_proveedor_nombre_orden", text("lower(nombre)"), "proveedor_id"),
+    )
 
     proveedor_id: Mapped[int] = mapped_column(primary_key=True)
     # Único: evita registrar dos veces el mismo proveedor.
@@ -53,6 +66,16 @@ class Repuesto(Base):
             "umbral_particular is null or umbral_particular >= 0",
             name="umbral_no_negativo",
         ),
+        # Un proveedor no tiene dos repuestos con el mismo nombre (sin
+        # distinguir mayúsculas): "Filtro de aceite" = "filtro de aceite".
+        # Proveedores distintos sí pueden vender un repuesto homónimo.
+        Index(
+            "uq_repuesto_proveedor_nombre",
+            "proveedor_id",
+            text("lower(nombre)"),
+            unique=True,
+        ),
+        Index("ix_repuesto_nombre_orden", text("lower(nombre)"), "repuesto_id"),
     )
 
     repuesto_id: Mapped[int] = mapped_column(primary_key=True)

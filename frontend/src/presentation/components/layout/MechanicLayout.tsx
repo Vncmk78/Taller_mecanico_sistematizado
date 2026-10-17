@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ClipboardList, RefreshCw, History, Car } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, RefreshCw, Car } from 'lucide-react';
 import { useAuth } from '@/presentation/components/auth/authContext';
 import { RoleLayout } from '@/presentation/components/layout/RoleLayout';
 
@@ -10,7 +10,6 @@ const sections = [
       { to: '/mechanic', icon: <LayoutDashboard className="w-5 h-5" />, label: 'Mi Panel', end: true },
       { to: '/mechanic/ordenes', icon: <ClipboardList className="w-5 h-5" />, label: 'Mis Órdenes' },
       { to: '/mechanic/estados', icon: <RefreshCw className="w-5 h-5" />, label: 'Actualizar Estados' },
-      { to: '/mechanic/historial', icon: <History className="w-5 h-5" />, label: 'Actividades' },
       { to: '/mechanic/vehiculos', icon: <Car className="w-5 h-5" />, label: 'Vehículos Asignados' },
     ],
   },

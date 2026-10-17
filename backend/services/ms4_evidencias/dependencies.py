@@ -1,17 +1,22 @@
-"""Dependencias de autenticación del microservicio MS4.
+"""Dependencias de autenticación y almacenamiento del microservicio MS4.
 
 Reutiliza el validador puro de shared.auth (mismo contrato que MS2): MS4 valida
-el Bearer JWT sin consultar la base de MS1. Por ahora `obtener_principal_actual`
-quedó LISTA pero ningún endpoint la usa; la consumen los endpoints de recepción
-y consulta de evidencias una vez definidos (tarea "Implementar base para
-recepción y consulta", que además le suma los filtros de visibilidad por rol).
+el Bearer JWT sin consultar la base de MS1. `obtener_principal_actual` la usan
+todos los endpoints de evidencias. Los clientes S3 se exponen como dependencias
+cacheadas para que los endpoints y los tests puedan reemplazarlos (override).
 """
 from __future__ import annotations
+
+from functools import lru_cache
 
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from services.ms4_evidencias.config import settings
+from services.ms4_evidencias.services.almacenamiento import (
+    crear_cliente_s3,
+    crear_cliente_s3_publico,
+)
 from shared.auth import (
     PrincipalAutenticado,
     TokenInvalidoError,
@@ -37,3 +42,32 @@ def obtener_principal_actual(
         )
     except TokenInvalidoError as exc:
         raise error_no_autenticado() from exc
+
+
+def obtener_token_bearer(
+    credenciales: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> str:
+    """JWT tal como llegó: MS4 lo reenvía a MS2 para validar la orden (§8)."""
+    if credenciales is None:
+        raise error_no_autenticado()
+    return credenciales.credentials
+
+
+@lru_cache
+def obtener_s3() -> object:
+    """Cliente S3 interno (subir, borrar y verificar el bucket)."""
+    return crear_cliente_s3(settings)
+
+
+@lru_cache
+def obtener_s3_publico() -> object:
+    """Cliente S3 que firma URLs de descarga con el endpoint que ve el cliente."""
+    return crear_cliente_s3_publico(settings)
+
+
+__all__ = [
+    "obtener_principal_actual",
+    "obtener_token_bearer",
+    "obtener_s3",
+    "obtener_s3_publico",
+]

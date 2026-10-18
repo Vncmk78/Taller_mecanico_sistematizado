@@ -266,6 +266,23 @@ del aviso lo hará MS1). Todas las operaciones de stock bloquean el repuesto
 La aprobación de un presupuesto también descuenta lo comprometido por otras
 órdenes al decidir si faltan repuestos.
 
+### Pruebas CRUD de repuestos, proveedores e inventario (MS3)
+
+`services/ms3_presupuestos/tests/test_crud_catalogo_inventario.py` recorre por
+HTTP el ciclo completo de cada recurso y revisa la base después de cada paso:
+
+- **Proveedores y repuestos**: crear → leer → listar → modificar → eliminar →
+  `404`. Cambios parciales, `umbral_particular: null` vuelve al general,
+  reasignar repuestos antes de borrar un proveedor.
+- **Inventario**: secuencia de movimientos y stock resultante (físico,
+  comprometido por orden, disponible), paginación y filtros. Los movimientos
+  no se modifican ni se borran (`405`) y un movimiento rechazado no deja rastro.
+- Datos inválidos (`422`, sin guardar nada), ids inválidos y sin token (`401`).
+
+```bash
+pytest services/ms3_presupuestos/tests/test_crud_catalogo_inventario.py -v
+```
+
 ### Pruebas de rollback y consistencia de presupuestos (MS3)
 
 `services/ms3_presupuestos/tests/test_rollback_consistencia.py` (requiere

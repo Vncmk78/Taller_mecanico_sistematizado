@@ -27,12 +27,27 @@ Roles sobre las evidencias:
   (`visible_cliente = true`, `estado = confirmada`, no eliminada); el resto ve
   las no eliminadas; el Administrador ve todo, incluidas las eliminadas.
 
-Errores: 401 sin token, 403 rol que no sube, 404 evidencia/orden inexistente o
-fuera de alcance, 422 datos/regla inválidos, 503 MS2 u almacenamiento no
-disponible.
+Archivo (Semana 6, checklist 1.1, 1.2, 1.3 y 1.6): solo se aceptan JPG, PNG,
+WEBP, MP4 y MOV (415 para cualquier otro formato o si los bytes no
+corresponden al formato declarado), cada tipo tiene un tamaño máximo
+(`MS4_MAX_BYTES_FOTO` / `MS4_MAX_BYTES_VIDEO`, 413 si se supera) y un archivo
+dañado o incompleto responde 422. Todos los rechazos ocurren antes de subir
+nada a MinIO o crear filas.
+
+Asociación con la orden (Semana 6): además de existir y ser visible (MS2), la
+orden no puede estar entregada ni cancelada (409), y si la evidencia es de
+contexto `presupuesto`, ese presupuesto debe pertenecer a la misma orden
+(MS3, 422 si no existe o es de otra orden; 503 si MS3 no responde).
+
+Errores: 400 archivo ilegible, 401 sin token, 403 rol que no sube, 404
+evidencia/orden inexistente o fuera de alcance, 409 orden cerrada, 413 archivo
+demasiado grande, 415 formato no permitido, 422 datos/regla/archivo dañado, 503
+MS2, MS3, almacenamiento o base no disponible (la subida se compensa). Un error
+no previsto responde 500 con un mensaje genérico (manejador en main.py).
 """
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from boto3.exceptions import S3UploadFailedError
@@ -61,10 +76,17 @@ from services.ms4_evidencias.dependencies import (
     obtener_token_bearer,
 )
 from services.ms4_evidencias.integracion_ms2 import (
+    ESTADOS_ORDEN_CERRADA,
     OrdenNoVisible,
     ServicioOrdenesNoDisponible,
     VerificadorOrdenes,
     obtener_verificador_ordenes,
+)
+from services.ms4_evidencias.integracion_ms3 import (
+    PresupuestoNoEncontrado,
+    ServicioPresupuestosNoDisponible,
+    VerificadorPresupuestos,
+    obtener_verificador_presupuestos,
 )
 from services.ms4_evidencias.models.evidencia import ContextoEvidencia, Evidencia
 from services.ms4_evidencias.schemas.evidencia import (
@@ -75,7 +97,7 @@ from services.ms4_evidencias.schemas.evidencia import (
 from services.ms4_evidencias.services.almacenamiento import generar_url_descarga
 from services.ms4_evidencias.services.contexto import CABECERA_REQUEST_ID
 from services.ms4_evidencias.services.evidencias import (
-    EvidenciaInvalidaError,
+    GuardadoEvidenciaError,
     buscar_por_id,
     es_visible_para,
     listar_por_orden,
@@ -86,12 +108,27 @@ from services.ms4_evidencias.services.permisos import (
     es_vista_cliente,
     puede_subir,
 )
+from services.ms4_evidencias.services.registro import nivel_para, registrar
+from services.ms4_evidencias.services.validacion_archivos import (
+    ArchivoDanadoError,
+    ArchivoDemasiadoGrandeError,
+    ArchivoIlegibleError,
+    ContenidoNoCoincideError,
+    EvidenciaInvalidaError,
+    PoliticaArchivos,
+    TipoArchivoNoPermitidoError,
+)
 from shared.auth import PrincipalAutenticado
 
 router = APIRouter(prefix="/evidencias", tags=["evidencias"])
 
 _MSG_ALMACENAMIENTO = "El almacenamiento de evidencias no está disponible"
+_MSG_GUARDADO = "No se pudo guardar la evidencia, intenta nuevamente"
 _MSG_ORDENES = "El servicio de órdenes no está disponible"
+_MSG_PRESUPUESTOS = "El servicio de presupuestos no está disponible"
+_MSG_ORDEN_CERRADA = "La orden está entregada o cancelada y no admite nuevas evidencias"
+_MSG_PRESUPUESTO_NO_EXISTE = "El presupuesto indicado no existe"
+_MSG_PRESUPUESTO_OTRA_ORDEN = "El presupuesto indicado no pertenece a la orden"
 
 _401 = {status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente, inválido o expirado"}}
 _403_SUBIR = {
@@ -110,7 +147,22 @@ _503_ORDENES = {
         "description": "El servicio de órdenes no está disponible (MS2)"
     }
 }
+_413 = {
+    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {
+        "description": "El archivo supera el tamaño máximo de su tipo (foto o video)"
+    }
+}
+_415 = {
+    status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: {
+        "description": "Formato no permitido: solo JPG, PNG, WEBP, MP4 y MOV"
+    }
+}
 _ERRORES_COMUNES = {**_401, **_403_SUBIR}
+
+
+def obtener_politica_archivos() -> PoliticaArchivos:
+    """Lista blanca y límites de tamaño vigentes (configuración MS4_*)."""
+    return PoliticaArchivos.desde_settings(settings)
 
 
 def _personal_que_subira(
@@ -118,11 +170,33 @@ def _personal_que_subira(
 ) -> PrincipalAutenticado:
     """Guard 3.1: solo Mecánico o Administrador suben (antes de leer el archivo)."""
     if not puede_subir(principal):
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="rol_sin_permiso",
+            estado_http=status.HTTP_403_FORBIDDEN,
+            usuario_id=principal.usuario_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para realizar esta operación",
         )
     return principal
+
+
+def _estado_y_motivo(exc: EvidenciaInvalidaError) -> tuple[int, str]:
+    """Código HTTP y motivo corto (para el log) de un archivo rechazado."""
+    if isinstance(exc, ArchivoDemasiadoGrandeError):
+        return status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "demasiado_grande"
+    if isinstance(exc, ContenidoNoCoincideError):
+        return status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "contenido_no_coincide"
+    if isinstance(exc, TipoArchivoNoPermitidoError):
+        return status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "tipo_no_permitido"
+    if isinstance(exc, ArchivoIlegibleError):
+        return status.HTTP_400_BAD_REQUEST, "archivo_ilegible"
+    if isinstance(exc, ArchivoDanadoError):
+        return status.HTTP_422_UNPROCESSABLE_ENTITY, "archivo_danado"
+    return status.HTTP_422_UNPROCESSABLE_ENTITY, "archivo_invalido"
 
 
 def _accesible(evidencia: Evidencia | None, principal: PrincipalAutenticado) -> bool:
@@ -148,22 +222,102 @@ def _exigir_orden_accesible(
     verificador: VerificadorOrdenes,
     *,
     detalle_no_visible: str,
-) -> None:
+) -> int | None:
     """Valida la orden contra MS2 (mismo contrato que MS3, integracion_ms2.py).
 
+    Devuelve el `estado_codigo` de la orden (None si MS2 no lo informa).
     404/403 de MS2 → 404 con `detalle_no_visible` (no enumera la existencia);
     MS2 no disponible → 503.
     """
     try:
-        verificador.verificar_acceso(orden_id, token)
+        return verificador.verificar_acceso(orden_id, token)
     except OrdenNoVisible as exc:
+        registrar(
+            "acceso_rechazado",
+            logging.WARNING,
+            motivo="orden_no_visible",
+            estado_http=status.HTTP_404_NOT_FOUND,
+            orden_id=orden_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=detalle_no_visible
         ) from exc
     except ServicioOrdenesNoDisponible as exc:
+        # Solo el tipo: el mensaje de httpx puede traer la URL interna de MS2.
+        registrar(
+            "dependencia_no_disponible",
+            logging.ERROR,
+            servicio="ms2",
+            error=type(exc.__cause__ or exc).__name__,
+            orden_id=orden_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ORDENES
         ) from exc
+
+
+def _exigir_orden_abierta(estado_codigo: int | None) -> None:
+    """Una orden entregada o cancelada no admite nuevas evidencias (409)."""
+    if estado_codigo in ESTADOS_ORDEN_CERRADA:
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="orden_cerrada",
+            estado_http=status.HTTP_409_CONFLICT,
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_MSG_ORDEN_CERRADA)
+
+
+def _exigir_presupuesto_de_la_orden(
+    presupuesto_id: int,
+    orden_id: int,
+    token: str,
+    verificador: VerificadorPresupuestos,
+) -> None:
+    """El presupuesto debe existir en MS3 y pertenecer a la misma orden.
+
+    Inexistente o de otra orden → 422 (es un dato del formulario inválido);
+    MS3 no disponible → 503. Se valida ANTES de leer o subir el archivo.
+    """
+    try:
+        orden_del_presupuesto = verificador.orden_del_presupuesto(presupuesto_id, token)
+    except PresupuestoNoEncontrado as exc:
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="presupuesto_inexistente",
+            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            presupuesto_id=presupuesto_id,
+            orden_id=orden_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_MSG_PRESUPUESTO_NO_EXISTE,
+        ) from exc
+    except ServicioPresupuestosNoDisponible as exc:
+        registrar(
+            "dependencia_no_disponible",
+            logging.ERROR,
+            servicio="ms3",
+            error=type(exc.__cause__ or exc).__name__,
+            presupuesto_id=presupuesto_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_PRESUPUESTOS
+        ) from exc
+    if orden_del_presupuesto != orden_id:
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="presupuesto_de_otra_orden",
+            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            presupuesto_id=presupuesto_id,
+            orden_id=orden_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_MSG_PRESUPUESTO_OTRA_ORDEN,
+        )
 
 
 @router.post(
@@ -175,19 +329,36 @@ def _exigir_orden_accesible(
         "Multipart: archivo + metadatos. El autor sale del JWT y el `request_id` de "
         "la cabecera X-Request-ID; el archivo se sube a MinIO/S3 y los metadatos a "
         "la base en una sola operación con compensación. Antes de subir se valida "
-        "contra MS2 que la orden existe y la atiende el solicitante (404/503 sin "
-        "dejar archivos ni filas)."
+        "contra MS2 que la orden existe, la atiende el solicitante y no está "
+        "entregada ni cancelada (404/409/503), contra MS3 que el presupuesto es "
+        "de esa orden, y el archivo: formato de la lista blanca verificado por "
+        "su contenido (415), tamaño máximo (413) y estructura completa (422). "
+        "Ningún rechazo deja archivos ni filas."
     ),
     responses={
         **_ERRORES_COMUNES,
+        status.HTTP_400_BAD_REQUEST: {"description": "No se pudo leer el archivo enviado"},
         status.HTTP_404_NOT_FOUND: {
             "description": "La orden no existe o no la atiende el solicitante"
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Tipo de archivo, contexto o reglas de presupuesto inválidos"
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden está entregada o cancelada"
         },
-        **_503,
-        **_503_ORDENES,
+        **_413,
+        **_415,
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": (
+                "Archivo vacío o dañado, contexto inválido, o presupuesto "
+                "inexistente o de otra orden"
+            )
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": (
+                "El almacenamiento, la base, el servicio de órdenes (MS2) o el "
+                "de presupuestos (MS3) no está disponible; no quedan archivos "
+                "ni filas a medias"
+            )
+        },
     },
 )
 def subir(
@@ -202,10 +373,15 @@ def subir(
     principal: PrincipalAutenticado = Depends(_personal_que_subira),
     token: str = Depends(obtener_token_bearer),
     verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
+    politica: PoliticaArchivos = Depends(obtener_politica_archivos),
+    verificador_presupuestos: VerificadorPresupuestos = Depends(
+        obtener_verificador_presupuestos
+    ),
 ) -> EvidenciaLeida:
-    _exigir_orden_accesible(
+    estado_orden = _exigir_orden_accesible(
         orden_id, token, verificador, detalle_no_visible="Orden no encontrada"
     )
+    _exigir_orden_abierta(estado_orden)
     try:
         datos = DatosRecepcion(
             orden_id=orden_id,
@@ -214,7 +390,19 @@ def subir(
             visible_cliente=visible_cliente,
         )
     except ValidationError as exc:
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="formulario_invalido",
+            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            orden_id=orden_id,
+            usuario_id=principal.usuario_id,
+        )
         raise _error_422_por_validacion(exc)
+    if datos.presupuesto_id is not None:
+        _exigir_presupuesto_de_la_orden(
+            datos.presupuesto_id, datos.orden_id, token, verificador_presupuestos
+        )
 
     try:
         evidencia = recibir_evidencia(
@@ -227,15 +415,61 @@ def subir(
             archivo.content_type or "",
             principal.usuario_id,
             request.headers.get(CABECERA_REQUEST_ID),
+            politica=politica,
         )
     except EvidenciaInvalidaError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        estado_http, motivo = _estado_y_motivo(exc)
+        registrar(
+            "subida_rechazada",
+            nivel_para(estado_http),
+            motivo=motivo,
+            estado_http=estado_http,
+            orden_id=datos.orden_id,
+            usuario_id=principal.usuario_id,
         )
-    except (BotoCoreError, ClientError, S3UploadFailedError):
+        raise HTTPException(status_code=estado_http, detail=str(exc))
+    except (BotoCoreError, ClientError, S3UploadFailedError) as exc:
+        registrar(
+            "subida_fallida",
+            logging.ERROR,
+            motivo="almacenamiento_no_disponible",
+            servicio="s3",
+            error=type(exc).__name__,
+            orden_id=datos.orden_id,
+            usuario_id=principal.usuario_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ALMACENAMIENTO
         )
+    except GuardadoEvidenciaError as exc:
+        # La subida ya se compensó; el cliente puede reintentar. La causa real
+        # (error de la base) queda encadenada y nunca viaja en el body. Si la
+        # compensación no pudo borrar el objeto, el log lo marca para que la
+        # conciliación (scripts/limpiar_huerfanos_ms4.py) lo limpie.
+        registrar(
+            "subida_fallida",
+            logging.ERROR,
+            motivo="base_no_disponible",
+            error=type(exc.__cause__).__name__,
+            evidencia_id=exc.evidencia_id,
+            orden_id=datos.orden_id,
+            usuario_id=principal.usuario_id,
+            pendiente_limpieza=exc.clave_huerfana is not None,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_GUARDADO
+        )
+    registrar(
+        "evidencia_subida",
+        evidencia_id=evidencia.evidencia_id,
+        orden_id=evidencia.orden_id,
+        presupuesto_id=evidencia.presupuesto_id,
+        contexto=evidencia.contexto,
+        tipo_archivo=evidencia.tipo_archivo,
+        content_type=evidencia.content_type,
+        tamano_bytes=evidencia.tamano_bytes,
+        usuario_id=principal.usuario_id,
+    )
     return evidencia
 
 
@@ -362,10 +596,24 @@ def descarga(
             nombre_descarga=evidencia.nombre_original,
             expira_en=settings.URL_DESCARGA_TTL_SECONDS,
         )
-    except (BotoCoreError, ClientError):
+    except (BotoCoreError, ClientError) as exc:
+        registrar(
+            "descarga_fallida",
+            logging.ERROR,
+            servicio="s3",
+            error=type(exc).__name__,
+            evidencia_id=evidencia.evidencia_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ALMACENAMIENTO
         )
+    # La URL firmada NUNCA se registra (checklist 5.5): da acceso al archivo.
+    registrar(
+        "descarga_autorizada",
+        evidencia_id=evidencia.evidencia_id,
+        orden_id=evidencia.orden_id,
+        usuario_id=principal.usuario_id,
+    )
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return UrlDescarga(url=url, expira_en=settings.URL_DESCARGA_TTL_SECONDS)

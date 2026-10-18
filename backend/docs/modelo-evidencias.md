@@ -144,7 +144,38 @@ orden, diseñado para no dejar residuos:
    hace commit. `visible_cliente` solo se escribe si vino en la entrada; si no,
    rige el default por contexto del modelo.
 6. **Compensación**: si la base falla, `rollback` y `eliminar_objeto` del objeto
-   recién subido (no quedan archivos huérfanos).
+   recién subido (no quedan archivos huérfanos) y se responde `503`. Si el
+   borrado también falla, `GuardadoEvidenciaError.clave_huerfana` informa la
+   clave que quedó en el bucket.
+
+### Archivos huérfanos (Semana 6)
+
+La compensación no cubre dos casos: que la base y el borrado fallen a la vez,
+o que el proceso muera entre la subida y el commit. Para esos casos existe la
+conciliación `services/huerfanos.py` (`conciliar`) y su script
+`scripts/limpiar_huerfanos_ms4.py`:
+
+- Lista el bucket bajo `ordenes/` (paginado) y compara cada clave contra la
+  columna `clave_objeto`. Un objeto sin fila es huérfano.
+- Nunca borra claves fuera de la convención (`claves_ajenas`) ni objetos más
+  nuevos que la antigüedad mínima (60 minutos por defecto), para no tocar
+  subidas en curso.
+- Las evidencias eliminadas lógicamente conservan su fila, así que su archivo
+  no es huérfano.
+- Por defecto es una **simulación**; borra solo con `--eliminar`. Un borrado
+  fallido queda en `no_eliminados` y se reintenta en la próxima pasada.
+- Informa también el caso inverso (filas confirmadas y vigentes sin archivo),
+  sin tocarlas: decidir qué hacer con ellas es una decisión de negocio.
+
+```bash
+python scripts/limpiar_huerfanos_ms4.py              # solo informa
+python scripts/limpiar_huerfanos_ms4.py --eliminar   # borra los huérfanos
+```
+
+Código de salida: `0` sin huérfanos pendientes, `1` si quedan, `2` si no se
+pudo conectar. El usuario de MinIO de MS4 ya tiene `s3:ListBucket` y
+`s3:DeleteObject` (`minio/politica-ms4.json`). Verificado en
+`tests/test_ms4_huerfanos.py`.
 
 Los metadatos que vienen del JWT/cabeceras (autor, `request_id`) no forman
 parte del body: los resuelve el endpoint que llama a este servicio.
@@ -356,3 +387,15 @@ HTTP: `POST /evidencias` → `GET /evidencias?orden_id=` → `GET /evidencias/{i
 
 Las pruebas con MinIO usan una orden aleatoria alta y borran su prefijo
 `ordenes/{orden_id}/` al terminar.
+
+### Pruebas de la Semana 6 (validación de archivos y rechazos)
+
+| Archivo | Qué cubre |
+|---|---|
+| `tests/test_ms4_limites_archivos.py` | Lista blanca (1.1) y tamaño máximo por tipo (1.3): configuración, `PoliticaArchivos`, lectura cortada al superar el límite, 415/413 por la API. |
+| `tests/test_ms4_validacion_contenido.py` | Formato real por *magic bytes* (1.2) y estructura completa (1.6): HTML disfrazado, PNG declarado como JPEG, HEIC, archivos truncados → 415/422. |
+| `tests/test_ms4_asociacion_ordenes.py` | Orden entregada/cancelada → 409; presupuesto inexistente o de otra orden → 422; MS3 caído → 503; clientes HTTP de MS2 y MS3. |
+| `tests/test_ms4_errores_carga.py` | Falla de la base → 503 con compensación; archivo ilegible → 400; error no previsto → 500 genérico sin datos internos. |
+| `tests/test_ms4_huerfanos.py` | Conciliación bucket ↔ base y script `limpiar_huerfanos_ms4.py`. |
+| `tests/test_ms4_logs.py` | Eventos con `request_id` y `motivo`; nunca JWT, URL firmada, clave, nombre ni contenido (5.5). |
+| `tests/test_gateway_rechazos_evidencias.py` | **Punta a punta por la Gateway**: archivo inválido (415/422), demasiado grande (413 de la Gateway sin llamar a MS4, o de MS4 entre 10 y 12 MiB) y orden inexistente, ajena, inválida o cerrada (404/422/409), siempre con `X-Request-ID` y sin dejar archivos ni filas. |

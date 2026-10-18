@@ -17,23 +17,62 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from services.ms4_evidencias.models.evidencia import (
-    EstadoEvidencia,
-    Evidencia,
-    TipoArchivo,
-)
+from services.ms4_evidencias.config import settings
+from services.ms4_evidencias.models.evidencia import EstadoEvidencia, Evidencia
 from services.ms4_evidencias.schemas.evidencia import DatosRecepcion
 from services.ms4_evidencias.services.almacenamiento import (
+    TamanoMaximoExcedido,
     calcular_sha256_y_tamano,
     eliminar_objeto,
     metadatos_objeto,
     subir_objeto,
 )
 from services.ms4_evidencias.services.contexto import normalizar_request_id
+from services.ms4_evidencias.services.validacion_archivos import (
+    MENSAJE_ARCHIVO_ILEGIBLE,
+    ArchivoDanadoError,
+    ArchivoDemasiadoGrandeError,
+    ArchivoIlegibleError,
+    ContenidoNoCoincideError,
+    EvidenciaInvalidaError,
+    PoliticaArchivos,
+    TipoArchivoNoPermitidoError,
+    normalizar_content_type,
+    tipo_desde_content_type,
+    validar_contenido,
+)
+
+__all__ = [
+    "ArchivoDanadoError",
+    "ArchivoDemasiadoGrandeError",
+    "ArchivoIlegibleError",
+    "ContenidoNoCoincideError",
+    "EvidenciaInvalidaError",
+    "PoliticaArchivos",
+    "TipoArchivoNoPermitidoError",
+    "normalizar_content_type",
+    "tipo_desde_content_type",
+]
 
 
-class EvidenciaInvalidaError(ValueError):
-    """El archivo o su content_type no constituyen una evidencia válida."""
+class GuardadoEvidenciaError(Exception):
+    """La base falló al guardar la evidencia después de subir el archivo (503).
+
+    La subida ya se compensó (rollback + borrado del objeto). Si el borrado
+    también falló, `clave_huerfana` trae la clave del objeto que quedó en el
+    almacenamiento sin fila que lo respalde, para registrarlo y limpiarlo
+    después; si la compensación funcionó, vale None. La causa original va
+    encadenada (`__cause__`) y nunca se expone al cliente.
+    """
+
+    def __init__(
+        self,
+        clave_huerfana: str | None = None,
+        evidencia_id: uuid.UUID | None = None,
+    ) -> None:
+        super().__init__("No se pudo guardar la evidencia")
+        self.clave_huerfana = clave_huerfana
+        self.evidencia_id = evidencia_id
 
 
 # Extensión de la clave según el content_type (1.4 y 2.5): la extensión sale del
@@ -56,30 +95,6 @@ _EXT_POR_CONTENT_TYPE = {
 PATRON_CLAVE_OBJETO = re.compile(r"^ordenes/[1-9][0-9]*/[0-9a-f]{32}\.[a-z0-9]{2,5}$")
 
 
-def normalizar_content_type(content_type: str) -> str:
-    """content_type en minúsculas, sin parámetros (``; charset=...``) ni espacios.
-
-    Se rechaza si no tiene la forma ``tipo/subtipo`` o si supera los 100
-    caracteres de la columna: así nunca llega a la base un valor que haga fallar
-    el INSERT después de haber subido el archivo.
-    """
-    ct = (content_type or "").split(";", 1)[0].strip().lower()
-    tipo, _, subtipo = ct.partition("/")
-    if not tipo or not subtipo or len(ct) > 100:
-        raise EvidenciaInvalidaError("Tipo de archivo no permitido")
-    return ct
-
-
-def tipo_desde_content_type(content_type: str) -> TipoArchivo:
-    """Clasifica el content_type: image/* es foto, video/* es video."""
-    ct = normalizar_content_type(content_type)
-    if ct.startswith("image/"):
-        return TipoArchivo.FOTO
-    if ct.startswith("video/"):
-        return TipoArchivo.VIDEO
-    raise EvidenciaInvalidaError("Tipo de archivo no permitido")
-
-
 def generar_clave_objeto(
     orden_id: int,
     content_type: str,
@@ -97,7 +112,8 @@ def generar_clave_objeto(
     ct = normalizar_content_type(content_type)
     # Tipos fuera del mapa quedan como .bin: nunca se copia el subtipo recibido
     # a la clave (un content_type como "image/../../x" no puede alterar la ruta).
-    # La lista blanca real de formatos es el control 1.1 (Semana 6).
+    # La lista blanca de formatos (control 1.1) se aplica antes, en
+    # PoliticaArchivos.validar_tipo; este mapa solo decide la extensión.
     extension = _EXT_POR_CONTENT_TYPE.get(ct, "bin")
     identificador = (evidencia_id or uuid.uuid4()).hex
     return f"ordenes/{orden_id}/{identificador}.{extension}"
@@ -134,12 +150,18 @@ def recibir_evidencia(
     content_type: str,
     autor_usuario_id: int,
     request_id: str | None,
+    *,
+    politica: PoliticaArchivos | None = None,
 ) -> Evidencia:
     """Flujo A completo: valida, sube a MinIO y guarda los metadatos.
 
     Orden (para no dejar residuos):
-    1. valida el content_type y calcula el SHA-256 + tamaño (bloques de 1 MiB);
-       un archivo de 0 bytes se rechaza ANTES de subir;
+    1. valida el content_type contra la lista blanca (1.1, → 415) y calcula el
+       SHA-256 + tamaño en bloques de 1 MiB, cortando la lectura si supera el
+       máximo de su tipo (1.3, → 413); un archivo de 0 bytes se rechaza (422);
+       luego valida el contenido por su firma (1.2, → 415) y su estructura
+       (1.6, → 422). El content_type que se guarda es el detectado, no el
+       declarado. Todo esto ocurre ANTES de subir nada a MinIO;
     2. genera el evidencia_id y, a partir de él, la clave del objeto
        (filas y objetos comparten el mismo UUID: trazabilidad y, en Semana 6,
        limpieza de huérfanos por prefijo);
@@ -147,14 +169,32 @@ def recibir_evidencia(
        se propaga y NO se crea ninguna fila;
     4. inserta la fila con estado `confirmada`, `confirmada_en` y `sha256` y hace
        commit;
-    5. compensación: si la base falla, rollback y borra el objeto recién subido.
-    """
-    content_type = normalizar_content_type(content_type)
-    tipo = tipo_desde_content_type(content_type)
+    5. compensación: si la base falla, rollback y borra el objeto recién subido;
+       se lanza `GuardadoEvidenciaError` (503) con la clave si el borrado
+       también falló.
 
-    sha256, tamano = calcular_sha256_y_tamano(archivo)
+    Si el archivo recibido no se puede leer (OSError o archivo cerrado), se
+    lanza `ArchivoIlegibleError` (400) antes de subir nada.
+    """
+    politica = politica or PoliticaArchivos.desde_settings(settings)
+    content_type, tipo = politica.validar_tipo(content_type)
+
+    try:
+        sha256, tamano = calcular_sha256_y_tamano(
+            archivo, maximo=politica.limite_para(tipo)
+        )
+    except TamanoMaximoExcedido as exc:
+        raise politica.error_tamano(tipo) from exc
+    except (OSError, ValueError) as exc:
+        raise ArchivoIlegibleError(MENSAJE_ARCHIVO_ILEGIBLE) from exc
     if tamano == 0:
         raise EvidenciaInvalidaError("El archivo no puede estar vacío")
+    try:
+        content_type = validar_contenido(archivo, content_type, tamano, politica)
+    except EvidenciaInvalidaError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise ArchivoIlegibleError(MENSAJE_ARCHIVO_ILEGIBLE) from exc
 
     evidencia_id = uuid.uuid4()
     clave = generar_clave_objeto(
@@ -199,14 +239,15 @@ def recibir_evidencia(
     try:
         db.add(evidencia)
         db.commit()
-    except Exception:
+    except Exception as exc:
         db.rollback()
         # Compensación: no dejar un archivo huérfano si la base falló.
+        clave_huerfana: str | None = None
         try:
             eliminar_objeto(s3, bucket, clave)
         except Exception:  # noqa: BLE001  (la base ya falló; borrado best-effort)
-            pass
-        raise
+            clave_huerfana = clave
+        raise GuardadoEvidenciaError(clave_huerfana, evidencia_id) from exc
     db.refresh(evidencia)
     return evidencia
 

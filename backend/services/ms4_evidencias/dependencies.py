@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from services.ms4_evidencias.config import settings
@@ -28,20 +28,27 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def obtener_principal_actual(
+    request: Request,
     credenciales: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> PrincipalAutenticado:
-    """Valida el Bearer JWT mediante el contrato puro compartido."""
+    """Valida el Bearer JWT mediante el contrato puro compartido.
+
+    Deja el `usuario_id` en `request.state` para que el log de la solicitud
+    (MiddlewareRegistro) sepa quién la hizo; el token nunca se guarda ahí.
+    """
 
     if credenciales is None:
         raise error_no_autenticado()
     try:
-        return validar_token_acceso(
+        principal = validar_token_acceso(
             credenciales.credentials,
             clave_secreta=settings.JWT_SECRET_KEY.get_secret_value(),
             algoritmo=settings.JWT_ALGORITHM,
         )
     except TokenInvalidoError as exc:
         raise error_no_autenticado() from exc
+    request.state.usuario_id = principal.usuario_id
+    return principal
 
 
 def obtener_token_bearer(

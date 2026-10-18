@@ -164,12 +164,12 @@ _EJEMPLOS_ERROR_GATEWAY: dict[str, dict[str, Any]] = {
 _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
     "detalle_token_ausente": _ejemplo(
         "401 sin cabecera Authorization",
-        {"detail": "No se proporcionó un token de acceso"},
-        "MS1 y MS2 responden además WWW-Authenticate: Bearer.",
+        {"detail": "No autenticado"},
+        "Los microservicios responden además WWW-Authenticate: Bearer.",
     ),
     "detalle_token_invalido": _ejemplo(
         "401 con token inválido o expirado",
-        {"detail": "Token inválido o expirado"},
+        {"detail": "No autenticado"},
     ),
     "detalle_credenciales_invalidas": _ejemplo(
         "401 de login con credenciales incorrectas",
@@ -231,8 +231,47 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         "Una evidencia ajena y una inexistente responden exactamente lo mismo.",
     ),
     "detalle_tipo_archivo_no_permitido": _ejemplo(
-        "422 de MS4: el archivo no es imagen ni video",
-        {"detail": "Tipo de archivo no permitido"},
+        "415 de MS4: formato fuera de la lista blanca",
+        {
+            "detail": (
+                "Tipo de archivo no permitido. Formatos aceptados: JPG, PNG, "
+                "WEBP, MP4 y MOV"
+            )
+        },
+        "SVG, HTML, PDF, ZIP, ejecutables, GIF o HEIC se rechazan antes de subir nada.",
+    ),
+    "detalle_contenido_no_coincide": _ejemplo(
+        "415 de MS4: los bytes no corresponden al formato declarado",
+        {"detail": "El contenido del archivo no corresponde al formato declarado"},
+        "MS4 lee la firma (magic bytes): un HTML renombrado a .jpg se rechaza.",
+    ),
+    "detalle_archivo_danado": _ejemplo(
+        "422 de MS4: archivo con la firma correcta pero incompleto",
+        {"detail": "El archivo está dañado o incompleto"},
+        "JPEG sin marcador de fin, PNG sin IEND o video truncado.",
+    ),
+    "detalle_orden_cerrada": _ejemplo(
+        "409 de MS4: la orden ya fue entregada o cancelada",
+        {"detail": "La orden está entregada o cancelada y no admite nuevas evidencias"},
+    ),
+    "detalle_presupuesto_otra_orden": _ejemplo(
+        "422 de MS4: el presupuesto es de otra orden (MS3)",
+        {"detail": "El presupuesto indicado no pertenece a la orden"},
+    ),
+    "detalle_archivo_ilegible": _ejemplo(
+        "400 de MS4: no se pudo leer el archivo recibido",
+        {"detail": "No se pudo leer el archivo enviado"},
+        "No se sube nada ni se crea ninguna fila.",
+    ),
+    "detalle_guardado_no_disponible": _ejemplo(
+        "503 de MS4: la base falló al guardar la evidencia",
+        {"detail": "No se pudo guardar la evidencia, intenta nuevamente"},
+        "El archivo ya subido se borra (compensación); se puede reintentar.",
+    ),
+    "detalle_foto_demasiado_grande": _ejemplo(
+        "413 de MS4: la foto supera su tamaño máximo",
+        {"detail": "La foto supera el tamaño máximo permitido (10 MB)"},
+        "Fotos hasta MS4_MAX_BYTES_FOTO (10 MiB); videos hasta MS4_MAX_BYTES_VIDEO.",
     ),
     "detalle_archivo_vacio": _ejemplo(
         "422 de MS4: archivo de 0 bytes",
@@ -509,12 +548,25 @@ _EJEMPLOS_OPERACIONES.update(
                 "401": _EJEMPLOS_AUTENTICACION,
                 "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
                 "404": {"orden_no_encontrada": _ref_ejemplo("detalle_orden_no_encontrada")},
-                "413": {"cuerpo_demasiado_grande": _ref_ejemplo("error_cuerpo_demasiado_grande")},
-                "422": {
-                    "tipo_no_permitido": _ref_ejemplo("detalle_tipo_archivo_no_permitido"),
-                    "archivo_vacio": _ref_ejemplo("detalle_archivo_vacio"),
+                "413": {
+                    "cuerpo_demasiado_grande": _ref_ejemplo("error_cuerpo_demasiado_grande"),
+                    "foto_demasiado_grande": _ref_ejemplo("detalle_foto_demasiado_grande"),
                 },
-                "503": _EJEMPLOS_503_EVIDENCIAS,
+                "400": {"archivo_ilegible": _ref_ejemplo("detalle_archivo_ilegible")},
+                "409": {"orden_cerrada": _ref_ejemplo("detalle_orden_cerrada")},
+                "415": {
+                    "tipo_no_permitido": _ref_ejemplo("detalle_tipo_archivo_no_permitido"),
+                    "contenido_no_coincide": _ref_ejemplo("detalle_contenido_no_coincide"),
+                },
+                "422": {
+                    "archivo_vacio": _ref_ejemplo("detalle_archivo_vacio"),
+                    "archivo_danado": _ref_ejemplo("detalle_archivo_danado"),
+                    "presupuesto_otra_orden": _ref_ejemplo("detalle_presupuesto_otra_orden"),
+                },
+                "503": {
+                    **_EJEMPLOS_503_EVIDENCIAS,
+                    "guardado_no_disponible": _ref_ejemplo("detalle_guardado_no_disponible"),
+                },
             },
         },
         ("/api/evidencias", "get"): {

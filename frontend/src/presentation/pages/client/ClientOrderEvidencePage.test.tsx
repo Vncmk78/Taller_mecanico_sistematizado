@@ -126,6 +126,31 @@ describe('ClientOrderEvidencePage: evidencia multimedia del cliente', () => {
         );
     });
 
+    it('filtra la galería por contexto y permite volver al listado completo', async () => {
+        vi.mocked(evidenciaService.getByOrder).mockResolvedValue(mockEvidenciasOrden101);
+        mockDownloadOk();
+
+        renderPage();
+
+        expect(await screen.findByText('desgaste-pastillas.jpg')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Resultado final (2)' }));
+
+        expect(await screen.findByText('filtro-motor.jpg')).toBeInTheDocument();
+        expect(screen.getByText('prueba-motor.mp4')).toBeInTheDocument();
+        expect(screen.queryByText('desgaste-pastillas.jpg')).not.toBeInTheDocument();
+        expect(screen.getByText(/Mostrando 2 de 3 archivos\./)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Resultado final (2)' })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Todos (3)' }));
+
+        expect(await screen.findByText('desgaste-pastillas.jpg')).toBeInTheDocument();
+        expect(screen.queryByText(/Mostrando/)).not.toBeInTheDocument();
+    });
+
     it('si la URL prefirmada falla, la tarjeta ofrece reintentar en vez de mostrar la imagen rota', async () => {
         vi.mocked(evidenciaService.getByOrder).mockResolvedValue([mockEvidenciaFrenos]);
         vi.mocked(evidenciaService.getDownloadUrl).mockRejectedValue(axios500);

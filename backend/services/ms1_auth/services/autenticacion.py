@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from math import ceil
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
+from services.ms1_auth.config import settings
 from services.ms1_auth.models.historial_rol import HistorialRol
 from services.ms1_auth.models.rol import Rol, UsuarioRol
 from services.ms1_auth.models.usuario import Usuario
@@ -23,6 +27,20 @@ class UsuarioNoEncontradoError(Exception):
 
 class CredencialesInvalidasError(Exception):
     """El correo, la contraseña o el estado de la cuenta no permiten ingresar."""
+
+
+class CuentaBloqueadaError(Exception):
+    """La cuenta está bloqueada temporalmente por intentos fallidos repetidos.
+
+    Lleva los segundos que faltan para que el bloqueo expire, de modo que el
+    router pueda anunciarlos en la cabecera `Retry-After`.
+    """
+
+    def __init__(self, segundos_restantes: int) -> None:
+        super().__init__(
+            "Demasiados intentos fallidos. Inténtalo de nuevo más tarde"
+        )
+        self.segundos_restantes = segundos_restantes
 
 
 class ConfiguracionRolesError(Exception):
@@ -87,7 +105,13 @@ def registrar_cliente(
 
 
 def autenticar_usuario(db: Session, *, correo: str, contrasena: str) -> Usuario:
-    """Valida credenciales sin revelar si el correo existe."""
+    """Valida credenciales sin revelar si el correo existe.
+
+    Si la cuenta acumula `LOGIN_MAX_INTENTOS` fallos consecutivos queda
+    bloqueada `LOGIN_BLOQUEO_MINUTOS` minutos: mientras el bloqueo siga
+    vigente no se verifica la contraseña y se lanza `CuentaBloqueadaError`.
+    Un ingreso correcto reinicia el contador y el bloqueo.
+    """
 
     try:
         usuario = db.scalar(
@@ -100,13 +124,95 @@ def autenticar_usuario(db: Session, *, correo: str, contrasena: str) -> Usuario:
             "No fue posible consultar el usuario"
         ) from exc
 
+    if usuario is not None:
+        segundos_restantes = _segundos_bloqueo_restantes(usuario)
+        if segundos_restantes > 0:
+            raise CuentaBloqueadaError(segundos_restantes)
+
     if (
         usuario is None
         or not usuario.activo
         or not verificar_contrasena(contrasena, usuario.contrasena_hash)
     ):
+        _registrar_intento_fallido(db, usuario)
         raise CredencialesInvalidasError("Correo o contraseña incorrectos")
+
+    _reiniciar_intentos(db, usuario)
     return usuario
+
+
+def _ahora() -> datetime:
+    """Instante actual en UTC, consciente de zona horaria."""
+
+    return datetime.now(timezone.utc)
+
+
+def _como_utc(momento: datetime) -> datetime:
+    """Normaliza a UTC un `datetime` que puede llegar sin zona (SQLite)."""
+
+    if momento.tzinfo is None:
+        return momento.replace(tzinfo=timezone.utc)
+    return momento.astimezone(timezone.utc)
+
+
+def _segundos_bloqueo_restantes(usuario: Usuario) -> int:
+    """Segundos que faltan para que expire el bloqueo; 0 si no hay o ya venció."""
+
+    if usuario.bloqueado_hasta is None:
+        return 0
+    restante = _como_utc(usuario.bloqueado_hasta) - _ahora()
+    if restante.total_seconds() <= 0:
+        return 0
+    return max(1, ceil(restante.total_seconds()))
+
+
+def _registrar_intento_fallido(db: Session, usuario: Usuario | None) -> None:
+    """Suma un fallo a la cuenta y la bloquea al superar el umbral.
+
+    Se persiste de inmediato: el router responde 401 y la sesión se cierra, así
+    que el contador debe quedar guardado antes de propagar el error. Cuando un
+    bloqueo anterior ya venció, el contador arranca de nuevo para que el usuario
+    vuelva a disponer de todos sus intentos.
+    """
+
+    if usuario is None:
+        # El correo no existe: no hay cuenta a la que contar el fallo.
+        return
+
+    if usuario.bloqueado_hasta is not None and _segundos_bloqueo_restantes(usuario) == 0:
+        usuario.bloqueado_hasta = None
+        usuario.intentos_fallidos = 0
+
+    usuario.intentos_fallidos += 1
+    if usuario.intentos_fallidos >= settings.LOGIN_MAX_INTENTOS:
+        usuario.bloqueado_hasta = _ahora() + timedelta(
+            minutes=settings.LOGIN_BLOQUEO_MINUTOS
+        )
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaAutenticacionError(
+            "No fue posible registrar el intento fallido"
+        ) from exc
+
+
+def _reiniciar_intentos(db: Session, usuario: Usuario) -> None:
+    """Limpia el contador y el bloqueo tras un ingreso correcto."""
+
+    if usuario.intentos_fallidos == 0 and usuario.bloqueado_hasta is None:
+        return
+
+    usuario.intentos_fallidos = 0
+    usuario.bloqueado_hasta = None
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaAutenticacionError(
+            "No fue posible reiniciar los intentos fallidos"
+        ) from exc
 
 
 def buscar_usuario_activo_por_id(db: Session, usuario_id: int) -> Usuario | None:

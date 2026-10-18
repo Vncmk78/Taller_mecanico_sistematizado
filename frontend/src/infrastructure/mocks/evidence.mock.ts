@@ -50,3 +50,19 @@ export const mockEvidenciasOrden101: Evidencia[] = [
     mockEvidenciaFiltro,
     mockEvidenciaVideo,
 ];
+
+// Evidencia de contexto `presupuesto` (siempre visible para el cliente y con
+// `presupuestoId` de la orden 101, igual que budgets.mock → id '501').
+export const mockEvidenciaPresupuesto: Evidencia = {
+    id: 'ev-presupuesto',
+    orderId: '101',
+    presupuestoId: '501',
+    contexto: 'presupuesto',
+    tipoArchivo: 'foto',
+    visibleCliente: true,
+    estado: 'confirmada',
+    nombreOriginal: 'cotizacion-repuestos.jpg',
+    contentType: 'image/jpeg',
+    tamanoBytes: 314572,
+    creadaEn: '2026-09-01T11:00:00',
+};

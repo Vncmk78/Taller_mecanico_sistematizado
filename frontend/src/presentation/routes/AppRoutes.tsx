@@ -29,6 +29,7 @@ import { MechanicVehicleDetailPage } from '@/presentation/pages/mechanic/Mechani
 import { MechanicOrdersPage } from '@/presentation/pages/mechanic/MechanicOrdersPage';
 import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicOrderDetailPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
+import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
 import { PublicOnlyRoute } from '@/presentation/components/auth/PublicOnlyRoute';
 
@@ -57,6 +58,10 @@ export function AppRoutes() {
         <Route index element={<AdminDashboardPage />} />
         <Route path="ordenes" element={<AdminOrdersPage />} />
         <Route path="ordenes/:id" element={<AdminOrderDetailPage />} />
+        <Route
+          path="ordenes/:id/evidencias"
+          element={<OrderEvidencePage backTo="/admin/ordenes" backLabel="Volver a la gestión de órdenes" canUpload />}
+        />
         <Route path="clientes" element={<AdminClientsPage />} />
         <Route path="vehiculos" element={<AdminVehiclesPage />} />
         <Route path="vehiculos/:id" element={<AdminVehicleDetailPage />} />
@@ -98,6 +103,10 @@ export function AppRoutes() {
         <Route path="vehiculos/:id" element={<MechanicVehicleDetailPage />} />
         <Route path="ordenes" element={<MechanicOrdersPage />} />
         <Route path="ordenes/:id" element={<MechanicOrderDetailPage />} />
+        <Route
+          path="ordenes/:id/evidencias"
+          element={<OrderEvidencePage backTo="/mechanic/ordenes" backLabel="Volver a mis órdenes" canUpload />}
+        />
         <Route path="estados" element={<MechanicStatusPage />} />
       </Route>
 

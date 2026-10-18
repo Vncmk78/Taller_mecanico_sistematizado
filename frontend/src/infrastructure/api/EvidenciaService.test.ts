@@ -87,4 +87,66 @@ describe('EvidenciaService: contrato HTTP de MS4 (evidencia multimedia)', () => 
             expiraEn: 300,
         });
     });
+
+    it('crear sube el archivo como multipart con sus metadatos', async () => {
+        vi.mocked(apiClient.post).mockResolvedValue({ data: evidenciaApi });
+        const archivo = new File(['contenido'], 'frenos delanteros.jpg', { type: 'image/jpeg' });
+
+        const evidencia = await evidenciaService.crear({
+            ordenId: '31',
+            archivo,
+            contexto: 'diagnostico',
+            visibleCliente: true,
+        });
+
+        expect(apiClient.post).toHaveBeenCalledWith(
+            '/evidencias',
+            expect.any(FormData),
+            expect.objectContaining({ onUploadProgress: expect.any(Function) })
+        );
+        const form = vi.mocked(apiClient.post).mock.calls[0][1] as FormData;
+        expect(form.get('archivo')).toBe(archivo);
+        expect(form.get('orden_id')).toBe('31');
+        expect(form.get('contexto')).toBe('diagnostico');
+        expect(form.get('visible_cliente')).toBe('true');
+        // Sin presupuesto el campo no se envía (el backend aplica su defecto).
+        expect(form.get('presupuesto_id')).toBeNull();
+        expect(evidencia.id).toBe(evidenciaApi.evidencia_id);
+    });
+
+    it('crear asocia el presupuesto cuando el contexto es presupuesto', async () => {
+        vi.mocked(apiClient.post).mockResolvedValue({ data: evidenciaApi });
+        const archivo = new File(['contenido'], 'detalle.png', { type: 'image/png' });
+
+        await evidenciaService.crear({
+            ordenId: '31',
+            archivo,
+            contexto: 'presupuesto',
+            presupuestoId: '501',
+        });
+
+        const form = vi.mocked(apiClient.post).mock.calls[0][1] as FormData;
+        expect(form.get('presupuesto_id')).toBe('501');
+        // No se envía visible_cliente: en presupuesto el backend lo fuerza a true.
+        expect(form.get('visible_cliente')).toBeNull();
+    });
+
+    it('crear reporta el progreso de la subida como porcentaje', async () => {
+        vi.mocked(apiClient.post).mockResolvedValue({ data: evidenciaApi });
+        const archivo = new File(['contenido'], 'video.mp4', { type: 'video/mp4' });
+        const progresos: number[] = [];
+
+        await evidenciaService.crear(
+            { ordenId: '31', archivo, contexto: 'reparacion' },
+            (porcentaje) => progresos.push(porcentaje)
+        );
+
+        const config = vi.mocked(apiClient.post).mock.calls[0][2] as {
+            onUploadProgress: (evento: { loaded: number; total?: number }) => void;
+        };
+        config.onUploadProgress({ loaded: 50, total: 200 });
+        config.onUploadProgress({ loaded: 200, total: 200 });
+
+        expect(progresos).toEqual([25, 100]);
+    });
 });

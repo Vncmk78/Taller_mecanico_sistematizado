@@ -42,7 +42,8 @@
       "framework": "fastapi",
       "entrypoint": "services.ms4_evidencias.main:app",
       "bindings": [
-        { "type": "service", "service": "ms-taller", "format": "url", "env": "MS4_MS2_URL" }
+        { "type": "service", "service": "ms-taller", "format": "url", "env": "MS4_MS2_URL" },
+        { "type": "service", "service": "ms-presupuestos", "format": "url", "env": "MS4_MS3_URL" }
       ],
       "rewrites": [{ "source": "/ms4/(.*)", "destination": "/$1" }]
     }

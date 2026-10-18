@@ -47,7 +47,8 @@ esquemas reales del microservicio.
 | `PresupuestoService.decidir` | POST | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/decision` | `/client/presupuestos/{ordenId}` | Cliente (propio) | OK (201; 409/422 de negocio) |
 | `EvidenciaService.getByOrder` | GET | `/api/evidencias?orden_id={id}` | `/client/ordenes/{id}/evidencias` | Cliente (visibles de sus órdenes) | OK (404 fuera de alcance) |
 | `EvidenciaService.getById` | GET | `/api/evidencias/{evidencia_id}` | (detalle puntual de evidencia) | Cliente (misma visibilidad) | OK (404 fuera de alcance) |
-| `EvidenciaService.getDownloadUrl` | GET | `/api/evidencias/{evidencia_id}/descarga` | `/client/ordenes/{id}/evidencias` | Cliente (misma visibilidad) | OK (URL prefirmada efímera) |
+| `EvidenciaService.getDownloadUrl` | GET | `/api/evidencias/{evidencia_id}/descarga` | `/client/ordenes/{id}/evidencias`, detalle del personal | Cliente y personal con acceso | OK (URL prefirmada efímera) |
+| `EvidenciaService.crear` | POST | `/api/evidencias` | Detalle de orden (mecánico/admin) y `/.../ordenes/{id}/evidencias` | Mecánico o Administrador | OK (201 multipart; 403 Cliente, 422 negocio) |
 
 El alcance por rol lo aplica el microservicio, no el frontend: el navegador
 recibe únicamente las filas que corresponden al usuario autenticado. Por eso las
@@ -134,6 +135,53 @@ Reglas reflejadas en la interfaz:
 - Un `404` en el listado se trata como **orden fuera de alcance**, distinto de una
   lista vacía (`200 []`), para no mostrar "no encontrado" ante una orden ajena y
   tampoco "sin evidencia" ante un fallo.
+- **Filtro por contexto**: la galería del cliente ofrece chips por contexto
+  oficial (Diagnóstico, Presupuesto, Reparación, Resultado final) con el conteo
+  de archivos (`EvidenceContextFilter`); si la orden cubre un solo contexto no se
+  renderiza. El filtro es local sobre la misma lista (`GET /evidencias?orden_id=`),
+  sin endpoints adicionales.
+- **Evidencia junto al presupuesto** (4.4 de la sistematización): el detalle del
+  presupuesto del cliente muestra inline las evidencias con `contexto =
+  presupuesto` y `presupuesto_id` igual al presupuesto lógico abierto
+  (`evidenciasDelPresupuesto`); el resto solo aparece en la galería de la orden.
+  Como esas evidencias siempre llegan `visible_cliente = true`, no requiere
+  permisos ni endpoints extra.
+
+### Subida de evidencia (personal)
+
+Los portales de **Mecánico** y **Administrador** permiten subir evidencia
+(`EvidenciaService.crear`, `POST /api/evidencias`, multipart) desde el detalle de
+la orden y desde `/mechanic/ordenes/{id}/evidencias` y
+`/admin/ordenes/{id}/evidencias`. El Cliente nunca ve esta opción (`403`).
+
+Campos del `FormData`:
+
+| Campo | Regla |
+| --- | --- |
+| `archivo` | Obligatorio; imagen o video (`accept="image/*,video/*"`). |
+| `orden_id` | Entero > 0, provisto por la vista. |
+| `contexto` | `diagnostico`, `presupuesto`, `reparacion` o `resultado_final`. |
+| `presupuesto_id` | Solo en contexto `presupuesto`; se resuelve con `PresupuestoService.getByOrder` y se envía; en ese contexto `visible_cliente` se fuerza a `true`. |
+| `visible_cliente` | Booleano; en contexto `diagnostico`/`reparacion`/`resultado_final` lo controla el mecánico/admin. |
+
+Reglas reflejadas en la interfaz:
+
+- **Progreso real**: el porcentaje sale de `onUploadProgress` de axios
+  (`(cargado / total) * 100`), no de un temporizador; se muestra con barra
+  accesible (`role="progressbar"`) mientras `uploadStatus === 'uploading'`.
+- **Validación local antes de enviar**: tipo permitido
+  (`esContentTypeEvidenciaPermitido`) y tamaño (`TAMANO_MAXIMO_EVIDENCIA_BYTES`,
+  12 MiB, alineado con el límite de cuerpo de la Gateway) con mensajes propios.
+- **Un envío a la vez**: `subir` ignora una segunda llamada mientras está en
+  `uploading`, y el botón se deshabilita, para no duplicar por doble clic.
+- **Éxito**: estado `success`, aviso `Evidencia subida correctamente.`, la
+  evidencia nueva entra a la caché (`upsertById`) y el formulario se limpia.
+- **Error**: estado `error`; se distingue **sin conexión** (`isOfflineError`) de
+  un error del servidor y se muestra la `Referencia` (`request_id`) cuando el
+  contrato la expone. Un `403`/`404`/`422` se reporta como mensaje del backend.
+- **Contexto `presupuesto`**: se resuelve `GET /api/presupuestos?orden_id={id}`
+  antes de subir; si la orden no tiene presupuesto, no se envía y se avisa. La
+  evidencia del presupuesto queda siempre visible al cliente.
 
 ## Campos que la Gateway expone y el frontend no puede nombrar
 
@@ -167,7 +215,6 @@ requieran):
 | `PATCH /api/vehiculos/{id}` | MS2 | Edición de vehículo. Sin vista aún. |
 | `POST /api/auth/register` | MS1 | Registro de usuario. Sin vista aún. |
 | `POST /api/presupuestos/decisiones/{decision_id}/aplicacion` | MS3 | Reintento de aplicación de una decisión tras `503`. Sin vista dedicada: el flujo actual informa el `503` y conserva el `decision_id`. |
-| `POST /api/evidencias` | MS4 | Subida multipart de evidencia (solo Mecánico/Administrador; el Cliente recibe `403`). Sin vista en el portal Cliente. |
 
 ## Estados de carga, vacío y error
 

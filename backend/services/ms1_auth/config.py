@@ -31,5 +31,11 @@ class Settings(ServiceSettings):
     JWT_ALGORITHM: Literal["HS256"] = "HS256"
     JWT_EXPIRE_MINUTES: int = Field(default=60, gt=0)
 
+    # Tratamiento de intentos repetidos de autenticación incorrecta: tras
+    # `LOGIN_MAX_INTENTOS` fallos consecutivos, la cuenta queda bloqueada
+    # temporalmente durante `LOGIN_BLOQUEO_MINUTOS` minutos.
+    LOGIN_MAX_INTENTOS: int = Field(default=5, gt=0)
+    LOGIN_BLOQUEO_MINUTOS: int = Field(default=15, gt=0)
+
 
 settings = Settings()

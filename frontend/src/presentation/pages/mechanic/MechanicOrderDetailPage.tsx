@@ -3,6 +3,7 @@ import { ArrowLeft, ClipboardX } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
 import { OrderBitacoraSection } from '@/presentation/components/orders/OrderBitacoraSection';
+import { OrderEvidenceSection } from '@/presentation/components/evidence/OrderEvidenceSection';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -92,6 +93,13 @@ export function MechanicOrderDetailPage() {
             <OrderStatusAndHistory order={order} />
 
             <OrderBitacoraSection order={order} canWrite={user?.role === 'mecanico'} />
+
+            <OrderEvidenceSection
+                orderId={order.id}
+                canUpload={user?.role === 'mecanico'}
+                moreHref={`/mechanic/ordenes/${order.id}/evidencias`}
+                className="mt-6"
+            />
 
             <OrderActionsPanel order={order} className="mt-6" />
         </div>

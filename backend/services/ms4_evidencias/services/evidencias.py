@@ -18,11 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from services.ms4_evidencias.config import settings
-from services.ms4_evidencias.models.evidencia import (
-    EstadoEvidencia,
-    Evidencia,
-    TipoArchivo,
-)
+from services.ms4_evidencias.models.evidencia import EstadoEvidencia, Evidencia
 from services.ms4_evidencias.schemas.evidencia import DatosRecepcion
 from services.ms4_evidencias.services.almacenamiento import (
     TamanoMaximoExcedido,
@@ -33,16 +29,21 @@ from services.ms4_evidencias.services.almacenamiento import (
 )
 from services.ms4_evidencias.services.contexto import normalizar_request_id
 from services.ms4_evidencias.services.validacion_archivos import (
+    ArchivoDanadoError,
     ArchivoDemasiadoGrandeError,
+    ContenidoNoCoincideError,
     EvidenciaInvalidaError,
     PoliticaArchivos,
     TipoArchivoNoPermitidoError,
     normalizar_content_type,
     tipo_desde_content_type,
+    validar_contenido,
 )
 
 __all__ = [
+    "ArchivoDanadoError",
     "ArchivoDemasiadoGrandeError",
+    "ContenidoNoCoincideError",
     "EvidenciaInvalidaError",
     "PoliticaArchivos",
     "TipoArchivoNoPermitidoError",
@@ -134,8 +135,10 @@ def recibir_evidencia(
     Orden (para no dejar residuos):
     1. valida el content_type contra la lista blanca (1.1, → 415) y calcula el
        SHA-256 + tamaño en bloques de 1 MiB, cortando la lectura si supera el
-       máximo de su tipo (1.3, → 413); un archivo de 0 bytes se rechaza (422).
-       Todo esto ocurre ANTES de subir nada a MinIO;
+       máximo de su tipo (1.3, → 413); un archivo de 0 bytes se rechaza (422);
+       luego valida el contenido por su firma (1.2, → 415) y su estructura
+       (1.6, → 422). El content_type que se guarda es el detectado, no el
+       declarado. Todo esto ocurre ANTES de subir nada a MinIO;
     2. genera el evidencia_id y, a partir de él, la clave del objeto
        (filas y objetos comparten el mismo UUID: trazabilidad y, en Semana 6,
        limpieza de huérfanos por prefijo);
@@ -156,6 +159,7 @@ def recibir_evidencia(
         raise politica.error_tamano(tipo) from exc
     if tamano == 0:
         raise EvidenciaInvalidaError("El archivo no puede estar vacío")
+    content_type = validar_contenido(archivo, content_type, tamano, politica)
 
     evidencia_id = uuid.uuid4()
     clave = generar_clave_objeto(

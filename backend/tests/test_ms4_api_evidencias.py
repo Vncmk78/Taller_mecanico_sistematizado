@@ -32,6 +32,7 @@ from services.ms4_evidencias.config import Settings, settings
 from services.ms4_evidencias.db import get_db
 from services.ms4_evidencias.dependencies import obtener_s3, obtener_s3_publico
 from services.ms4_evidencias.integracion_ms2 import obtener_verificador_ordenes
+from services.ms4_evidencias.integracion_ms3 import obtener_verificador_presupuestos
 from services.ms4_evidencias.main import app
 from services.ms4_evidencias.models import Base
 from services.ms4_evidencias.models.evidencia import (
@@ -43,6 +44,7 @@ from services.ms4_evidencias.models.evidencia import (
 from services.ms4_evidencias.services.almacenamiento import crear_cliente_s3_publico
 from shared.auth import NombreRol, crear_token_acceso
 
+from archivos_muestra import JPEG_VALIDO
 from test_ms4_recepcion import FakeS3
 
 SECRETO = "clave-secreta-exclusiva-para-pruebas-de-ms4-123456"
@@ -87,6 +89,19 @@ class VerificadorPermiteTodo:
 
     def verificar_acceso(self, orden_id: int, token: str) -> None:
         return None
+
+
+class PresupuestosDeLaOrden:
+    """Falso MS3: todo presupuesto pertenece a la orden 1 (la de `_subir`).
+
+    La asociación presupuesto ↔ orden se prueba en
+    test_ms4_asociacion_ordenes.py."""
+
+    def __init__(self, orden_id: int = 1) -> None:
+        self.orden_id = orden_id
+
+    def orden_del_presupuesto(self, presupuesto_id: int, token: str) -> int:
+        return self.orden_id
 
 
 def _crear_settings_publico() -> Settings:
@@ -145,6 +160,7 @@ def api(
     app.dependency_overrides[obtener_s3] = lambda: s3
     app.dependency_overrides[obtener_s3_publico] = lambda: s3_publico
     app.dependency_overrides[obtener_verificador_ordenes] = lambda: VerificadorPermiteTodo()
+    app.dependency_overrides[obtener_verificador_presupuestos] = lambda: PresupuestosDeLaOrden()
     with TestClient(app) as cliente:
         yield cliente
     app.dependency_overrides.clear()
@@ -158,7 +174,7 @@ def _subir(
     cliente: TestClient,
     token: str,
     *,
-    archivo: bytes = b"datos-de-foto",
+    archivo: bytes = JPEG_VALIDO,
     nombre: str = "foto.jpg",
     content_type: str = "image/jpeg",
     orden_id: int = 1,

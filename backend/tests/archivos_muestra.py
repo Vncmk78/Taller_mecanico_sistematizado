@@ -32,6 +32,11 @@ def jpeg(tamano: int = 2048) -> bytes:
     return inicio + b"\x00" * relleno + fin
 
 
+def jpeg_con(contenido: bytes) -> bytes:
+    """JPEG con `contenido` propio entre la cabecera y el fin (bytes únicos)."""
+    return jpeg(0)[:-2] + contenido + b"\xff\xd9"
+
+
 def png(tamano: int = 2048) -> bytes:
     """PNG: firma + IHDR + tEXt de relleno + IEND."""
     ihdr = _chunk_png(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
@@ -73,3 +78,6 @@ POR_CONTENT_TYPE = {
     "video/mp4": mp4,
     "video/quicktime": mov,
 }
+
+# Foto JPEG pequeña y válida, por defecto en las pruebas de subida.
+JPEG_VALIDO = jpeg_con(b"datos-de-foto")

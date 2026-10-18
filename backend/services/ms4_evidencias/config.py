@@ -79,6 +79,12 @@ class Settings(ServiceSettings):
     MS2_URL: str = "http://localhost:8002"
     MS2_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
 
+    # MS3 (presupuestos): al subir una evidencia de contexto `presupuesto`, MS4
+    # le pregunta a qué orden pertenece ese presupuesto (mismo JWT) para no
+    # asociar la foto al presupuesto de otra orden (Semana 6).
+    MS3_URL: str = "http://localhost:8003"
+    MS3_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
+
     @field_validator("TIPOS_PERMITIDOS")
     @classmethod
     def _solo_formatos_soportados(cls, tipos: list[str]) -> list[str]:

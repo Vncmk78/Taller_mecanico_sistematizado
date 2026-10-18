@@ -42,13 +42,22 @@ verifica** · **cuándo** se implementa (tarea del plan).
     Verificado en `tests/test_ms4_limites_archivos.py` (SVG, HTML, EXE, PDF,
     ZIP y GIF → `415` sin objetos ni filas; cada formato permitido → `201`).
 
-- [ ] **1.2 El tipo se valida por el contenido, no por el nombre.** Se leen
+- [x] **1.2 El tipo se valida por el contenido, no por el nombre.** Se leen
   los primeros bytes del archivo (firma o *magic bytes*) y se comparan con el
   formato declarado. No se confía en la extensión ni en el `Content-Type` que
   envía el cliente.
   - Por qué: renombrar `script.html` a `foto.jpg` es trivial.
   - Verificación: test con un HTML renombrado a `.jpg` que debe ser rechazado.
   - Cuándo: Semana 6.
+  - ✅ Implementado (Semana 6 — *Validar tamaño, formato y asociación de
+    archivos con órdenes*): `detectar_formato` / `validar_contenido`
+    (`services/validacion_archivos.py`) leen los primeros 16 bytes y
+    reconocen JPEG, PNG, WEBP y MP4/MOV (caja `ftyp`, sin confundir HEIC/AVIF
+    con video). Si la firma no es de un formato permitido o no coincide con
+    el declarado → `415`; MP4 y MOV son intercambiables. Se guarda el tipo
+    **detectado**, que es el que firma la descarga (3.4). Verificado en
+    `tests/test_ms4_validacion_contenido.py` (HTML renombrado a `.jpg`, SVG,
+    EXE, PNG declarado como JPEG, HEIC → `415` sin objetos ni filas).
 
 - [x] **1.3 Tamaño máximo.** Imágenes hasta **10 MB**; videos hasta
   **100 MB** (valores iniciales, ajustables por configuración `MS4_*`).
@@ -89,9 +98,17 @@ verifica** · **cuándo** se implementa (tarea del plan).
     tiene.
   - Cuándo: Semana 6.
 
-- [ ] **1.6 Archivo vacío o corrupto se rechaza.** Tamaño 0 o imagen que no
+- [x] **1.6 Archivo vacío o corrupto se rechaza.** Tamaño 0 o imagen que no
   se puede abrir → `422`.
   - Cuándo: Semana 6.
+  - ✅ Implementado: 0 bytes → `422` (`recibir_evidencia`) y, sin depender de
+    librerías de imágenes, una revisión estructural por formato: JPEG debe
+    tener el marcador de fin `FF D9`, PNG el chunk `IEND`, el tamaño RIFF de
+    WEBP no puede superar al real, y en MP4/MOV todas las cajas de primer
+    nivel deben caber en el archivo y debe existir `moov`. Verificado en
+    `tests/test_ms4_validacion_contenido.py`. Límite conocido: no decodifica
+    los píxeles; una imagen con estructura completa pero datos internos
+    alterados no se detecta.
 
 ## 2. Almacenamiento (MinIO / S3)
 
@@ -308,7 +325,7 @@ verifica** · **cuándo** se implementa (tarea del plan).
 | 1.4, 2.4, 2.5, 3.2 (diseño), 3.5, 5.1 | Definir modelo de metadatos / base de recepción y almacenamiento | 3 |
 | 3.1, 3.2, 3.3, 3.4 | Implementar subida y consulta de archivos en MS4 | 5 |
 | 4.2, 4.3, 4.5 | Integrar operaciones multimedia mediante API Gateway | 5 |
-| 1.1, 1.2, 1.3, 1.5, 1.6, 5.2, 5.3 | Validar tamaño, formato y asociación de archivos con órdenes | 6 |
+| 1.1, 1.2, 1.3, 1.5, 1.6, 5.2, 5.3 | Validar tamaño, formato y asociación de archivos con órdenes (1.1 y 1.3 en *Implementar límites de tamaño y lista permitida*) | 6 |
 | 4.4, 4.5 | Tratamiento de indisponibilidad, timeout y errores en Gateway | 10 |
 | 2.3, 4.1, 5.4 | Despliegue de Gateway y servicios en ambiente público | 11 |
 

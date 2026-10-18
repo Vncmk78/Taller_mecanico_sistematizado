@@ -108,7 +108,7 @@ def _cabeceras(*roles: NombreRol) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _subir(cliente: TestClient, cabeceras: dict, datos: bytes = b"foto", tipo: str = "image/jpeg"):
+def _subir(cliente: TestClient, cabeceras: dict, datos: bytes = jpeg(), tipo: str = "image/jpeg"):
     return cliente.post(
         "/evidencias",
         headers=cabeceras,
@@ -137,6 +137,12 @@ def test_ejemplos_de_error_de_la_subida_son_los_reales(esquema: dict, ms4: dict)
             lambda: _subir(cliente, mecanico, datos=jpeg(10 * 1024 * 1024 + 1)),
         ),
         ("422", "archivo_vacio", lambda: _subir(cliente, mecanico, datos=b"")),
+        (
+            "415",
+            "contenido_no_coincide",
+            lambda: _subir(cliente, mecanico, datos=b"<html><script></script></html>"),
+        ),
+        ("422", "archivo_danado", lambda: _subir(cliente, mecanico, datos=jpeg()[:-2])),
     ]
     for codigo, nombre, llamada in casos:
         respuesta = llamada()

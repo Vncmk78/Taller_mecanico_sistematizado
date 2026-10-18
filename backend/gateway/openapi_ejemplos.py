@@ -240,6 +240,24 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         },
         "SVG, HTML, PDF, ZIP, ejecutables, GIF o HEIC se rechazan antes de subir nada.",
     ),
+    "detalle_contenido_no_coincide": _ejemplo(
+        "415 de MS4: los bytes no corresponden al formato declarado",
+        {"detail": "El contenido del archivo no corresponde al formato declarado"},
+        "MS4 lee la firma (magic bytes): un HTML renombrado a .jpg se rechaza.",
+    ),
+    "detalle_archivo_danado": _ejemplo(
+        "422 de MS4: archivo con la firma correcta pero incompleto",
+        {"detail": "El archivo está dañado o incompleto"},
+        "JPEG sin marcador de fin, PNG sin IEND o video truncado.",
+    ),
+    "detalle_orden_cerrada": _ejemplo(
+        "409 de MS4: la orden ya fue entregada o cancelada",
+        {"detail": "La orden está entregada o cancelada y no admite nuevas evidencias"},
+    ),
+    "detalle_presupuesto_otra_orden": _ejemplo(
+        "422 de MS4: el presupuesto es de otra orden (MS3)",
+        {"detail": "El presupuesto indicado no pertenece a la orden"},
+    ),
     "detalle_foto_demasiado_grande": _ejemplo(
         "413 de MS4: la foto supera su tamaño máximo",
         {"detail": "La foto supera el tamaño máximo permitido (10 MB)"},
@@ -524,11 +542,15 @@ _EJEMPLOS_OPERACIONES.update(
                     "cuerpo_demasiado_grande": _ref_ejemplo("error_cuerpo_demasiado_grande"),
                     "foto_demasiado_grande": _ref_ejemplo("detalle_foto_demasiado_grande"),
                 },
+                "409": {"orden_cerrada": _ref_ejemplo("detalle_orden_cerrada")},
                 "415": {
                     "tipo_no_permitido": _ref_ejemplo("detalle_tipo_archivo_no_permitido"),
+                    "contenido_no_coincide": _ref_ejemplo("detalle_contenido_no_coincide"),
                 },
                 "422": {
                     "archivo_vacio": _ref_ejemplo("detalle_archivo_vacio"),
+                    "archivo_danado": _ref_ejemplo("detalle_archivo_danado"),
+                    "presupuesto_otra_orden": _ref_ejemplo("detalle_presupuesto_otra_orden"),
                 },
                 "503": _EJEMPLOS_503_EVIDENCIAS,
             },

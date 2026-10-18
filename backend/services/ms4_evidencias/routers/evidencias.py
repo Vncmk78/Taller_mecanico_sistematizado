@@ -27,14 +27,22 @@ Roles sobre las evidencias:
   (`visible_cliente = true`, `estado = confirmada`, no eliminada); el resto ve
   las no eliminadas; el Administrador ve todo, incluidas las eliminadas.
 
-Archivo (Semana 6, checklist 1.1 y 1.3): solo se aceptan JPG, PNG, WEBP, MP4 y
-MOV (415 para cualquier otro formato) y cada tipo tiene un tamaño máximo
-(`MS4_MAX_BYTES_FOTO` / `MS4_MAX_BYTES_VIDEO`, 413 si se supera). Ambos
-rechazos ocurren antes de subir nada a MinIO o crear filas.
+Archivo (Semana 6, checklist 1.1, 1.2, 1.3 y 1.6): solo se aceptan JPG, PNG,
+WEBP, MP4 y MOV (415 para cualquier otro formato o si los bytes no
+corresponden al formato declarado), cada tipo tiene un tamaño máximo
+(`MS4_MAX_BYTES_FOTO` / `MS4_MAX_BYTES_VIDEO`, 413 si se supera) y un archivo
+dañado o incompleto responde 422. Todos los rechazos ocurren antes de subir
+nada a MinIO o crear filas.
+
+Asociación con la orden (Semana 6): además de existir y ser visible (MS2), la
+orden no puede estar entregada ni cancelada (409), y si la evidencia es de
+contexto `presupuesto`, ese presupuesto debe pertenecer a la misma orden
+(MS3, 422 si no existe o es de otra orden; 503 si MS3 no responde).
 
 Errores: 401 sin token, 403 rol que no sube, 404 evidencia/orden inexistente o
-fuera de alcance, 413 archivo demasiado grande, 415 formato no permitido, 422
-datos/regla inválidos, 503 MS2 u almacenamiento no disponible.
+fuera de alcance, 409 orden cerrada, 413 archivo demasiado grande, 415 formato
+no permitido, 422 datos/regla/archivo dañado, 503 MS2, MS3 u almacenamiento no
+disponible.
 """
 from __future__ import annotations
 
@@ -66,10 +74,17 @@ from services.ms4_evidencias.dependencies import (
     obtener_token_bearer,
 )
 from services.ms4_evidencias.integracion_ms2 import (
+    ESTADOS_ORDEN_CERRADA,
     OrdenNoVisible,
     ServicioOrdenesNoDisponible,
     VerificadorOrdenes,
     obtener_verificador_ordenes,
+)
+from services.ms4_evidencias.integracion_ms3 import (
+    PresupuestoNoEncontrado,
+    ServicioPresupuestosNoDisponible,
+    VerificadorPresupuestos,
+    obtener_verificador_presupuestos,
 )
 from services.ms4_evidencias.models.evidencia import ContextoEvidencia, Evidencia
 from services.ms4_evidencias.schemas.evidencia import (
@@ -102,6 +117,10 @@ router = APIRouter(prefix="/evidencias", tags=["evidencias"])
 
 _MSG_ALMACENAMIENTO = "El almacenamiento de evidencias no está disponible"
 _MSG_ORDENES = "El servicio de órdenes no está disponible"
+_MSG_PRESUPUESTOS = "El servicio de presupuestos no está disponible"
+_MSG_ORDEN_CERRADA = "La orden está entregada o cancelada y no admite nuevas evidencias"
+_MSG_PRESUPUESTO_NO_EXISTE = "El presupuesto indicado no existe"
+_MSG_PRESUPUESTO_OTRA_ORDEN = "El presupuesto indicado no pertenece a la orden"
 
 _401 = {status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente, inválido o expirado"}}
 _403_SUBIR = {
@@ -173,14 +192,15 @@ def _exigir_orden_accesible(
     verificador: VerificadorOrdenes,
     *,
     detalle_no_visible: str,
-) -> None:
+) -> int | None:
     """Valida la orden contra MS2 (mismo contrato que MS3, integracion_ms2.py).
 
+    Devuelve el `estado_codigo` de la orden (None si MS2 no lo informa).
     404/403 de MS2 → 404 con `detalle_no_visible` (no enumera la existencia);
     MS2 no disponible → 503.
     """
     try:
-        verificador.verificar_acceso(orden_id, token)
+        return verificador.verificar_acceso(orden_id, token)
     except OrdenNoVisible as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=detalle_no_visible
@@ -189,6 +209,41 @@ def _exigir_orden_accesible(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ORDENES
         ) from exc
+
+
+def _exigir_orden_abierta(estado_codigo: int | None) -> None:
+    """Una orden entregada o cancelada no admite nuevas evidencias (409)."""
+    if estado_codigo in ESTADOS_ORDEN_CERRADA:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_MSG_ORDEN_CERRADA)
+
+
+def _exigir_presupuesto_de_la_orden(
+    presupuesto_id: int,
+    orden_id: int,
+    token: str,
+    verificador: VerificadorPresupuestos,
+) -> None:
+    """El presupuesto debe existir en MS3 y pertenecer a la misma orden.
+
+    Inexistente o de otra orden → 422 (es un dato del formulario inválido);
+    MS3 no disponible → 503. Se valida ANTES de leer o subir el archivo.
+    """
+    try:
+        orden_del_presupuesto = verificador.orden_del_presupuesto(presupuesto_id, token)
+    except PresupuestoNoEncontrado as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_MSG_PRESUPUESTO_NO_EXISTE,
+        ) from exc
+    except ServicioPresupuestosNoDisponible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_PRESUPUESTOS
+        ) from exc
+    if orden_del_presupuesto != orden_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_MSG_PRESUPUESTO_OTRA_ORDEN,
+        )
 
 
 @router.post(
@@ -200,21 +255,34 @@ def _exigir_orden_accesible(
         "Multipart: archivo + metadatos. El autor sale del JWT y el `request_id` de "
         "la cabecera X-Request-ID; el archivo se sube a MinIO/S3 y los metadatos a "
         "la base en una sola operación con compensación. Antes de subir se valida "
-        "contra MS2 que la orden existe y la atiende el solicitante (404/503 sin "
-        "dejar archivos ni filas)."
+        "contra MS2 que la orden existe, la atiende el solicitante y no está "
+        "entregada ni cancelada (404/409/503), contra MS3 que el presupuesto es "
+        "de esa orden, y el archivo: formato de la lista blanca verificado por "
+        "su contenido (415), tamaño máximo (413) y estructura completa (422). "
+        "Ningún rechazo deja archivos ni filas."
     ),
     responses={
         **_ERRORES_COMUNES,
         status.HTTP_404_NOT_FOUND: {
             "description": "La orden no existe o no la atiende el solicitante"
         },
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden está entregada o cancelada"
+        },
         **_413,
         **_415,
         status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Archivo vacío, contexto o reglas de presupuesto inválidos"
+            "description": (
+                "Archivo vacío o dañado, contexto inválido, o presupuesto "
+                "inexistente o de otra orden"
+            )
         },
-        **_503,
-        **_503_ORDENES,
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": (
+                "El almacenamiento, el servicio de órdenes (MS2) o el de "
+                "presupuestos (MS3) no está disponible"
+            )
+        },
     },
 )
 def subir(
@@ -230,10 +298,14 @@ def subir(
     token: str = Depends(obtener_token_bearer),
     verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
     politica: PoliticaArchivos = Depends(obtener_politica_archivos),
+    verificador_presupuestos: VerificadorPresupuestos = Depends(
+        obtener_verificador_presupuestos
+    ),
 ) -> EvidenciaLeida:
-    _exigir_orden_accesible(
+    estado_orden = _exigir_orden_accesible(
         orden_id, token, verificador, detalle_no_visible="Orden no encontrada"
     )
+    _exigir_orden_abierta(estado_orden)
     try:
         datos = DatosRecepcion(
             orden_id=orden_id,
@@ -243,6 +315,10 @@ def subir(
         )
     except ValidationError as exc:
         raise _error_422_por_validacion(exc)
+    if datos.presupuesto_id is not None:
+        _exigir_presupuesto_de_la_orden(
+            datos.presupuesto_id, datos.orden_id, token, verificador_presupuestos
+        )
 
     try:
         evidencia = recibir_evidencia(

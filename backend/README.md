@@ -329,6 +329,12 @@ Endpoints de negocio (por la Gateway, con `Authorization: Bearer <token>`):
 (`curl` y `fetch`) en
 [`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md#evidencias-multimedia-ms4).
 
+La subida solo acepta JPG, PNG, WEBP, MP4 y MOV, verificados por su contenido,
+con un máximo de 10 MiB por foto y 100 MiB por video (`MS4_TIPOS_PERMITIDOS`,
+`MS4_MAX_BYTES_FOTO`, `MS4_MAX_BYTES_VIDEO`). Para validar la asociación con la
+orden, MS4 consulta a MS2 (`MS4_MS2_URL`) y, en evidencias de presupuesto, a MS3
+(`MS4_MS3_URL`); ambos deben estar levantados para subir.
+
 ```bash
 # Pruebas de MS4 (las que usan MinIO real se omiten si no está levantado)
 python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py -q

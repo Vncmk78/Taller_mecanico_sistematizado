@@ -1,24 +1,37 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ImageOff, Images } from 'lucide-react';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useOrderEvidence } from '@/presentation/hooks/useOrderEvidence';
+import { EvidenceContextFilter } from '@/presentation/components/evidence/EvidenceContextFilter';
 import { EvidenceGallery } from '@/presentation/components/evidence/EvidenceGallery';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { filtrarPorContexto, type ContextoFiltro } from '@/presentation/utils/evidenceDisplay';
 
 /**
  * Evidencia multimedia de una orden para el portal del cliente. Solo se listan
  * las fotos y videos que el taller marcó como visibles para el cliente; el
- * archivo se ve o se baja con una URL prefirmada efímera.
+ * archivo se ve o se baja con una URL prefirmada efímera. La galería se puede
+ * filtrar por contexto oficial cuando la orden cubre más de uno.
  */
 export function ClientOrderEvidencePage() {
     const { id } = useParams<{ id: string }>();
     const { evidencias, loading, notFound, failed, error, isOffline, requestId, refetch } =
         useOrderEvidence(id);
     const order = useOrderStore((s) => s.orders.find((cached) => cached.id === id));
+    const [filtro, setFiltro] = useState<{ orden: string | undefined; contexto: ContextoFiltro }>({
+        orden: undefined,
+        contexto: 'todos',
+    });
+    // Cada orden arranca con el filtro limpio (la ruta reutiliza el componente):
+    // la selección solo vale para la orden con la que se registró.
+    const contexto = filtro.orden === id ? filtro.contexto : 'todos';
+    const visibles = filtrarPorContexto(evidencias, contexto);
+    const cambiarContexto = (nuevo: ContextoFiltro) => setFiltro({ orden: id, contexto: nuevo });
 
     if (loading) {
         return <LoadingState message="Cargando evidencia multimedia..." className="p-10" />;
@@ -99,7 +112,28 @@ export function ClientOrderEvidencePage() {
                     description="Cuando el taller registre fotos o videos visibles para usted, aparecerán en esta sección."
                 />
             ) : (
-                <EvidenceGallery evidencias={evidencias} />
+                <>
+                    <EvidenceContextFilter
+                        evidencias={evidencias}
+                        contexto={contexto}
+                        onChange={cambiarContexto}
+                        className="mb-5"
+                    />
+                    {contexto !== 'todos' && (
+                        <p className="text-sm text-text-muted mb-4" role="status">
+                            Mostrando {visibles.length} de {evidencias.length} archivos.
+                        </p>
+                    )}
+                    {visibles.length === 0 ? (
+                        <EmptyState
+                            icon={Images}
+                            title="Sin evidencia en este contexto"
+                            description="Seleccione otro contexto para ver el resto de los archivos del servicio."
+                        />
+                    ) : (
+                        <EvidenceGallery evidencias={visibles} />
+                    )}
+                </>
             )}
         </div>
     );

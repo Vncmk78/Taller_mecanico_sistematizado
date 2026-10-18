@@ -135,6 +135,17 @@ Reglas reflejadas en la interfaz:
 - Un `404` en el listado se trata como **orden fuera de alcance**, distinto de una
   lista vacía (`200 []`), para no mostrar "no encontrado" ante una orden ajena y
   tampoco "sin evidencia" ante un fallo.
+- **Filtro por contexto**: la galería del cliente ofrece chips por contexto
+  oficial (Diagnóstico, Presupuesto, Reparación, Resultado final) con el conteo
+  de archivos (`EvidenceContextFilter`); si la orden cubre un solo contexto no se
+  renderiza. El filtro es local sobre la misma lista (`GET /evidencias?orden_id=`),
+  sin endpoints adicionales.
+- **Evidencia junto al presupuesto** (4.4 de la sistematización): el detalle del
+  presupuesto del cliente muestra inline las evidencias con `contexto =
+  presupuesto` y `presupuesto_id` igual al presupuesto lógico abierto
+  (`evidenciasDelPresupuesto`); el resto solo aparece en la galería de la orden.
+  Como esas evidencias siempre llegan `visible_cliente = true`, no requiere
+  permisos ni endpoints extra.
 
 ### Subida de evidencia (personal)
 

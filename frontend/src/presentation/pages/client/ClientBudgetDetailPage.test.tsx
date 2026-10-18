@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { evidenciaService } from '@/infrastructure/api/EvidenciaService';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
 import { useBudgetStore } from '@/infrastructure/stores/useBudgetStore';
+import { useEvidenceStore } from '@/infrastructure/stores/useEvidenceStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { mockPresupuestoPendiente } from '@/infrastructure/mocks/budgets.mock';
+import { mockEvidenciaFrenos, mockEvidenciaPresupuesto } from '@/infrastructure/mocks/evidence.mock';
 import { ClientBudgetDetailPage } from './ClientBudgetDetailPage';
 
 vi.mock('@/infrastructure/api/PresupuestoService', () => ({
@@ -12,6 +15,14 @@ vi.mock('@/infrastructure/api/PresupuestoService', () => ({
         getByOrder: vi.fn(),
         getById: vi.fn(),
         decidir: vi.fn(),
+    },
+}));
+
+vi.mock('@/infrastructure/api/EvidenciaService', () => ({
+    evidenciaService: {
+        getByOrder: vi.fn(),
+        getById: vi.fn(),
+        getDownloadUrl: vi.fn(),
     },
 }));
 
@@ -50,7 +61,16 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
     beforeEach(() => {
         useBudgetStore.setState({ presupuestos: [], status: 'idle', error: null, isOffline: false, requestId: null });
         useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false, requestId: null });
+        useEvidenceStore.setState({
+            evidencias: [],
+            status: 'idle',
+            error: null,
+            isOffline: false,
+            requestId: null,
+        });
         vi.clearAllMocks();
+        // Por defecto la orden no tiene evidencia: la sección quedará oculta.
+        vi.mocked(evidenciaService.getByOrder).mockResolvedValue([]);
     });
 
     it('muestra las partidas, el total y los botones de decisión del presupuesto pendiente', async () => {
@@ -210,5 +230,42 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         ).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Aprobar Presupuesto' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Rechazar' })).toBeDisabled();
+    });
+
+    it('muestra junto al presupuesto solo la evidencia de contexto presupuesto', async () => {
+        withPendingSources();
+        vi.mocked(evidenciaService.getByOrder).mockResolvedValue([
+            mockEvidenciaPresupuesto,
+            mockEvidenciaFrenos,
+        ]);
+        vi.mocked(evidenciaService.getDownloadUrl).mockResolvedValue({
+            url: 'https://almacenamiento.taller.example/evidencias/p.jpg?firma',
+            expiraEn: 300,
+        });
+
+        renderPage();
+
+        expect(await screen.findByRole('heading', { name: 'Evidencia del presupuesto' })).toBeInTheDocument();
+        expect(await screen.findByAltText('cotizacion-repuestos.jpg')).toHaveAttribute(
+            'src',
+            'https://almacenamiento.taller.example/evidencias/p.jpg?firma'
+        );
+        // La evidencia de diagnóstico no pertenece al presupuesto: no se muestra acá.
+        expect(screen.queryByText('desgaste-pastillas.jpg')).not.toBeInTheDocument();
+        // El acceso a la galería completa sigue disponible.
+        expect(screen.getByRole('link', { name: 'Ver evidencia multimedia' })).toHaveAttribute(
+            'href',
+            '/client/ordenes/101/evidencias'
+        );
+    });
+
+    it('sin evidencia del presupuesto no muestra la sección', async () => {
+        withPendingSources();
+        vi.mocked(evidenciaService.getByOrder).mockResolvedValue([mockEvidenciaFrenos]);
+
+        renderPage();
+
+        expect(await screen.findByText('Servicio n° 101')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Evidencia del presupuesto' })).not.toBeInTheDocument();
     });
 });

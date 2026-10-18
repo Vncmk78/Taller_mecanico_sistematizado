@@ -29,8 +29,10 @@ from services.ms4_evidencias.services.almacenamiento import (
 )
 from services.ms4_evidencias.services.contexto import normalizar_request_id
 from services.ms4_evidencias.services.validacion_archivos import (
+    MENSAJE_ARCHIVO_ILEGIBLE,
     ArchivoDanadoError,
     ArchivoDemasiadoGrandeError,
+    ArchivoIlegibleError,
     ContenidoNoCoincideError,
     EvidenciaInvalidaError,
     PoliticaArchivos,
@@ -43,6 +45,7 @@ from services.ms4_evidencias.services.validacion_archivos import (
 __all__ = [
     "ArchivoDanadoError",
     "ArchivoDemasiadoGrandeError",
+    "ArchivoIlegibleError",
     "ContenidoNoCoincideError",
     "EvidenciaInvalidaError",
     "PoliticaArchivos",
@@ -50,6 +53,21 @@ __all__ = [
     "normalizar_content_type",
     "tipo_desde_content_type",
 ]
+
+
+class GuardadoEvidenciaError(Exception):
+    """La base falló al guardar la evidencia después de subir el archivo (503).
+
+    La subida ya se compensó (rollback + borrado del objeto). Si el borrado
+    también falló, `clave_huerfana` trae la clave del objeto que quedó en el
+    almacenamiento sin fila que lo respalde, para registrarlo y limpiarlo
+    después; si la compensación funcionó, vale None. La causa original va
+    encadenada (`__cause__`) y nunca se expone al cliente.
+    """
+
+    def __init__(self, clave_huerfana: str | None = None) -> None:
+        super().__init__("No se pudo guardar la evidencia")
+        self.clave_huerfana = clave_huerfana
 
 
 # Extensión de la clave según el content_type (1.4 y 2.5): la extensión sale del
@@ -146,7 +164,12 @@ def recibir_evidencia(
        se propaga y NO se crea ninguna fila;
     4. inserta la fila con estado `confirmada`, `confirmada_en` y `sha256` y hace
        commit;
-    5. compensación: si la base falla, rollback y borra el objeto recién subido.
+    5. compensación: si la base falla, rollback y borra el objeto recién subido;
+       se lanza `GuardadoEvidenciaError` (503) con la clave si el borrado
+       también falló.
+
+    Si el archivo recibido no se puede leer (OSError o archivo cerrado), se
+    lanza `ArchivoIlegibleError` (400) antes de subir nada.
     """
     politica = politica or PoliticaArchivos.desde_settings(settings)
     content_type, tipo = politica.validar_tipo(content_type)
@@ -157,9 +180,16 @@ def recibir_evidencia(
         )
     except TamanoMaximoExcedido as exc:
         raise politica.error_tamano(tipo) from exc
+    except (OSError, ValueError) as exc:
+        raise ArchivoIlegibleError(MENSAJE_ARCHIVO_ILEGIBLE) from exc
     if tamano == 0:
         raise EvidenciaInvalidaError("El archivo no puede estar vacío")
-    content_type = validar_contenido(archivo, content_type, tamano, politica)
+    try:
+        content_type = validar_contenido(archivo, content_type, tamano, politica)
+    except EvidenciaInvalidaError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise ArchivoIlegibleError(MENSAJE_ARCHIVO_ILEGIBLE) from exc
 
     evidencia_id = uuid.uuid4()
     clave = generar_clave_objeto(
@@ -204,14 +234,15 @@ def recibir_evidencia(
     try:
         db.add(evidencia)
         db.commit()
-    except Exception:
+    except Exception as exc:
         db.rollback()
         # Compensación: no dejar un archivo huérfano si la base falló.
+        clave_huerfana: str | None = None
         try:
             eliminar_objeto(s3, bucket, clave)
         except Exception:  # noqa: BLE001  (la base ya falló; borrado best-effort)
-            pass
-        raise
+            clave_huerfana = clave
+        raise GuardadoEvidenciaError(clave_huerfana) from exc
     db.refresh(evidencia)
     return evidencia
 

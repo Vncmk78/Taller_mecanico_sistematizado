@@ -7,7 +7,8 @@ routers/).
 """
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -36,6 +37,23 @@ app = FastAPI(
 
 for router in ROUTERS:
     app.include_router(router)
+
+MENSAJE_ERROR_INTERNO = "Error interno del servicio de evidencias"
+
+
+@app.exception_handler(Exception)
+async def error_no_controlado(request: Request, exc: Exception) -> JSONResponse:
+    """Cualquier excepción no prevista responde 500 con un mensaje genérico.
+
+    El body nunca lleva el mensaje de la excepción, el traceback, el bucket, la
+    clave del objeto ni el endpoint del almacenamiento (checklist 5.5). Las
+    HTTPException y los 422 de validación de FastAPI tienen sus propios
+    manejadores y no pasan por aquí.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": MENSAJE_ERROR_INTERNO},
+    )
 
 
 @app.get("/health", tags=["health"])

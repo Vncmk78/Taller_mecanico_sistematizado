@@ -49,6 +49,10 @@ class _S3:
         return None
 
 
+def _commit_que_falla() -> None:
+    raise RuntimeError("base caída")
+
+
 class _MS2:
     def __init__(self, modo: str = "ok") -> None:
         self.modo = modo
@@ -86,7 +90,7 @@ def ms4() -> Generator[dict, None, None]:
     )
     Base.metadata.create_all(engine)
     sesion: Session = sessionmaker(bind=engine, expire_on_commit=False)()
-    estado = {"s3": _S3(), "ms2": _MS2()}
+    estado = {"s3": _S3(), "ms2": _MS2(), "sesion": sesion}
 
     def db():
         yield sesion
@@ -166,6 +170,12 @@ def test_ejemplos_de_error_de_la_subida_son_los_reales(esquema: dict, ms4: dict)
     assert respuesta.json() == _ejemplo(
         esquema, ruta, metodo, "503", "almacenamiento_no_disponible"
     )
+
+    ms4["s3"].falla = False
+    ms4["sesion"].commit = _commit_que_falla
+    respuesta = _subir(cliente, mecanico)
+    assert respuesta.status_code == 503
+    assert respuesta.json() == _ejemplo(esquema, ruta, metodo, "503", "guardado_no_disponible")
 
 
 def test_ejemplos_404_de_consulta_son_los_reales(esquema: dict, ms4: dict) -> None:

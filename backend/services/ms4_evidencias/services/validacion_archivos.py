@@ -42,6 +42,10 @@ class ArchivoDanadoError(EvidenciaInvalidaError):
     """El archivo tiene la firma correcta pero está incompleto o dañado (422)."""
 
 
+class ArchivoIlegibleError(EvidenciaInvalidaError):
+    """No se pudo leer el archivo recibido (temporal ilegible o cerrado) (400)."""
+
+
 class ArchivoDemasiadoGrandeError(EvidenciaInvalidaError):
     """El archivo supera el tamaño máximo de su tipo (413)."""
 
@@ -58,6 +62,7 @@ MENSAJE_CONTENIDO_NO_COINCIDE = (
     "El contenido del archivo no corresponde al formato declarado"
 )
 MENSAJE_ARCHIVO_DANADO = "El archivo está dañado o incompleto"
+MENSAJE_ARCHIVO_ILEGIBLE = "No se pudo leer el archivo enviado"
 
 
 def normalizar_content_type(content_type: str) -> str:

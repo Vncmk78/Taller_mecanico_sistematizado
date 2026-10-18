@@ -30,6 +30,7 @@ from services.ms4_evidencias.models.evidencia import (
 from services.ms4_evidencias.schemas.evidencia import DatosRecepcion
 from services.ms4_evidencias.services.evidencias import (
     EvidenciaInvalidaError,
+    GuardadoEvidenciaError,
     listar_por_orden,
     presupuesto_tiene_evidencia,
     recibir_evidencia,
@@ -229,9 +230,12 @@ def test_si_la_base_falla_se_borra_el_objeto_recien_subido(
 
     monkeypatch.setattr(sesion, "commit", _commit_falla)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(GuardadoEvidenciaError) as error:
         _recibir(sesion, s3)
 
+    # La causa real queda encadenada; la compensación borró el objeto.
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert error.value.clave_huerfana is None
     # Compensación: no quedan archivos huérfanos ni filas.
     assert not s3.objetos
     assert _contar_filas(sesion) == 0

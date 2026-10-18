@@ -516,5 +516,9 @@ def test_minio_falla_de_base_no_deja_archivo_huerfano(
     monkeypatch.setattr(sesion, "commit", commit_que_falla)
     respuesta = _subir(api_minio, _token(MECANICO, NombreRol.MECANICO), orden_id, jpeg_con(b"huerfano" * 50))
 
-    assert respuesta.status_code == 500
+    # Semana 6 (tratamiento de errores): falla de la base → 503 controlado.
+    assert respuesta.status_code == 503
+    assert respuesta.json() == {
+        "detail": "No se pudo guardar la evidencia, intenta nuevamente"
+    }
     assert _objetos_de_orden(cfg, cliente, orden_id) == []

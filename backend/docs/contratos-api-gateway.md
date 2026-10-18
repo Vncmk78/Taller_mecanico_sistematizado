@@ -1034,7 +1034,7 @@ Sube una foto o video de una orden. Es `multipart/form-data`, **no** JSON.
 | Body (multipart) | `archivo` (binario: `image/jpeg`, `image/png`, `image/webp`, `video/mp4` o `video/quicktime`; foto ≤ 10 MiB) · `orden_id` (int > 0) · `contexto` (`diagnostico` \| `presupuesto` \| `reparacion` \| `resultado_final`) · `presupuesto_id`? (solo con `presupuesto`) · `visible_cliente`? (`true`/`false`) |
 | Cabeceras opcionales | `X-Request-ID` (queda guardado con la evidencia para rastrearla) |
 | Respuesta OK | `201` con `EvidenciaRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` rol Cliente (se rechaza antes de procesar el archivo) · `404` `"Orden no encontrada"` (inexistente o no visible) · `409` `"La orden está entregada o cancelada y no admite nuevas evidencias"` · `413` body > 12 MiB (Gateway) o `"La foto supera el tamaño máximo permitido (10 MB)"` (MS4) · `415` `"Tipo de archivo no permitido. Formatos aceptados: JPG, PNG, WEBP, MP4 y MOV"` o `"El contenido del archivo no corresponde al formato declarado"` · `422` `"El archivo no puede estar vacío"`, `"El archivo está dañado o incompleto"`, `"El presupuesto indicado no existe"`, `"El presupuesto indicado no pertenece a la orden"` o formulario inválido · `503` `"El almacenamiento de evidencias no está disponible"`, `"El servicio de órdenes no está disponible"` o `"El servicio de presupuestos no está disponible"` |
+| Errores | `400` `"No se pudo leer el archivo enviado"` · `401` JWT ausente/inválido · `403` rol Cliente (se rechaza antes de procesar el archivo) · `404` `"Orden no encontrada"` (inexistente o no visible) · `409` `"La orden está entregada o cancelada y no admite nuevas evidencias"` · `413` body > 12 MiB (Gateway) o `"La foto supera el tamaño máximo permitido (10 MB)"` (MS4) · `415` `"Tipo de archivo no permitido. Formatos aceptados: JPG, PNG, WEBP, MP4 y MOV"` o `"El contenido del archivo no corresponde al formato declarado"` · `422` `"El archivo no puede estar vacío"`, `"El archivo está dañado o incompleto"`, `"El presupuesto indicado no existe"`, `"El presupuesto indicado no pertenece a la orden"` o formulario inválido · `503` `"El almacenamiento de evidencias no está disponible"`, `"El servicio de órdenes no está disponible"` , `"El servicio de presupuestos no está disponible"` o `"No se pudo guardar la evidencia, intenta nuevamente"` (falla de la base; el archivo se borra) · `500` `"Error interno del servicio de evidencias"` (error no previsto, sin detalles) |
 
 El servidor decide el nombre y la extensión del objeto a partir del
 `Content-Type` de la parte `archivo`; el nombre original solo se guarda para
@@ -1062,6 +1062,16 @@ consulta a MS3 (`GET /presupuestos/{presupuesto_id}` con el mismo JWT) y exige
 que el presupuesto sea de la misma `orden_id` (`422` si no existe o es de otra
 orden; `503` si MS3 no responde). Todas estas validaciones ocurren antes de
 subir el archivo o crear filas.
+
+Tratamiento de errores en la carga (Semana 6): ninguna falla deja archivos ni
+filas a medias ni filtra datos internos. Si la base falla después de subir el
+archivo, MS4 hace rollback, borra el objeto y responde `503` (se puede
+reintentar); si el archivo recibido no se puede leer responde `400`; y
+cualquier error no previsto responde `500` con un mensaje genérico, sin el
+traceback, el bucket, la clave del objeto ni el endpoint del almacenamiento.
+Orden en que se evalúan los rechazos: `401` → `403` → orden (`404`/`409`/`503`)
+→ formulario y presupuesto (`422`/`503`) → archivo (`415`/`413`/`422`/`400`) →
+almacenamiento (`503`) → base (`503`).
 
 ```bash
 curl -X POST "$GATEWAY/api/evidencias" \

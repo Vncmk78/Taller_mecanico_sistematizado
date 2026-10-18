@@ -39,10 +39,11 @@ orden no puede estar entregada ni cancelada (409), y si la evidencia es de
 contexto `presupuesto`, ese presupuesto debe pertenecer a la misma orden
 (MS3, 422 si no existe o es de otra orden; 503 si MS3 no responde).
 
-Errores: 401 sin token, 403 rol que no sube, 404 evidencia/orden inexistente o
-fuera de alcance, 409 orden cerrada, 413 archivo demasiado grande, 415 formato
-no permitido, 422 datos/regla/archivo dañado, 503 MS2, MS3 u almacenamiento no
-disponible.
+Errores: 400 archivo ilegible, 401 sin token, 403 rol que no sube, 404
+evidencia/orden inexistente o fuera de alcance, 409 orden cerrada, 413 archivo
+demasiado grande, 415 formato no permitido, 422 datos/regla/archivo dañado, 503
+MS2, MS3, almacenamiento o base no disponible (la subida se compensa). Un error
+no previsto responde 500 con un mensaje genérico (manejador en main.py).
 """
 from __future__ import annotations
 
@@ -95,6 +96,7 @@ from services.ms4_evidencias.schemas.evidencia import (
 from services.ms4_evidencias.services.almacenamiento import generar_url_descarga
 from services.ms4_evidencias.services.contexto import CABECERA_REQUEST_ID
 from services.ms4_evidencias.services.evidencias import (
+    GuardadoEvidenciaError,
     buscar_por_id,
     es_visible_para,
     listar_por_orden,
@@ -107,6 +109,7 @@ from services.ms4_evidencias.services.permisos import (
 )
 from services.ms4_evidencias.services.validacion_archivos import (
     ArchivoDemasiadoGrandeError,
+    ArchivoIlegibleError,
     EvidenciaInvalidaError,
     PoliticaArchivos,
     TipoArchivoNoPermitidoError,
@@ -116,6 +119,7 @@ from shared.auth import PrincipalAutenticado
 router = APIRouter(prefix="/evidencias", tags=["evidencias"])
 
 _MSG_ALMACENAMIENTO = "El almacenamiento de evidencias no está disponible"
+_MSG_GUARDADO = "No se pudo guardar la evidencia, intenta nuevamente"
 _MSG_ORDENES = "El servicio de órdenes no está disponible"
 _MSG_PRESUPUESTOS = "El servicio de presupuestos no está disponible"
 _MSG_ORDEN_CERRADA = "La orden está entregada o cancelada y no admite nuevas evidencias"
@@ -263,6 +267,7 @@ def _exigir_presupuesto_de_la_orden(
     ),
     responses={
         **_ERRORES_COMUNES,
+        status.HTTP_400_BAD_REQUEST: {"description": "No se pudo leer el archivo enviado"},
         status.HTTP_404_NOT_FOUND: {
             "description": "La orden no existe o no la atiende el solicitante"
         },
@@ -279,8 +284,9 @@ def _exigir_presupuesto_de_la_orden(
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "description": (
-                "El almacenamiento, el servicio de órdenes (MS2) o el de "
-                "presupuestos (MS3) no está disponible"
+                "El almacenamiento, la base, el servicio de órdenes (MS2) o el "
+                "de presupuestos (MS3) no está disponible; no quedan archivos "
+                "ni filas a medias"
             )
         },
     },
@@ -341,6 +347,8 @@ def subir(
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)
         )
+    except ArchivoIlegibleError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except EvidenciaInvalidaError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -348,6 +356,12 @@ def subir(
     except (BotoCoreError, ClientError, S3UploadFailedError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ALMACENAMIENTO
+        )
+    except GuardadoEvidenciaError:
+        # La subida ya se compensó; el cliente puede reintentar. La causa real
+        # (error de la base) queda encadenada y nunca viaja en el body.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_GUARDADO
         )
     return evidencia
 

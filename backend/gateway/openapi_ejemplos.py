@@ -258,6 +258,16 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         "422 de MS4: el presupuesto es de otra orden (MS3)",
         {"detail": "El presupuesto indicado no pertenece a la orden"},
     ),
+    "detalle_archivo_ilegible": _ejemplo(
+        "400 de MS4: no se pudo leer el archivo recibido",
+        {"detail": "No se pudo leer el archivo enviado"},
+        "No se sube nada ni se crea ninguna fila.",
+    ),
+    "detalle_guardado_no_disponible": _ejemplo(
+        "503 de MS4: la base falló al guardar la evidencia",
+        {"detail": "No se pudo guardar la evidencia, intenta nuevamente"},
+        "El archivo ya subido se borra (compensación); se puede reintentar.",
+    ),
     "detalle_foto_demasiado_grande": _ejemplo(
         "413 de MS4: la foto supera su tamaño máximo",
         {"detail": "La foto supera el tamaño máximo permitido (10 MB)"},
@@ -542,6 +552,7 @@ _EJEMPLOS_OPERACIONES.update(
                     "cuerpo_demasiado_grande": _ref_ejemplo("error_cuerpo_demasiado_grande"),
                     "foto_demasiado_grande": _ref_ejemplo("detalle_foto_demasiado_grande"),
                 },
+                "400": {"archivo_ilegible": _ref_ejemplo("detalle_archivo_ilegible")},
                 "409": {"orden_cerrada": _ref_ejemplo("detalle_orden_cerrada")},
                 "415": {
                     "tipo_no_permitido": _ref_ejemplo("detalle_tipo_archivo_no_permitido"),
@@ -552,7 +563,10 @@ _EJEMPLOS_OPERACIONES.update(
                     "archivo_danado": _ref_ejemplo("detalle_archivo_danado"),
                     "presupuesto_otra_orden": _ref_ejemplo("detalle_presupuesto_otra_orden"),
                 },
-                "503": _EJEMPLOS_503_EVIDENCIAS,
+                "503": {
+                    **_EJEMPLOS_503_EVIDENCIAS,
+                    "guardado_no_disponible": _ref_ejemplo("detalle_guardado_no_disponible"),
+                },
             },
         },
         ("/api/evidencias", "get"): {

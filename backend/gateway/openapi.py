@@ -317,8 +317,9 @@ def _operacion_evidencias(**kwargs: object) -> dict[str, object]:
     operacion = _operacion(tag="Evidencias", requiere_auth=True, **kwargs)  # type: ignore[arg-type]
     operacion["responses"]["503"] = _respuesta(
         (
-            "No disponible. MS4 responde {'detail': ...} si el almacenamiento "
-            "o el servicio de órdenes no responden; la Gateway responde "
+            "No disponible. MS4 responde {'detail': ...} si el almacenamiento, "
+            "la base o el servicio de órdenes/presupuestos no responden (la "
+            "subida se compensa, sin archivos ni filas a medias); la Gateway responde "
             "GATEWAY_SATURADA si su pool está agotado."
         ),
         {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
@@ -354,6 +355,7 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
         errores_ms={
             "401": "JWT ausente o inválido",
             "403": "Se requiere rol Mecánico o Administrador",
+            "400": "No se pudo leer el archivo enviado",
             "409": "La orden está entregada o cancelada",
             "415": (
                 "Formato no permitido (solo JPG, PNG, WEBP, MP4 y MOV) o "

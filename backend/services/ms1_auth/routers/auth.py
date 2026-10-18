@@ -22,6 +22,7 @@ from services.ms1_auth.services.autenticacion import (
     ConfiguracionRolesError,
     CorreoRegistradoError,
     CredencialesInvalidasError,
+    CuentaBloqueadaError,
     PersistenciaAutenticacionError,
     UsuarioNoEncontradoError,
     asignar_rol_restringido,
@@ -74,7 +75,21 @@ def registrar(
         ) from exc
 
 
-@router_auth.post("/login", response_model=TokenRespuesta)
+@router_auth.post(
+    "/login",
+    response_model=TokenRespuesta,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "description": "Credenciales inválidas",
+        },
+        status.HTTP_429_TOO_MANY_REQUESTS: {
+            "description": (
+                "Demasiados intentos fallidos: la cuenta está bloqueada "
+                "temporalmente (cabecera `Retry-After`)"
+            ),
+        },
+    },
+)
 def login(
     body: LoginSolicitud,
     db: Session = Depends(get_db),
@@ -99,6 +114,12 @@ def login(
         )
     except CredencialesInvalidasError as exc:
         raise error_no_autenticado(str(exc)) from exc
+    except CuentaBloqueadaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.segundos_restantes)},
+        ) from exc
     except ConfiguracionRolesError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

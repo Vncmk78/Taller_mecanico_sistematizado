@@ -351,6 +351,11 @@ verifica** · **cuándo** se implementa (tarea del plan).
 | 4.4, 4.5 | Tratamiento de indisponibilidad, timeout y errores en Gateway | 10 |
 | 2.3, 4.1, 5.4 | Despliegue de Gateway y servicios en ambiente público | 11 |
 
+El fundamento de los controles de recepción (1.x), de los límites de carga y
+de los códigos `400/413/415/422` está en
+[`estudio-seguridad-archivos-mime.md`](estudio-seguridad-archivos-mime.md)
+(Semana 6).
+
 ## Cómo usar este checklist
 
 1. Antes de cerrar cada tarea de MS4, revisar los controles que le

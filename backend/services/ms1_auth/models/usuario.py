@@ -7,13 +7,17 @@ Los roles NO se guardan como columna dentro de Usuario. La Sistematización
 final §1.1 define roles múltiples por usuario, así que la relación es N:M a
 través de `UsuarioRol` (ver rol.py). Un mismo usuario puede ser, por ejemplo,
 Cliente y Mecánico a la vez.
+
+Además del MER, la tabla guarda el estado del tratamiento de intentos
+repetidos de autenticación incorrecta (`intentos_fallidos` y
+`bloqueado_hasta`).
 """
 from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from services.ms1_auth.db import Base
@@ -34,6 +38,20 @@ class Usuario(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+
+    # Protección contra intentos repetidos de autenticación incorrecta: número
+    # de fallos consecutivos y, si los supera, hasta cuándo está bloqueada la
+    # cuenta. Un ingreso correcto reinicia ambos campos.
+    intentos_fallidos: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    bloqueado_hasta: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Roles asignados a este usuario (N:M vía la tabla puente UsuarioRol).

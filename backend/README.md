@@ -357,7 +357,7 @@ python scripts/limpiar_huerfanos_ms4.py --eliminar   # borra los huérfanos
 
 ```bash
 # Pruebas de MS4 (las que usan MinIO real se omiten si no está levantado)
-python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py -q
+python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py tests/test_gateway_rechazos_evidencias.py -q
 ```
 
 ## API Gateway

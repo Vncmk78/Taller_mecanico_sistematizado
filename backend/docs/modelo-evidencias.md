@@ -387,3 +387,15 @@ HTTP: `POST /evidencias` → `GET /evidencias?orden_id=` → `GET /evidencias/{i
 
 Las pruebas con MinIO usan una orden aleatoria alta y borran su prefijo
 `ordenes/{orden_id}/` al terminar.
+
+### Pruebas de la Semana 6 (validación de archivos y rechazos)
+
+| Archivo | Qué cubre |
+|---|---|
+| `tests/test_ms4_limites_archivos.py` | Lista blanca (1.1) y tamaño máximo por tipo (1.3): configuración, `PoliticaArchivos`, lectura cortada al superar el límite, 415/413 por la API. |
+| `tests/test_ms4_validacion_contenido.py` | Formato real por *magic bytes* (1.2) y estructura completa (1.6): HTML disfrazado, PNG declarado como JPEG, HEIC, archivos truncados → 415/422. |
+| `tests/test_ms4_asociacion_ordenes.py` | Orden entregada/cancelada → 409; presupuesto inexistente o de otra orden → 422; MS3 caído → 503; clientes HTTP de MS2 y MS3. |
+| `tests/test_ms4_errores_carga.py` | Falla de la base → 503 con compensación; archivo ilegible → 400; error no previsto → 500 genérico sin datos internos. |
+| `tests/test_ms4_huerfanos.py` | Conciliación bucket ↔ base y script `limpiar_huerfanos_ms4.py`. |
+| `tests/test_ms4_logs.py` | Eventos con `request_id` y `motivo`; nunca JWT, URL firmada, clave, nombre ni contenido (5.5). |
+| `tests/test_gateway_rechazos_evidencias.py` | **Punta a punta por la Gateway**: archivo inválido (415/422), demasiado grande (413 de la Gateway sin llamar a MS4, o de MS4 entre 10 y 12 MiB) y orden inexistente, ajena, inválida o cerrada (404/422/409), siempre con `X-Request-ID` y sin dejar archivos ni filas. |

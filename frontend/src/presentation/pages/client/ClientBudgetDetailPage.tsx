@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, ClipboardX, FileText, Wrench, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ClipboardX, FileText, Images, Wrench, XCircle } from 'lucide-react';
 import {
     type DecisionCliente,
     type ResultadoDecision,
@@ -13,10 +13,12 @@ import { getApiErrorMessage, isConflictError } from '@/infrastructure/api/errors
 import { useBudgetStore } from '@/infrastructure/stores/useBudgetStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useBudgetDetail } from '@/presentation/hooks/useBudgetDetail';
+import { useOrderEvidence } from '@/presentation/hooks/useOrderEvidence';
 import { ApproveBudgetDialog } from '@/presentation/components/budgets/ApproveBudgetDialog';
 import { BudgetItemRow } from '@/presentation/components/budgets/BudgetItemRow';
 import { BudgetStatusBadge } from '@/presentation/components/budgets/BudgetStatusBadge';
 import { RejectBudgetDialog } from '@/presentation/components/budgets/RejectBudgetDialog';
+import { EvidenceGallery } from '@/presentation/components/evidence/EvidenceGallery';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
@@ -24,6 +26,7 @@ import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { formatDateTime } from '@/presentation/utils/orderDisplay';
+import { evidenciasDelPresupuesto } from '@/presentation/utils/evidenceDisplay';
 import { EFECTO_EN_ORDEN_LABEL, formatMoneyCLP } from '@/presentation/utils/budgetDisplay';
 
 interface DecisionResuelta {
@@ -35,6 +38,12 @@ export function ClientBudgetDetailPage() {
     const { ordenId } = useParams<{ ordenId: string }>();
     const { presupuesto, loading, notFound, failed, error, isOffline, requestId, refetch } =
         useBudgetDetail(ordenId);
+    const {
+        evidencias: evidenciasOrden,
+        loading: evidenciasCargando,
+        failed: evidenciasFallaron,
+        refetch: refetchEvidencias,
+    } = useOrderEvidence(ordenId);
     const order = useOrderStore((s) => s.orders.find((cached) => cached.id === ordenId));
     const updateBudget = useBudgetStore((s) => s.updateBudget);
 
@@ -161,6 +170,7 @@ export function ClientBudgetDetailPage() {
     const aplicacionPendiente =
         decisionResuelta?.resultado.efectoEnOrden != null &&
         !decisionResuelta.resultado.aplicacionConfirmada;
+    const evidenciasPresupuesto = evidenciasDelPresupuesto(evidenciasOrden, presupuesto.id);
 
     return (
         <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
@@ -310,6 +320,36 @@ export function ClientBudgetDetailPage() {
                     </Link>
                 </section>
             </div>
+
+            {!evidenciasCargando && evidenciasPresupuesto.length > 0 && (
+                <section className="card p-6 mt-6" aria-labelledby="evidencia-presupuesto-title">
+                    <h2
+                        id="evidencia-presupuesto-title"
+                        className="text-xl font-bold flex items-center gap-2 mb-2"
+                    >
+                        <Images className="w-5 h-5 text-text-muted" aria-hidden />
+                        Evidencia del presupuesto
+                    </h2>
+                    <p className="text-text-muted text-sm mb-5">
+                        Fotos y videos registrados por el taller en el contexto Presupuesto de este
+                        servicio. Se muestran siempre visibles para usted.
+                    </p>
+                    <EvidenceGallery evidencias={evidenciasPresupuesto} />
+                </section>
+            )}
+
+            {!evidenciasCargando && evidenciasFallaron && evidenciasPresupuesto.length === 0 && (
+                <Alert tone="warning" className="mt-6">
+                    No se pudo cargar la evidencia del presupuesto.{' '}
+                    <button
+                        type="button"
+                        onClick={refetchEvidencias}
+                        className="text-primary-blue font-medium bg-transparent border-none cursor-pointer hover:underline p-0"
+                    >
+                        Reintentar
+                    </button>
+                </Alert>
+            )}
 
             {order && (
                 <p className="text-sm text-text-muted mt-6">

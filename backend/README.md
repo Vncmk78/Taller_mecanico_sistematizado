@@ -103,10 +103,47 @@ alembic -c services/ms3_presupuestos/alembic.ini upgrade head
 #    Con --orden-id agrega un presupuesto de ejemplo (versión 1 enviada).
 python scripts/seed_datos_ms3.py --orden-id 1
 
+#    Con --integracion agrega el catálogo de integración con sus existencias;
+#    --verificar solo revisa que el stock cuadre con los movimientos.
+python scripts/seed_datos_ms3.py --integracion
+python scripts/seed_datos_ms3.py --verificar
+
 # 3. Pruebas de persistencia ORM contra PostgreSQL migrado (se omiten si no hay base)
 MS3_ORM_TEST_DATABASE_URL=postgresql+psycopg://taller:taller@localhost:5435/taller_ms3 \
     pytest services/ms3_presupuestos/tests -q
 ```
+
+### Datos semilla de integración de MS3
+
+Para que el frontend, la app móvil y los otros servicios prueben contra datos
+realistas, `services/ms3_presupuestos/datos_integracion.py` define 5
+proveedores y 12 repuestos más (además de los 4 de `datos_prueba.py`). Cada
+repuesto declara los **movimientos** que explican su stock; la semilla los
+registra con los mismos casos de uso que la API, así el stock siempre coincide
+con el historial.
+
+| Caso | Repuesto | Stock / umbral |
+|---|---|---|
+| Stock holgado | Aceite sintético 5W-30 (litro) | 40 / 5 (general) |
+| Sin stock (alerta) | Líquido de frenos DOT4 (500 ml) | 0 / 3 — se consumió en la orden 1 |
+| Bajo umbral particular (alerta) | Alternador reacondicionado | 1 / 2 |
+| Bajo umbral general (alerta) | Kit de embrague | 3 / 5 — 1 consumido en la orden 1 |
+| Justo en el umbral (no es alerta) | Bujía de iridio | 5 / 5 |
+| Unidades reservadas | Amortiguador delantero | 6, 2 comprometidas para la orden 2 → disponible 4 |
+| Corregido con ajuste | Filtro de aire | 12 − 2 = 10 |
+| Búsqueda con tildes y eñes | Importadora Ñuble, Bujía de iridio | `q=nuble`, `q=bujia` |
+| Proveedor sin repuestos | Neumáticos Cautín | `con_repuestos=false`, se puede eliminar |
+
+- **Idempotente**: proveedores y repuestos se buscan por nombre y cada
+  movimiento tiene una `clave_operacion` fija (`semilla-int:<repuesto_id>:<n>`);
+  si una carga se cortó, la siguiente la completa.
+- Las órdenes son referencias lógicas a MS2: por defecto 1 (en reparación) y 2
+  (recibida); se cambian con `--orden-en-reparacion` y `--orden-recibida`.
+- Al terminar, el script verifica que el stock de **todos** los repuestos
+  coincida con sus movimientos (sale con código 1 si no). Las diferencias con
+  los valores de la semilla se muestran como aviso, porque pueden deberse al
+  uso real de la app.
+- Pruebas: `services/ms3_presupuestos/tests/test_semilla_integracion.py`.
 
 ### Datos mínimos y fixtures de prueba de MS3
 

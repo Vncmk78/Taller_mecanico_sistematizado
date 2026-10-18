@@ -6,12 +6,23 @@ historial y un movimiento de ingreso inicial por repuesto. Con --orden-id
 también crea el presupuesto de esa orden (versión 1 ENVIADA, sin decisión:
 queda lista para probar aprobar/rechazar).
 
+Con --integracion además carga el catálogo de INTEGRACIÓN
+(services/ms3_presupuestos/datos_integracion.py): 5 proveedores más, 12
+repuestos y sus existencias como movimientos de inventario (ingresos,
+consumos, compromisos, liberación y ajuste), cubriendo stock holgado, sin
+stock, bajo umbral particular y general, justo en el umbral y unidades
+reservadas para una orden. Al final verifica que el stock cuadre con los
+movimientos. Con --verificar solo verifica, sin escribir nada.
+
 Es idempotente: se puede correr varias veces sin duplicar nada.
 
 Uso (desde backend/, con las migraciones de MS3 aplicadas y MS3_DATABASE_URL
 en .env apuntando a la base que se quiere poblar, local o Neon):
     python scripts/seed_datos_ms3.py
     python scripts/seed_datos_ms3.py --orden-id 1 --admin-id 3 --mecanico-id 2
+    python scripts/seed_datos_ms3.py --integracion
+    python scripts/seed_datos_ms3.py --integracion --orden-en-reparacion 1 --orden-recibida 2
+    python scripts/seed_datos_ms3.py --verificar
 
 Los ids de usuario/orden son REFERENCIAS LÓGICAS a MS1/MS2 (§8): el script no
 puede verificarlos, deben existir en esas bases.
@@ -26,7 +37,9 @@ from sqlalchemy import select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from services.ms3_presupuestos import datos_integracion as integ  # noqa: E402
 from services.ms3_presupuestos import datos_prueba as datos  # noqa: E402
+from services.ms3_presupuestos import semilla_integracion as semilla  # noqa: E402
 from services.ms3_presupuestos.db import SessionLocal  # noqa: E402
 from services.ms3_presupuestos.models import (  # noqa: E402
     HistorialUmbral,
@@ -117,6 +130,41 @@ def _sembrar_presupuesto(db, orden_id: int, mecanico_id: int,
     print(f"  + Presupuesto orden {orden_id}: version 1 enviada, total ${total:,.0f}")
 
 
+def _cargar_integracion(admin_id: int, mecanico_id: int, ordenes: dict) -> None:
+    print("Sembrando catalogo de integracion en MS3...")
+    with SessionLocal() as db:
+        r = semilla.cargar_integracion(db, admin_id=admin_id, mecanico_id=mecanico_id,
+                                       ordenes=ordenes)
+    for nombre in r.proveedores_creados:
+        print(f"  + Proveedor: {nombre}")
+    for nombre in r.repuestos_creados:
+        print(f"  + Repuesto: {nombre}")
+    print(f"  Movimientos: {r.movimientos_aplicados} aplicados, "
+          f"{r.movimientos_repetidos} ya estaban")
+
+
+def _verificar(ordenes: dict, *, integracion: bool) -> bool:
+    with SessionLocal() as db:
+        errores = semilla.verificar_existencias(db)
+        avisos = semilla.diferencias_con_semilla(db, ordenes=ordenes) if integracion else []
+        vigente = db.scalar(select(ParametroInventario)
+                            .where(ParametroInventario.vigente_hasta.is_(None)))
+        general = vigente.umbral_general if vigente else None
+        print(f"\nExistencias (umbral general vigente: {general}):")
+        for r in db.scalars(select(Repuesto).order_by(Repuesto.proveedor_id, Repuesto.nombre)):
+            efectivo = r.umbral_particular if r.umbral_particular is not None else general
+            alerta = "  <- ALERTA" if efectivo is not None and r.stock < efectivo else ""
+            print(f"  {r.proveedor.nombre[:22]:<22} {r.nombre[:34]:<34} stock {r.stock:>3}"
+                  f"  umbral {efectivo if efectivo is not None else '-':>2}{alerta}")
+    for e in errores:
+        print(f"  ERROR: {e}")
+    for a in avisos:
+        print(f"  AVISO (puede ser uso real de la app): {a}")
+    if not errores:
+        print("  OK: el stock de todos los repuestos coincide con sus movimientos.")
+    return not errores
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--admin-id", type=int, default=datos.ADMIN_ID,
@@ -125,7 +173,21 @@ def main() -> None:
                         help="usuario_id (MS1) del mecanico que arma el presupuesto")
     parser.add_argument("--orden-id", type=int, default=None,
                         help="orden (MS2) para la que se crea un presupuesto de ejemplo")
+    parser.add_argument("--integracion", action="store_true",
+                        help="carga tambien el catalogo de integracion con sus existencias")
+    parser.add_argument("--orden-en-reparacion", type=int,
+                        default=integ.ORDENES_POR_DEFECTO["en_reparacion"],
+                        help="orden (MS2) que consume repuestos en la semilla (por defecto 1)")
+    parser.add_argument("--orden-recibida", type=int,
+                        default=integ.ORDENES_POR_DEFECTO["recibida"],
+                        help="orden (MS2) con repuestos reservados en la semilla (por defecto 2)")
+    parser.add_argument("--verificar", action="store_true",
+                        help="solo verifica las existencias, sin escribir nada")
     args = parser.parse_args()
+    ordenes = {"en_reparacion": args.orden_en_reparacion, "recibida": args.orden_recibida}
+
+    if args.verificar:
+        sys.exit(0 if _verificar(ordenes, integracion=True) else 1)
 
     print("Sembrando datos de prueba en MS3...")
     with SessionLocal() as db:
@@ -134,7 +196,11 @@ def main() -> None:
         if args.orden_id is not None:
             _sembrar_presupuesto(db, args.orden_id, args.mecanico_id, repuestos)
         db.commit()
-    print("Seed de MS3 completado.")
+    if args.integracion:
+        _cargar_integracion(args.admin_id, args.mecanico_id, ordenes)
+    ok = _verificar(ordenes, integracion=args.integracion)
+    print("Seed de MS3 completado." if ok else "Seed de MS3 terminado CON ERRORES.")
+    sys.exit(0 if ok else 1)
 
 
 if __name__ == "__main__":

@@ -319,9 +319,22 @@ verifica** · **cuándo** se implementa (tarea del plan).
   ficha técnica del vehículo).
   - Cuándo: decisión del equipo antes del despliegue (Semana 11).
 
-- [ ] **5.5 Logs sin datos sensibles.** Los logs no incluyen el contenido del
+- [x] **5.5 Logs sin datos sensibles.** Los logs no incluyen el contenido del
   archivo, tokens JWT ni URLs prefirmadas completas.
   - Cuándo: transversal.
+  - ✅ Implementado (Semana 6 — *Agregar logs útiles sin exponer contenido
+    sensible*): todo log de MS4 pasa por `registrar`
+    (`services/registro.py`), que solo acepta campos de una lista blanca
+    (ids, tipo, tamaño, estado, motivo, servicio, tipo de error), neutraliza
+    saltos de línea y trunca a 80 caracteres. El middleware `MiddlewareRegistro`
+    agrega el `request_id` de la Gateway y registra cada solicitud sin
+    cabeceras, body ni query string. Tampoco se registran la clave del objeto,
+    el nombre original del archivo ni el mensaje de las excepciones (solo su
+    tipo; el traceback queda en DEBUG). Eventos: `evidencia_subida`,
+    `subida_rechazada` (con `motivo`), `subida_fallida`,
+    `dependencia_no_disponible`, `descarga_autorizada`, `error_no_controlado`
+    y `solicitud`. Nivel con `MS4_LOG_LEVEL`. Verificado en
+    `tests/test_ms4_logs.py`.
 
 ---
 

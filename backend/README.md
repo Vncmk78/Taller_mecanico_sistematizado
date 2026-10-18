@@ -335,6 +335,18 @@ con un máximo de 10 MiB por foto y 100 MiB por video (`MS4_TIPOS_PERMITIDOS`,
 orden, MS4 consulta a MS2 (`MS4_MS2_URL`) y, en evidencias de presupuesto, a MS3
 (`MS4_MS3_URL`); ambos deben estar levantados para subir.
 
+MS4 escribe un log por solicitud y por evento de negocio, en formato
+`evento=... clave=valor` (nivel con `MS4_LOG_LEVEL`). Para seguir una subida
+desde la Gateway basta con filtrar por su `request_id`:
+
+```text
+INFO ms4.evidencias evento=evidencia_subida request_id=req-123 evidencia_id=... orden_id=31 tipo_archivo=foto content_type=image/jpeg tamano_bytes=20480 usuario_id=7
+WARNING ms4.evidencias evento=subida_rechazada request_id=req-124 motivo=contenido_no_coincide estado_http=415 orden_id=31 usuario_id=7
+```
+
+Nunca se registran el JWT, la URL firmada, la clave del objeto, el nombre del
+archivo ni su contenido (checklist 5.5).
+
 Para encontrar y limpiar archivos del bucket que quedaron sin fila en la base
 (huérfanos), ver `docs/modelo-evidencias.md` § Archivos huérfanos:
 

@@ -47,6 +47,7 @@ no previsto responde 500 con un mensaje genérico (manejador en main.py).
 """
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from boto3.exceptions import S3UploadFailedError
@@ -107,9 +108,12 @@ from services.ms4_evidencias.services.permisos import (
     es_vista_cliente,
     puede_subir,
 )
+from services.ms4_evidencias.services.registro import nivel_para, registrar
 from services.ms4_evidencias.services.validacion_archivos import (
+    ArchivoDanadoError,
     ArchivoDemasiadoGrandeError,
     ArchivoIlegibleError,
+    ContenidoNoCoincideError,
     EvidenciaInvalidaError,
     PoliticaArchivos,
     TipoArchivoNoPermitidoError,
@@ -166,11 +170,33 @@ def _personal_que_subira(
 ) -> PrincipalAutenticado:
     """Guard 3.1: solo Mecánico o Administrador suben (antes de leer el archivo)."""
     if not puede_subir(principal):
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="rol_sin_permiso",
+            estado_http=status.HTTP_403_FORBIDDEN,
+            usuario_id=principal.usuario_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No tienes permiso para realizar esta operación",
         )
     return principal
+
+
+def _estado_y_motivo(exc: EvidenciaInvalidaError) -> tuple[int, str]:
+    """Código HTTP y motivo corto (para el log) de un archivo rechazado."""
+    if isinstance(exc, ArchivoDemasiadoGrandeError):
+        return status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "demasiado_grande"
+    if isinstance(exc, ContenidoNoCoincideError):
+        return status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "contenido_no_coincide"
+    if isinstance(exc, TipoArchivoNoPermitidoError):
+        return status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "tipo_no_permitido"
+    if isinstance(exc, ArchivoIlegibleError):
+        return status.HTTP_400_BAD_REQUEST, "archivo_ilegible"
+    if isinstance(exc, ArchivoDanadoError):
+        return status.HTTP_422_UNPROCESSABLE_ENTITY, "archivo_danado"
+    return status.HTTP_422_UNPROCESSABLE_ENTITY, "archivo_invalido"
 
 
 def _accesible(evidencia: Evidencia | None, principal: PrincipalAutenticado) -> bool:
@@ -206,10 +232,25 @@ def _exigir_orden_accesible(
     try:
         return verificador.verificar_acceso(orden_id, token)
     except OrdenNoVisible as exc:
+        registrar(
+            "acceso_rechazado",
+            logging.WARNING,
+            motivo="orden_no_visible",
+            estado_http=status.HTTP_404_NOT_FOUND,
+            orden_id=orden_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=detalle_no_visible
         ) from exc
     except ServicioOrdenesNoDisponible as exc:
+        # Solo el tipo: el mensaje de httpx puede traer la URL interna de MS2.
+        registrar(
+            "dependencia_no_disponible",
+            logging.ERROR,
+            servicio="ms2",
+            error=type(exc.__cause__ or exc).__name__,
+            orden_id=orden_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ORDENES
         ) from exc
@@ -218,6 +259,12 @@ def _exigir_orden_accesible(
 def _exigir_orden_abierta(estado_codigo: int | None) -> None:
     """Una orden entregada o cancelada no admite nuevas evidencias (409)."""
     if estado_codigo in ESTADOS_ORDEN_CERRADA:
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="orden_cerrada",
+            estado_http=status.HTTP_409_CONFLICT,
+        )
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_MSG_ORDEN_CERRADA)
 
 
@@ -235,15 +282,38 @@ def _exigir_presupuesto_de_la_orden(
     try:
         orden_del_presupuesto = verificador.orden_del_presupuesto(presupuesto_id, token)
     except PresupuestoNoEncontrado as exc:
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="presupuesto_inexistente",
+            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            presupuesto_id=presupuesto_id,
+            orden_id=orden_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=_MSG_PRESUPUESTO_NO_EXISTE,
         ) from exc
     except ServicioPresupuestosNoDisponible as exc:
+        registrar(
+            "dependencia_no_disponible",
+            logging.ERROR,
+            servicio="ms3",
+            error=type(exc.__cause__ or exc).__name__,
+            presupuesto_id=presupuesto_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_PRESUPUESTOS
         ) from exc
     if orden_del_presupuesto != orden_id:
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="presupuesto_de_otra_orden",
+            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            presupuesto_id=presupuesto_id,
+            orden_id=orden_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=_MSG_PRESUPUESTO_OTRA_ORDEN,
@@ -320,6 +390,14 @@ def subir(
             visible_cliente=visible_cliente,
         )
     except ValidationError as exc:
+        registrar(
+            "subida_rechazada",
+            logging.WARNING,
+            motivo="formulario_invalido",
+            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            orden_id=orden_id,
+            usuario_id=principal.usuario_id,
+        )
         raise _error_422_por_validacion(exc)
     if datos.presupuesto_id is not None:
         _exigir_presupuesto_de_la_orden(
@@ -339,30 +417,59 @@ def subir(
             request.headers.get(CABECERA_REQUEST_ID),
             politica=politica,
         )
-    except ArchivoDemasiadoGrandeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
-        )
-    except TipoArchivoNoPermitidoError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)
-        )
-    except ArchivoIlegibleError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except EvidenciaInvalidaError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        estado_http, motivo = _estado_y_motivo(exc)
+        registrar(
+            "subida_rechazada",
+            nivel_para(estado_http),
+            motivo=motivo,
+            estado_http=estado_http,
+            orden_id=datos.orden_id,
+            usuario_id=principal.usuario_id,
         )
-    except (BotoCoreError, ClientError, S3UploadFailedError):
+        raise HTTPException(status_code=estado_http, detail=str(exc))
+    except (BotoCoreError, ClientError, S3UploadFailedError) as exc:
+        registrar(
+            "subida_fallida",
+            logging.ERROR,
+            motivo="almacenamiento_no_disponible",
+            servicio="s3",
+            error=type(exc).__name__,
+            orden_id=datos.orden_id,
+            usuario_id=principal.usuario_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ALMACENAMIENTO
         )
-    except GuardadoEvidenciaError:
+    except GuardadoEvidenciaError as exc:
         # La subida ya se compensó; el cliente puede reintentar. La causa real
-        # (error de la base) queda encadenada y nunca viaja en el body.
+        # (error de la base) queda encadenada y nunca viaja en el body. Si la
+        # compensación no pudo borrar el objeto, el log lo marca para que la
+        # conciliación (scripts/limpiar_huerfanos_ms4.py) lo limpie.
+        registrar(
+            "subida_fallida",
+            logging.ERROR,
+            motivo="base_no_disponible",
+            error=type(exc.__cause__).__name__,
+            evidencia_id=exc.evidencia_id,
+            orden_id=datos.orden_id,
+            usuario_id=principal.usuario_id,
+            pendiente_limpieza=exc.clave_huerfana is not None,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_GUARDADO
         )
+    registrar(
+        "evidencia_subida",
+        evidencia_id=evidencia.evidencia_id,
+        orden_id=evidencia.orden_id,
+        presupuesto_id=evidencia.presupuesto_id,
+        contexto=evidencia.contexto,
+        tipo_archivo=evidencia.tipo_archivo,
+        content_type=evidencia.content_type,
+        tamano_bytes=evidencia.tamano_bytes,
+        usuario_id=principal.usuario_id,
+    )
     return evidencia
 
 
@@ -489,10 +596,24 @@ def descarga(
             nombre_descarga=evidencia.nombre_original,
             expira_en=settings.URL_DESCARGA_TTL_SECONDS,
         )
-    except (BotoCoreError, ClientError):
+    except (BotoCoreError, ClientError) as exc:
+        registrar(
+            "descarga_fallida",
+            logging.ERROR,
+            servicio="s3",
+            error=type(exc).__name__,
+            evidencia_id=evidencia.evidencia_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ALMACENAMIENTO
         )
+    # La URL firmada NUNCA se registra (checklist 5.5): da acceso al archivo.
+    registrar(
+        "descarga_autorizada",
+        evidencia_id=evidencia.evidencia_id,
+        orden_id=evidencia.orden_id,
+        usuario_id=principal.usuario_id,
+    )
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return UrlDescarga(url=url, expira_en=settings.URL_DESCARGA_TTL_SECONDS)

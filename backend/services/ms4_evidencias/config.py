@@ -82,6 +82,9 @@ class Settings(ServiceSettings):
     # MS3 (presupuestos): al subir una evidencia de contexto `presupuesto`, MS4
     # le pregunta a qué orden pertenece ese presupuesto (mismo JWT) para no
     # asociar la foto al presupuesto de otra orden (Semana 6).
+    # Nivel de los logs de MS4 (services/registro.py): DEBUG, INFO, WARNING...
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
     MS3_URL: str = "http://localhost:8003"
     MS3_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
 

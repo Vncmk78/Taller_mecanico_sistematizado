@@ -15,6 +15,10 @@ from sqlalchemy.orm import Session
 from services.ms4_evidencias.config import settings
 from services.ms4_evidencias.db import get_db
 from services.ms4_evidencias.routers import ROUTERS
+from services.ms4_evidencias.services.registro import (
+    MiddlewareRegistro,
+    configurar_logs,
+)
 from services.ms4_evidencias.services.almacenamiento import (
     crear_cliente_s3,
     verificar_bucket,
@@ -37,6 +41,11 @@ app = FastAPI(
 
 for router in ROUTERS:
     app.include_router(router)
+
+# Log de cada solicitud con request_id, estado y duración, sin cabeceras, body
+# ni query string (checklist 5.5; services/registro.py).
+configurar_logs(settings.LOG_LEVEL)
+app.add_middleware(MiddlewareRegistro)
 
 MENSAJE_ERROR_INTERNO = "Error interno del servicio de evidencias"
 

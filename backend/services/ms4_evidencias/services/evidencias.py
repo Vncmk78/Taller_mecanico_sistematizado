@@ -65,9 +65,14 @@ class GuardadoEvidenciaError(Exception):
     encadenada (`__cause__`) y nunca se expone al cliente.
     """
 
-    def __init__(self, clave_huerfana: str | None = None) -> None:
+    def __init__(
+        self,
+        clave_huerfana: str | None = None,
+        evidencia_id: uuid.UUID | None = None,
+    ) -> None:
         super().__init__("No se pudo guardar la evidencia")
         self.clave_huerfana = clave_huerfana
+        self.evidencia_id = evidencia_id
 
 
 # Extensión de la clave según el content_type (1.4 y 2.5): la extensión sale del
@@ -242,7 +247,7 @@ def recibir_evidencia(
             eliminar_objeto(s3, bucket, clave)
         except Exception:  # noqa: BLE001  (la base ya falló; borrado best-effort)
             clave_huerfana = clave
-        raise GuardadoEvidenciaError(clave_huerfana) from exc
+        raise GuardadoEvidenciaError(clave_huerfana, evidencia_id) from exc
     db.refresh(evidencia)
     return evidencia
 

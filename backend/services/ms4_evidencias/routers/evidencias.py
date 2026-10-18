@@ -27,9 +27,14 @@ Roles sobre las evidencias:
   (`visible_cliente = true`, `estado = confirmada`, no eliminada); el resto ve
   las no eliminadas; el Administrador ve todo, incluidas las eliminadas.
 
+Archivo (Semana 6, checklist 1.1 y 1.3): solo se aceptan JPG, PNG, WEBP, MP4 y
+MOV (415 para cualquier otro formato) y cada tipo tiene un tamaño máximo
+(`MS4_MAX_BYTES_FOTO` / `MS4_MAX_BYTES_VIDEO`, 413 si se supera). Ambos
+rechazos ocurren antes de subir nada a MinIO o crear filas.
+
 Errores: 401 sin token, 403 rol que no sube, 404 evidencia/orden inexistente o
-fuera de alcance, 422 datos/regla inválidos, 503 MS2 u almacenamiento no
-disponible.
+fuera de alcance, 413 archivo demasiado grande, 415 formato no permitido, 422
+datos/regla inválidos, 503 MS2 u almacenamiento no disponible.
 """
 from __future__ import annotations
 
@@ -75,7 +80,6 @@ from services.ms4_evidencias.schemas.evidencia import (
 from services.ms4_evidencias.services.almacenamiento import generar_url_descarga
 from services.ms4_evidencias.services.contexto import CABECERA_REQUEST_ID
 from services.ms4_evidencias.services.evidencias import (
-    EvidenciaInvalidaError,
     buscar_por_id,
     es_visible_para,
     listar_por_orden,
@@ -85,6 +89,12 @@ from services.ms4_evidencias.services.permisos import (
     es_administrador,
     es_vista_cliente,
     puede_subir,
+)
+from services.ms4_evidencias.services.validacion_archivos import (
+    ArchivoDemasiadoGrandeError,
+    EvidenciaInvalidaError,
+    PoliticaArchivos,
+    TipoArchivoNoPermitidoError,
 )
 from shared.auth import PrincipalAutenticado
 
@@ -110,7 +120,22 @@ _503_ORDENES = {
         "description": "El servicio de órdenes no está disponible (MS2)"
     }
 }
+_413 = {
+    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {
+        "description": "El archivo supera el tamaño máximo de su tipo (foto o video)"
+    }
+}
+_415 = {
+    status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: {
+        "description": "Formato no permitido: solo JPG, PNG, WEBP, MP4 y MOV"
+    }
+}
 _ERRORES_COMUNES = {**_401, **_403_SUBIR}
+
+
+def obtener_politica_archivos() -> PoliticaArchivos:
+    """Lista blanca y límites de tamaño vigentes (configuración MS4_*)."""
+    return PoliticaArchivos.desde_settings(settings)
 
 
 def _personal_que_subira(
@@ -183,8 +208,10 @@ def _exigir_orden_accesible(
         status.HTTP_404_NOT_FOUND: {
             "description": "La orden no existe o no la atiende el solicitante"
         },
+        **_413,
+        **_415,
         status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Tipo de archivo, contexto o reglas de presupuesto inválidos"
+            "description": "Archivo vacío, contexto o reglas de presupuesto inválidos"
         },
         **_503,
         **_503_ORDENES,
@@ -202,6 +229,7 @@ def subir(
     principal: PrincipalAutenticado = Depends(_personal_que_subira),
     token: str = Depends(obtener_token_bearer),
     verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
+    politica: PoliticaArchivos = Depends(obtener_politica_archivos),
 ) -> EvidenciaLeida:
     _exigir_orden_accesible(
         orden_id, token, verificador, detalle_no_visible="Orden no encontrada"
@@ -227,6 +255,15 @@ def subir(
             archivo.content_type or "",
             principal.usuario_id,
             request.headers.get(CABECERA_REQUEST_ID),
+            politica=politica,
+        )
+    except ArchivoDemasiadoGrandeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)
+        )
+    except TipoArchivoNoPermitidoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)
         )
     except EvidenciaInvalidaError as exc:
         raise HTTPException(

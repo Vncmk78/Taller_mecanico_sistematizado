@@ -337,8 +337,10 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
             "(de una orden que atiende) o Administrador; un Cliente recibe 403 "
             "antes de procesar el archivo. MS4 verifica la orden contra MS2 con "
             "el mismo JWT antes de guardar nada. El autor sale del token y el "
-            "`X-Request-ID` queda registrado con la evidencia. La Gateway "
-            "rechaza con 413 un body mayor a 12 MiB."
+            "`X-Request-ID` queda registrado con la evidencia. Formatos "
+            "aceptados: JPG, PNG, WEBP, MP4 y MOV (415 para el resto). Fotos "
+            "hasta 10 MiB (413 de MS4); la Gateway rechaza con 413 un body "
+            "mayor a 12 MiB."
         ),
         operation_id="subir_evidencia",
         cuerpo=None,
@@ -349,7 +351,8 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
         errores_ms={
             "401": "JWT ausente o inválido",
             "403": "Se requiere rol Mecánico o Administrador",
-            "422": "Archivo vacío, tipo no permitido o datos del formulario inválidos",
+            "415": "Formato no permitido: solo JPG, PNG, WEBP, MP4 y MOV",
+            "422": "Archivo vacío o datos del formulario inválidos",
         },
         descripcion_404=(
             "Orden no encontrada: no existe o no es visible para el usuario "
@@ -358,8 +361,10 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
         esquema_404=error_404_ms4,
     )
     subir["responses"]["413"] = _respuesta(
-        "La Gateway rechazó el body por superar el límite (CUERPO_DEMASIADO_GRANDE).",
-        _ref("ErrorRespuesta"),
+        "El archivo es demasiado grande: la Gateway rechaza un body mayor a "
+        "12 MiB (CUERPO_DEMASIADO_GRANDE) y MS4 una foto mayor a 10 MiB o un "
+        "video mayor a su límite (`{\"detail\": ...}`).",
+        {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
     )
     return {
         "/api/evidencias": {

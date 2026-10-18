@@ -231,8 +231,19 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         "Una evidencia ajena y una inexistente responden exactamente lo mismo.",
     ),
     "detalle_tipo_archivo_no_permitido": _ejemplo(
-        "422 de MS4: el archivo no es imagen ni video",
-        {"detail": "Tipo de archivo no permitido"},
+        "415 de MS4: formato fuera de la lista blanca",
+        {
+            "detail": (
+                "Tipo de archivo no permitido. Formatos aceptados: JPG, PNG, "
+                "WEBP, MP4 y MOV"
+            )
+        },
+        "SVG, HTML, PDF, ZIP, ejecutables, GIF o HEIC se rechazan antes de subir nada.",
+    ),
+    "detalle_foto_demasiado_grande": _ejemplo(
+        "413 de MS4: la foto supera su tamaño máximo",
+        {"detail": "La foto supera el tamaño máximo permitido (10 MB)"},
+        "Fotos hasta MS4_MAX_BYTES_FOTO (10 MiB); videos hasta MS4_MAX_BYTES_VIDEO.",
     ),
     "detalle_archivo_vacio": _ejemplo(
         "422 de MS4: archivo de 0 bytes",
@@ -509,9 +520,14 @@ _EJEMPLOS_OPERACIONES.update(
                 "401": _EJEMPLOS_AUTENTICACION,
                 "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
                 "404": {"orden_no_encontrada": _ref_ejemplo("detalle_orden_no_encontrada")},
-                "413": {"cuerpo_demasiado_grande": _ref_ejemplo("error_cuerpo_demasiado_grande")},
-                "422": {
+                "413": {
+                    "cuerpo_demasiado_grande": _ref_ejemplo("error_cuerpo_demasiado_grande"),
+                    "foto_demasiado_grande": _ref_ejemplo("detalle_foto_demasiado_grande"),
+                },
+                "415": {
                     "tipo_no_permitido": _ref_ejemplo("detalle_tipo_archivo_no_permitido"),
+                },
+                "422": {
                     "archivo_vacio": _ref_ejemplo("detalle_archivo_vacio"),
                 },
                 "503": _EJEMPLOS_503_EVIDENCIAS,

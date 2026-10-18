@@ -29,6 +29,8 @@ from services.ms4_evidencias.models import Base
 from services.ms4_evidencias.schemas.evidencia import EvidenciaLeida, UrlDescarga
 from shared.auth import NombreRol, crear_token_acceso
 
+from archivos_muestra import jpeg
+
 SECRETO = "clave-secreta-exclusiva-para-pruebas-de-ms4-123456"
 _JSON = "application/json"
 
@@ -128,7 +130,12 @@ def test_ejemplos_de_error_de_la_subida_son_los_reales(esquema: dict, ms4: dict)
             lambda: _subir(cliente, {"Authorization": "Bearer invalido"}),
         ),
         ("403", "rol_insuficiente", lambda: _subir(cliente, _cabeceras(NombreRol.CLIENTE))),
-        ("422", "tipo_no_permitido", lambda: _subir(cliente, mecanico, tipo="text/plain")),
+        ("415", "tipo_no_permitido", lambda: _subir(cliente, mecanico, tipo="text/plain")),
+        (
+            "413",
+            "foto_demasiado_grande",
+            lambda: _subir(cliente, mecanico, datos=jpeg(10 * 1024 * 1024 + 1)),
+        ),
         ("422", "archivo_vacio", lambda: _subir(cliente, mecanico, datos=b"")),
     ]
     for codigo, nombre, llamada in casos:

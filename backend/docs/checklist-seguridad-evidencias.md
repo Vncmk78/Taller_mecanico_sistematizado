@@ -26,13 +26,21 @@ verifica** · **cuándo** se implementa (tarea del plan).
 
 ## 1. Recepción del archivo
 
-- [ ] **1.1 Lista blanca de formatos.** Solo se aceptan `image/jpeg`,
+- [x] **1.1 Lista blanca de formatos.** Solo se aceptan `image/jpeg`,
   `image/png`, `image/webp`, `video/mp4` y `video/quicktime` (MOV).
   - Por qué: SVG y HTML pueden contener scripts (XSS); ejecutables, ZIP o
     PDF no son evidencia y abren otros vectores de ataque.
   - Verificación: test que sube un `.svg`, un `.html` y un `.exe` y espera
     `415 Unsupported Media Type`.
   - Cuándo: Semana 6 — *Validar tamaño, formato y asociación de archivos*.
+  - ✅ Implementado (Semana 6 — *Implementar límites de tamaño y lista
+    permitida de tipos de archivo*): `PoliticaArchivos.validar_tipo`
+    (`services/validacion_archivos.py`) aplica la lista blanca
+    `MS4_TIPOS_PERMITIDOS` antes de leer o subir el archivo y responde `415`.
+    La configuración solo admite formatos de `FORMATOS_SOPORTADOS`
+    (`config.py`), para que nadie habilite un tipo que MS4 no sabe verificar.
+    Verificado en `tests/test_ms4_limites_archivos.py` (SVG, HTML, EXE, PDF,
+    ZIP y GIF → `415` sin objetos ni filas; cada formato permitido → `201`).
 
 - [ ] **1.2 El tipo se valida por el contenido, no por el nombre.** Se leen
   los primeros bytes del archivo (firma o *magic bytes*) y se comparan con el
@@ -42,13 +50,19 @@ verifica** · **cuándo** se implementa (tarea del plan).
   - Verificación: test con un HTML renombrado a `.jpg` que debe ser rechazado.
   - Cuándo: Semana 6.
 
-- [ ] **1.3 Tamaño máximo.** Imágenes hasta **10 MB**; videos hasta
+- [x] **1.3 Tamaño máximo.** Imágenes hasta **10 MB**; videos hasta
   **100 MB** (valores iniciales, ajustables por configuración `MS4_*`).
   Si se supera, se corta la lectura y se responde `413 Payload Too Large`.
   - Por qué: evita agotar disco, memoria y ancho de banda (denegación de
     servicio).
   - Verificación: test con un archivo de 10 MB + 1 byte.
   - Cuándo: Semana 6.
+  - ✅ Implementado: `MS4_MAX_BYTES_FOTO` (10 MiB) y `MS4_MAX_BYTES_VIDEO`
+    (100 MiB) en `config.py`; `calcular_sha256_y_tamano(maximo=...)` corta la
+    lectura apenas se supera el límite del tipo y el router responde `413`
+    con el límite en el mensaje, sin subir nada. Verificado en
+    `tests/test_ms4_limites_archivos.py` (foto de 10 MiB + 1 byte → `413`,
+    exacta de 10 MiB → `201`, límite propio para video y lectura cortada).
 
 - [x] **1.4 Nombre de almacenamiento generado por el servidor.** El archivo
   se guarda con un UUID (`{uuid}.{ext}`); el nombre original solo se guarda

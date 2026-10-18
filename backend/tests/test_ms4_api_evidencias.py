@@ -5,8 +5,9 @@ Usan el TestClient de FastAPI contra `main.app` con SQLite en memoria
 `obtener_s3_publico` (cliente boto3 real que firma offline contra un endpoint
 público de prueba, sin tocar la red). Verifican los contratos:
 
-- subida: 201 mecánico/admin, 403 cliente, 401 sin token, 422 archivo vacío /
-  tipo de archivo / contexto / reglas de presupuesto, 503 si el almacenamiento
+- subida: 201 mecánico/admin, 403 cliente, 401 sin token, 415 tipo de archivo
+  fuera de la lista blanca, 422 archivo vacío / contexto / reglas de
+  presupuesto, 503 si el almacenamiento
   falla (sin filas ni objetos sueltos);
 - consulta: filtros de visibilidad por rol en el listado, 422 sin `orden_id`,
   404 por no enumeración en detalle y descarga, cabeceras seguras en la
@@ -299,14 +300,15 @@ def test_archivo_vacio_se_rechaza_con_422(
     assert _contar_filas(sesion) == 0
 
 
-def test_tipo_de_archivo_no_permitido_se_rechaza_con_422(
+def test_tipo_de_archivo_no_permitido_se_rechaza_con_415(
     api: TestClient, s3: FakeS3, sesion: Session
 ) -> None:
     respuesta = _subir(
         api, _token(7, NombreRol.MECANICO), content_type="text/plain"
     )
 
-    assert respuesta.status_code == 422
+    # Lista blanca (checklist 1.1, Semana 6): formato fuera de la lista → 415.
+    assert respuesta.status_code == 415
     assert not s3.objetos
     assert _contar_filas(sesion) == 0
 

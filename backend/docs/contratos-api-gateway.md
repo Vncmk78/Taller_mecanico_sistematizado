@@ -102,7 +102,7 @@ OpenAPI publica en cada caso el esquema que corresponde.
 | Prefijo | Ejemplos |
 |---|---|
 | `error_*` | Los ocho errores de la Gateway: `error_ruta_no_encontrada` (404), `error_metodo_no_permitido` (405), `error_cuerpo_demasiado_grande` (413), `error_interno_gateway` (500), `error_microservicio` (respuesta no JSON), `error_microservicio_no_disponible` (502), `error_gateway_saturada` (503) y `error_tiempo_agotado` (504) |
-| `detalle_*` | Los errores que responden MS1, MS2 y MS4: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados, los dos `422` de validación y los de evidencias (orden o evidencia no encontrada, tipo de archivo no permitido, archivo vacío, almacenamiento u órdenes no disponibles) |
+| `detalle_*` | Los errores que responden MS1, MS2 y MS4: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados, los dos `422` de validación y los de evidencias (orden o evidencia no encontrada, tipo de archivo no permitido (415), foto demasiado grande (413), archivo vacío, almacenamiento u órdenes no disponibles) |
 
 Los mensajes de los errores de la Gateway se importan de `gateway/errores.py`, así
 que el ejemplo no puede divergir del texto que la Gateway responde realmente. Los
@@ -1031,15 +1031,22 @@ Sube una foto o video de una orden. Es `multipart/form-data`, **no** JSON.
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` con rol Mecánico (orden asignada) o Administrador |
-| Body (multipart) | `archivo` (binario, `image/*` o `video/*`) · `orden_id` (int > 0) · `contexto` (`diagnostico` \| `presupuesto` \| `reparacion` \| `resultado_final`) · `presupuesto_id`? (solo con `presupuesto`) · `visible_cliente`? (`true`/`false`) |
+| Body (multipart) | `archivo` (binario: `image/jpeg`, `image/png`, `image/webp`, `video/mp4` o `video/quicktime`; foto ≤ 10 MiB) · `orden_id` (int > 0) · `contexto` (`diagnostico` \| `presupuesto` \| `reparacion` \| `resultado_final`) · `presupuesto_id`? (solo con `presupuesto`) · `visible_cliente`? (`true`/`false`) |
 | Cabeceras opcionales | `X-Request-ID` (queda guardado con la evidencia para rastrearla) |
 | Respuesta OK | `201` con `EvidenciaRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` rol Cliente (se rechaza antes de procesar el archivo) · `404` `"Orden no encontrada"` (inexistente o no visible) · `413` body > 12 MiB (Gateway) · `422` `"Tipo de archivo no permitido"`, `"El archivo no puede estar vacío"` o formulario inválido · `503` `"El almacenamiento de evidencias no está disponible"` o `"El servicio de órdenes no está disponible"` |
+| Errores | `401` JWT ausente/inválido · `403` rol Cliente (se rechaza antes de procesar el archivo) · `404` `"Orden no encontrada"` (inexistente o no visible) · `413` body > 12 MiB (Gateway) o `"La foto supera el tamaño máximo permitido (10 MB)"` (MS4) · `415` `"Tipo de archivo no permitido. Formatos aceptados: JPG, PNG, WEBP, MP4 y MOV"` · `422` `"El archivo no puede estar vacío"` o formulario inválido · `503` `"El almacenamiento de evidencias no está disponible"` o `"El servicio de órdenes no está disponible"` |
 
 El servidor decide el nombre y la extensión del objeto a partir del
 `Content-Type` de la parte `archivo`; el nombre original solo se guarda para
 mostrarlo, sin rutas. Si la base falla después de subir, el archivo se borra
 (no quedan archivos huérfanos).
+
+Lista blanca y tamaños (Semana 6, checklist 1.1 y 1.3): MS4 solo acepta JPG,
+PNG, WEBP, MP4 y MOV; cualquier otro formato (SVG, HTML, PDF, ZIP, GIF, HEIC,
+ejecutables) responde `415`. Las fotos pesan hasta `MS4_MAX_BYTES_FOTO`
+(10 MiB) y los videos hasta `MS4_MAX_BYTES_VIDEO` (100 MiB); al superar el
+límite MS4 corta la lectura y responde `413`. Ambos rechazos ocurren antes de
+subir el archivo o crear filas. Por la Gateway nunca pasa más de 12 MiB.
 
 ```bash
 curl -X POST "$GATEWAY/api/evidencias" \

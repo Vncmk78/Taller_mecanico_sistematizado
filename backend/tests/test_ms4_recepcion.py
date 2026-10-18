@@ -30,10 +30,13 @@ from services.ms4_evidencias.models.evidencia import (
 from services.ms4_evidencias.schemas.evidencia import DatosRecepcion
 from services.ms4_evidencias.services.evidencias import (
     EvidenciaInvalidaError,
+    GuardadoEvidenciaError,
     listar_por_orden,
     presupuesto_tiene_evidencia,
     recibir_evidencia,
 )
+
+from archivos_muestra import JPEG_VALIDO, jpeg_con
 
 BUCKET = "evidencias"
 
@@ -93,7 +96,7 @@ def _recibir(
     sesion: Session,
     s3: FakeS3,
     *,
-    archivo: bytes = b"datos-de-foto",
+    archivo: bytes = JPEG_VALIDO,
     nombre: str = "foto.jpg",
     content_type: str = "image/jpeg",
     autor: int = 7,
@@ -136,7 +139,7 @@ def _nueva(**cambios) -> Evidencia:
 # --------------------------------------------------------------------------- #
 
 def test_foto_valida_queda_guardada_y_confirmada(sesion: Session, s3: FakeS3) -> None:
-    contenido = b"datos-de-foto-jpeg"
+    contenido = jpeg_con(b"datos-de-foto-jpeg")
     evidencia = _recibir(sesion, s3, archivo=contenido)
 
     # Fila confirmada con metadatos de integridad (control 2.4).
@@ -227,9 +230,12 @@ def test_si_la_base_falla_se_borra_el_objeto_recien_subido(
 
     monkeypatch.setattr(sesion, "commit", _commit_falla)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(GuardadoEvidenciaError) as error:
         _recibir(sesion, s3)
 
+    # La causa real queda encadenada; la compensación borró el objeto.
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert error.value.clave_huerfana is None
     # Compensación: no quedan archivos huérfanos ni filas.
     assert not s3.objetos
     assert _contar_filas(sesion) == 0

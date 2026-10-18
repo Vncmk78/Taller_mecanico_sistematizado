@@ -370,9 +370,12 @@ def test_contrato_evidencias_documenta_formulario_y_seguridad(esquema: dict) -> 
 
     paths = esquema["paths"]
     subir = paths["/api/evidencias"]["post"]["responses"]
-    assert subir["413"]["content"]["application/json"]["schema"]["$ref"] == (
-        "#/components/schemas/ErrorRespuesta"
-    )
+    # 413 puede venir de la Gateway (body > 12 MiB) o de MS4 (foto > 10 MiB).
+    assert subir["413"]["content"]["application/json"]["schema"]["oneOf"] == [
+        {"$ref": "#/components/schemas/ErrorRespuesta"},
+        {"$ref": "#/components/schemas/ErrorDetalle"},
+    ]
+    assert "415" in subir
     listado = paths["/api/evidencias"]["get"]
     [query] = [p for p in listado["parameters"] if p["in"] == "query"]
     assert query["name"] == "orden_id" and query["required"] is True

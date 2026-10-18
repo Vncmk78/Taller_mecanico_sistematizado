@@ -304,6 +304,15 @@ verifica** · **cuándo** se implementa (tarea del plan).
   borra el objeto en MinIO **y** el metadato en la base; si falla uno, no
   quedan registros huérfanos.
   - Cuándo: Semana 6.
+  - Avance (Semana 6 — *Implementar limpieza o manejo de archivos huérfanos
+    ante fallos*): la subida ya no deja huérfanos sin rastro. Si la base falla
+    se borra el objeto y, si ese borrado también falla, la clave queda en
+    `GuardadoEvidenciaError.clave_huerfana`. La conciliación
+    `services/huerfanos.py` + `scripts/limpiar_huerfanos_ms4.py` encuentra y
+    borra los objetos sin fila (solo claves de la convención y con más de 60
+    minutos) e informa las filas sin archivo. Verificado en
+    `tests/test_ms4_huerfanos.py`. Queda pendiente el endpoint de borrado de
+    evidencias, que debe reutilizar esta misma lógica.
 
 - [ ] **5.4 Política de retención definida.** Cuánto tiempo se conservan las
   evidencias de órdenes entregadas (propuesta inicial: mientras exista la

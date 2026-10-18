@@ -335,6 +335,14 @@ con un máximo de 10 MiB por foto y 100 MiB por video (`MS4_TIPOS_PERMITIDOS`,
 orden, MS4 consulta a MS2 (`MS4_MS2_URL`) y, en evidencias de presupuesto, a MS3
 (`MS4_MS3_URL`); ambos deben estar levantados para subir.
 
+Para encontrar y limpiar archivos del bucket que quedaron sin fila en la base
+(huérfanos), ver `docs/modelo-evidencias.md` § Archivos huérfanos:
+
+```bash
+python scripts/limpiar_huerfanos_ms4.py              # solo informa
+python scripts/limpiar_huerfanos_ms4.py --eliminar   # borra los huérfanos
+```
+
 ```bash
 # Pruebas de MS4 (las que usan MinIO real se omiten si no está levantado)
 python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py -q

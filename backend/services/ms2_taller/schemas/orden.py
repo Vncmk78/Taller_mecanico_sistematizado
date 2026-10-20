@@ -25,6 +25,25 @@ class AsignacionMecanicoActualizar(BaseModel):
     observacion: str | None = Field(default=None, min_length=1)
 
 
+class CapacidadMecanicoActualizar(BaseModel):
+    """Límite administrativo de órdenes activas asignadas a cada mecánico."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_ordenes_activas: int = Field(gt=0, strict=True)
+
+
+class CapacidadMecanicoRespuesta(BaseModel):
+    """Límite vigente y carga que supera el valor recién configurado."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    max_ordenes_activas: int | None
+    actualizado_por_id: int | None
+    actualizado_en: datetime
+    mecanicos_sobre_limite: list[dict[str, int]]
+
+
 class OrdenRespuesta(BaseModel):
     """Representación inicial de una orden expuesta por la API de MS2."""
 

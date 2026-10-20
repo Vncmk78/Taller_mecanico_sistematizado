@@ -130,6 +130,14 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         "AsignacionMecanicoActualizar",
         contratos_ordenes.AsignacionMecanicoActualizar,
     ),
+    (
+        "CapacidadMecanicoActualizar",
+        contratos_ordenes.CapacidadMecanicoActualizar,
+    ),
+    (
+        "CapacidadMecanicoRespuesta",
+        contratos_ordenes.CapacidadMecanicoRespuesta,
+    ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
@@ -718,7 +726,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "409": "Autoasignación o estado terminal",
+                    "409": "Autoasignación, estado terminal o capacidad excedida/no configurada",
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
@@ -726,6 +734,55 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 descripcion_404="Orden no encontrada.",
                 esquema_404=error_404_recurso,
             )
+        },
+        "/api/ordenes/configuracion/capacidad/mecanicos": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar la capacidad máxima por mecánico",
+                descripcion=(
+                    "Solo Administrador. Devuelve el máximo configurado y, si "
+                    "se redujo por debajo del uso actual, informa los mecánicos "
+                    "que superan el nuevo límite. Un valor nulo indica que aún "
+                    "no se ha configurado capacidad."
+                ),
+                operation_id="consultar_capacidad_mecanicos",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Configuración de capacidad.",
+                        _ref("CapacidadMecanicoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                },
+                requiere_auth=True,
+            ),
+            "put": _operacion(
+                tag="Órdenes",
+                resumen="Configurar el máximo de órdenes activas por mecánico",
+                descripcion=(
+                    "Solo Administrador. El valor debe ser un entero positivo. "
+                    "Cada cambio guarda el valor anterior y el nuevo, el actor "
+                    "y la fecha. Si hay mecánicos sobre el nuevo límite, se "
+                    "informan sin cancelar ni desasignar órdenes existentes."
+                ),
+                operation_id="actualizar_capacidad_mecanicos",
+                cuerpo="CapacidadMecanicoActualizar",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Configuración actualizada.",
+                        _ref("CapacidadMecanicoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "El máximo debe ser un entero positivo",
+                },
+                requiere_auth=True,
+            ),
         },
         "/api/ordenes/{orden_id}/historial": {
             "get": _operacion(

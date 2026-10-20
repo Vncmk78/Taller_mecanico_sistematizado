@@ -2,6 +2,8 @@
 
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
+    CapacidadMecanicoActualizar,
+    CapacidadMecanicoRespuesta,
     HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
@@ -14,6 +16,8 @@ from services.ms2_taller.schemas.vehiculo import (
 
 __all__ = [
     "AsignacionMecanicoActualizar",
+    "CapacidadMecanicoActualizar",
+    "CapacidadMecanicoRespuesta",
     "HistorialEstadoRespuesta",
     "OrdenCrear",
     "OrdenRespuesta",

@@ -130,9 +130,9 @@ Detalles que condicionan la matriz:
   `Esperando diagnóstico` y quedan registrados `HistorialAsignacion` e
   `HistorialEstado` en la misma transacción. `Entregado` y `Cancelado` rechazan
   asignaciones con `409`.
-- `mecanico_id` es hoy una **referencia lógica** a MS1: **no** se valida en el
-  servidor que exista, esté activo ni tenga el rol `mecanico`, ni se aplica un
-  máximo de órdenes activas.
+- `mecanico_id` es una **referencia lógica** a MS1. MS2 valida localmente el
+  máximo configurable de órdenes activas, pero aún no comprueba por contrato
+  que el usuario de destino exista, esté activo o tenga el rol `mecanico`.
 
 ### 4.4 Presupuestos, repuestos, proveedores e inventario (MS3)
 

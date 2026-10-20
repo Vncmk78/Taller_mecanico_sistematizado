@@ -19,6 +19,11 @@ from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
+from services.ms2_taller.models.configuracion_capacidad_mecanico import (
+    ConfiguracionCapacidadMecanico,
+    HistorialConfiguracionCapacidadMecanico,
+    HistorialValidacionCapacidadMecanico,
+)
 
 __all__ = [
     "Base",
@@ -29,4 +34,7 @@ __all__ = [
     "OrdenTrabajo",
     "HistorialEstado",
     "HistorialAsignacion",
+    "ConfiguracionCapacidadMecanico",
+    "HistorialConfiguracionCapacidadMecanico",
+    "HistorialValidacionCapacidadMecanico",
 ]

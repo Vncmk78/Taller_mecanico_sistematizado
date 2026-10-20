@@ -17,6 +17,8 @@ from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
+    CapacidadMecanicoActualizar,
+    CapacidadMecanicoRespuesta,
     CambioEstadoSolicitud,
     HistorialEstadoRespuesta,
     OrdenCrear,
@@ -40,6 +42,13 @@ from services.ms2_taller.services.ordenes import (
     obtener_historial_orden,
     obtener_orden_visible,
 )
+from services.ms2_taller.services.capacidad_mecanicos import (
+    CapacidadMecanicoExcedidaError,
+    CapacidadMecanicoNoConfiguradaError,
+    PersistenciaCapacidadError,
+    configurar_capacidad_mecanicos,
+    obtener_configuracion_capacidad_mecanicos,
+)
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
@@ -49,6 +58,79 @@ from shared.contratos_decisiones import (
 )
 
 router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
+
+
+@router_ordenes.get(
+    "/configuracion/capacidad/mecanicos",
+    response_model=CapacidadMecanicoRespuesta,
+    summary="Consultar el límite de órdenes activas por mecánico",
+)
+def consultar_capacidad_mecanicos(
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> dict[str, object]:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para realizar esta operación",
+        )
+    try:
+        configuracion, sobre_limite = obtener_configuracion_capacidad_mecanicos(db)
+        return {
+            "max_ordenes_activas": configuracion.max_ordenes_activas,
+            "actualizado_por_id": configuracion.actualizado_por_id,
+            "actualizado_en": configuracion.actualizado_en,
+            "mecanicos_sobre_limite": sobre_limite,
+        }
+    except PersistenciaCapacidadError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar la capacidad de los mecánicos",
+        ) from exc
+
+
+@router_ordenes.put(
+    "/configuracion/capacidad/mecanicos",
+    response_model=CapacidadMecanicoRespuesta,
+    summary="Configurar el máximo de órdenes activas por mecánico",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "El máximo debe ser un entero positivo"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible guardar la configuración"
+        },
+    },
+)
+def actualizar_capacidad_mecanicos(
+    body: CapacidadMecanicoActualizar,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> dict[str, object]:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para realizar esta operación",
+        )
+    try:
+        configuracion, sobre_limite = configurar_capacidad_mecanicos(
+            db,
+            max_ordenes_activas=body.max_ordenes_activas,
+            administrador_id=principal.usuario_id,
+        )
+        return {
+            "max_ordenes_activas": configuracion.max_ordenes_activas,
+            "actualizado_por_id": configuracion.actualizado_por_id,
+            "actualizado_en": configuracion.actualizado_en,
+            "mecanicos_sobre_limite": sobre_limite,
+        }
+    except PersistenciaCapacidadError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible guardar la capacidad de los mecánicos",
+        ) from exc
 
 
 @router_ordenes.post(
@@ -363,7 +445,8 @@ def cambiar_estado(
         status.HTTP_409_CONFLICT: {
             "description": (
                 "Un administrador-mecánico no puede autoasignarse o la orden "
-                "se encuentra en un estado terminal"
+                "está en estado terminal, no se configuró capacidad o el "
+                "mecánico alcanzó el límite"
             )
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
@@ -405,6 +488,16 @@ def actualizar_mecanico_responsable(
             detail="Orden no encontrada",
         ) from exc
     except OrdenTerminalError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except CapacidadMecanicoNoConfiguradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except CapacidadMecanicoExcedidaError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),

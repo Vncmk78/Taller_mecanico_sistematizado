@@ -648,7 +648,7 @@ reasignaciones.
 | Auth | `Authorization: Bearer <token>` con rol Administrador |
 | Body | `{"mecanico_id": int positivo, "observacion"?: string no vacío}` |
 | Respuesta OK | `200` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` autoasignación o estado terminal · `422` body inválido · `500` persistencia · `502` MS2 no disponible |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` autoasignación, estado terminal, capacidad no configurada o límite alcanzado · `422` body inválido · `500` persistencia · `502` MS2 no disponible |
 
 ```json
 // Request
@@ -667,8 +667,33 @@ reasignaciones.
 ```
 
 `mecanico_id` es hoy una referencia lógica a MS1. La validación remota de
-existencia, actividad y rol Mecánico, junto con los límites de capacidad por
-mecánico, permanece pendiente de contratos e implementación posteriores.
+existencia, actividad y rol Mecánico permanece pendiente del contrato con MS1.
+Antes de cambiar el responsable, MS2 valida el máximo configurable de órdenes
+activas del mecánico de destino. Se cuentan sus órdenes asignadas cuyo estado no
+sea `Entregado` ni `Cancelado`; una orden `Recibido` sin asignar no consume
+capacidad. La reasignación solo se confirma si el destino tiene cupo y el cambio
+se serializa junto con las demás asignaciones mediante la fila de configuración.
+Cada validación aceptada o rechazada queda registrada en el historial de MS2.
+
+### GET y PUT `/api/ordenes/configuracion/capacidad/mecanicos`
+
+Permiten consultar y modificar el límite de órdenes activas por mecánico. Ambas
+operaciones requieren JWT con rol Administrador. El `PUT` acepta un entero
+positivo y conserva valor anterior, nuevo, administrador y fecha/hora. Si el
+límite se reduce por debajo de la carga actual, la respuesta informa los
+mecánicos sobre el nuevo límite; sus órdenes existentes no se cancelan ni se
+desasignan, y las operaciones que aumenten una carga ya excedida se rechazan.
+
+```json
+PUT /api/ordenes/configuracion/capacidad/mecanicos
+{ "max_ordenes_activas": 5 }
+```
+
+La respuesta incluye `max_ordenes_activas`, `actualizado_por_id`,
+`actualizado_en` y `mecanicos_sobre_limite` (`mecanico_id` y `ordenes_activas`).
+Si el límite aún no se configuró, el valor es `null` y las asignaciones o
+reasignaciones se rechazan con `409` hasta que un Administrador lo establezca.
+Un valor igual al actual no genera una nueva fila de historial.
 
 ### GET `/api/ordenes/{orden_id}/historial`
 
@@ -1009,7 +1034,8 @@ consumidas como parte del contrato actual:
 
 | Capacidad | Situación actual |
 |---|---|
-| Capacidad y máximo de órdenes activas | Subsistema de una semana posterior |
+| Máximo de órdenes activas por mecánico | Implementado en MS2; GET/PUT de configuración y validación en asignación |
+| Cupo diario de ingresos físicos | Subsistema posterior; no forma parte de la configuración de capacidad por mecánico |
 | Presupuestos, repuestos e inventario | Los contratos de MS3 se publicarán cuando sus endpoints estén definidos y verificados |
 
 El frontend web y la aplicación móvil deben consumir exclusivamente las rutas

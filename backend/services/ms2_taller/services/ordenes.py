@@ -3,9 +3,9 @@
 INT-32 aporta el alta en estado ``Recibido`` y la visibilidad por recurso.
 INT-33 agrega la asignación y reasignación auditada del mecánico. La primera
 asignación de una orden recibida la deja esperando diagnóstico; las posteriores
-no cambian automáticamente el estado. La validación remota del rol del destino
-y la capacidad configurable siguen pendientes porque su infraestructura todavía
-no está disponible.
+no cambian automáticamente el estado. La asignación valida y audita la
+capacidad configurable del mecánico en la base propia de MS2. La validación
+remota del rol del destino continúa pendiente de contrato con MS1.
 """
 
 from __future__ import annotations
@@ -42,6 +42,9 @@ from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.vehiculo import Vehiculo
+from services.ms2_taller.services.capacidad_mecanicos import (
+    validar_capacidad_para_asignacion,
+)
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
@@ -263,8 +266,9 @@ def asignar_mecanico(
     una operación concurrente sobre la misma orden observa el responsable que
     haya confirmado la operación anterior. En la primera asignación, una orden
     ``Recibida`` pasa a ``Esperando diagnóstico`` y se auditan ambos cambios.
-    La comprobación remota del rol del destino y la capacidad configurable quedan
-    deliberadamente fuera de INT-33.
+    La operación valida la capacidad configurada del mecánico de destino y deja
+    constancia del resultado. La verificación remota del rol del destino sigue
+    pendiente del contrato correspondiente con MS1.
     """
 
     try:
@@ -284,6 +288,14 @@ def asignar_mecanico(
             # sin emitir UPDATE ni insertar una fila de historial.
             db.commit()
             return orden
+
+        validar_capacidad_para_asignacion(
+            db,
+            orden_id=orden.orden_id,
+            mecanico_anterior_id=mecanico_anterior_id,
+            mecanico_id=mecanico_id,
+            administrador_id=administrador_id,
+        )
 
         orden.mecanico_actual_id = mecanico_id
         db.add(

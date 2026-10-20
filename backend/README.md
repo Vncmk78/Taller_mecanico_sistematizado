@@ -39,6 +39,19 @@ backend/
 └── requirements.txt
 ```
 
+### Capacidad de órdenes por mecánico (MS2)
+
+Un Administrador configura el límite mediante
+`PUT /api/ordenes/configuracion/capacidad/mecanicos` con
+`{"max_ordenes_activas": 5}` y lo consulta con `GET` sobre la misma ruta. El
+límite se aplica al asignar o reasignar: solo cuentan órdenes asignadas que no
+están `Entregado` ni `Cancelado`. Las modificaciones conservan auditoría y las
+validaciones guardan su resultado. Hay que establecer el límite antes de asignar
+órdenes. Si se reduce por debajo de la carga existente, la API informa qué
+mecánicos la superan y bloquea nuevos aumentos sin alterar sus órdenes actuales.
+Antes del primer uso, aplicar las migraciones de MS2 desde `backend/` con
+`alembic -c services/ms2_taller/alembic.ini upgrade head`.
+
 Cada servicio tiene su **propia base declarativa**. Es lo que impide que las
 tablas de los cuatro dominios terminen mezcladas en una misma migración.
 

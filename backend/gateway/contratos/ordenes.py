@@ -86,6 +86,50 @@ class AsignacionMecanicoActualizar(BaseModel):
     )
 
 
+class CapacidadMecanicoActualizar(BaseModel):
+    """Límite de órdenes activas que un Administrador configura por mecánico."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"max_ordenes_activas": 5}]},
+    )
+
+    max_ordenes_activas: int = Field(
+        gt=0,
+        strict=True,
+        description="Máximo positivo de órdenes asignadas no terminales por mecánico.",
+        examples=[5],
+    )
+
+
+class CapacidadMecanicoRespuesta(BaseModel):
+    """Configuración vigente e información de mecánicos sobre el nuevo límite."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "max_ordenes_activas": 5,
+                    "actualizado_por_id": 99,
+                    "actualizado_en": "2026-10-20T10:00:00-03:00",
+                    "mecanicos_sobre_limite": [],
+                }
+            ]
+        }
+    )
+
+    max_ordenes_activas: int | None = Field(
+        description="Nulo hasta que un Administrador configure el límite."
+    )
+    actualizado_por_id: int | None = Field(
+        description="Referencia lógica al Administrador que configuró el valor."
+    )
+    actualizado_en: datetime = Field(description="Fecha y hora de la configuración.")
+    mecanicos_sobre_limite: list[dict[str, int]] = Field(
+        description="Mecánicos cuya carga actual supera el máximo recién configurado."
+    )
+
+
 class OrdenRespuesta(BaseModel):
     """Representación inicial de una orden expuesta por MS2."""
 

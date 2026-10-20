@@ -248,7 +248,7 @@ Bloquear un par no implementa ni simula ese flujo.
 | Origen → destino | Evento y precondiciones funcionales | Actor autorizado | Endpoint u operación | Resultado esperado | Estado y pruebas |
 |---|---|---|---|---|---|
 | Sin orden → 1 | Confirmar ingreso físico, vehículo e ingreso válidos. | Administrador | `POST /api/ordenes`, `crear_orden()` | Orden en `Recibido` e historial inicial en la misma transacción. | Implementada; `test_post_administrador_crea_orden_inicial_completa`, `test_post_fallo_en_historial_hace_rollback_completo`. |
-| 1 → 2 | Primera asignación válida; la reasignación posterior conserva estado. | Administrador | `PUT /api/ordenes/{id}/mecanico`, `asignar_mecanico()` | Responsable e historiales de asignación y estado; `PATCH` responde `409`. | Implementada para la primera asignación; rol remoto del mecánico y capacidad siguen fuera de esta operación. `test_primera_asignacion_cambia_estado_y_registra_ambos_historiales`. |
+| 1 → 2 | Primera asignación válida; la reasignación posterior conserva estado. | Administrador | `PUT /api/ordenes/{id}/mecanico`, `asignar_mecanico()` | Responsable e historiales de asignación, estado y validación de capacidad; `PATCH` responde `409`. | Implementada para la primera asignación y la capacidad configurable; rol remoto del mecánico sigue pendiente. |
 | 2 → 3 | Enviar versión 1 como primer presupuesto; última versión en borrador, con ítems y precios. | Administrador | MS3 `POST /presupuestos/{id}/versiones/{numero}/envio`; coordinación MS2 `POST /ordenes/{id}/envios-presupuesto`; reintento MS3 `POST /presupuestos/{id}/envio-inicial/aplicacion`. | MS3 conserva el envío; MS2 verifica el hecho y guarda estado e historial con actor; reintentar no duplica historial. | Implementada y cubierta por `test_envio_inicial_coordina_estado_historial_y_actor_administrador`, `test_fallo_de_ms2_deja_envio_guardado_y_reintento_idempotente`. Migración 0007 aún requiere PostgreSQL real. |
 | 3 → 4 | Primera aprobación y disponibilidad insuficiente evaluada al decidir. | Cliente propietario; MS3 evalúa y MS2 deriva | MS3 `POST /presupuestos/{id}/versiones/{n}/decision`; aplicación MS2 `POST /ordenes/{id}/decisiones-presupuesto`; retry MS3 `POST /presupuestos/decisiones/{id}/aplicacion`. | `Esperando repuestos`, una decisión y un historial asociados; la evaluación es una instantánea, no reserva. | Implementada; rama incluida en `test_decision_coordina_estado_historial_actor_y_motivo` y pruebas de retry. |
 | 3 → 5 | Primera aprobación y disponibilidad suficiente evaluada al decidir. | Cliente propietario; MS3 evalúa y MS2 deriva | Mismas operaciones de decisión 3 → 4. | `En reparación`, con decisión e historial asociados. | Implementada según instantánea; no reserva ni vuelve a verificar stock. Misma prueba parametrizada de decisión. |
@@ -317,7 +317,8 @@ flowchart LR
 precondición funcional pendiente; ⛔ transición bloqueada deliberadamente hasta
 implementar una operación que valide el hecho de negocio. La aprobación con stock
 usa la instantánea de MS3 al decidir y no reserva inventario. La primera
-asignación no valida aquí el rol remoto del mecánico ni capacidad configurable.
+asignación valida la capacidad local configurada, pero no valida aquí el rol
+remoto del mecánico.
 La finalización solo valida al Mecánico asignado y aún no acredita que el alcance
 autorizado esté terminado. `Entregado` y `Cancelado` no tienen salidas.
 
@@ -412,9 +413,8 @@ que existan operaciones con las comprobaciones funcionales correspondientes.
 El portal mecánico ofrece `5 → 6`, y MS2 exige que el actor tenga rol Mecánico y
 sea el responsable asignado. Esa transición todavía no acredita por sí sola que
 el alcance autorizado esté terminado.
-La asignación específica conserva los límites ya documentados de INT-33 sobre
-comprobación remota del rol del destino y capacidad configurable; no se agregan
-validaciones ficticias para esos puntos.
+La asignación específica valida la capacidad configurable según §4.7. La
+comprobación remota del rol del destino sigue pendiente de un contrato con MS1.
 
 #### Envío inicial (2 → 3) — SCRUM-435
 

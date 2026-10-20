@@ -19,6 +19,7 @@ from services.ms2_taller.main import app
 from services.ms2_taller.models import (
     Base,
     Cliente,
+    ConfiguracionCapacidadMecanico,
     EstadoOrden,
     HistorialEstado,
     IngresoVehiculo,
@@ -76,6 +77,13 @@ def db_ordenes() -> Generator[Session, None, None]:
             EstadoOrden(estado_codigo=codigo, nombre=nombre)
             for codigo, nombre in ESTADOS_ORDEN.items()
         ]
+    )
+    sesion.add(
+        ConfiguracionCapacidadMecanico(
+            configuracion_id=1,
+            max_ordenes_activas=5,
+            actualizado_por_id=99,
+        )
     )
     sesion.commit()
     try:

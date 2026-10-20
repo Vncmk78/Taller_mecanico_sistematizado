@@ -21,7 +21,8 @@ from services.ms2_taller.config import settings as settings_ms2
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as app_ms2
 from services.ms2_taller.models import (
-    Base as BaseMS2, Cliente, EstadoOrden, HistorialEstado, IngresoVehiculo, OrdenTrabajo, Vehiculo,
+    Base as BaseMS2, Cliente, ConfiguracionCapacidadMecanico, EstadoOrden,
+    HistorialEstado, IngresoVehiculo, OrdenTrabajo, Vehiculo,
 )
 from services.ms2_taller.models.estado_orden import (
     CANCELADO, EN_REPARACION, ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS,
@@ -73,6 +74,12 @@ def preparar_flujo(monkeypatch, base2, base3):
     with fabrica2() as db:
         if not db.scalar(select(func.count()).select_from(EstadoOrden)):
             db.add_all([EstadoOrden(estado_codigo=c, nombre=n) for c, n in ESTADOS_ORDEN.items()])
+        capacidad = db.get(ConfiguracionCapacidadMecanico, 1)
+        if capacidad is None:
+            capacidad = ConfiguracionCapacidadMecanico(configuracion_id=1)
+            db.add(capacidad)
+        capacidad.max_ordenes_activas = 5
+        capacidad.actualizado_por_id = 99
         cliente = Cliente(usuario_id=42)
         vehiculo = Vehiculo(cliente=cliente, patente="TEST438", marca="Marca", modelo="Modelo")
         db.add(vehiculo)

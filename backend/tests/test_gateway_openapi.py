@@ -1,6 +1,6 @@
 """Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 18 endpoints reales de Auth,
+Verifican que `/openapi.json` publica los endpoints reales de Auth,
 Vehículos, Órdenes y Evidencias con sus contratos y seguridad, que el proxy
 genérico no aparece, y que las copias de `gateway/contratos` no se
 desactualizan respecto a los esquemas reales de MS1, MS2 y MS4.
@@ -34,6 +34,8 @@ from services.ms2_taller.schemas.vehiculo import (
 )
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
+    CapacidadMecanicoActualizar as Ms2CapacidadMecanicoActualizar,
+    CapacidadMecanicoRespuesta as Ms2CapacidadMecanicoRespuesta,
     CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
     HistorialEstadoRespuesta as Ms2HistorialEstadoRespuesta,
     OrdenCrear as Ms2OrdenCrear,
@@ -60,6 +62,8 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes", "get"),
     ("/api/ordenes/{orden_id}", "get"),
     ("/api/ordenes/{orden_id}/mecanico", "put"),
+    ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
+    ("/api/ordenes/configuracion/capacidad/mecanicos", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
     ("/api/evidencias", "post"),
@@ -80,6 +84,7 @@ _PROTEGIDOS = {
     "/api/ordenes",
     "/api/ordenes/{orden_id}",
     "/api/ordenes/{orden_id}/mecanico",
+    "/api/ordenes/configuracion/capacidad/mecanicos",
     "/api/ordenes/{orden_id}/historial",
     "/api/ordenes/{orden_id}/estado",
     "/api/evidencias",
@@ -223,6 +228,10 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
             "/api/ordenes/{orden_id}/mecanico",
             "put",
         ): "AsignacionMecanicoActualizar",
+        (
+            "/api/ordenes/configuracion/capacidad/mecanicos",
+            "put",
+        ): "CapacidadMecanicoActualizar",
         ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"): "DecisionOrdenSolicitud",
     }
@@ -238,6 +247,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/vehiculos/{vehiculo_id}", "get"),
         ("/api/ordenes", "get"),
         ("/api/ordenes/{orden_id}", "get"),
+        ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
         ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
@@ -273,6 +283,14 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (
             contratos_ordenes.AsignacionMecanicoActualizar,
             Ms2AsignacionMecanicoActualizar,
+        ),
+        (
+            contratos_ordenes.CapacidadMecanicoActualizar,
+            Ms2CapacidadMecanicoActualizar,
+        ),
+        (
+            contratos_ordenes.CapacidadMecanicoRespuesta,
+            Ms2CapacidadMecanicoRespuesta,
         ),
         (contratos_ordenes.OrdenRespuesta, Ms2OrdenRespuesta),
         (
@@ -421,6 +439,12 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     assert "Recibido a Esperando diagnóstico" in descripcion_asignacion
     assert "reasignación conserva el estado" in descripcion_asignacion
     assert "Entregado y Cancelado" in descripcion_asignacion
+
+    descripcion_capacidad = paths[
+        "/api/ordenes/configuracion/capacidad/mecanicos"
+    ]["put"]["description"]
+    assert "entero positivo" in descripcion_capacidad
+    assert "valor anterior y el nuevo" in descripcion_capacidad
 
     cambio = schemas["CambioEstadoSolicitud"]
     assert cambio["additionalProperties"] is False

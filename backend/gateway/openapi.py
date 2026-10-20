@@ -317,8 +317,9 @@ def _operacion_evidencias(**kwargs: object) -> dict[str, object]:
     operacion = _operacion(tag="Evidencias", requiere_auth=True, **kwargs)  # type: ignore[arg-type]
     operacion["responses"]["503"] = _respuesta(
         (
-            "No disponible. MS4 responde {'detail': ...} si el almacenamiento "
-            "o el servicio de órdenes no responden; la Gateway responde "
+            "No disponible. MS4 responde {'detail': ...} si el almacenamiento, "
+            "la base o el servicio de órdenes/presupuestos no responden (la "
+            "subida se compensa, sin archivos ni filas a medias); la Gateway responde "
             "GATEWAY_SATURADA si su pool está agotado."
         ),
         {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
@@ -337,8 +338,13 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
             "(de una orden que atiende) o Administrador; un Cliente recibe 403 "
             "antes de procesar el archivo. MS4 verifica la orden contra MS2 con "
             "el mismo JWT antes de guardar nada. El autor sale del token y el "
-            "`X-Request-ID` queda registrado con la evidencia. La Gateway "
-            "rechaza con 413 un body mayor a 12 MiB."
+            "`X-Request-ID` queda registrado con la evidencia. La orden no "
+            "puede estar entregada ni cancelada (409) y un `presupuesto_id` "
+            "debe pertenecer a la misma orden (MS3). Formatos aceptados: JPG, "
+            "PNG, WEBP, MP4 y MOV, verificados por su contenido (415 para el "
+            "resto o si los bytes no coinciden con el tipo declarado; 422 si "
+            "el archivo está dañado). Fotos hasta 10 MiB (413 de MS4); la "
+            "Gateway rechaza con 413 un body mayor a 12 MiB."
         ),
         operation_id="subir_evidencia",
         cuerpo=None,
@@ -349,7 +355,16 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
         errores_ms={
             "401": "JWT ausente o inválido",
             "403": "Se requiere rol Mecánico o Administrador",
-            "422": "Archivo vacío, tipo no permitido o datos del formulario inválidos",
+            "400": "No se pudo leer el archivo enviado",
+            "409": "La orden está entregada o cancelada",
+            "415": (
+                "Formato no permitido (solo JPG, PNG, WEBP, MP4 y MOV) o "
+                "contenido distinto al tipo declarado"
+            ),
+            "422": (
+                "Archivo vacío o dañado, presupuesto inexistente o de otra "
+                "orden, o datos del formulario inválidos"
+            ),
         },
         descripcion_404=(
             "Orden no encontrada: no existe o no es visible para el usuario "
@@ -358,8 +373,10 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
         esquema_404=error_404_ms4,
     )
     subir["responses"]["413"] = _respuesta(
-        "La Gateway rechazó el body por superar el límite (CUERPO_DEMASIADO_GRANDE).",
-        _ref("ErrorRespuesta"),
+        "El archivo es demasiado grande: la Gateway rechaza un body mayor a "
+        "12 MiB (CUERPO_DEMASIADO_GRANDE) y MS4 una foto mayor a 10 MiB o un "
+        "video mayor a su límite (`{\"detail\": ...}`).",
+        {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
     )
     return {
         "/api/evidencias": {

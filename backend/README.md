@@ -103,10 +103,47 @@ alembic -c services/ms3_presupuestos/alembic.ini upgrade head
 #    Con --orden-id agrega un presupuesto de ejemplo (versión 1 enviada).
 python scripts/seed_datos_ms3.py --orden-id 1
 
+#    Con --integracion agrega el catálogo de integración con sus existencias;
+#    --verificar solo revisa que el stock cuadre con los movimientos.
+python scripts/seed_datos_ms3.py --integracion
+python scripts/seed_datos_ms3.py --verificar
+
 # 3. Pruebas de persistencia ORM contra PostgreSQL migrado (se omiten si no hay base)
 MS3_ORM_TEST_DATABASE_URL=postgresql+psycopg://taller:taller@localhost:5435/taller_ms3 \
     pytest services/ms3_presupuestos/tests -q
 ```
+
+### Datos semilla de integración de MS3
+
+Para que el frontend, la app móvil y los otros servicios prueben contra datos
+realistas, `services/ms3_presupuestos/datos_integracion.py` define 5
+proveedores y 12 repuestos más (además de los 4 de `datos_prueba.py`). Cada
+repuesto declara los **movimientos** que explican su stock; la semilla los
+registra con los mismos casos de uso que la API, así el stock siempre coincide
+con el historial.
+
+| Caso | Repuesto | Stock / umbral |
+|---|---|---|
+| Stock holgado | Aceite sintético 5W-30 (litro) | 40 / 5 (general) |
+| Sin stock (alerta) | Líquido de frenos DOT4 (500 ml) | 0 / 3 — se consumió en la orden 1 |
+| Bajo umbral particular (alerta) | Alternador reacondicionado | 1 / 2 |
+| Bajo umbral general (alerta) | Kit de embrague | 3 / 5 — 1 consumido en la orden 1 |
+| Justo en el umbral (no es alerta) | Bujía de iridio | 5 / 5 |
+| Unidades reservadas | Amortiguador delantero | 6, 2 comprometidas para la orden 2 → disponible 4 |
+| Corregido con ajuste | Filtro de aire | 12 − 2 = 10 |
+| Búsqueda con tildes y eñes | Importadora Ñuble, Bujía de iridio | `q=nuble`, `q=bujia` |
+| Proveedor sin repuestos | Neumáticos Cautín | `con_repuestos=false`, se puede eliminar |
+
+- **Idempotente**: proveedores y repuestos se buscan por nombre y cada
+  movimiento tiene una `clave_operacion` fija (`semilla-int:<repuesto_id>:<n>`);
+  si una carga se cortó, la siguiente la completa.
+- Las órdenes son referencias lógicas a MS2: por defecto 1 (en reparación) y 2
+  (recibida); se cambian con `--orden-en-reparacion` y `--orden-recibida`.
+- Al terminar, el script verifica que el stock de **todos** los repuestos
+  coincida con sus movimientos (sale con código 1 si no). Las diferencias con
+  los valores de la semilla se muestran como aviso, porque pueden deberse al
+  uso real de la app.
+- Pruebas: `services/ms3_presupuestos/tests/test_semilla_integracion.py`.
 
 ### Datos mínimos y fixtures de prueba de MS3
 
@@ -266,6 +303,23 @@ del aviso lo hará MS1). Todas las operaciones de stock bloquean el repuesto
 La aprobación de un presupuesto también descuenta lo comprometido por otras
 órdenes al decidir si faltan repuestos.
 
+### Pruebas CRUD de repuestos, proveedores e inventario (MS3)
+
+`services/ms3_presupuestos/tests/test_crud_catalogo_inventario.py` recorre por
+HTTP el ciclo completo de cada recurso y revisa la base después de cada paso:
+
+- **Proveedores y repuestos**: crear → leer → listar → modificar → eliminar →
+  `404`. Cambios parciales, `umbral_particular: null` vuelve al general,
+  reasignar repuestos antes de borrar un proveedor.
+- **Inventario**: secuencia de movimientos y stock resultante (físico,
+  comprometido por orden, disponible), paginación y filtros. Los movimientos
+  no se modifican ni se borran (`405`) y un movimiento rechazado no deja rastro.
+- Datos inválidos (`422`, sin guardar nada), ids inválidos y sin token (`401`).
+
+```bash
+pytest services/ms3_presupuestos/tests/test_crud_catalogo_inventario.py -v
+```
+
 ### Pruebas de rollback y consistencia de presupuestos (MS3)
 
 `services/ms3_presupuestos/tests/test_rollback_consistencia.py` (requiere
@@ -329,9 +383,35 @@ Endpoints de negocio (por la Gateway, con `Authorization: Bearer <token>`):
 (`curl` y `fetch`) en
 [`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md#evidencias-multimedia-ms4).
 
+La subida solo acepta JPG, PNG, WEBP, MP4 y MOV, verificados por su contenido,
+con un máximo de 10 MiB por foto y 100 MiB por video (`MS4_TIPOS_PERMITIDOS`,
+`MS4_MAX_BYTES_FOTO`, `MS4_MAX_BYTES_VIDEO`). Para validar la asociación con la
+orden, MS4 consulta a MS2 (`MS4_MS2_URL`) y, en evidencias de presupuesto, a MS3
+(`MS4_MS3_URL`); ambos deben estar levantados para subir.
+
+MS4 escribe un log por solicitud y por evento de negocio, en formato
+`evento=... clave=valor` (nivel con `MS4_LOG_LEVEL`). Para seguir una subida
+desde la Gateway basta con filtrar por su `request_id`:
+
+```text
+INFO ms4.evidencias evento=evidencia_subida request_id=req-123 evidencia_id=... orden_id=31 tipo_archivo=foto content_type=image/jpeg tamano_bytes=20480 usuario_id=7
+WARNING ms4.evidencias evento=subida_rechazada request_id=req-124 motivo=contenido_no_coincide estado_http=415 orden_id=31 usuario_id=7
+```
+
+Nunca se registran el JWT, la URL firmada, la clave del objeto, el nombre del
+archivo ni su contenido (checklist 5.5).
+
+Para encontrar y limpiar archivos del bucket que quedaron sin fila en la base
+(huérfanos), ver `docs/modelo-evidencias.md` § Archivos huérfanos:
+
+```bash
+python scripts/limpiar_huerfanos_ms4.py              # solo informa
+python scripts/limpiar_huerfanos_ms4.py --eliminar   # borra los huérfanos
+```
+
 ```bash
 # Pruebas de MS4 (las que usan MinIO real se omiten si no está levantado)
-python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py -q
+python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py tests/test_gateway_rechazos_evidencias.py -q
 ```
 
 ## API Gateway

@@ -25,6 +25,7 @@ from services.ms1_auth.services.autenticacion import (
     CuentaBloqueadaError,
     PersistenciaAutenticacionError,
     UsuarioNoEncontradoError,
+    UsuarioSinRolesError,
     asignar_rol_restringido,
     autenticar_usuario,
     buscar_usuario_por_id,
@@ -63,7 +64,7 @@ def registrar(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
-    except ConfiguracionRolesError as exc:
+    except (ConfiguracionRolesError, UsuarioSinRolesError) as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
@@ -81,6 +82,12 @@ def registrar(
     responses={
         status.HTTP_401_UNAUTHORIZED: {
             "description": "Credenciales inválidas",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": (
+                "La cuenta no tiene roles asignados: credenciales correctas, "
+                "pero no puede emitirse un token"
+            ),
         },
         status.HTTP_429_TOO_MANY_REQUESTS: {
             "description": (
@@ -120,6 +127,13 @@ def login(
             detail=str(exc),
             headers={"Retry-After": str(exc.segundos_restantes)},
         ) from exc
+    except UsuarioSinRolesError as exc:
+        # Credenciales correctas, pero no puede emitirse un token: el contrato
+        # del JWT exige un claim `roles` no vacío. No es un fallo del servidor.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
     except ConfiguracionRolesError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -136,7 +150,7 @@ def login(
 def consultar_usuario_actual(
     usuario: Usuario = Depends(obtener_usuario_actual),
 ) -> UsuarioRespuesta:
-    return _serializar_usuario(usuario)
+    return _serializar_usuario_para_consulta(usuario)
 
 
 @router_auth.get(
@@ -232,7 +246,11 @@ def asignar_rol_a_usuario(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
-    except (ConfiguracionRolesError, PersistenciaAutenticacionError) as exc:
+    except (
+        ConfiguracionRolesError,
+        UsuarioSinRolesError,
+        PersistenciaAutenticacionError,
+    ) as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible asignar el rol",
@@ -284,18 +302,19 @@ def retirar_rol_de_usuario(
 def _serializar_usuario(usuario: Usuario) -> UsuarioRespuesta:
     """Serializa una cuenta exigiendo al menos un rol.
 
-    Es la vía de registro, login, `/me` y gestión de roles: allí un conjunto
-    vacío sigue siendo un error de configuración.
+    Es la vía de registro, login y asignación de roles: allí una lista vacía
+    solo puede venir de una configuración rota, no del estado de la cuenta.
     """
     return _respuesta_usuario(usuario, roles_del_usuario(usuario))
 
 
 def _serializar_usuario_para_consulta(usuario: Usuario) -> UsuarioRespuesta:
-    """Serializa una cuenta para la consulta administrativa de usuarios.
+    """Serializa una cuenta sin exigirle asignaciones de rol.
 
-    Una cuenta sin asignaciones se emite con `roles: []` en lugar de fallar:
-    poder listarla y verla es justamente el objetivo de esos endpoints. Un rol
-    desconocido sí sigue siendo un error de configuración.
+    Es la vía de la consulta administrativa y de `/me`: una cuenta sin roles se
+    emite con `roles: []` en lugar de fallar, porque poder consultarla es
+    justamente el objetivo de esos endpoints. Un rol desconocido sí sigue siendo
+    un error de configuración.
     """
     roles = roles_del_usuario(usuario) if usuario.roles else frozenset()
     return _respuesta_usuario(usuario, roles)

@@ -68,6 +68,8 @@ def requerir_roles(
 ) -> Callable[[PrincipalAutenticado], PrincipalAutenticado]:
     """Crea un guard que exige al menos uno de los roles indicados (403 si no)."""
 
+    if not roles_permitidos:
+        raise ValueError("Debe indicarse al menos un rol permitido")
     permitidos = frozenset(roles_permitidos)
 
     def dependencia(

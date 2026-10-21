@@ -358,7 +358,7 @@ Inicia sesión y entrega el token de acceso.
 | Auth | No requiere |
 | Body | `{"email": string, "password": string}` |
 | Respuesta OK | `200` con `TokenRespuesta` |
-| Errores | `401` credenciales inválidas · `404/502/500` de la Gateway |
+| Errores | `401` credenciales inválidas · `403` la cuenta no tiene roles asignados · `404/502/500` de la Gateway |
 
 ```json
 // Request
@@ -369,6 +369,12 @@ Inicia sesión y entrega el token de acceso.
             "roles": ["cliente"], "is_active": true } }
 ```
 
+Una cuenta a la que un administrador le retiró todos los roles responde `403`
+con `{"detail": "El usuario no posee roles"}`: las credenciales son correctas,
+pero el contrato del token exige un claim `roles` no vacío, así que no hay
+token que emitir. No es un error del servidor (`500`) ni una credencial
+inválida (`401`).
+
 ### GET `/api/auth/me`
 
 Devuelve el usuario identificado por el token.
@@ -377,7 +383,7 @@ Devuelve el usuario identificado por el token.
 |---|---|
 | Auth | `Authorization: Bearer <token>` |
 | Body | — |
-| Respuesta OK | `200` con `UsuarioRespuesta` |
+| Respuesta OK | `200` con `UsuarioRespuesta`, con `roles: []` si la cuenta ya no tiene roles |
 | Errores | `401` JWT ausente o inválido · `404/502/500` de la Gateway |
 
 ```json

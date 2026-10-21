@@ -14,6 +14,7 @@ PostgreSQL en services/ms2_taller/tests y en la validación desde base vacía.
 """
 from __future__ import annotations
 
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from alembic.config import Config
@@ -155,6 +156,13 @@ def test_guard_rol_permitido_responde_200_con_la_identidad() -> None:
     )
     assert respuesta.status_code == 200
     assert respuesta.json() == {"usuario_id": 42}
+
+
+def test_guard_sin_roles_indicados_falla_en_la_construccion() -> None:
+    """Igual que MS1: un guard sin roles es error de programación, no un 403 en silencio."""
+
+    with pytest.raises(ValueError, match="al menos un rol permitido"):
+        requerir_roles()
 
 
 # --------------------------------------------------------------------------- #

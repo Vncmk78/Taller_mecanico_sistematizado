@@ -91,6 +91,11 @@ y con un rol distinto, `403`. El listado y el detalle incluyen también las
 cuentas sin roles (`roles: []`). Cada asignación o retirada queda registrada en
 `historial_rol` con el administrador responsable y la fecha y hora.
 
+Una cuenta sin roles puede ser consultada, pero no iniciar sesión: `POST
+/api/auth/login` responde `403` y `/api/auth/me` devuelve `roles: []`, en lugar
+del `500` que daba hasta la corrección del hallazgo §8.3 de
+`estudio-rbac-multiples-roles.md`.
+
 ### 4.2 Vehículos (MS2)
 
 Todos los endpoints pasan por `resolver_cliente_actual`, que exige rol `cliente` y

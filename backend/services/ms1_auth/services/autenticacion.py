@@ -47,6 +47,10 @@ class ConfiguracionRolesError(Exception):
     """Los roles oficiales todavía no están disponibles en la base de MS1."""
 
 
+class UsuarioSinRolesError(Exception):
+    """La cuenta es correcta, pero no tiene ningún rol asignado."""
+
+
 class PersistenciaAutenticacionError(Exception):
     """La operación no pudo persistirse o consultarse de manera segura."""
 
@@ -360,14 +364,19 @@ def retirar_rol_restringido(
 
 
 def roles_del_usuario(usuario: Usuario) -> frozenset[NombreRol]:
-    """Obtiene y valida todos los roles ORM asociados a una cuenta."""
+    """Obtiene y valida todos los roles ORM asociados a una cuenta.
+
+    Un rol desconocido sigue siendo error de configuración; una cuenta sin
+    asignaciones lanza `UsuarioSinRolesError`, que es un estado legítimo que
+    produce la propia retirada de roles.
+    """
 
     try:
         roles = frozenset(NombreRol(asignacion.rol.nombre) for asignacion in usuario.roles)
     except ValueError as exc:
         raise ConfiguracionRolesError("El usuario posee un rol desconocido") from exc
     if not roles:
-        raise ConfiguracionRolesError("El usuario no posee roles")
+        raise UsuarioSinRolesError("El usuario no posee roles")
     return roles
 
 

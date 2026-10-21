@@ -312,15 +312,16 @@ el secreto del servicio, y dejar en cada `*/dependencies.py` solo lo específico
 que hoy pasan, y su valor no compensa el riesgo en esta entrega. Queda como
 tarea de mantenimiento.
 
-### 7.2 `requerir_roles` sin argumentos se comporta distinto en MS1 y MS3
+### 7.2 CORREGIDO: `requerir_roles` sin argumentos se comportaba distinto en MS1 y MS3
 
-MS1 lanza `ValueError("Debe indicarse al menos un rol permitido")` si se invoca
-sin roles; MS3 construye un `frozenset()` vacío y deniega todo con `403`. Ninguna
-de las dos rutas es alcanzable desde los routers actuales, porque ambos pasan
-siempre al menos un rol.
+MS1 lanzaba `ValueError("Debe indicarse al menos un rol permitido")` si se
+invocaba sin roles; MS3 construía un `frozenset()` vacío y denegaba todo con
+`403`. Ninguna de las dos rutas es alcanzable desde los routers actuales, porque
+ambos pasan siempre al menos un rol.
 
-*Recomendación:* igualar MS3 a MS1, que falla ruidosamente en desarrollo en
-lugar de denegar en silencio.
+*Corrección aplicada:* MS3 valida ahora lo mismo que MS1 al construir el guard,
+que falla ruidosamente en desarrollo en lugar de denegar en silencio. Cubierto
+por `test_ms3_estructura.py`.
 
 ### 7.3 `shared/auth.py` no exporta explícitamente su API pública
 

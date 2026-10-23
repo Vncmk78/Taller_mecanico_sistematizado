@@ -459,6 +459,35 @@ Para obtener las tres identidades de prueba (Cliente, Mecánico y
 Administrador) existe `scripts/seed_usuarios_prueba.py`; el registro público solo
 puede crear clientes, porque los roles se asignan en el servidor.
 
+## Notificaciones (MS1)
+
+### GET `/api/notificaciones`
+
+Lista los avisos del usuario autenticado, ordenados desde el más reciente. Cada
+usuario solo consulta su propia bandeja.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Query | `limite` opcional (1–100, por defecto 50), `offset` opcional (por defecto 0) |
+| Respuesta | Lista con `notificacion_id`, `tipo`, `orden_id`, `vehiculo_id`, `titulo`, `mensaje`, `ocurrido_en` y `creado_en` |
+| Error | `401` si el token falta o no es válido · `500` si MS1 no puede consultar la bandeja |
+
+El contrato interno de MS2 es `POST /interno/eventos/ordenes/estado`, llamado
+directamente al servicio MS1, fuera de la Gateway. Requiere
+`X-Service-Token`, comparado en tiempo constante contra `MS1_EVENT_SHARED_SECRET`;
+MS2 usa el mismo valor como `MS2_EVENT_SHARED_SECRET`. El payload versionado por
+tipo `orden.estado_cambiado` lleva `evento_id` UUID estable, hora con zona,
+`orden_id`, `vehiculo_id`, `cliente_usuario_id` y códigos de estado anterior y
+nuevo. MS1 verifica que el destinatario sea una cuenta Cliente activa y crea un
+aviso lógico una sola vez por `evento_id`; las repeticiones devuelven la misma
+notificación. El mensaje lo compone MS1, no se acepta texto arbitrario del
+productor.
+
+Esta primera entrega cubre almacenamiento y consulta web de avisos. No afirma
+que correo o push hayan sido enviados: requieren sus canales/proveedores y el
+registro de dispositivos de Integración IV.
+
 ## Vehículos (MS2)
 
 Todas requieren `Authorization: Bearer <token>` con rol Cliente y un perfil

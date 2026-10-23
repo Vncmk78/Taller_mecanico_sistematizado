@@ -4,7 +4,7 @@ El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
 los endpoints reales que enruta la Gateway hacia MS1 (Autenticación), MS2
-(Vehículos y Órdenes) y MS4 (Evidencias), con sus esquemas
+(Vehículos y Órdenes), MS3 (Inventario) y MS4 (Evidencias), con sus esquemas
 (`gateway/contratos`), la seguridad `bearerAuth` y el formato común de errores
 de la Gateway (`gateway.esquemas`).
 
@@ -19,6 +19,7 @@ from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
 from gateway.contratos import evidencias as contratos_evidencias
+from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
@@ -33,7 +34,7 @@ _TITULO = "SGTM — API Gateway"
 _VERSION = "0.1.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia MS1 (Autenticación y \
-Usuarios), MS2 (Vehículos y Órdenes) y MS4 (Evidencias multimedia).
+Usuarios), MS2 (Vehículos y Órdenes), MS3 (Inventario) y MS4 (Evidencias multimedia).
 
 ## URL base
 
@@ -116,6 +117,10 @@ _TAGS = [
         "description": "Consulta y reintento de la decisión inicial de presupuesto (MS3).",
     },
     {
+        "name": "Inventario",
+        "description": "Reservas de stock aprobadas y disponibilidad para órdenes (MS3).",
+    },
+    {
         "name": "Gateway",
         "description": "Endpoints propios de la Gateway (índice y healthcheck).",
     },
@@ -127,6 +132,11 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("UsuarioRespuesta", contratos_auth.UsuarioRespuesta),
     ("TokenRespuesta", contratos_auth.TokenRespuesta),
     ("NotificacionRespuesta", contratos_auth.NotificacionRespuesta),
+    ("RepuestoReservado", contratos_inventario.RepuestoReservado),
+    (
+        "DisponibilidadRepuestosRespuesta",
+        contratos_inventario.DisponibilidadRepuestosRespuesta,
+    ),
     ("VehiculoCrear", contratos_vehiculos.VehiculoCrear),
     ("VehiculoActualizar", contratos_vehiculos.VehiculoActualizar),
     ("VehiculoRespuesta", contratos_vehiculos.VehiculoRespuesta),
@@ -567,13 +577,88 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "200": _respuesta(
                         "Notificaciones del usuario.",
                         {"type": "array", "items": _ref("NotificacionRespuesta")},
-                    )
+                    ) | {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": _ref("NotificacionRespuesta"),
+                                },
+                                "examples": {
+                                    "bandeja_vacia": {
+                                        "summary": "Sin notificaciones",
+                                        "description": "La bandeja aún no contiene avisos.",
+                                        "value": [],
+                                    }
+                                },
+                            }
+                        }
+                    }
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "422": "Parámetros de paginación inválidos",
                 },
                 requiere_auth=True,
+            )
+        },
+        "/api/inventario/ordenes/{orden_id}/disponibilidad": {
+            "post": _operacion(
+                tag="Inventario",
+                resumen="Confirmar disponibilidad y reservar repuestos",
+                descripcion=(
+                    "Solo Administrador. MS3 reserva las unidades enteras del "
+                    "alcance aprobado si el stock libre las cubre, descontando "
+                    "compromisos de otras órdenes. Luego coordina con MS2 el "
+                    "cambio auditado a En reparación. Una respuesta 503 indica "
+                    "que la reserva quedó persistida y se debe repetir la misma "
+                    "operación para confirmar su aplicación."
+                ),
+                operation_id="confirmar_disponibilidad_repuestos",
+                cuerpo=None,
+                con_orden_id=True,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Reserva confirmada y transición aplicada.",
+                        _ref("DisponibilidadRepuestosRespuesta"),
+                    ) | {
+                        "content": {
+                            "application/json": {
+                                "schema": _ref("DisponibilidadRepuestosRespuesta"),
+                                "examples": {
+                                    "reserva_confirmada": {
+                                        "summary": "Reserva confirmada",
+                                        "description": (
+                                            "El presupuesto aprobado quedó reservado "
+                                            "y la orden inició su reparación."
+                                        ),
+                                        "value": {
+                                            "clave_operacion": "disp:31:4",
+                                            "orden_id": 31,
+                                            "version_presupuesto": 4,
+                                            "repuestos": [
+                                                {"repuesto_id": 8, "cantidad": 2}
+                                            ],
+                                            "aplicacion_confirmada": True,
+                                        },
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "Stock libre insuficiente o estado incompatible",
+                    "422": "Cantidad de repuesto fraccionaria",
+                    "503": "MS2 no confirmó la transición; reintentar con la misma clave",
+                },
+                requiere_auth=True,
+                descripcion_404="Orden o presupuesto inexistente.",
+                esquema_404={
+                    "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]
+                },
             )
         },
         "/api/vehiculos": {

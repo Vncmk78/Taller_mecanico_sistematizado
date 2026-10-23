@@ -237,6 +237,45 @@ ruta que ningún servicio expone. Se conservan por compatibilidad con MS2 (los
 usa el equipo) y no se consideran contrato: MS3 y MS4 publican únicamente sus
 prefijos en plural.
 
+### POST `/api/inventario/ordenes/{orden_id}/disponibilidad`
+
+Solo Administrador. MS3 identifica la versión aprobada vigente y suma las
+cantidades de repuestos requeridas. Las cantidades de repuestos deben ser
+enteras, acorde con el inventario actual; la mano de obra conserva su escala
+decimal. MS3 bloquea los repuestos en orden estable, resta los compromisos
+pendientes de otras órdenes al stock físico y registra movimientos de
+`compromiso` solo si el stock libre cubre todas las unidades. Si una versión
+aprobada reemplaza otra que ya tenía compromisos, libera el saldo anterior y
+reserva el nuevo alcance en una sola transacción.
+
+Después de reservar, MS3 envía a MS2 una clave determinista derivada de la orden
+y versión. MS2 verifica esa reserva en MS3, comprueba que la orden esté en
+`Esperando repuestos` y guarda el cambio a `En reparación` junto con el historial
+del Administrador. Repetir la petición devuelve la misma aplicación, sin
+duplicar movimientos ni historial.
+
+```http
+POST /api/inventario/ordenes/71/disponibilidad
+Authorization: Bearer <token-administrador>
+```
+
+```json
+{
+  "clave_operacion": "disp:71:42",
+  "orden_id": 71,
+  "version_presupuesto": 3,
+  "repuestos": [{ "repuesto_id": 8, "cantidad": 2 }],
+  "aplicacion_confirmada": true
+}
+```
+
+`409` informa que falta stock libre, que no hay una aprobación vigente o que
+el estado de la orden ya no permite continuar. `422` rechaza cantidades de
+repuestos fraccionarias. Un `503` significa que MS3 ya guardó la reserva, pero
+MS2 no confirmó el cambio; debe repetirse la misma operación para completar la
+transición idempotente. La reserva queda registrada para no ofrecer esas
+unidades a otra orden mientras se resuelve el reintento.
+
 ## Relaciones y flujo inicial de MS2
 
 La aplicación web y la aplicación móvil consumen estas relaciones únicamente a

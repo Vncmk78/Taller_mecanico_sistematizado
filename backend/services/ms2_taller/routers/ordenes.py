@@ -10,8 +10,12 @@ from services.ms2_taller.dependencies import obtener_principal_actual, obtener_t
 from services.ms2_taller.integracion_ms3 import (
     DecisionNoAplicableError, DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError,
     EnvioPresupuestoNoAplicableError, EnvioPresupuestoNoVisibleError,
+    DisponibilidadRepuestosNoAplicableError,
+    DisponibilidadRepuestosNoVisibleError,
     VerificadorDecisiones, VerificadorEnviosPresupuesto,
+    VerificadorDisponibilidadRepuestos,
     obtener_verificador_decisiones, obtener_verificador_envios_presupuesto,
+    obtener_verificador_disponibilidad_repuestos,
 )
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
@@ -23,6 +27,7 @@ from services.ms2_taller.schemas.orden import (
     CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud,
     EntregaOrdenRespuesta,
+    DisponibilidadRepuestosRespuesta,
     HistorialOrdenesVehiculoRespuesta,
     HistorialEstadoRespuesta,
     OrdenCrear,
@@ -40,6 +45,7 @@ from services.ms2_taller.services.ordenes import (
     VehiculoNoEncontradoError,
     asignar_mecanico,
     aplicar_decision_presupuesto,
+    aplicar_disponibilidad_repuestos,
     aplicar_envio_inicial_presupuesto,
     cambiar_estado_orden,
     crear_orden,
@@ -66,7 +72,9 @@ from services.ms2_taller.services.cupo_ingresos import (
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
+    AplicacionDisponibilidadRepuestosRespuesta,
     AplicacionEnvioPresupuestoRespuesta,
+    DisponibilidadRepuestosSolicitud,
     DecisionOrdenSolicitud,
     EnvioPresupuestoSolicitud,
 )
@@ -305,6 +313,60 @@ def aplicar_decision(
         raise HTTPException(503, "No fue posible verificar la decisión en MS3") from exc
     except PersistenciaOrdenError as exc:
         raise HTTPException(500, "No fue posible aplicar la decisión") from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/disponibilidad-repuestos",
+    response_model=AplicacionDisponibilidadRepuestosRespuesta,
+    include_in_schema=False,
+    summary="Iniciar reparación tras verificar una reserva de repuestos",
+    description=(
+        "Solo Administrador. MS2 valida la reserva persistida en MS3 antes de "
+        "derivar Esperando repuestos → En reparación. La clave de operación "
+        "hace idempotente el reintento y queda registrada en el historial."
+    ),
+    responses={
+        401: {"description": "JWT ausente o inválido"},
+        403: {"description": "Se requiere rol Administrador"},
+        404: {"description": "Orden o reserva de repuestos no encontrada"},
+        409: {"description": "Orden en estado incompatible o reserva no confirmada"},
+        422: {"description": "Clave de operación inválida"},
+        500: {"description": "Error de persistencia local"},
+        503: {"description": "No fue posible verificar la reserva en MS3"},
+    },
+)
+def aplicar_disponibilidad(
+    body: DisponibilidadRepuestosSolicitud,
+    orden_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorDisponibilidadRepuestos = Depends(
+        obtener_verificador_disponibilidad_repuestos
+    ),
+) -> AplicacionDisponibilidadRepuestosRespuesta:
+    try:
+        return aplicar_disponibilidad_repuestos(
+            db,
+            orden_id=orden_id,
+            clave_operacion=body.clave_operacion,
+            principal=principal,
+            token=token,
+            verificador=verificador,
+        )
+    except (OrdenNoEncontradaError, DisponibilidadRepuestosNoVisibleError) as exc:
+        raise HTTPException(404, "Orden o reserva de repuestos no encontrada") from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except (
+        OrdenTransicionNoPermitidaError,
+        DisponibilidadRepuestosNoAplicableError,
+    ) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ServicioPresupuestosNoDisponibleError as exc:
+        raise HTTPException(503, "No fue posible verificar la reserva en MS3") from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(500, "No fue posible iniciar la reparación") from exc
 
 
 @router_ordenes.post(

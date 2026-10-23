@@ -92,6 +92,17 @@ class EntregaOrdenRespuesta(BaseModel):
     historial_id: int
 
 
+class DisponibilidadRepuestosRespuesta(BaseModel):
+    """Confirmación de la transición basada en reserva verificada por MS3."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    clave_operacion: str
+    orden_id: int
+    estado_aplicado: int
+    historial_id: int
+
+
 class HistorialOrdenesVehiculoRespuesta(BaseModel):
     """Página del historial de órdenes visibles de un vehículo."""
 

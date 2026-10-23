@@ -131,6 +131,24 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
         )
         return self.sesion.scalars(consulta).all()
 
+    def de_repuestos(self, repuesto_ids: Sequence[int]) -> Sequence[MovimientoInventario]:
+        if not repuesto_ids:
+            return []
+        consulta = (
+            select(MovimientoInventario)
+            .where(MovimientoInventario.repuesto_id.in_(repuesto_ids))
+            .order_by(MovimientoInventario.movimiento_id)
+        )
+        return self.sesion.scalars(consulta).all()
+
+    def por_prefijo_clave_operacion(self, prefijo: str) -> Sequence[MovimientoInventario]:
+        consulta = (
+            select(MovimientoInventario)
+            .where(MovimientoInventario.clave_operacion.like(f"{prefijo}%"))
+            .order_by(MovimientoInventario.movimiento_id)
+        )
+        return self.sesion.scalars(consulta).all()
+
 
 class RepositorioParametros(RepositorioBase[ParametroInventario]):
     modelo = ParametroInventario
@@ -166,6 +184,18 @@ class RepositorioPresupuestos(RepositorioBase[Presupuesto]):
         presupuesto = self.sesion.scalar(consulta)
         if presupuesto is None:
             raise RecursoNoEncontrado(f"Presupuesto {presupuesto_id} no existe")
+        return presupuesto
+
+    def obtener_de_orden_para_actualizar(self, orden_id: int) -> Presupuesto:
+        consulta = (
+            select(Presupuesto)
+            .where(Presupuesto.orden_id == orden_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        presupuesto = self.sesion.scalar(consulta)
+        if presupuesto is None:
+            raise RecursoNoEncontrado(f"Presupuesto para orden {orden_id} no existe")
         return presupuesto
 
     def buscar(

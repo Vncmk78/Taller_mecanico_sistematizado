@@ -21,12 +21,32 @@ import httpx
 from services.ms3_presupuestos.config import settings
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
+    AplicacionDisponibilidadRepuestosRespuesta,
     AplicacionEnvioPresupuestoRespuesta,
+    DisponibilidadRepuestosSolicitud,
 )
 
 
 class OrdenNoVisible(Exception):
     """La orden no existe o no pertenece al usuario."""
+
+
+class AplicacionDisponibilidadPendienteError(Exception):
+    """MS3 reservó stock, pero no confirmó el cambio de estado en MS2."""
+
+    def __init__(self, orden_id: int, clave_operacion: str, status_code: int | None = None):
+        super().__init__("La aplicación de disponibilidad en MS2 no está confirmada")
+        self.orden_id = orden_id
+        self.clave_operacion = clave_operacion
+        self.status_code = status_code
+
+
+class ReservaRepuestosNoAplicableError(Exception):
+    """MS2 rechazó la transición por incompatibilidad de orden o reserva."""
+
+    def __init__(self, status_code: int):
+        super().__init__(f"MS2 rechazó la aplicación ({status_code})")
+        self.status_code = status_code
 
 
 class ServicioOrdenesNoDisponible(Exception):
@@ -127,6 +147,58 @@ class CoordinadorOrdenesHttp:
 
 def obtener_coordinador_ordenes() -> CoordinadorOrdenes:
     return CoordinadorOrdenesHttp(settings.MS2_URL, settings.MS2_TIMEOUT_SEGUNDOS)
+
+
+class CoordinadorDisponibilidadRepuestos:
+    def __init__(self, url_base: str, timeout: float) -> None:
+        self.url_base = url_base.rstrip("/")
+        self.timeout = timeout
+
+    def aplicar(
+        self, orden_id: int, clave_operacion: str, token: str,
+    ) -> AplicacionDisponibilidadRepuestosRespuesta:
+        try:
+            respuesta = httpx.post(
+                f"{self.url_base}/ordenes/{orden_id}/disponibilidad-repuestos",
+                json=DisponibilidadRepuestosSolicitud(
+                    clave_operacion=clave_operacion
+                ).model_dump(),
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=self.timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise AplicacionDisponibilidadPendienteError(
+                orden_id, clave_operacion
+            ) from exc
+        if respuesta.status_code in (400, 401, 403, 404, 409, 422):
+            raise ReservaRepuestosNoAplicableError(respuesta.status_code)
+        if respuesta.status_code != 200:
+            raise AplicacionDisponibilidadPendienteError(
+                orden_id, clave_operacion, respuesta.status_code
+            )
+        try:
+            aplicada = AplicacionDisponibilidadRepuestosRespuesta.model_validate(
+                respuesta.json()
+            )
+        except ValueError as exc:
+            raise AplicacionDisponibilidadPendienteError(
+                orden_id, clave_operacion
+            ) from exc
+        if (
+            aplicada.orden_id != orden_id
+            or aplicada.clave_operacion != clave_operacion
+            or aplicada.estado_aplicado != 5
+        ):
+            raise AplicacionDisponibilidadPendienteError(
+                orden_id, clave_operacion
+            )
+        return aplicada
+
+
+def obtener_coordinador_disponibilidad_repuestos() -> CoordinadorDisponibilidadRepuestos:
+    return CoordinadorDisponibilidadRepuestos(
+        settings.MS2_URL, settings.MS2_TIMEOUT_SEGUNDOS
+    )
 
 
 class EnvioPresupuestoAplicacionPendienteError(Exception):

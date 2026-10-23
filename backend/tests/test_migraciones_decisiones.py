@@ -15,7 +15,8 @@ from services.ms3_presupuestos.models import Base as BaseMS3
 
 @pytest.mark.parametrize("servicio,archivo,base,columna,restriccion,revision,anterior,head", [
     ("ms2_taller", "0007_envio_presupuesto_ms2.py", BaseMS2, "envio_presupuesto_id",
-     "uq_historial_estado_envio_presupuesto_id", "0007_ms2", "0006_ms2", "0009_ms2"),
+     "uq_historial_estado_envio_presupuesto_id", "0007_ms2", "0006_ms2",
+     "0011_disponibilidad_repuestos_ms2"),
     ("ms3_presupuestos", "0004_stock_decision_ms3.py", BaseMS3, "repuestos_disponibles",
      "ck_decision_presupuesto_stock_solo_aprobacion", "0004_ms3", "0003_ms3", "0004_ms3"),
 ])
@@ -52,7 +53,7 @@ def test_migracion_agrega_referencia_o_snapshot_sin_reescribir_historia(
 
 def test_migracion_cupo_diario_agrega_configuracion_y_auditoria():
     script = ScriptDirectory.from_config(Config("services/ms2_taller/alembic.ini"))
-    assert script.get_heads() == ["0009_ms2"]
+    assert script.get_heads() == ["0011_disponibilidad_repuestos_ms2"]
     assert script.get_revision("0009_ms2").down_revision == "0008_ms2"
     ruta = (
         Path(__file__).resolve().parents[1]

@@ -50,11 +50,13 @@ from services.ms2_taller.services.ordenes import (
     cambiar_estado_orden,
     registrar_historial_estado,
 )
+from services.ms2_taller.integracion_ms3 import obtener_verificador_disponibilidad_repuestos
 from services.ms2_taller.services.cupo_ingresos import (
     _consulta_configuracion_para_actualizacion,
     _rango_jornada_utc,
 )
 from shared.auth import NombreRol, PrincipalAutenticado, crear_token_acceso
+from shared.contratos_decisiones import DisponibilidadRepuestosVerificada
 
 
 @pytest.fixture
@@ -1770,3 +1772,68 @@ def _headers_para(usuario_id: int, *roles: NombreRol) -> dict[str, str]:
 
 def _ids(ordenes: list[dict]) -> list[int]:
     return [orden["orden_id"] for orden in ordenes]
+
+
+def test_disponibilidad_repuestos_admin_verifica_y_aplica_idempotente(
+    api_ordenes: TestClient, db_ordenes: Session,
+) -> None:
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, estado_codigo=ESPERANDO_REPUESTOS,
+    )
+    clave = f"disp:{orden.orden_id}:42"
+
+    class VerificadorFalso:
+        def consultar(self, orden_id: int, clave_operacion: str, token: str):
+            assert orden_id == orden.orden_id
+            assert clave_operacion == clave
+            assert token
+            return DisponibilidadRepuestosVerificada(
+                clave_operacion=clave, orden_id=orden_id, reserva_confirmada=True,
+            )
+
+    app.dependency_overrides[
+        obtener_verificador_disponibilidad_repuestos
+    ] = lambda: VerificadorFalso()
+
+    primera = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/disponibilidad-repuestos",
+        json={"clave_operacion": clave},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    segunda = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/disponibilidad-repuestos",
+        json={"clave_operacion": clave},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert primera.status_code == 200
+    assert primera.json()["estado_aplicado"] == EN_REPARACION
+    assert segunda.status_code == 200
+    assert segunda.json()["historial_id"] == primera.json()["historial_id"]
+    db_ordenes.expire_all()
+    actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
+    assert actual.estado_codigo == EN_REPARACION
+    historial = db_ordenes.scalar(
+        select(HistorialEstado).where(
+            HistorialEstado.disponibilidad_repuestos_clave_operacion == clave
+        )
+    )
+    assert historial is not None
+    assert historial.actor_usuario_id == 99
+    assert historial.estado_anterior == ESPERANDO_REPUESTOS
+    assert historial.estado_nuevo == EN_REPARACION
+
+
+def test_disponibilidad_repuestos_rechaza_cliente(
+    api_ordenes: TestClient, db_ordenes: Session,
+) -> None:
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, estado_codigo=ESPERANDO_REPUESTOS,
+    )
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/disponibilidad-repuestos",
+        json={"clave_operacion": "disp:1:1"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 403
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0

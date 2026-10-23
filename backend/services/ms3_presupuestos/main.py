@@ -44,7 +44,7 @@ app = FastAPI(
         {"name": "presupuestos", "description": "Presupuesto único por orden: versiones, ítems, envío y decisión del cliente."},
         {"name": "repuestos", "description": "Catálogo de repuestos y stock (en desarrollo)."},
         {"name": "proveedores", "description": "Proveedores de repuestos (en desarrollo)."},
-        {"name": "inventario", "description": "Movimientos de inventario y umbrales (en desarrollo)."},
+        {"name": "inventario", "description": "Movimientos, compromisos y verificación de stock libre."},
     ],
 )
 

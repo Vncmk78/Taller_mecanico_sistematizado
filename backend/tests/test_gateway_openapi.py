@@ -14,6 +14,7 @@ from pydantic import SecretStr
 
 from gateway.contratos import auth as contratos_auth
 from gateway.contratos import evidencias as contratos_evidencias
+from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.main import app
@@ -51,6 +52,10 @@ from services.ms4_evidencias.schemas.evidencia import (
     EvidenciaLeida as Ms4EvidenciaLeida,
     UrlDescarga as Ms4UrlDescarga,
 )
+from services.ms3_presupuestos.schemas.inventario import (
+    RepuestoReservado as Ms3RepuestoReservado,
+    DisponibilidadRepuestosRespuesta as Ms3DisponibilidadRepuestosRespuesta,
+)
 from shared.auth import NombreRol, crear_token_acceso
 from shared.openapi_ordenes import ESTADOS_DOCUMENTADOS
 
@@ -59,6 +64,7 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/auth/login", "post"),
     ("/api/auth/me", "get"),
     ("/api/notificaciones", "get"),
+    ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
     ("/api/vehiculos", "post"),
     ("/api/vehiculos", "get"),
     ("/api/vehiculos/asignados", "get"),
@@ -88,6 +94,7 @@ _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
 _PROTEGIDOS = {
     "/api/auth/me",
     "/api/notificaciones",
+    "/api/inventario/ordenes/{orden_id}/disponibilidad",
     "/api/vehiculos",
     "/api/vehiculos/asignados",
     "/api/vehiculos/{vehiculo_id}",
@@ -190,6 +197,7 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/evidencias/{evidencia_id}", "get"),
         ("/api/evidencias/{evidencia_id}/descarga", "get"),
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"),
+        ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/presupuestos/decisiones/{decision_id}", "get"),
         ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
     }
@@ -260,6 +268,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
     for (ruta, metodo) in (
         ("/api/auth/me", "get"),
         ("/api/notificaciones", "get"),
+        ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos/asignados", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
@@ -297,6 +306,11 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (contratos_auth.UsuarioRespuesta, Ms1UsuarioRespuesta),
         (contratos_auth.TokenRespuesta, Ms1TokenRespuesta),
         (contratos_auth.NotificacionRespuesta, Ms1NotificacionRespuesta),
+        (contratos_inventario.RepuestoReservado, Ms3RepuestoReservado),
+        (
+            contratos_inventario.DisponibilidadRepuestosRespuesta,
+            Ms3DisponibilidadRepuestosRespuesta,
+        ),
         (contratos_vehiculos.VehiculoCrear, Ms2VehiculoCrear),
         (contratos_vehiculos.VehiculoActualizar, Ms2VehiculoActualizar),
         (contratos_vehiculos.VehiculoRespuesta, Ms2VehiculoRespuesta),
@@ -394,6 +408,8 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "UsuarioRespuesta",
         "TokenRespuesta",
         "NotificacionRespuesta",
+        "RepuestoReservado",
+        "DisponibilidadRepuestosRespuesta",
         "VehiculoCrear",
         "VehiculoActualizar",
         "VehiculoRespuesta",

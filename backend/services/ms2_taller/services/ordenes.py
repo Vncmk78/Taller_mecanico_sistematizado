@@ -31,12 +31,15 @@ from services.ms2_taller.domain.transiciones_orden import (
 )
 from services.ms2_taller.models.cliente import Cliente
 from services.ms2_taller.integracion_ms3 import (
+    DisponibilidadRepuestosNoAplicableError,
+    DisponibilidadRepuestosNoVisibleError,
     DecisionNoAplicableError,
     DecisionNoVisibleError,
     EnvioPresupuestoNoVisibleError,
     EnvioPresupuestoNoAplicableError,
     ServicioPresupuestosNoDisponibleError,
     VerificadorDecisiones,
+    VerificadorDisponibilidadRepuestos,
     VerificadorEnviosPresupuesto,
 )
 from services.ms2_taller.models.estado_orden import (
@@ -63,6 +66,7 @@ from services.ms2_taller.services.cupo_ingresos import (
 )
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
+    AplicacionDisponibilidadRepuestosRespuesta,
     AplicacionDecisionRespuesta,
     AplicacionEnvioPresupuestoRespuesta,
 )
@@ -140,6 +144,7 @@ def registrar_historial_estado(
     observacion: str | None = None,
     decision_presupuesto_id: int | None = None,
     envio_presupuesto_id: int | None = None,
+    disponibilidad_repuestos_clave_operacion: str | None = None,
 ) -> HistorialEstado:
     """Agrega el cambio de estado a la sesión sin confirmar la transacción.
 
@@ -170,6 +175,7 @@ def registrar_historial_estado(
         observacion=observacion,
         decision_presupuesto_id=decision_presupuesto_id,
         envio_presupuesto_id=envio_presupuesto_id,
+        disponibilidad_repuestos_clave_operacion=disponibilidad_repuestos_clave_operacion,
     )
     db.add(historial)
     if estado_anterior != estado_nuevo:
@@ -833,6 +839,82 @@ def aplicar_envio_inicial_presupuesto(
         raise PersistenciaOrdenError("No fue posible aplicar el envío del presupuesto") from exc
 
 
+def aplicar_disponibilidad_repuestos(
+    db: Session,
+    *,
+    orden_id: int,
+    clave_operacion: str,
+    principal: PrincipalAutenticado,
+    token: str,
+    verificador: VerificadorDisponibilidadRepuestos,
+) -> AplicacionDisponibilidadRepuestosRespuesta:
+    """Aplica 4 → 5 solo con reserva confirmada por MS3 y clave idempotente."""
+    try:
+        if NombreRol.ADMINISTRADOR not in principal.roles:
+            raise OrdenEstadoNoAutorizadoError("Se requiere rol Administrador")
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        historial = db.scalar(
+            select(HistorialEstado).where(
+                HistorialEstado.disponibilidad_repuestos_clave_operacion
+                == clave_operacion
+            )
+        )
+        if historial is not None:
+            if historial.orden_id != orden_id:
+                raise DisponibilidadRepuestosNoVisibleError(
+                    "Reserva de repuestos no encontrada"
+                )
+            respuesta = _aplicacion_de_disponibilidad(historial, clave_operacion)
+            db.commit()
+            return respuesta
+
+        hecho = verificador.consultar(orden_id, clave_operacion, token)
+        if hecho.orden_id != orden_id or hecho.clave_operacion != clave_operacion:
+            raise DisponibilidadRepuestosNoVisibleError(
+                "Reserva de repuestos no encontrada"
+            )
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.DISPONIBILIDAD_REPUESTOS,
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        historial = registrar_historial_estado(
+            db,
+            orden_id=orden_id,
+            estado_anterior=orden.estado_codigo,
+            estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id,
+            origen="usuario",
+            observacion="Disponibilidad de repuestos confirmada por MS3",
+            disponibilidad_repuestos_clave_operacion=clave_operacion,
+        )
+        orden.estado_codigo = destino
+        db.flush()
+        respuesta = _aplicacion_de_disponibilidad(historial, clave_operacion)
+        db.commit()
+        return respuesta
+    except (
+        OrdenEstadoNoAutorizadoError,
+        OrdenNoEncontradaError,
+        OrdenTransicionNoPermitidaError,
+        DisponibilidadRepuestosNoVisibleError,
+        DisponibilidadRepuestosNoAplicableError,
+        ServicioPresupuestosNoDisponibleError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible aplicar la disponibilidad de repuestos"
+        ) from exc
+
+
 def _aplicacion_de_historial(historial: HistorialEstado) -> AplicacionDecisionRespuesta:
     return AplicacionDecisionRespuesta(
         decision_id=historial.decision_presupuesto_id, orden_id=historial.orden_id,
@@ -844,6 +926,17 @@ def _aplicacion_de_envio(historial: HistorialEstado) -> AplicacionEnvioPresupues
     return AplicacionEnvioPresupuestoRespuesta(
         presupuesto_id=historial.envio_presupuesto_id, orden_id=historial.orden_id,
         estado_aplicado=historial.estado_nuevo, historial_id=historial.historial_id,
+    )
+
+
+def _aplicacion_de_disponibilidad(
+    historial: HistorialEstado, clave_operacion: str,
+) -> AplicacionDisponibilidadRepuestosRespuesta:
+    return AplicacionDisponibilidadRepuestosRespuesta(
+        clave_operacion=clave_operacion,
+        orden_id=historial.orden_id,
+        estado_aplicado=historial.estado_nuevo,
+        historial_id=historial.historial_id,
     )
 
 

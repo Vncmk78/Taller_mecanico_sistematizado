@@ -245,6 +245,8 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
         ("/api/auth/login", "post"),
         ("/api/auth/me", "get"),
         ("/api/auth/register", "post"),
+        ("/api/notificaciones", "get"),
+        ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/ordenes", "get"),
         ("/api/ordenes", "post"),
         ("/api/ordenes/{orden_id}", "get"),

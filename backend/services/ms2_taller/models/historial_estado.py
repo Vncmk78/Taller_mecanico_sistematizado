@@ -54,6 +54,10 @@ class HistorialEstado(Base):
         Index("ix_historial_estado_orden_fecha", "orden_id", "fecha_hora"),
         UniqueConstraint("decision_presupuesto_id", name="uq_historial_estado_decision_presupuesto_id"),
         UniqueConstraint("envio_presupuesto_id", name="uq_historial_estado_envio_presupuesto_id"),
+        UniqueConstraint(
+            "disponibilidad_repuestos_clave_operacion",
+            name="uq_historial_estado_disponibilidad_clave_operacion",
+        ),
         CheckConstraint(
             "decision_presupuesto_id is null or decision_presupuesto_id > 0",
             name="decision_presupuesto_positiva",
@@ -115,6 +119,10 @@ class HistorialEstado(Base):
     decision_presupuesto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Referencia lógica al presupuesto inicial de MS3; sin FK entre servicios.
     envio_presupuesto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Clave idempotente emitida por MS3 para la disponibilidad ya reservada.
+    disponibilidad_repuestos_clave_operacion: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
 
     orden: Mapped["OrdenTrabajo"] = relationship(back_populates="historial")
 

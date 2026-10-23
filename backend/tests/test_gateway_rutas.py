@@ -115,6 +115,23 @@ def test_notificaciones_reenvia_a_ms1_con_paginacion_y_jwt(
     assert ruta.calls.last.request.headers["authorization"] == "Bearer token.jwt.abc"
 
 
+def test_confirmar_disponibilidad_reenvia_a_ms3_con_jwt(
+    gateway: TestClient, api_mock: respx.MockRouter
+) -> None:
+    ruta = api_mock.post(
+        f"{settings.MS3_URL}/inventario/ordenes/71/disponibilidad"
+    ).mock(return_value=httpx.Response(200, json={"orden_id": 71}))
+
+    respuesta = gateway.post(
+        "/api/inventario/ordenes/71/disponibilidad",
+        headers={"Authorization": "Bearer token.jwt.abc"},
+    )
+
+    assert respuesta.status_code == 200
+    assert ruta.called
+    assert ruta.calls.last.request.headers["authorization"] == "Bearer token.jwt.abc"
+
+
 def test_vehiculos_reenvia_a_ms2(gateway: TestClient, api_mock: respx.MockRouter) -> None:
     ruta = api_mock.get(f"{settings.MS2_URL}/vehiculos")
 

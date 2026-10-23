@@ -604,6 +604,137 @@ def test_get_mecanico_ve_solo_ordenes_asignadas(
     assert _ids(respuesta.json()) == [asignada.orden_id]
 
 
+def test_historial_vehiculo_admin_pagina_y_ordena_de_forma_estable(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    ordenes = []
+    for _ in range(3):
+        ingreso = IngresoVehiculo(
+            vehiculo_id=vehiculo.vehiculo_id,
+            registrado_por_id=99,
+        )
+        db_ordenes.add(ingreso)
+        db_ordenes.flush()
+        orden = OrdenTrabajo(
+            vehiculo_id=vehiculo.vehiculo_id,
+            ingreso_id=ingreso.ingreso_id,
+            estado_codigo=RECIBIDO,
+            creado_por_id=99,
+        )
+        db_ordenes.add(orden)
+        db_ordenes.flush()
+        ordenes.append(orden)
+    db_ordenes.commit()
+
+    primera = api_ordenes.get(
+        f"/ordenes/vehiculo/{vehiculo.vehiculo_id}/historial?limit=2",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    segunda = api_ordenes.get(
+        f"/ordenes/vehiculo/{vehiculo.vehiculo_id}/historial?limit=2&offset=2",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert primera.status_code == segunda.status_code == 200
+    assert _ids(primera.json()["items"]) == [
+        ordenes[2].orden_id,
+        ordenes[1].orden_id,
+    ]
+    assert primera.json()["total"] == 3
+    assert primera.json()["limit"] == 2
+    assert primera.json()["offset"] == 0
+    assert [item["orden_id"] for item in segunda.json()["items"]] == [
+        ordenes[0].orden_id
+    ]
+    assert segunda.json()["total"] == 3
+
+
+def test_historial_vehiculo_respeta_propiedad_y_devuelve_vacio_si_no_hay_ordenes(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    propio = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    ajeno = _crear_vehiculo(db_ordenes, usuario_cliente=20)
+
+    vacio = api_ordenes.get(
+        f"/ordenes/vehiculo/{propio.vehiculo_id}/historial",
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    no_visible = api_ordenes.get(
+        f"/ordenes/vehiculo/{ajeno.vehiculo_id}/historial",
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+
+    assert vacio.status_code == 200
+    assert vacio.json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+    assert no_visible.status_code == 404
+    assert no_visible.json() == {"detail": "Vehículo no encontrado"}
+
+
+def test_historial_vehiculo_mecanico_solo_recibe_ordenes_asignadas(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    ingreso = IngresoVehiculo(
+        vehiculo_id=vehiculo.vehiculo_id,
+        registrado_por_id=99,
+    )
+    db_ordenes.add(ingreso)
+    db_ordenes.flush()
+    asignada = OrdenTrabajo(
+        vehiculo_id=vehiculo.vehiculo_id,
+        ingreso_id=ingreso.ingreso_id,
+        estado_codigo=RECIBIDO,
+        mecanico_actual_id=50,
+        creado_por_id=99,
+    )
+    db_ordenes.add(asignada)
+    otro_ingreso = IngresoVehiculo(
+        vehiculo_id=vehiculo.vehiculo_id,
+        registrado_por_id=99,
+    )
+    db_ordenes.add(otro_ingreso)
+    db_ordenes.flush()
+    db_ordenes.add(
+        OrdenTrabajo(
+            vehiculo_id=vehiculo.vehiculo_id,
+            ingreso_id=otro_ingreso.ingreso_id,
+            estado_codigo=RECIBIDO,
+            mecanico_actual_id=60,
+            creado_por_id=99,
+        )
+    )
+    db_ordenes.commit()
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/vehiculo/{vehiculo.vehiculo_id}/historial",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200
+    assert _ids(respuesta.json()["items"]) == [asignada.orden_id]
+    assert respuesta.json()["total"] == 1
+
+
+@pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1"])
+def test_historial_vehiculo_rechaza_parametros_paginacion_invalidos(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+    query: str,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/vehiculo/{vehiculo.vehiculo_id}/historial?{query}",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 422
+
+
 def test_get_multirol_une_alcances_sin_duplicados(
     api_ordenes: TestClient,
     db_ordenes: Session,

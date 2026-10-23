@@ -80,6 +80,17 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime
 
 
+class HistorialOrdenesVehiculoRespuesta(BaseModel):
+    """Página del historial de órdenes visibles de un vehículo."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[OrdenRespuesta]
+    total: int
+    limit: int
+    offset: int
+
+
 class CambioEstadoSolicitud(BaseModel):
     """Datos controlables al solicitar un cambio de estado de una orden."""
 

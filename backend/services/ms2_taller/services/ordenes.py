@@ -10,7 +10,7 @@ remota del rol del destino continúa pendiente de contrato con MS1.
 
 from __future__ import annotations
 
-from sqlalchemy import false, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
@@ -380,6 +380,73 @@ def listar_ordenes(
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaOrdenError("No fue posible consultar las órdenes") from exc
+
+
+def listar_historial_ordenes_vehiculo(
+    db: Session,
+    principal: PrincipalAutenticado,
+    vehiculo_id: int,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[OrdenTrabajo], int]:
+    """Lista una página de órdenes del vehículo dentro del alcance del principal."""
+
+    try:
+        visible = select(Vehiculo.vehiculo_id).where(
+            Vehiculo.vehiculo_id == vehiculo_id
+        )
+        if NombreRol.ADMINISTRADOR not in principal.roles:
+            alcances_vehiculo = []
+            if NombreRol.CLIENTE in principal.roles:
+                alcances_vehiculo.append(
+                    Vehiculo.cliente.has(
+                        Cliente.usuario_id == principal.usuario_id
+                    )
+                )
+            if NombreRol.MECANICO in principal.roles:
+                orden_asignada = (
+                    select(OrdenTrabajo.orden_id)
+                    .where(
+                        OrdenTrabajo.vehiculo_id == Vehiculo.vehiculo_id,
+                        OrdenTrabajo.mecanico_actual_id == principal.usuario_id,
+                    )
+                    .exists()
+                )
+                alcances_vehiculo.append(orden_asignada)
+            visible = visible.where(
+                or_(*alcances_vehiculo) if alcances_vehiculo else false()
+            )
+
+        if db.scalar(visible) is None:
+            raise VehiculoNoEncontradoError("Vehículo no encontrado")
+
+        consulta = select(OrdenTrabajo).where(
+            OrdenTrabajo.vehiculo_id == vehiculo_id
+        )
+        filtro = _filtro_visibilidad(principal)
+        if filtro is not None:
+            consulta = consulta.where(filtro)
+
+        total = db.scalar(
+            select(func.count()).select_from(consulta.order_by(None).subquery())
+        ) or 0
+        pagina = (
+            consulta.order_by(
+                OrdenTrabajo.creado_en.desc(),
+                OrdenTrabajo.orden_id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(db.scalars(pagina).unique().all()), total
+    except VehiculoNoEncontradoError:
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible consultar el historial del vehículo"
+        ) from exc
 
 
 def obtener_orden_visible(

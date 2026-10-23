@@ -253,6 +253,7 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
         ("/api/presupuestos/decisiones/{decision_id}", "get"),
         ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
         ("/api/ordenes/configuracion/capacidad/mecanicos", "put"),

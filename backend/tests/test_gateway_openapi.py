@@ -69,6 +69,7 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
     ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
+    ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
     ("/api/evidencias", "post"),
     ("/api/evidencias", "get"),
@@ -91,6 +92,7 @@ _PROTEGIDOS = {
     "/api/ordenes/configuracion/capacidad/mecanicos",
     "/api/ordenes/configuracion/capacidad/ingresos-diarios",
     "/api/ordenes/{orden_id}/historial",
+    "/api/ordenes/vehiculo/{vehiculo_id}/historial",
     "/api/ordenes/{orden_id}/estado",
     "/api/evidencias",
     "/api/evidencias/{evidencia_id}",
@@ -176,6 +178,7 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}", "get"),
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/estado", "patch"),
         ("/api/evidencias", "post"),
         ("/api/evidencias", "get"),
@@ -259,6 +262,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
         ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
         ("/api/evidencias/{evidencia_id}/descarga", "get"),
@@ -494,6 +498,12 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
             "content"
         ]["application/json"]["schema"]["items"]["$ref"]
         == "#/components/schemas/HistorialEstadoRespuesta"
+    )
+    assert (
+        paths["/api/ordenes/vehiculo/{vehiculo_id}/historial"]["get"]["responses"][
+            "200"
+        ]["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/HistorialOrdenesVehiculoRespuesta"
     )
 
 

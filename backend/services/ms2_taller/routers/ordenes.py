@@ -22,6 +22,7 @@ from services.ms2_taller.schemas.orden import (
     CupoDiarioIngresosActualizar,
     CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud,
+    HistorialOrdenesVehiculoRespuesta,
     HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
@@ -41,6 +42,7 @@ from services.ms2_taller.services.ordenes import (
     cambiar_estado_orden,
     crear_orden,
     listar_ordenes,
+    listar_historial_ordenes_vehiculo,
     obtener_historial_orden,
     obtener_orden_visible,
 )
@@ -380,6 +382,50 @@ def consultar_ordenes(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible consultar las órdenes",
+        ) from exc
+
+
+@router_ordenes.get(
+    "/vehiculo/{vehiculo_id}/historial",
+    response_model=HistorialOrdenesVehiculoRespuesta,
+    summary="Consultar el historial paginado de órdenes de un vehículo",
+    description=(
+        "Ordena por fecha de creación descendente y desempata por ID. "
+        "Cliente ve un vehículo propio, Mecánico solo órdenes actualmente "
+        "asignadas a él y Administrador ve todas."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_404_NOT_FOUND: {"description": "Vehículo no encontrado"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Identificador o parámetros de página inválidos"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible consultar el historial"
+        },
+    },
+)
+def consultar_historial_ordenes_vehiculo(
+    vehiculo_id: int = Path(gt=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> dict[str, object]:
+    try:
+        items, total = listar_historial_ordenes_vehiculo(
+            db, principal, vehiculo_id, limit=limit, offset=offset
+        )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+    except VehiculoNoEncontradoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehículo no encontrado",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar el historial del vehículo",
         ) from exc
 
 

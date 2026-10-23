@@ -614,6 +614,30 @@ Lista solamente las órdenes visibles para la identidad autenticada:
 | Respuesta OK | `200` con lista de `OrdenRespuesta` |
 | Errores | `401` JWT ausente/inválido · `500` consulta · `502` MS2 no disponible |
 
+### GET `/api/ordenes/vehiculo/{vehiculo_id}/historial`
+
+Consulta en MS2 el historial de órdenes de un vehículo con paginación en el
+servidor. Ordena por `creado_en` descendente y usa `orden_id` descendente para
+desempatar. `limit` acepta de 1 a 100 (por defecto 20) y `offset` desde 0
+(por defecto 0). La respuesta incluye `items`, `total`, `limit` y `offset`.
+
+- Administrador: consulta cualquier vehículo existente.
+- Cliente: consulta un vehículo propio; si no tiene órdenes recibe `items: []`.
+- Mecánico: consulta únicamente órdenes actualmente asignadas a él; el vehículo
+  debe tener al menos una orden asignada para ser visible.
+- Multirol: combina los alcances existentes; Administrador conserva visibilidad
+  global.
+
+Un vehículo inexistente o fuera del alcance responde `404`, igual que el
+detalle de vehículo.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Parámetros | `vehiculo_id` en ruta; `limit` y `offset` opcionales |
+| Respuesta OK | `200` con `{ "items": [OrdenRespuesta], "total": 3, "limit": 20, "offset": 0 }` |
+| Errores | `401` JWT ausente/inválido · `404` vehículo inexistente o no visible · `422` parámetros inválidos · `500` consulta · `502` MS2 no disponible |
+
 ### GET `/api/ordenes/{orden_id}`
 
 Devuelve una orden solo si es visible conforme a las mismas reglas del listado.

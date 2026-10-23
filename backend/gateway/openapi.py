@@ -147,6 +147,10 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         contratos_ordenes.CupoDiarioIngresosRespuesta,
     ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
+    (
+        "HistorialOrdenesVehiculoRespuesta",
+        contratos_ordenes.HistorialOrdenesVehiculoRespuesta,
+    ),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
     ("EvidenciaSubida", contratos_evidencias.EvidenciaSubida),
@@ -842,6 +846,64 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 },
                 requiere_auth=True,
             ),
+        },
+        "/api/ordenes/vehiculo/{vehiculo_id}/historial": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar historial paginado de órdenes por vehículo",
+                descripcion=(
+                    "Filtro en MS2 por vehículo y página ordenada por creación "
+                    "descendente, con ID descendente como desempate. Administrador "
+                    "ve todas; Cliente solo un vehículo propio; Mecánico solo sus "
+                    "órdenes actualmente asignadas. Un vehículo visible sin órdenes "
+                    "devuelve items vacío y total 0."
+                ),
+                operation_id="consultar_historial_ordenes_vehiculo",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Página del historial del vehículo.",
+                        _ref("HistorialOrdenesVehiculoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador o parámetros de página inválidos",
+                    "404": "Vehículo inexistente o fuera de visibilidad",
+                    "500": "No fue posible consultar el historial",
+                },
+                requiere_auth=True,
+                con_vehiculo_id=True,
+                parametros_extra=[
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": False,
+                        "description": (
+                            "Cantidad de elementos: 20 por defecto, entre 1 y 100."
+                        ),
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                        },
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "required": False,
+                        "description": "Índice inicial, desde cero.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0,
+                        },
+                    },
+                ],
+                descripcion_404="Vehículo inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            )
         },
         "/api/ordenes/{orden_id}/historial": {
             "get": _operacion(

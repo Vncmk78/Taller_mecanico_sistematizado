@@ -22,6 +22,7 @@ from services.ms2_taller.models import (
     ConfiguracionCapacidadMecanico,
     ConfiguracionCupoIngresos,
     EstadoOrden,
+    EventoOutbox,
     HistorialConfiguracionCupoIngresos,
     HistorialEstado,
     HistorialValidacionCupoIngreso,
@@ -43,6 +44,7 @@ from services.ms2_taller.models.estado_orden import (
 from services.ms2_taller.services.ordenes import (
     OrdenObservacionInvalidaError,
     OrdenEstadoNoAutorizadoError,
+    registrar_historial_estado,
     OrdenTransicionNoPermitidaError,
     _consulta_vehiculo_para_actualizacion,
     cambiar_estado_orden,
@@ -1153,6 +1155,43 @@ def test_patch_no_entrega_sin_operacion_ni_registro_de_entrega(
     assert orden_actual.estado_codigo == LISTO
     assert orden_actual.entregado_en is None
     assert orden_actual.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_cambio_de_estado_y_evento_outbox_se_guardan_en_la_misma_transaccion(
+    db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes,
+        usuario_cliente=10,
+        mecanico_id=50,
+        estado_codigo=ESPERANDO_REPUESTOS,
+    )
+
+    historial = registrar_historial_estado(
+        db_ordenes,
+        orden_id=orden.orden_id,
+        estado_anterior=ESPERANDO_REPUESTOS,
+        estado_nuevo=EN_REPARACION,
+        actor_usuario_id=99,
+        origen="usuario",
+    )
+    db_ordenes.flush()
+
+    evento = db_ordenes.scalar(select(EventoOutbox))
+    assert evento is not None
+    assert evento.tipo == "orden.estado_cambiado"
+    assert evento.payload["evento_id"] == str(evento.evento_id)
+    assert evento.payload["orden_id"] == orden.orden_id
+    assert evento.payload["vehiculo_id"] == orden.vehiculo_id
+    assert evento.payload["cliente_usuario_id"] == 10
+    assert evento.payload["estado_anterior"] == ESPERANDO_REPUESTOS
+    assert evento.payload["estado_nuevo"] == EN_REPARACION
+    assert db_ordenes.get(HistorialEstado, historial.historial_id) is not None
+
+    db_ordenes.rollback()
+
+    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 0
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 

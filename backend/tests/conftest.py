@@ -21,6 +21,9 @@ os.environ.setdefault(
     "MS2_DATABASE_URL",
     "sqlite+pysqlite:////tmp/sgtm_ms2_config_only.db",
 )
+# Las pruebas HTTP no deben arrancar el publicador que usa la base/servicio
+# externo configurado en el .env del desarrollador.
+os.environ["MS2_EVENT_WORKER_ENABLED"] = "false"
 os.environ.setdefault(
     "MS3_JWT_SECRET_KEY",
     "clave-secreta-exclusiva-para-pruebas-de-ms3-123456",

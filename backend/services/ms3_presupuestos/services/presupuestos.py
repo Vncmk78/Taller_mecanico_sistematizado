@@ -49,7 +49,10 @@ from services.ms3_presupuestos.schemas.presupuesto import (
     ResultadoOperacion,
     VersionDetalle,
 )
-from shared.contratos_decisiones import DecisionPresupuestoVerificada
+from shared.contratos_decisiones import (
+    DecisionPresupuestoVerificada,
+    EnvioPresupuestoVerificado,
+)
 
 
 # ---------------------------------------------------------------- escritura --
@@ -204,6 +207,22 @@ def enviar_version(uow: UnidadDeTrabajo, *, presupuesto_id: int, numero: int) ->
     return ResultadoOperacion(presupuesto=a_detalle(presupuesto), efecto_en_orden=efecto)
 
 
+def consultar_envio_inicial(
+    uow: UnidadDeTrabajo, *, presupuesto_id: int,
+) -> EnvioPresupuestoVerificado:
+    """Devuelve a MS2 el hecho de envío inicial persistido por este servicio."""
+    presupuesto = obtener_presupuesto(uow, presupuesto_id)
+    if not any(v.numero == 1 and v.enviada for v in presupuesto.versiones):
+        raise ConflictoDeDatos(
+            "La primera versión del presupuesto aún no fue enviada"
+        )
+    return EnvioPresupuestoVerificado(
+        presupuesto_id=presupuesto.presupuesto_id,
+        orden_id=presupuesto.orden_id,
+        envio_inicial_confirmado=True,
+    )
+
+
 def decidir_version(
     uow: UnidadDeTrabajo,
     *,
@@ -328,6 +347,23 @@ def consultar_decision(
         primera_decision=primera, repuestos_disponibles=registro.repuestos_disponibles,
         motivo=registro.motivo,
     )
+
+
+def existe_aprobacion_inicial(
+    uow: UnidadDeTrabajo, *, orden_id: int,
+) -> bool:
+    """Comprueba la decisión inicial persistida, incluso si MS2 no aplicó el efecto."""
+    return uow.sesion.scalar(
+        select(DecisionPresupuesto.decision_id)
+        .join(VersionPresupuesto, DecisionPresupuesto.version_id == VersionPresupuesto.version_id)
+        .join(Presupuesto, VersionPresupuesto.presupuesto_id == Presupuesto.presupuesto_id)
+        .where(
+            Presupuesto.orden_id == orden_id,
+            VersionPresupuesto.es_modificacion.is_(False),
+            DecisionPresupuesto.decision == "aprobado",
+        )
+        .limit(1)
+    ) is not None
 
 
 def obtener_version(

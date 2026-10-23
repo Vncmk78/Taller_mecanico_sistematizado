@@ -25,8 +25,15 @@ from sqlalchemy.orm import Session
 
 from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
-from services.ms3_presupuestos.integracion_ms2 import DecisionAplicacionPendienteError, ServicioOrdenesNoDisponible
-from shared.contratos_decisiones import DecisionAplicacionPendiente
+from services.ms3_presupuestos.integracion_ms2 import (
+    DecisionAplicacionPendienteError,
+    EnvioPresupuestoAplicacionPendienteError,
+    ServicioOrdenesNoDisponible,
+)
+from shared.contratos_decisiones import (
+    DecisionAplicacionPendiente,
+    EnvioPresupuestoAplicacionPendiente,
+)
 from services.ms3_presupuestos.persistencia import ErrorDePersistencia
 from services.ms3_presupuestos.routers import ROUTERS
 
@@ -93,6 +100,22 @@ def _decision_aplicacion_pendiente(_: Request, exc: DecisionAplicacionPendienteE
         decision_id=exc.decision_id, orden_id=exc.orden_id,
         reintento=f"/api/presupuestos/decisiones/{exc.decision_id}/aplicacion",
         estado_ms2=exc.estado_ms2, detalle_ms2=exc.detalle_ms2,
+    )
+    return JSONResponse(status_code=503, content=respuesta.model_dump())
+
+
+@app.exception_handler(EnvioPresupuestoAplicacionPendienteError)
+def _envio_aplicacion_pendiente(
+    _: Request, exc: EnvioPresupuestoAplicacionPendienteError,
+) -> JSONResponse:
+    respuesta = EnvioPresupuestoAplicacionPendiente(
+        detail="El presupuesto quedó enviado; no se pudo confirmar su aplicación en MS2. "
+               "Reintente la aplicación del envío inicial.",
+        presupuesto_id=exc.presupuesto_id,
+        orden_id=exc.orden_id,
+        reintento=f"/api/presupuestos/{exc.presupuesto_id}/envio-inicial/aplicacion",
+        estado_ms2=exc.estado_ms2,
+        detalle_ms2=exc.detalle_ms2,
     )
     return JSONResponse(status_code=503, content=respuesta.model_dump())
 

@@ -22,7 +22,9 @@ const PARES_ACEPTADOS_POR_MS2: ReadonlyArray<readonly [number, number]> = [
 /** Estados sin ninguna transición para el mecánico, con el motivo. */
 const ESTADOS_SIN_AVANCE_DEL_MECANICO: Record<number, string> = {
     1: 'la primera asignación la realiza el administrador mediante la operación específica',
+    2: 'el administrador envía el primer presupuesto',
     3: 'la aprobación del presupuesto la gestiona el cliente',
+    4: 'la disponibilidad depende de un evento MS3 cuyo actor sigue pendiente de definición',
     6: 'la entrega física la gestiona el administrador',
     7: 'es terminal (Entregado)',
     8: 'es terminal (Cancelado)',
@@ -41,8 +43,8 @@ describe('AVANCES_MECANICO: transiciones que la vista del mecánico ofrece', () 
         }
     });
 
-    it('ofrece los tres avances conservados sin sustituir la asignación administrativa', () => {
-        expect(AVANCES_MECANICO).toEqual({ 2: [3], 4: [5], 5: [6] });
+    it('ofrece solo la finalización del trabajo autorizado por el mecánico asignado', () => {
+        expect(AVANCES_MECANICO).toEqual({ 5: [6] });
     });
 
     it('no ofrece avance en los estados que dependen del cliente, el admin o son terminales', () => {

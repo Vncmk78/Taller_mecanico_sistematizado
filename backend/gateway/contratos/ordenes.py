@@ -6,7 +6,7 @@ OpenAPI comparan sus campos y obligatoriedad con los esquemas reales de MS2.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -92,6 +92,100 @@ class AsignacionMecanicoActualizar(BaseModel):
     )
 
 
+class CapacidadMecanicoActualizar(BaseModel):
+    """Límite de órdenes activas que un Administrador configura por mecánico."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"max_ordenes_activas": 5}]},
+    )
+
+    max_ordenes_activas: int = Field(
+        gt=0,
+        strict=True,
+        description="Máximo positivo de órdenes asignadas no terminales por mecánico.",
+        examples=[5],
+    )
+
+
+class CapacidadMecanicoRespuesta(BaseModel):
+    """Configuración vigente e información de mecánicos sobre el nuevo límite."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "max_ordenes_activas": 5,
+                    "actualizado_por_id": 99,
+                    "actualizado_en": "2026-10-20T10:00:00-03:00",
+                    "mecanicos_sobre_limite": [],
+                }
+            ]
+        }
+    )
+
+    max_ordenes_activas: int | None = Field(
+        description="Nulo hasta que un Administrador configure el límite."
+    )
+    actualizado_por_id: int | None = Field(
+        description="Referencia lógica al Administrador que configuró el valor."
+    )
+    actualizado_en: datetime = Field(description="Fecha y hora de la configuración.")
+    mecanicos_sobre_limite: list[dict[str, int]] = Field(
+        description="Mecánicos cuya carga actual supera el máximo recién configurado."
+    )
+
+
+class CupoDiarioIngresosActualizar(BaseModel):
+    """Límite de ingresos físicos que un Administrador configura por jornada."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"max_ingresos_diarios": 12}]},
+    )
+
+    max_ingresos_diarios: int = Field(
+        gt=0,
+        strict=True,
+        description="Máximo positivo de ingresos físicos en una jornada local.",
+        examples=[12],
+    )
+
+
+class CupoDiarioIngresosRespuesta(BaseModel):
+    """Límite diario vigente, jornada y número de ingresos registrados."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "max_ingresos_diarios": 12,
+                    "actualizado_por_id": 99,
+                    "actualizado_en": "2026-10-23T10:00:00-03:00",
+                    "jornada_local": "2026-10-23",
+                    "ingresos_registrados": 4,
+                    "sobre_limite": False,
+                }
+            ]
+        }
+    )
+
+    max_ingresos_diarios: int | None = Field(
+        description="Nulo hasta que un Administrador configure el límite."
+    )
+    actualizado_por_id: int | None = Field(
+        description="Referencia lógica al Administrador que configuró el valor."
+    )
+    actualizado_en: datetime
+    jornada_local: date
+    ingresos_registrados: int = Field(
+        description="Ingresos físicos registrados en la jornada local actual."
+    )
+    sobre_limite: bool = Field(
+        description="Indica si el uso actual excede el límite configurado."
+    )
+
+
 class OrdenRespuesta(BaseModel):
     """Representación inicial de una orden expuesta por MS2."""
 
@@ -163,7 +257,7 @@ class EntregaSolicitud(BaseModel):
 
 
 class CancelacionClienteSolicitud(BaseModel):
-    """Motivo obligatorio con el que el cliente cancela su orden."""
+    """Motivo obligatorio con el que el cliente solicita cancelar su orden."""
 
     model_config = ConfigDict(
         str_strip_whitespace=True,
@@ -176,6 +270,29 @@ class CancelacionClienteSolicitud(BaseModel):
         description="Motivo de la cancelación; no puede estar vacío.",
         examples=["El cliente ya no desea el servicio"],
     )
+
+
+class SolicitudCancelacionRespuesta(BaseModel):
+    """Solicitud auditable que el Administrador debe revisar."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{
+            "solicitud_id": 12, "orden_id": 31, "cliente_usuario_id": 42,
+            "estado_al_solicitar": 3, "motivo": "El cliente no continuará",
+            "estado": "pendiente", "solicitada_en": "2026-10-23T10:30:00-03:00",
+            "administrador_id": None, "confirmada_en": None,
+        }]}
+    )
+
+    solicitud_id: int
+    orden_id: int
+    cliente_usuario_id: int
+    estado_al_solicitar: int
+    motivo: str
+    estado: Literal["pendiente", "confirmada"]
+    solicitada_en: datetime
+    administrador_id: int | None
+    confirmada_en: datetime | None
 
 
 class HistorialEstadoRespuesta(BaseModel):

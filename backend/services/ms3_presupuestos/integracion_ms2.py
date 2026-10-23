@@ -19,7 +19,10 @@ from typing import Protocol
 import httpx
 
 from services.ms3_presupuestos.config import settings
-from shared.contratos_decisiones import AplicacionDecisionRespuesta
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta,
+    AplicacionEnvioPresupuestoRespuesta,
+)
 
 
 class OrdenNoVisible(Exception):
@@ -124,3 +127,62 @@ class CoordinadorOrdenesHttp:
 
 def obtener_coordinador_ordenes() -> CoordinadorOrdenes:
     return CoordinadorOrdenesHttp(settings.MS2_URL, settings.MS2_TIMEOUT_SEGUNDOS)
+
+
+class EnvioPresupuestoAplicacionPendienteError(Exception):
+    """MS3 guardó el envío, pero MS2 no confirmó la transición de la orden."""
+
+    def __init__(self, orden_id: int, presupuesto_id: int,
+                 estado_ms2: int | None = None, detalle_ms2: str | None = None) -> None:
+        super().__init__("La aplicación del envío inicial en MS2 no está confirmada")
+        self.orden_id = orden_id
+        self.presupuesto_id = presupuesto_id
+        self.estado_ms2 = estado_ms2
+        self.detalle_ms2 = detalle_ms2
+
+
+class CoordinadorEnviosPresupuesto(Protocol):
+    def aplicar(self, orden_id: int, presupuesto_id: int, token: str
+                ) -> AplicacionEnvioPresupuestoRespuesta: ...
+
+
+class CoordinadorEnviosPresupuestoHttp:
+    def __init__(self, url_base: str, timeout: float) -> None:
+        self.url_base = url_base.rstrip("/")
+        self.timeout = timeout
+
+    def aplicar(self, orden_id: int, presupuesto_id: int, token: str
+                ) -> AplicacionEnvioPresupuestoRespuesta:
+        try:
+            respuesta = httpx.post(
+                f"{self.url_base}/ordenes/{orden_id}/envios-presupuesto",
+                json={"presupuesto_id": presupuesto_id},
+                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise EnvioPresupuestoAplicacionPendienteError(
+                orden_id, presupuesto_id,
+            ) from exc
+        if respuesta.status_code != 200:
+            try:
+                body = respuesta.json()
+                detalle = body.get("detail") if isinstance(body, dict) else None
+            except ValueError:
+                detalle = None
+            raise EnvioPresupuestoAplicacionPendienteError(
+                orden_id, presupuesto_id, respuesta.status_code,
+                detalle if isinstance(detalle, str) else None,
+            )
+        try:
+            aplicada = AplicacionEnvioPresupuestoRespuesta.model_validate(respuesta.json())
+        except ValueError as exc:
+            raise EnvioPresupuestoAplicacionPendienteError(
+                orden_id, presupuesto_id,
+            ) from exc
+        if aplicada.presupuesto_id != presupuesto_id or aplicada.orden_id != orden_id:
+            raise EnvioPresupuestoAplicacionPendienteError(orden_id, presupuesto_id)
+        return aplicada
+
+
+def obtener_coordinador_envios_presupuesto() -> CoordinadorEnviosPresupuesto:
+    return CoordinadorEnviosPresupuestoHttp(settings.MS2_URL, settings.MS2_TIMEOUT_SEGUNDOS)

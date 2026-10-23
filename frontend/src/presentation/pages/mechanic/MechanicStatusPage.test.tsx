@@ -298,14 +298,15 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         expect(screen.queryByLabelText('Siguiente estado de la orden 102')).not.toBeInTheDocument();
     });
 
-    // La vista no sustituye operaciones específicas. Los avances de envío y
-    // stock posterior se conservan con sus precondiciones funcionales pendientes.
+    // La vista ofrece solo acciones cuyo actor está definido para el mecánico.
+    // El envío inicial es administrativo y la disponibilidad posterior depende
+    // de un evento MS3 cuyo actor aún no está definido.
     describe('matriz de estados: qué ofrece el selector en cada uno', () => {
         const ESPERADOS: Record<number, string[]> = {
             1: [],
-            2: ['Esperando aprobación de presupuesto'],
+            2: [],
             3: [],
-            4: ['En reparación'],
+            4: [],
             5: ['Listo'],
             6: [],
             7: [],
@@ -357,12 +358,9 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         });
     });
 
-    // Los tres avances conservados en AVANCES_MECANICO, y no solo el 5->6 que
-    // ya cubría la suite.
+    // El único avance del mecánico confirmado por la sistematización.
     describe('avances permitidos por el mecánico', () => {
         it.each([
-            [2, 3, 'Esperando aprobación de presupuesto'],
-            [4, 5, 'En reparación'],
             [5, 6, 'Listo'],
         ])('avanza de %i a %i ("%s") con su observación', async (origen, destino, etiqueta) => {
             vi.mocked(orderService.getOrders).mockResolvedValue([orden('101', origen)]);

@@ -62,7 +62,8 @@ from services.ms2_taller.config import settings as settings_ms2  # noqa: E402
 from services.ms2_taller.db import get_db as get_db_ms2  # noqa: E402
 from services.ms2_taller.main import app as app_ms2  # noqa: E402
 from services.ms2_taller.models import (  # noqa: E402
-    Base as BaseMS2, Cliente, EstadoOrden, IngresoVehiculo, OrdenTrabajo, Vehiculo,
+    Base as BaseMS2, Cliente, ConfiguracionCapacidadMecanico, EstadoOrden,
+    IngresoVehiculo, OrdenTrabajo, Vehiculo,
 )
 from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN, RECIBIDO  # noqa: E402
 from services.ms3_presupuestos.config import settings as settings_ms3  # noqa: E402
@@ -144,6 +145,11 @@ def escenario(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
             [EstadoOrden(estado_codigo=codigo, nombre=nombre)
              for codigo, nombre in ESTADOS_ORDEN.items()]
         )
+        # La configuración evita que las pruebas de autorización pasen por el
+        # error de capacidad no configurada, ajeno a los permisos evaluados.
+        db.add(ConfiguracionCapacidadMecanico(
+            configuracion_id=1, max_ordenes_activas=5, actualizado_por_id=99,
+        ))
         # El dueño del vehículo es la cuenta 42 (rol cliente); la orden es
         # ajena a todo mecánico, que es el punto de la revisión.
         vehiculo = Vehiculo(

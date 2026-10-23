@@ -1,6 +1,6 @@
 """Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 22 endpoints reales de Auth,
+Verifican que `/openapi.json` publica los endpoints reales de Auth,
 Vehículos, Órdenes y Evidencias con sus contratos y seguridad, que el proxy
 genérico no aparece, y que las copias de `gateway/contratos` no se
 desactualizan respecto a los esquemas reales de MS1, MS2 y MS4.
@@ -34,8 +34,13 @@ from services.ms2_taller.schemas.vehiculo import (
 )
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
+    CapacidadMecanicoActualizar as Ms2CapacidadMecanicoActualizar,
+    CapacidadMecanicoRespuesta as Ms2CapacidadMecanicoRespuesta,
+    CupoDiarioIngresosActualizar as Ms2CupoDiarioIngresosActualizar,
+    CupoDiarioIngresosRespuesta as Ms2CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
     CancelacionClienteSolicitud as Ms2CancelacionClienteSolicitud,
+    SolicitudCancelacionRespuesta as Ms2SolicitudCancelacionRespuesta,
     EntregaSolicitud as Ms2EntregaSolicitud,
     HistorialEstadoRespuesta as Ms2HistorialEstadoRespuesta,
     OrdenCrear as Ms2OrdenCrear,
@@ -68,12 +73,18 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes", "get"),
     ("/api/ordenes/{orden_id}", "get"),
     ("/api/ordenes/{orden_id}/mecanico", "put"),
+    ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
+    ("/api/ordenes/configuracion/capacidad/mecanicos", "put"),
+    ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
+    ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/bitacora", "get"),
     ("/api/ordenes/{orden_id}/bitacora", "post"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
     ("/api/ordenes/{orden_id}/entrega", "post"),
     ("/api/ordenes/{orden_id}/cancelacion", "post"),
+    ("/api/ordenes/cancelaciones/pendientes", "get"),
+    ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
     ("/api/evidencias", "post"),
     ("/api/evidencias", "get"),
     ("/api/evidencias/{evidencia_id}", "get"),
@@ -92,11 +103,15 @@ _PROTEGIDOS = {
     "/api/ordenes",
     "/api/ordenes/{orden_id}",
     "/api/ordenes/{orden_id}/mecanico",
+    "/api/ordenes/configuracion/capacidad/mecanicos",
+    "/api/ordenes/configuracion/capacidad/ingresos-diarios",
     "/api/ordenes/{orden_id}/historial",
     "/api/ordenes/{orden_id}/bitacora",
     "/api/ordenes/{orden_id}/estado",
     "/api/ordenes/{orden_id}/entrega",
     "/api/ordenes/{orden_id}/cancelacion",
+    "/api/ordenes/cancelaciones/pendientes",
+    "/api/ordenes/{orden_id}/cancelacion/confirmacion",
     "/api/evidencias",
     "/api/evidencias/{evidencia_id}",
     "/api/evidencias/{evidencia_id}/descarga",
@@ -186,6 +201,7 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}/estado", "patch"),
         ("/api/ordenes/{orden_id}/entrega", "post"),
         ("/api/ordenes/{orden_id}/cancelacion", "post"),
+        ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
         ("/api/evidencias", "post"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
@@ -242,6 +258,14 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
             "/api/ordenes/{orden_id}/mecanico",
             "put",
         ): "AsignacionMecanicoActualizar",
+        (
+            "/api/ordenes/configuracion/capacidad/mecanicos",
+            "put",
+        ): "CapacidadMecanicoActualizar",
+        (
+            "/api/ordenes/configuracion/capacidad/ingresos-diarios",
+            "put",
+        ): "CupoDiarioIngresosActualizar",
         ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
         ("/api/ordenes/{orden_id}/entrega", "post"): "EntregaSolicitud",
         ("/api/ordenes/{orden_id}/cancelacion", "post"): "CancelacionClienteSolicitud",
@@ -260,6 +284,8 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/vehiculos/{vehiculo_id}", "get"),
         ("/api/ordenes", "get"),
         ("/api/ordenes/{orden_id}", "get"),
+        ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
+        ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
         ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "get"),
         ("/api/evidencias", "get"),
@@ -297,6 +323,22 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
             contratos_ordenes.AsignacionMecanicoActualizar,
             Ms2AsignacionMecanicoActualizar,
         ),
+        (
+            contratos_ordenes.CapacidadMecanicoActualizar,
+            Ms2CapacidadMecanicoActualizar,
+        ),
+        (
+            contratos_ordenes.CapacidadMecanicoRespuesta,
+            Ms2CapacidadMecanicoRespuesta,
+        ),
+        (
+            contratos_ordenes.CupoDiarioIngresosActualizar,
+            Ms2CupoDiarioIngresosActualizar,
+        ),
+        (
+            contratos_ordenes.CupoDiarioIngresosRespuesta,
+            Ms2CupoDiarioIngresosRespuesta,
+        ),
         (contratos_ordenes.OrdenRespuesta, Ms2OrdenRespuesta),
         (
             contratos_ordenes.CambioEstadoSolicitud,
@@ -309,6 +351,10 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (
             contratos_ordenes.CancelacionClienteSolicitud,
             Ms2CancelacionClienteSolicitud,
+        ),
+        (
+            contratos_ordenes.SolicitudCancelacionRespuesta,
+            Ms2SolicitudCancelacionRespuesta,
         ),
         (
             contratos_ordenes.HistorialEstadoRespuesta,
@@ -399,6 +445,7 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "CambioEstadoSolicitud",
         "EntregaSolicitud",
         "CancelacionClienteSolicitud",
+        "SolicitudCancelacionRespuesta",
         "HistorialEstadoRespuesta",
         "BitacoraCrear",
         "BitacoraRespuesta",
@@ -472,6 +519,12 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     assert "reasignación conserva el estado" in descripcion_asignacion
     assert "Entregado y Cancelado" in descripcion_asignacion
 
+    descripcion_capacidad = paths[
+        "/api/ordenes/configuracion/capacidad/mecanicos"
+    ]["put"]["description"]
+    assert "entero positivo" in descripcion_capacidad
+    assert "valor anterior y el nuevo" in descripcion_capacidad
+
     cambio = schemas["CambioEstadoSolicitud"]
     assert cambio["additionalProperties"] is False
     assert cambio["properties"]["estado_destino"]["exclusiveMinimum"] == 0
@@ -479,13 +532,14 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     assert "Obligatoria al pasar a Cancelado" in (
         cambio["properties"]["observacion"]["description"]
     )
-    assert "Cancelado exige una observación" in (
+    assert "exige un motivo no vacío" in (
         paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
     )
     descripcion_cambio = paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
-    assert "1 → 2" in descripcion_cambio and "3 → 4/5" in descripcion_cambio
+    assert "1 → 2" in descripcion_cambio and "3 → 4/5/8" in descripcion_cambio
     assert "operaciones" in descripcion_cambio or "decisión verificada" in descripcion_cambio
-    assert "siguen pendientes" in descripcion_cambio
+    assert "bloquearlos no implementa esos flujos" in descripcion_cambio
+    assert "5 → 6 al Mecánico asignado" in descripcion_cambio
     assert "operación específica" in paths["/api/ordenes/{orden_id}/estado"]["patch"]["responses"]["409"]["description"]
     assert paths["/api/ordenes/{orden_id}/estado"]["patch"]["requestBody"][
         "content"
@@ -613,6 +667,24 @@ def test_openapi_historial_publica_lista_protegida_y_errores(aplicacion, prefijo
     assert respuesta["type"] == "array"
     assert respuesta["items"] == {"$ref": "#/components/schemas/HistorialEstadoRespuesta"}
     assert {"200", "401", "404", "422", "500"} <= set(operacion["responses"])
+
+
+def test_openapi_ms2_documenta_coordinacion_idempotente_de_envio_inicial() -> None:
+    operacion = ms2_app.openapi()["paths"][
+        "/ordenes/{orden_id}/envios-presupuesto"
+    ]["post"]
+    assert "únicamente presupuesto_id" in operacion["description"]
+    assert "idempotente el reintento" in operacion["description"]
+    assert {"403", "409", "503"} <= set(operacion["responses"])
+
+
+def test_openapi_ms2_patch_distingue_rechazo_inicial_de_cancelacion_generica() -> None:
+    descripcion = ms2_app.openapi()["paths"]["/ordenes/{orden_id}/estado"]["patch"][
+        "description"
+    ]
+    assert "3 → 4/5/8" in descripcion
+    assert "rechazo inicial verificado" in descripcion
+    assert "no por cancelación genérica" in descripcion
 
 
 

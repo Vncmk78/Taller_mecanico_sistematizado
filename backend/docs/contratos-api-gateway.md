@@ -679,14 +679,16 @@ historiales, por lo que esos campos no se aceptan en el body.
 
 La orden se crea en `Recibido` (`estado_codigo=1`) y puede permanecer con
 `mecanico_actual_id=null`. En la misma transacción se crea o reutiliza el ingreso
-físico y se registra el historial inicial con el Administrador como actor.
+físico y se registra el historial inicial con el Administrador como actor. Si
+no existe un ingreso abierto, se comprueba y audita el cupo diario antes de
+crear el ingreso. Reutilizar un ingreso abierto no consume otro cupo.
 
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` con rol Administrador |
 | Body | `{"vehiculo_id": int positivo}` |
 | Respuesta OK | `201` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` vehículo inexistente · `422` body inválido o campos controlados · `500` persistencia · `502` MS2 no disponible |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` vehículo inexistente · `409` cupo diario agotado o no configurado · `422` body inválido o campos controlados · `500` persistencia · `502` MS2 no disponible |
 
 ```json
 // Request
@@ -746,7 +748,7 @@ reasignaciones.
 | Auth | `Authorization: Bearer <token>` con rol Administrador |
 | Body | `{"mecanico_id": int positivo, "observacion"?: string no vacío}` |
 | Respuesta OK | `200` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` autoasignación o estado terminal · `422` body inválido · `500` persistencia · `502` MS2 no disponible |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` autoasignación, estado terminal, capacidad no configurada o límite alcanzado · `422` body inválido · `500` persistencia · `502` MS2 no disponible |
 
 ```json
 // Request
@@ -765,8 +767,55 @@ reasignaciones.
 ```
 
 `mecanico_id` es hoy una referencia lógica a MS1. La validación remota de
-existencia, actividad y rol Mecánico, junto con los límites de capacidad por
-mecánico, permanece pendiente de contratos e implementación posteriores.
+existencia, actividad y rol Mecánico permanece pendiente del contrato con MS1.
+Antes de cambiar el responsable, MS2 valida el máximo configurable de órdenes
+activas del mecánico de destino. Se cuentan sus órdenes asignadas cuyo estado no
+sea `Entregado` ni `Cancelado`; una orden `Recibido` sin asignar no consume
+capacidad. La reasignación solo se confirma si el destino tiene cupo y el cambio
+se serializa junto con las demás asignaciones mediante la fila de configuración.
+Cada validación aceptada o rechazada queda registrada en el historial de MS2.
+
+### GET y PUT `/api/ordenes/configuracion/capacidad/mecanicos`
+
+Permiten consultar y modificar el límite de órdenes activas por mecánico. Ambas
+operaciones requieren JWT con rol Administrador. El `PUT` acepta un entero
+positivo y conserva valor anterior, nuevo, administrador y fecha/hora. Si el
+límite se reduce por debajo de la carga actual, la respuesta informa los
+mecánicos sobre el nuevo límite; sus órdenes existentes no se cancelan ni se
+desasignan, y las operaciones que aumenten una carga ya excedida se rechazan.
+
+```json
+PUT /api/ordenes/configuracion/capacidad/mecanicos
+{ "max_ordenes_activas": 5 }
+```
+
+La respuesta incluye `max_ordenes_activas`, `actualizado_por_id`,
+`actualizado_en` y `mecanicos_sobre_limite` (`mecanico_id` y `ordenes_activas`).
+Si el límite aún no se configuró, el valor es `null` y las asignaciones o
+reasignaciones se rechazan con `409` hasta que un Administrador lo establezca.
+Un valor igual al actual no genera una nueva fila de historial.
+
+### GET y PUT `/api/ordenes/configuracion/capacidad/ingresos-diarios`
+
+Permiten consultar y modificar el máximo de ingresos físicos del taller por
+jornada. Ambas operaciones requieren JWT con rol Administrador. El `PUT` acepta
+un entero positivo en `max_ingresos_diarios` y conserva valor anterior, nuevo,
+administrador y fecha/hora. La respuesta incluye la jornada local actual, los
+ingresos ya registrados y `sobre_limite`; si el límite se reduce por debajo del
+uso actual, no elimina ingresos y rechaza nuevas entradas físicas.
+
+```json
+PUT /api/ordenes/configuracion/capacidad/ingresos-diarios
+{ "max_ingresos_diarios": 12 }
+```
+
+El conteo usa `MS2_TIMEZONE` (`America/Santiago` por defecto) y abarca todos los
+ingresos físicos registrados en esa jornada, aunque el vehículo haya salido o
+su orden se haya cancelado. Crear otra orden mientras el vehículo conserva un
+ingreso abierto reutiliza esa estancia y no consume un cupo adicional. Antes
+del primer ingreso, el Administrador debe configurar el límite; de lo
+contrario, `POST /api/ordenes` responde `409`. Los intentos aceptados y
+rechazados quedan auditados en MS2.
 
 ### GET `/api/ordenes/{orden_id}/historial`
 
@@ -885,8 +934,17 @@ no agrega un campo al endpoint de historial.
 
 El `POST .../versiones/{numero}/decision` de MS3 persiste primero la decisión y
 solicita aplicar su efecto inicial en MS2. En éxito (`201`), incorpora
-`decision_id` y `aplicacion_en_orden` al resultado. Las modificaciones conservan
-su comportamiento previo y no ejecutan esta transición inicial.
+`decision_id` y `aplicacion_en_orden` al resultado. Para la primera aprobación,
+la instantánea de disponibilidad decide entre `Esperando repuestos` y
+`En reparación`; el segundo resultado no implica reserva. El rechazo inicial
+antes de cualquier aprobación lleva a `Cancelado`, guardando decisión, motivo e
+historial. La aplicación/reintento no vuelve a decidir ni duplica el historial.
+
+Las modificaciones posteriores son independientes de esa transición inicial:
+enviar o rechazar una modificación no cancela la orden ni invalida el alcance ya
+autorizado; aprobar otra versión tampoco vuelve a aplicar el evento inicial. La
+modificación y su decisión quedan en MS3. El efecto que una versión posterior
+aprobada tenga sobre el alcance de reparación permanece por definir.
 
 Si el efecto no se confirma, MS3 responde `503`: la decisión queda guardada.
 El body contiene `detail`, `decision_id`, `orden_id`, `decision_registrada=true`,
@@ -903,20 +961,21 @@ No se reserva stock ni hay transacción SQL entre ambos servicios.
 ### PATCH `/api/ordenes/{orden_id}/estado`
 
 Cambia el estado de una orden validando rol, catálogo oficial (1 a 8) y la
-transición declarada por el dominio. Rechaza con `409` la primera asignación
-(`1 → 2`), que debe realizarse por `PUT /api/ordenes/{orden_id}/mecanico`; la
-primera aprobación (`3 → 4/5`), que exige una decisión verificada mediante
-`POST /api/ordenes/{orden_id}/decisiones-presupuesto`; y la entrega física
-(`6 → 7`), que exige `POST /api/ordenes/{orden_id}/entrega`. También rechaza estos
-cambios para Administrador o usuarios multirrol, sin modificar estado ni historial.
+transición declarada por el dominio. Solo permite `5 → 6` al Mecánico asignado;
+esta llamada registra el cambio y el historial, pero todavía no comprueba el
+término del alcance autorizado. El Administrador no puede finalizar el trabajo
+por PATCH, aunque tenga otro rol asociado.
 
-Los demás pares conservan el comportamiento existente y **no están completamente
-protegidos por sus precondiciones funcionales**: permanecen pendientes los flujos
-de envío inicial, disponibilidad posterior de repuestos, finalización y
-cancelación independiente. El Administrador supera el control de rol;
-el Mecánico solo sobre las órdenes que tiene asignadas. `Entregado` y
-`Cancelado` son terminales y rechazan cualquier cambio. El estado y el historial
-se actualizan en la misma transacción.
+Las transiciones `1 → 2`, `2 → 3` y `3 → 4/5/8` requieren las operaciones
+específicas de asignación, envío inicial y decisión verificada. El `PATCH`
+devuelve `409` para esos pares, incluso si el usuario tiene varios roles.
+También bloquea `4 → 5` hasta contar con verificación de disponibilidad, `6 → 7`
+hasta registrar la entrega física y cualquier transición genérica a `Cancelado`
+hasta que exista el flujo de negocio correspondiente. El rechazo inicial `3 → 8`
+sigue disponible por la operación específica de decisión; ese hecho no habilita
+la cancelación independiente. Los rechazos no modifican estado ni historial.
+`Entregado` y `Cancelado` son terminales; estado e historial se actualizan en la
+misma transacción local cuando una transición permitida se confirma.
 
 Toda transición hacia `Cancelado` exige `observacion` con un motivo no vacío.
 En los demás destinos puede omitirse o ser `null`; si se proporciona texto,
@@ -925,10 +984,10 @@ valida en el servicio de MS2 y no cambia las precondiciones de cada transición.
 
 | Atributo | Descripción |
 |---|---|
-| Auth | `Authorization: Bearer <token>` con rol Administrador o mecánico asignado |
+| Auth | `Authorization: Bearer <token>` con rol Administrador o Mecánico asignado; para `5 → 6` se exige el segundo |
 | Body | `{"estado_destino": int positivo, "observacion"?: string no vacío}`; obligatoria si el destino es `Cancelado` |
 | Respuesta OK | `200` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador ni orden asignada · `404` orden inexistente · `409` transición no permitida, terminal o reservada a operación específica · `422` estado de destino desconocido o body inválido · `500` persistencia · `502` MS2 no disponible |
+| Errores | `401` JWT ausente/inválido · `403` actor sin autorización para el recurso o finalización por alguien distinto del Mecánico asignado · `404` orden inexistente · `409` transición no permitida, terminal, protegida por operación específica o sin precondición funcional verificable · `422` estado de destino desconocido o body inválido (incluido motivo de cancelación ausente) · `500` persistencia · `502` MS2 no disponible |
 
 ```json
 // Request
@@ -965,26 +1024,54 @@ responde `409`. En la misma transacción MS2 actualiza el estado, fija
 
 ### POST `/api/ordenes/{orden_id}/cancelacion`
 
-Cancela una orden a solicitud de su cliente propietario. Solo el Cliente dueño
-del vehículo puede invocarlo y únicamente mientras la orden no sea terminal
-(`1`, `2` o `3`). El `motivo` es obligatorio y se registra como observación del
-`HistorialEstado` junto con el cambio de estado.
+El Cliente propietario solicita la cancelación antes de la primera aprobación.
+MS2 valida propiedad y estado `Recibido`, `Esperando diagnóstico` o `Esperando
+aprobación de presupuesto`, consulta MS3 para descartar una aprobación inicial
+persistida y crea una solicitud pendiente. El estado e historial de la orden no
+cambian en esta operación. Repetir el mismo motivo devuelve la solicitud
+existente (`200`); un motivo distinto para la misma orden responde `409`.
 
 | Atributo | Descripción |
 |---|---|
-| Auth | `Authorization: Bearer <token>` con rol Cliente |
+| Auth | `Authorization: Bearer <token>` con rol Cliente propietario |
 | Body | `{"motivo": string no vacío}` |
-| Respuesta OK | `200` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `404` orden inexistente o ajena · `409` la orden ya avanzó o es terminal · `422` motivo vacío · `500` persistencia · `502` MS2 no disponible |
+| Respuesta OK | `201` con `SolicitudCancelacionRespuesta`; `200` si ya existía la misma solicitud |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `404` orden inexistente o ajena · `409` estado no cancelable, solicitud distinta ya registrada o aprobación inicial existente · `422` motivo vacío · `500` persistencia · `503` MS3 no disponible |
 
-```json
-// Request
-{ "motivo": "El cliente ya no desea el servicio" }
-// Response 200
-{ "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 8,
-  "mecanico_actual_id": null, "creado_por_id": 99,
-  "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T12:00:00-03:00" }
-```
+La respuesta contiene `solicitud_id`, `orden_id`, `cliente_usuario_id`,
+`estado_al_solicitar`, `motivo`, `estado` (`pendiente`), `solicitada_en`,
+`administrador_id` y `confirmada_en`.
+
+### GET `/api/ordenes/cancelaciones/pendientes`
+
+Solo Administrador. Devuelve las solicitudes pendientes ordenadas por fecha para
+su revisión. No modifica la orden.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador |
+| Respuesta OK | `200` con lista de `SolicitudCancelacionRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador |
+
+### POST `/api/ordenes/{orden_id}/cancelacion/confirmacion`
+
+Solo Administrador. Requiere una solicitud pendiente, que la orden continúe en
+uno de los estados cancelables y que MS3 todavía no registre una aprobación
+inicial. La comprobación se repite al confirmar para cubrir aprobaciones
+registradas mientras la solicitud esperaba revisión. Estado, solicitante,
+Administrador confirmante y el historial se guardan en una transacción local.
+Repetir una confirmación ya aplicada devuelve la orden sin duplicar historial.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador |
+| Body | Sin body |
+| Respuesta OK | `200` con `OrdenRespuesta` en estado `Cancelado` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` sin solicitud pendiente, orden ya avanzada o aprobación inicial registrada · `500` persistencia · `503` MS3 no disponible |
+
+El rechazo de un presupuesto inicial sigue su propio endpoint de decisión: el
+Cliente confirma el rechazo y la integración MS3–MS2 lo aplica sin usar este
+flujo administrativo.
 
 ## Evidencias multimedia (MS4)
 
@@ -1209,7 +1296,8 @@ consumidas como parte del contrato actual:
 
 | Capacidad | Situación actual |
 |---|---|
-| Capacidad y máximo de órdenes activas | Subsistema de una semana posterior |
+| Máximo de órdenes activas por mecánico | Implementado en MS2; GET/PUT de configuración y validación en asignación |
+| Cupo diario de ingresos físicos | Implementado en MS2; GET/PUT de configuración diaria y validación concurrente al registrar un ingreso nuevo |
 | Presupuestos, repuestos e inventario | Los contratos de MS3 se publicarán cuando sus endpoints estén definidos y verificados |
 
 El frontend web y la aplicación móvil deben consumir exclusivamente las rutas

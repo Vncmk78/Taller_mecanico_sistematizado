@@ -21,7 +21,9 @@ from services.ms2_taller.config import settings as settings_ms2
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as app_ms2
 from services.ms2_taller.models import (
-    Base as BaseMS2, Cliente, EstadoOrden, HistorialEstado, IngresoVehiculo, OrdenTrabajo, Vehiculo,
+    Base as BaseMS2, Cliente, ConfiguracionCapacidadMecanico,
+    ConfiguracionCupoIngresos, EstadoOrden,
+    HistorialEstado, IngresoVehiculo, OrdenTrabajo, Vehiculo,
 )
 from services.ms2_taller.models.estado_orden import (
     CANCELADO, EN_REPARACION, ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS,
@@ -73,6 +75,18 @@ def preparar_flujo(monkeypatch, base2, base3):
     with fabrica2() as db:
         if not db.scalar(select(func.count()).select_from(EstadoOrden)):
             db.add_all([EstadoOrden(estado_codigo=c, nombre=n) for c, n in ESTADOS_ORDEN.items()])
+        capacidad = db.get(ConfiguracionCapacidadMecanico, 1)
+        if capacidad is None:
+            capacidad = ConfiguracionCapacidadMecanico(configuracion_id=1)
+            db.add(capacidad)
+        capacidad.max_ordenes_activas = 5
+        capacidad.actualizado_por_id = 99
+        cupo = db.get(ConfiguracionCupoIngresos, 1)
+        if cupo is None:
+            cupo = ConfiguracionCupoIngresos(configuracion_id=1)
+            db.add(cupo)
+        cupo.max_ingresos_diarios = 100
+        cupo.actualizado_por_id = 99
         cliente = Cliente(usuario_id=42)
         vehiculo = Vehiculo(cliente=cliente, patente="TEST438", marca="Marca", modelo="Modelo")
         db.add(vehiculo)
@@ -157,9 +171,102 @@ def _aplicar(flujo, decision_id, *, orden_id=None, headers=None, **extras):
                           headers=_headers() if headers is None else headers)
 
 
+def _enviar_presupuesto_inicial(flujo, *, headers=None):
+    """Devuelve la fixture a la etapa documentada antes del primer envío."""
+    with flujo.db2() as db:
+        db.get(OrdenTrabajo, flujo.orden_id).estado_codigo = 2
+        db.commit()
+    with flujo.db3() as db:
+        db.scalar(select(VersionPresupuesto)).enviado_en = None
+        db.commit()
+    return flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones/1/envio",
+        headers=_headers(99, NombreRol.ADMINISTRADOR) if headers is None else headers,
+    )
+
+
 def _estado_y_historial(flujo):
     with flujo.db2() as db:
         return db.get(OrdenTrabajo, flujo.orden_id).estado_codigo, list(db.scalars(select(HistorialEstado)))
+
+
+def _firma_historial(registros):
+    return tuple(
+        (registro.historial_id, registro.estado_anterior, registro.estado_nuevo,
+         registro.actor_usuario_id, registro.origen, registro.observacion,
+         registro.decision_presupuesto_id, registro.envio_presupuesto_id,
+         registro.fecha_hora)
+        for registro in registros
+    )
+
+
+def test_ms3_informa_aprobacion_inicial_persistida_a_ms2(flujo):
+    ruta = f"/presupuestos/ordenes/{flujo.orden_id}/primera-aprobacion"
+    sin_aprobacion = flujo.ms3.get(ruta, headers=_headers())
+    assert sin_aprobacion.status_code == 200, sin_aprobacion.text
+    assert sin_aprobacion.json() == {
+        "orden_id": flujo.orden_id,
+        "aprobacion_registrada": False,
+    }
+
+    with flujo.db3() as db:
+        version = db.scalar(select(VersionPresupuesto))
+        db.add(DecisionPresupuesto(
+            version=version, cliente_usuario_id=42,
+            decision="aprobado", repuestos_disponibles=True,
+        ))
+        db.commit()
+
+    aprobada = flujo.ms3.get(ruta, headers=_headers(99, NombreRol.ADMINISTRADOR))
+    assert aprobada.status_code == 200, aprobada.text
+    assert aprobada.json()["aprobacion_registrada"] is True
+    assert flujo.ms3.get(ruta, headers=_headers(88)).status_code == 404
+
+
+def test_envio_inicial_coordina_estado_historial_y_actor_administrador(flujo):
+    respuesta = _enviar_presupuesto_inicial(flujo)
+    assert respuesta.status_code == 200, respuesta.text
+    body = respuesta.json()
+    aplicacion = body["aplicacion_en_orden"]
+    assert body["efecto_en_orden"] == "esperando_aprobacion"
+    assert aplicacion["estado_aplicado"] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert aplicacion["presupuesto_id"] == flujo.presupuesto_id
+    estado, historial = _estado_y_historial(flujo)
+    assert estado == ESPERANDO_APROBACION_PRESUPUESTO and len(historial) == 1
+    registro = historial[0]
+    assert (registro.estado_anterior, registro.estado_nuevo) == (2, 3)
+    assert registro.envio_presupuesto_id == flujo.presupuesto_id
+    assert registro.actor_usuario_id == 99 and registro.origen == "usuario"
+    assert registro.decision_presupuesto_id is None
+    assert registro.fecha_hora is not None
+    esperado = _headers(99, NombreRol.ADMINISTRADOR)["Authorization"]
+    assert all(headers["Authorization"] == esperado
+               for _, _, headers in flujo.llamadas)
+
+
+@pytest.mark.parametrize("fallo,historias_antes", [("antes", 0), ("verificacion", 0), ("despues", 1)])
+def test_fallo_de_ms2_deja_envio_guardado_y_reintento_idempotente(flujo, fallo, historias_antes):
+    flujo.fallo["modo"] = fallo
+    respuesta = _enviar_presupuesto_inicial(flujo)
+    assert respuesta.status_code == 503, respuesta.text
+    body = respuesta.json()
+    assert body["envio_confirmado"] is True and body["aplicacion_confirmada"] is False
+    assert body["presupuesto_id"] == flujo.presupuesto_id
+    assert body["reintento"] == (
+        f"/api/presupuestos/{flujo.presupuesto_id}/envio-inicial/aplicacion"
+    )
+    with flujo.db3() as db:
+        assert db.scalar(select(VersionPresupuesto)).enviado_en is not None
+    assert len(_estado_y_historial(flujo)[1]) == historias_antes
+    flujo.fallo["modo"] = None
+    reintento = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/envio-inicial/aplicacion",
+        headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert reintento.status_code == 200, reintento.text
+    assert reintento.json()["estado_aplicado"] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert _estado_y_historial(flujo)[0] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert len(_estado_y_historial(flujo)[1]) == 1
 
 
 @pytest.mark.parametrize("decision,stock,esperado,motivo", [
@@ -258,18 +365,39 @@ def test_fallo_despues_del_flush_revierte_estado_e_historial_juntos(flujo):
 @pytest.mark.parametrize("decision", ["aprobado", "rechazado"])
 def test_modificacion_conserva_comportamiento_y_no_reaplica_transicion_inicial(flujo, decision):
     assert _decidir(flujo).status_code == 201
+    estado_aprobado, historial_aprobado = _estado_y_historial(flujo)
+    assert estado_aprobado == EN_REPARACION and len(historial_aprobado) == 1
+    historial_aprobado = _firma_historial(historial_aprobado)
     with flujo.db3() as db:
-        # Fixture de una aprobación previa: SQLite no ejecuta el trigger de MS3.
+        # PostgreSQL marca la versión vigente con un trigger al aprobar; SQLite
+        # no ejecuta ese trigger, así que el fixture reproduce su efecto.
         db.scalar(select(VersionPresupuesto)).bloqueada_en = datetime.now(timezone.utc)
-        version = VersionPresupuesto(
-            presupuesto_id=flujo.presupuesto_id, numero=2, creado_por_id=50,
-            es_modificacion=True,
-        )
-        db.add(version)
-        db.flush()
-        version.enviado_en = func.now()
         db.commit()
+
+    nueva_version = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones",
+        json={}, headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert nueva_version.status_code == 201, nueva_version.text
+    version = next(
+        version for version in nueva_version.json()["versiones"]
+        if version["numero"] == 2
+    )
+    assert version["es_modificacion"] is True
+
     llamadas_antes = len([llamada for llamada in flujo.llamadas if llamada[0] == "POST"])
+    envio = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones/2/envio",
+        headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert envio.status_code == 200, envio.text
+    assert envio.json()["efecto_en_orden"] is None
+    assert envio.json()["aplicacion_en_orden"] is None
+    assert len([llamada for llamada in flujo.llamadas if llamada[0] == "POST"]) == llamadas_antes
+    estado_actual, historial_actual = _estado_y_historial(flujo)
+    assert estado_actual == estado_aprobado
+    assert _firma_historial(historial_actual) == historial_aprobado
+
     body = {"decision": decision, "motivo": "Rechazo el trabajo adicional"}
     respuesta = flujo.ms3.post(
         f"/presupuestos/{flujo.presupuesto_id}/versiones/2/decision",
@@ -284,8 +412,9 @@ def test_modificacion_conserva_comportamiento_y_no_reaplica_transicion_inicial(f
     assert _aplicar(flujo, decision_id).status_code == 409
     assert flujo.ms3.post(f"/presupuestos/decisiones/{decision_id}/aplicacion",
                          headers=_headers()).status_code == 409
-    assert _estado_y_historial(flujo)[0] == EN_REPARACION
-    assert len(_estado_y_historial(flujo)[1]) == 1
+    estado_actual, historial_actual = _estado_y_historial(flujo)
+    assert estado_actual == estado_aprobado
+    assert _firma_historial(historial_actual) == historial_aprobado
 
 
 def test_stock_del_reintento_no_cambia_la_rama_persistida(flujo):

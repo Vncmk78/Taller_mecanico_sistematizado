@@ -97,8 +97,8 @@ _TAGS = [
         "name": "Órdenes",
         "description": (
             "Creación, consulta, historial, bitácora de trabajo, cambio de "
-            "estado, asignación inicial, entrega física y cancelación del "
-            "cliente (MS2)."
+            "estado, asignación inicial, entrega física y solicitudes de "
+            "cancelación con revisión administrativa (MS2)."
         ),
     },
     {
@@ -131,10 +131,27 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         "AsignacionMecanicoActualizar",
         contratos_ordenes.AsignacionMecanicoActualizar,
     ),
+    (
+        "CapacidadMecanicoActualizar",
+        contratos_ordenes.CapacidadMecanicoActualizar,
+    ),
+    (
+        "CapacidadMecanicoRespuesta",
+        contratos_ordenes.CapacidadMecanicoRespuesta,
+    ),
+    (
+        "CupoDiarioIngresosActualizar",
+        contratos_ordenes.CupoDiarioIngresosActualizar,
+    ),
+    (
+        "CupoDiarioIngresosRespuesta",
+        contratos_ordenes.CupoDiarioIngresosRespuesta,
+    ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
     ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
+    ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
     ("RepuestoBitacoraEntrada", contratos_ordenes.RepuestoBitacoraEntrada),
     ("RepuestoBitacoraRespuesta", contratos_ordenes.RepuestoBitacoraRespuesta),
@@ -662,8 +679,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 resumen="Crear una orden de trabajo",
                 descripcion=(
                     "Solo un Administrador crea la orden para un vehículo "
-                    "registrado. Se asocia o crea el ingreso físico, la orden "
-                    "comienza en Recibido y puede quedar sin mecánico."
+                    "registrado. Si no hay un ingreso abierto, valida el cupo "
+                    "diario antes de crearlo; reutilizar un ingreso abierto no "
+                    "consume otro cupo. La orden comienza en Recibido y puede "
+                    "quedar sin mecánico."
                 ),
                 operation_id="crear_orden",
                 cuerpo="OrdenCrear",
@@ -673,6 +692,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
+                    "409": "Cupo diario agotado o aún no configurado",
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
@@ -742,7 +762,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "409": "Autoasignación o estado terminal",
+                    "409": "Autoasignación, estado terminal o capacidad excedida/no configurada",
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
@@ -750,6 +770,103 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 descripcion_404="Orden no encontrada.",
                 esquema_404=error_404_recurso,
             )
+        },
+        "/api/ordenes/configuracion/capacidad/mecanicos": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar la capacidad máxima por mecánico",
+                descripcion=(
+                    "Solo Administrador. Devuelve el máximo configurado y, si "
+                    "se redujo por debajo del uso actual, informa los mecánicos "
+                    "que superan el nuevo límite. Un valor nulo indica que aún "
+                    "no se ha configurado capacidad."
+                ),
+                operation_id="consultar_capacidad_mecanicos",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Configuración de capacidad.",
+                        _ref("CapacidadMecanicoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                },
+                requiere_auth=True,
+            ),
+            "put": _operacion(
+                tag="Órdenes",
+                resumen="Configurar el máximo de órdenes activas por mecánico",
+                descripcion=(
+                    "Solo Administrador. El valor debe ser un entero positivo. "
+                    "Cada cambio guarda el valor anterior y el nuevo, el actor "
+                    "y la fecha. Si hay mecánicos sobre el nuevo límite, se "
+                    "informan sin cancelar ni desasignar órdenes existentes."
+                ),
+                operation_id="actualizar_capacidad_mecanicos",
+                cuerpo="CapacidadMecanicoActualizar",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Configuración actualizada.",
+                        _ref("CapacidadMecanicoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "El máximo debe ser un entero positivo",
+                },
+                requiere_auth=True,
+            ),
+        },
+        "/api/ordenes/configuracion/capacidad/ingresos-diarios": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar el cupo diario de ingresos físicos",
+                descripcion=(
+                    "Solo Administrador. Devuelve el límite y el número de "
+                    "ingresos físicos de la jornada local actual. Cuenta nuevas "
+                    "estancias, no órdenes que reutilizan un ingreso abierto."
+                ),
+                operation_id="consultar_cupo_diario_ingresos",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Cupo diario y uso de la jornada.",
+                        _ref("CupoDiarioIngresosRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                },
+                requiere_auth=True,
+            ),
+            "put": _operacion(
+                tag="Órdenes",
+                resumen="Configurar el máximo diario de ingresos físicos",
+                descripcion=(
+                    "Solo Administrador. El máximo debe ser un entero positivo. "
+                    "Se auditan valor anterior, nuevo, administrador y fecha. "
+                    "Si la jornada ya supera el límite reducido, se informa sin "
+                    "eliminar ingresos; se bloquean nuevos ingresos físicos."
+                ),
+                operation_id="actualizar_cupo_diario_ingresos",
+                cuerpo="CupoDiarioIngresosActualizar",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Cupo diario actualizado.",
+                        _ref("CupoDiarioIngresosRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "El máximo debe ser un entero positivo",
+                },
+                requiere_auth=True,
+            ),
         },
         "/api/ordenes/{orden_id}/historial": {
             "get": _operacion(
@@ -849,20 +966,21 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 descripcion=(
                     "Cambia el estado validando rol, catálogo oficial y "
                     "transición declarada por el dominio. La primera asignación (1 → 2) "
-                    "requiere PUT /api/ordenes/{orden_id}/mecanico; la primera aprobación "
-                    "(3 → 4/5) requiere POST /api/ordenes/{orden_id}/decisiones-presupuesto "
-                    "con una decisión verificada de MS3; y la entrega física (6 → 7) "
-                    "requiere POST /api/ordenes/{orden_id}/entrega. "
-                    "El PATCH directo responde 409 en esos tres pares, también para "
-                    "Administrador y usuarios multirrol. "
-                    "Los otros pares mantienen su comportamiento y las brechas de "
-                    "precondiciones de envío, stock posterior, finalización y "
-                    "cancelación siguen pendientes. Administrador por rol; "
-                    "Mecánico solo en órdenes que tiene asignadas. Una orden "
-                    "Entregada o Cancelada es terminal y rechaza cualquier "
-                    "cambio. Pasar a Cancelado exige una observación o motivo no vacío; "
-                    "en los demás destinos es opcional. Registra el historial "
-                    "en la misma transacción."
+                    "requiere PUT /api/ordenes/{orden_id}/mecanico; el envío inicial "
+                    "(2 → 3) requiere POST /api/presupuestos/{presupuesto_id}/versiones/"
+                    "{numero}/envio, que coordina la aplicación con MS2; la primera "
+                    "decisión (3 → 4/5/8) requiere POST /api/ordenes/{orden_id}/"
+                    "decisiones-presupuesto con una decisión verificada de MS3. El PATCH "
+                    "directo responde 409 para esos pares, también para usuarios "
+                    "multirrol. Bloquea además 4 → 5 hasta verificar disponibilidad, "
+                    "6 → 7 hasta registrar la entrega y cualquier destino Cancelado "
+                    "genérico; bloquearlos no implementa esos flujos. Solo permite "
+                    "5 → 6 al Mecánico asignado; devuelve 403 a otros actores. Esa "
+                    "operación todavía no acredita que el trabajo autorizado haya "
+                    "terminado. Entregado y Cancelado son terminales. Pasar a Cancelado "
+                    "exige un motivo no vacío; en otros destinos es opcional. Los "
+                    "rechazos no modifican estado ni historial y el cambio permitido "
+                    "guarda ambos en la misma transacción local."
                 ),
                 operation_id="cambiar_estado_orden",
                 cuerpo="CambioEstadoSolicitud",
@@ -912,28 +1030,68 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
         "/api/ordenes/{orden_id}/cancelacion": {
             "post": _operacion(
                 tag="Órdenes",
-                resumen="Cancelar una orden a solicitud de su cliente propietario",
+                resumen="Solicitar la cancelación administrativa de una orden",
                 descripcion=(
-                    "El cliente dueño del vehículo cancela una orden no terminal "
-                    "(1/2/3 → 8). El motivo es obligatorio y se audita en el "
-                    "historial junto con el estado. Una orden inexistente o ajena "
-                    "responde 404 sin revelar cuál; una orden ya avanzada o "
-                    "terminal responde 409."
+                    "El Cliente propietario registra un motivo auditable sin cambiar "
+                    "el estado. Un Administrador debe revisar y confirmar por la "
+                    "operación específica. MS2 verifica en MS3 que no exista una "
+                    "aprobación inicial. Repetir el mismo motivo devuelve la solicitud "
+                    "pendiente existente."
                 ),
-                operation_id="cancelar_orden_cliente",
+                operation_id="solicitar_cancelacion_orden",
                 cuerpo="CancelacionClienteSolicitud",
                 respuestas_ok={
-                    "200": _respuesta("Orden cancelada.", _ref("OrdenRespuesta"))
+                    "201": _respuesta("Solicitud pendiente de revisión.", _ref("SolicitudCancelacionRespuesta")),
+                    "200": _respuesta("Solicitud pendiente existente.", _ref("SolicitudCancelacionRespuesta")),
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Cliente",
-                    "409": "La orden ya avanzó o es terminal",
+                    "409": "Orden no cancelable, solicitud existente o aprobación inicial registrada",
                     "422": "Motivo de cancelación vacío o datos inválidos",
+                    "503": "No fue posible verificar MS3",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
                 descripcion_404="Orden no encontrada o ajena.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/cancelaciones/pendientes": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Listar solicitudes pendientes de cancelación",
+                descripcion="Solo Administrador. Devuelve los datos necesarios para revisar la solicitud.",
+                operation_id="listar_cancelaciones_pendientes",
+                cuerpo=None,
+                respuestas_ok={"200": _respuesta(
+                    "Solicitudes pendientes.",
+                    {"type": "array", "items": _ref("SolicitudCancelacionRespuesta")},
+                )},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador"},
+                requiere_auth=True,
+            )
+        },
+        "/api/ordenes/{orden_id}/cancelacion/confirmacion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Confirmar administrativamente una cancelación",
+                descripcion=(
+                    "Solo Administrador. Vuelve a comprobar en MS3 que no exista "
+                    "aprobación inicial y registra el estado Cancelado con el "
+                    "Administrador confirmante e historial en una transacción."
+                ),
+                operation_id="confirmar_cancelacion_orden",
+                cuerpo=None,
+                respuestas_ok={"200": _respuesta("Orden cancelada.", _ref("OrdenRespuesta"))},
+                errores_ms={
+                    "401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                    "409": "No hay solicitud pendiente o existe una aprobación inicial",
+                    "503": "No fue posible verificar MS3",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
                 esquema_404=error_404_recurso,
             )
         },

@@ -9,16 +9,14 @@ dominio tiene ocho estados estables y pocas transiciones respaldadas por la
 Sistematización final, por lo que una librería externa de máquinas de estados no
 aportaría una ventaja proporcional.
 
-El endpoint genérico para cambiar el estado valida permisos, el par estructural
-y registra el historial de MS2. SCRUM-398/399 restringe en la rama personal la
-asignación inicial, las dos ramas de primera aprobación y la entrega física a sus
-operaciones específicas. Los demás flujos conservan brechas de precondiciones; este
-cambio no protege por sí solo todos los eventos ni coordina todas las operaciones
-MS2–MS3. SCRUM-438 agrega una operación específica para aplicar la primera decisión
-de presupuesto, verificada por HTTP contra MS3, con atribución al cliente e
-idempotencia persistida por `decision_id`. La entrega física
-(`POST /ordenes/{id}/entrega`) y la cancelación del cliente propietario
-(`POST /ordenes/{id}/cancelacion`) cuentan con operaciones específicas auditadas.
+El dominio declara las transiciones estructurales en una tabla de eventos. El
+PATCH genérico valida autorización y esa tabla, registra el historial de MS2 y,
+desde SCRUM-436, solo permite `5 → 6` al Mecánico asignado. La asignación inicial,
+el envío y la primera decisión de presupuesto se coordinan por operaciones
+específicas. Los flujos sin precondiciones verificables (disponibilidad de
+repuestos, entrega y cancelación independiente) quedan bloqueados en el PATCH.
+La primera decisión se verifica por HTTP contra MS3, con atribución al Cliente e
+idempotencia persistida por `decision_id`.
 
 ## 1. Fuentes y alcance
 
@@ -110,11 +108,10 @@ situación no debe añadirse al catálogo de estados de la orden.
 
 ### 3.3 Mapa explícito y validadores simples
 
-Cuando se implemente el flujo general, la tabla puede representarse mediante un
-mapa explícito indexado por `(estado_actual, evento)`, cuyo resultado sea el
-`estado_nuevo`. Esta forma es preferible a validar solo el destino, porque dos
-eventos distintos pueden conducir a `Cancelado` y cada uno exige condiciones y
-actores diferentes.
+La tabla ejecutable se representa mediante un mapa explícito indexado por
+`(estado_actual, evento)`, cuyo resultado es el `estado_nuevo`. Esta forma es
+preferible a validar solo el destino, porque dos eventos distintos pueden
+conducir a `Cancelado` y cada uno exige condiciones y actores diferentes.
 
 El validador debe rechazar por defecto toda combinación ausente del mapa. Además,
 cada evento debe aplicar por separado:
@@ -135,18 +132,18 @@ historial y transacciones entre límites de servicio.
 
 La validación estructural del cambio de estado está separada de sus efectos
 externos. MS2 valida la transición, actualiza `OrdenTrabajo.estado_codigo` y
-escribe `HistorialEstado` en una transacción local. El endpoint genérico actual
-no comprueba por sí mismo decisiones de presupuesto, disponibilidad de stock ni
-otras precondiciones que pertenecen a servicios externos.
+escribe `HistorialEstado` en una transacción local. Las operaciones de envío y
+decisión verifican los hechos de MS3. El PATCH genérico no puede sustituirlas ni
+ejecutar eventos que aún carecen de una operación verificadora.
 
 Notificaciones, decisiones de presupuesto, reservas o movimientos de inventario
 y otras acciones de servicios externos no deben ocultarse dentro del validador.
-MS3 persiste la decisión y solicita a MS2 aplicar su efecto inicial. MS2 recibe
-solo `decision_id`, consulta el hecho en MS3 y deriva el evento con su propia
+MS3 persiste el envío inicial o la decisión y solicita a MS2 aplicar su efecto.
+MS2 consulta el hecho correspondiente en MS3 y deriva el evento con su propia
 máquina. MS3 no publica un evento ni envía un destino arbitrario.
 
-La primera decisión usa el contrato descrito en la sección 6.1. La coordinación
-del envío inicial y de la disponibilidad posterior de repuestos sigue pendiente.
+El envío inicial y la primera decisión usan coordinación HTTP con MS2. La
+disponibilidad posterior de repuestos sigue pendiente.
 
 ### 3.5 Historial, actor y atomicidad
 
@@ -235,31 +232,37 @@ siguiente acción normal; no sustituye la autorización concreta de cada evento.
 | 5 | En reparación | Existe un presupuesto aprobado y están disponibles los repuestos necesarios para ejecutar el alcance autorizado. | Mecánico |
 | 6 | Listo | El mecánico terminó el trabajo autorizado y el vehículo está disponible para retiro. | Administrador para registrar la entrega |
 | 7 | Entregado | El administrador registró la entrega física tras finalizar el servicio. Es el término normal y es terminal. | Administrador mediante `POST /ordenes/{id}/entrega` |
-| 8 | Cancelado | El proceso terminó antes de la primera aprobación por rechazo confirmado o por solicitud de cancelación confirmada según el flujo. Es terminal. | Cliente propietario mediante `POST /ordenes/{id}/cancelacion`; o Cliente/Administrador por rechazo confirmado |
+| 8 | Cancelado | El proceso terminó antes de la primera aprobación por rechazo confirmado, o el Administrador confirmó la solicitud del Cliente. Es terminal. | Cliente propietario solicita; Administrador confirma. El rechazo inicial sigue siendo decisión del Cliente. |
 
 No existe reapertura de `Entregado` o `Cancelado`. Una nueva atención después de
 cancelar inicia otra orden en `Recibido` y conserva la anterior como antecedente.
 
-## 5. Tabla de transiciones para SCRUM-314
+## 5. Matriz de transiciones y evidencia
 
-Esta tabla es cerrada: una transición no incluida no debe considerarse permitida.
+La matriz es cerrada: los únicos ocho estados son los de la sección 4 y una
+transición no incluida no se considera permitida. “Implementada” describe el
+flujo completo comprobable; “bloqueada deliberadamente” significa que el
+`PATCH` rechaza el cambio hasta que exista la operación funcional correspondiente.
+Bloquear un par no implementa ni simula ese flujo.
 
-| Estado actual | Evento y precondición documentada | Actor u origen | Estado nuevo | Servicio responsable |
-|---|---|---|---|---|
-| No existe orden | El administrador confirma el ingreso físico y crea la orden. | Administrador | Recibido | MS2 crea orden e historial inicial. |
-| Recibido | Primera asignación válida de mecánico. | Administrador | Esperando diagnóstico | MS2; ya implementado por INT-33. |
-| Esperando diagnóstico | Se envía el primer presupuesto al cliente. | Administrador envía la versión revisada | Esperando aprobación de presupuesto | MS3 gestiona presupuesto y envío; MS2 valida y persiste el estado mediante un contrato futuro. |
-| Esperando aprobación de presupuesto | El cliente aprueba por primera vez y existen los repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | En reparación | MS3 conserva la disponibilidad al decidir; MS2 verifica la decisión y persiste estado e historial (SCRUM-438). |
-| Esperando aprobación de presupuesto | El cliente aprueba por primera vez y faltan repuestos necesarios. | Cliente origina la decisión; MS3 comprueba presupuesto y disponibilidad | Esperando repuestos | MS3 conserva la disponibilidad al decidir; MS2 verifica la decisión y persiste estado e historial (SCRUM-438). |
-| Esperando repuestos | Se registra la disponibilidad necesaria para el trabajo autorizado. | Evento originado en MS3; actor exacto **PENDIENTE DE DEFINICIÓN** | En reparación | MS3 aporta el hecho; MS2 valida y persiste el estado mediante un contrato futuro. |
-| En reparación | El mecánico finaliza el trabajo autorizado. | Mecánico asignado | Listo | MS2 valida responsable, actualiza orden e historial. |
-| Listo | Se registra la entrega física del vehículo. | Administrador | Entregado | MS2 actualiza estado, `entregado_en`, `entregado_por_id` e historial mediante `POST /ordenes/{id}/entrega`; el PATCH `6 → 7` responde 409. |
-| Esperando aprobación de presupuesto | El cliente rechaza el presupuesto cuando nunca ha existido una aprobación y confirma la consecuencia de cancelar. No requiere una segunda confirmación administrativa. | Cliente | Cancelado | MS3 conserva decisión y motivo; MS2 verifica el hecho y persiste cancelación e historial (SCRUM-438). |
-| Recibido | El cliente propietario cancela su solicitud desde el portal. | Cliente propietario | Cancelado | MS2 valida rol, propiedad y motivo, y persiste cancelación e historial mediante `POST /ordenes/{id}/cancelacion`. |
-| Esperando diagnóstico | El cliente propietario cancela su solicitud desde el portal. | Cliente propietario | Cancelado | MS2 valida rol, propiedad y motivo, y persiste cancelación e historial mediante `POST /ordenes/{id}/cancelacion`. |
-| Esperando aprobación de presupuesto | El cliente propietario cancela su solicitud sin rechazar el presupuesto. | Cliente propietario | Cancelado | MS2 valida rol, propiedad y motivo, y persiste cancelación e historial mediante `POST /ordenes/{id}/cancelacion`. |
-| Entregado | Ninguno. Estado terminal. | No aplica | Sin transición | MS2 rechaza el intento. |
-| Cancelado | Ninguno. Estado terminal. | No aplica | Sin transición | MS2 rechaza el intento. |
+| Origen → destino | Evento y precondiciones funcionales | Actor autorizado | Endpoint u operación | Resultado esperado | Estado y pruebas |
+|---|---|---|---|---|---|
+| Sin orden → 1 | Confirmar ingreso físico, vehículo, cupo diario e ingreso válidos. | Administrador | `POST /api/ordenes`, `crear_orden()` | Orden en `Recibido` e historial inicial en la misma transacción; el ingreso nuevo y su validación se confirman juntos. | Implementada; el cupo se serializa por jornada, y las pruebas cubren rechazo, reutilización y auditoría. |
+| 1 → 2 | Primera asignación válida; la reasignación posterior conserva estado. | Administrador | `PUT /api/ordenes/{id}/mecanico`, `asignar_mecanico()` | Responsable e historiales de asignación, estado y validación de capacidad; `PATCH` responde `409`. | Implementada para la primera asignación y la capacidad configurable; rol remoto del mecánico sigue pendiente. |
+| 2 → 3 | Enviar versión 1 como primer presupuesto; última versión en borrador, con ítems y precios. | Administrador | MS3 `POST /presupuestos/{id}/versiones/{numero}/envio`; coordinación MS2 `POST /ordenes/{id}/envios-presupuesto`; reintento MS3 `POST /presupuestos/{id}/envio-inicial/aplicacion`. | MS3 conserva el envío; MS2 verifica el hecho y guarda estado e historial con actor; reintentar no duplica historial. | Implementada y cubierta por `test_envio_inicial_coordina_estado_historial_y_actor_administrador`, `test_fallo_de_ms2_deja_envio_guardado_y_reintento_idempotente`. Migración 0007 aún requiere PostgreSQL real. |
+| 3 → 4 | Primera aprobación y disponibilidad insuficiente evaluada al decidir. | Cliente propietario; MS3 evalúa y MS2 deriva | MS3 `POST /presupuestos/{id}/versiones/{n}/decision`; aplicación MS2 `POST /ordenes/{id}/decisiones-presupuesto`; retry MS3 `POST /presupuestos/decisiones/{id}/aplicacion`. | `Esperando repuestos`, una decisión y un historial asociados; la evaluación es una instantánea, no reserva. | Implementada; rama incluida en `test_decision_coordina_estado_historial_actor_y_motivo` y pruebas de retry. |
+| 3 → 5 | Primera aprobación y disponibilidad suficiente evaluada al decidir. | Cliente propietario; MS3 evalúa y MS2 deriva | Mismas operaciones de decisión 3 → 4. | `En reparación`, con decisión e historial asociados. | Implementada según instantánea; no reserva ni vuelve a verificar stock. Misma prueba parametrizada de decisión. |
+| 3 → 8 | Rechazo inicial con motivo, sin aprobación previa. | Cliente propietario | MS3 `POST /presupuestos/{id}/versiones/{n}/decision`; aplicación MS2 `POST /ordenes/{id}/decisiones-presupuesto`; reintento por `POST /presupuestos/decisiones/{id}/aplicacion`. | `Cancelado`, decisión/motivo e historial preservados; retry idempotente. | Implementada por operación específica; `test_decision_coordina_estado_historial_actor_y_motivo`, `test_repetir_decision_aplicacion_y_retry_no_duplica_historial`. El `PATCH` directo devuelve `409`. |
+| 4 → 5 | Disponibilidad posterior suficiente para el alcance aprobado, verificada contra inventario. | Actor del evento aún por definir | No existe operación MS2–MS3 conectada; `PATCH /api/ordenes/{id}/estado` está bloqueado. | No se cambia estado hasta comprobar disponibilidad/compromisos y persistir el efecto mediante contrato. | Bloqueada deliberadamente; `test_patch_estado_no_elude_operaciones_especificas_ni_con_varios_roles`. Reserva y compromiso quedan para trabajo futuro de inventario. |
+| 5 → 6 | Trabajo autorizado terminado; el endpoint actual no verifica la evidencia de término. | Solo Mecánico asignado | `PATCH /api/ordenes/{id}/estado` | Actualiza a `Listo` e historial; otros actores reciben `403`; rechazo no escribe. | Parcial: autorización y persistencia implementadas, verificación de término pendiente. `test_patch_estado_mecanico_asignado_actualiza_y_registra_historial`, `test_solo_mecanico_asignado_puede_finalizar_trabajo`. |
+| 6 → 7 | Entrega física registrada con datos de auditoría. | Administrador | `POST /api/ordenes/{id}/entrega`, `registrar_entrega()` | Estado, fecha, actor e historial persisten atómicamente; `PATCH` bloqueado. | Implementada; la devolución de un cancelado no cambia a Entregado. |
+| 1/2/3 → 8 | Solicitud del Cliente, confirmación administrativa, motivo y comprobación de ausencia de aprobación previa al solicitar y al confirmar. | Cliente propietario solicita; Administrador confirma | `POST /api/ordenes/{id}/cancelacion`; `GET /api/ordenes/cancelaciones/pendientes`; `POST /api/ordenes/{id}/cancelacion/confirmacion`. | La solicitud pendiente no cambia el estado. La confirmación registra Cancelado e historial con el administrador actor en una transacción local. | Implementada y probada en `test_cancelacion_requiere_solicitud_y_confirmacion_administrativa` y `test_cancelacion_vuelve_a_verificar_que_no_haya_aprobacion`. El `PATCH` genérico sigue bloqueado. |
+| 7/8 → cualquier estado | Ninguno: ambos son terminales. | Ninguno | Validador de MS2; no existe operación de reapertura. | Rechazo sin modificar la orden ni su historial. | Implementado por catálogo/validador; `test_patch_estado_terminal_rechaza_cualquier_cambio` y `test_terminal_no_se_reabre_mediante_evento`. |
+
+Para los rechazos por `PATCH`, el contrato de MS2 distingue `403` (actor no
+autorizado), `409` (par protegido, terminal o precondición funcional sin
+operación verificadora) y `422` (destino o body inválido). Las solicitudes
+rechazadas no deben escribir estado ni historial.
 
 ### 5.1 Cambios que no son transiciones
 
@@ -284,6 +287,41 @@ presupuesto, cambios especiales por reasignación ni transiciones automáticas p
 cada modificación posterior del presupuesto. Cualquier flujo no incluido en la
 tabla queda **PENDIENTE DE DEFINICIÓN** y no debe implementarse por inferencia.
 
+### 5.3 Diagrama visual y estado de implementación
+
+El diagrama conserva el catálogo oficial de ocho estados. Las etiquetas indican
+el estado real de cada flujo según el código y las pruebas disponibles; que
+exista una transición estructural en `TRANSICIONES_PERMITIDAS` no significa que
+se comprueben todas sus precondiciones funcionales.
+
+```mermaid
+flowchart LR
+    I([Ingreso físico]) -->|Confirmar ingreso · ✅ Implementada| S1["1 · Recibido"]
+    S1 -->|Primera asignación · ✅ Implementada| S2["2 · Esperando diagnóstico"]
+    S2 -->|Enviar primer presupuesto · ✅ Implementada y verificada| S3["3 · Esperando aprobación de presupuesto"]
+    S3 -->|Aprobación inicial y sin stock · ✅ Implementada y verificada| S4["4 · Esperando repuestos"]
+    S3 -->|Aprobación inicial y con stock en evaluación · ✅ Implementada¹| S5["5 · En reparación"]
+    S4 -->|Disponibilidad posterior · ⛔ Bloqueada hasta operación de inventario| S5
+    S5 -->|Trabajo terminado · 🟡 Autorización implementada; evidencia pendiente| S6["6 · Listo"]
+    S6 -->|Entrega física · ⛔ Bloqueada hasta registrar entrega| S7["7 · Entregado · terminal"]
+    S3 -->|Rechazo inicial confirmado · ✅ Implementada y verificada| S8["8 · Cancelado · terminal"]
+    S1 -->|Solicitud Cliente + confirmación Admin · ✅ Implementada| S8
+    S2 -->|Solicitud Cliente + confirmación Admin · ✅ Implementada| S8
+    S3 -->|Solicitud Cliente + confirmación Admin · ✅ Implementada| S8
+
+    classDef terminal fill:#e8edf2,stroke:#526477,color:#192c42,stroke-width:2px;
+    class S7,S8 terminal;
+```
+
+**Leyenda:** ✅ operación implementada con pruebas; 🟡 control parcial con una
+precondición funcional pendiente; ⛔ transición bloqueada deliberadamente hasta
+implementar una operación que valide el hecho de negocio. La aprobación con stock
+usa la instantánea de MS3 al decidir y no reserva inventario. La primera
+asignación valida la capacidad local configurada, pero no valida aquí el rol
+remoto del mecánico.
+La finalización solo valida al Mecánico asignado y aún no acredita que el alcance
+autorizado esté terminado. `Entregado` y `Cancelado` no tienen salidas.
+
 ## 6. Responsabilidades por microservicio
 
 | Responsabilidad | Servicio propietario |
@@ -298,8 +336,8 @@ bases. El evento puede originarse en otro servicio, pero MS2 conserva la autorid
 sobre el estado de la orden y comprueba que el cambio solicitado sea compatible
 con el estado actual.
 
-Quedan **PENDIENTES DE DEFINICIÓN** los contratos concretos para comunicar a MS2
-el envío del primer presupuesto y la disponibilidad posterior de repuestos.
+Queda **PENDIENTE DE DEFINICIÓN** el contrato para comunicar a MS2 la disponibilidad
+posterior de repuestos.
 
 ### 6.1 Primera decisión de presupuesto (SCRUM-397 y SCRUM-438)
 
@@ -334,8 +372,9 @@ La disponibilidad es una instantánea, no una reserva de inventario: no se
 recalcula al reintentar y no garantiza que otro trabajo no consuma el stock.
 Las aprobaciones históricas sin instantánea responden `409`; no se reconstruye
 su stock pasado ni se enlazan artificialmente historiales anteriores.
-La orden debe estar en `Esperando aprobación de presupuesto`; SCRUM-438 no
-implementa el envío inicial de SCRUM-435.
+La orden debe estar en `Esperando aprobación de presupuesto`, estado establecido
+por la coordinación del envío inicial de SCRUM-435. El flujo de aprobación no
+reemplaza ese envío ni lo vuelve a ejecutar.
 
 Aplicar las migraciones `0006_ms2` (referencia única) y `0004_ms3` (instantánea).
 Configurar `MS2_MS3_URL`, `MS2_MS3_TIMEOUT_SEGUNDOS` y los existentes
@@ -343,14 +382,16 @@ Configurar `MS2_MS3_URL`, `MS2_MS3_TIMEOUT_SEGUNDOS` y los existentes
 margen a la consulta de verificación y al commit de MS2. Ambos validan el mismo
 JWT de MS1 con la configuración existente.
 
-### 6.2 Protección del PATCH y brechas conservadas (SCRUM-398/399)
+### 6.2 Protección del PATCH y brechas conservadas (SCRUM-436)
 
 Se distinguen autorización (rol y recurso), transición estructural (tabla de
 eventos) y precondición funcional (hecho comprobado por una operación).
-`cambiar_estado_orden()` rechaza `1 → 2`, `3 → 4/5` y `6 → 7` con `409`, antes
-de modificar la orden o agregar historial. La selección de esos pares se deriva de
-`TRANSICIONES_PERMITIDAS` por los eventos protegidos, sin copiar el catálogo.
-El rechazo también se aplica a Administrador y a usuarios multirrol.
+`cambiar_estado_orden()` consulta el evento de
+`TRANSICIONES_PERMITIDAS` para el par solicitado antes de modificar la orden o
+agregar historial. El `PATCH` genérico permite únicamente `5 → 6` al Mecánico
+asignado; las operaciones específicas conservan su propio control de rol,
+responsabilidad y hecho de negocio. Los bloqueos devuelven `409`, y un actor que
+no es el Mecánico asignado al finalizar devuelve `403`.
 
 | Transición | Evento y actor funcional | Hecho necesario | Operación conectada | Situación del PATCH |
 |---|---|---|---|---|
@@ -361,39 +402,64 @@ El rechazo también se aplica a Administrador y a usuarios multirrol.
 | 3 → 5 | Primera aprobación con repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Mismo flujo SCRUM-438 | Rechazado; usar decisión verificada |
 | 4 → 5 | Disponibilidad posterior; actor exacto pendiente | Disponibilidad suficiente para el alcance aprobado | No hay operación MS2–MS3 específica | Disponible con brecha |
 | 5 → 6 | Finalización; Mecánico asignado | Trabajo autorizado terminado | Solo `PATCH /ordenes/{id}/estado` | Disponible; la finalización no se comprueba y Administrador conserva acceso amplio |
-| 6 → 7 | Entrega física; Administrador | Entrega confirmada y sus datos de auditoría | `POST /ordenes/{id}/entrega`, `registrar_entrega()` | Rechazado; usar la operación específica |
-| 3 → 8 | Rechazo inicial; Cliente propietario | Rechazo confirmado y motivo, sin aprobación previa | Decisión MS3 y aplicación verificada SCRUM-438 | El par sigue disponible por compartirlo con cancelación independiente |
-| 1/2/3 → 8 | Cancelación del Cliente propietario | Rol Cliente, propiedad del vehículo, estado no terminal y motivo | `POST /ordenes/{id}/cancelacion`, `cancelar_orden_cliente()` | El cliente usa la operación específica; el PATCH directo sigue disponible con brecha para Administrador/Mecánico |
+| 6 → 7 | Entrega física; Administrador | Entrega confirmada y sus datos de auditoría | `POST /ordenes/{id}/entrega`, `registrar_entrega()` | `PATCH` rechazado; operación específica disponible |
+| 3 → 8 | Rechazo inicial; Cliente propietario | Rechazo confirmado y motivo, sin aprobación previa | Decisión MS3 y aplicación verificada SCRUM-438 | `PATCH` rechazado; usar decisión verificada |
+| 1/2/3 → 8 | Solicitud del Cliente confirmada por Administrador | Propiedad, solicitud, motivo y ausencia de aprobación inicial en MS3 | `POST /ordenes/{id}/cancelacion`, `GET /ordenes/cancelaciones/pendientes`, `POST /ordenes/{id}/cancelacion/confirmacion` | La solicitud no cambia estado; confirmación verificada cancela. `PATCH` rechazado. |
 | 7/8 → cualquier estado | Ninguno | Son terminales | Validación existente | Rechazado |
 
-Por decisión expresa del usuario se mantienen los flujos sin alternativa completa.
-Conservarlos **no los convierte en seguros ni en reglas funcionales aprobadas**.
-El portal mecánico deja de ofrecer `1 → 2`; conserva sus demás opciones pendientes.
-La asignación específica conserva los límites ya documentados de INT-33 sobre
-comprobación remota del rol del destino y capacidad configurable; no se agregan
-validaciones ficticias para esos puntos.
+El `PATCH` genérico no sustituye estas operaciones: rechaza `1 → 2`, `2 → 3` y
+`3 → 4/5/8`; bloquea `4 → 5`, `6 → 7` y los destinos genéricos `Cancelado` hasta
+que existan operaciones con las comprobaciones funcionales correspondientes.
+El portal mecánico ofrece `5 → 6`, y MS2 exige que el actor tenga rol Mecánico y
+sea el responsable asignado. Esa transición todavía no acredita por sí sola que
+el alcance autorizado esté terminado.
+La asignación específica valida la capacidad configurable según §4.7. La
+comprobación remota del rol del destino sigue pendiente de un contrato con MS1.
 
-#### Envío inicial (2 → 3)
+#### Envío inicial (2 → 3) — SCRUM-435
 
-Un Administrador o un Mecánico asignado puede solicitar el destino `3` sin que
-exista un envío real. La operación de MS3 sí valida última versión, borrador,
-ítems y precios, y congela el envío, pero solo devuelve `efecto_en_orden`: no
-coordina la transición de MS2. El riesgo es mostrar al cliente una orden esperando
-su decisión sin tener un presupuesto enviado.
+1. El Administrador envía desde MS3 la última versión en borrador, que debe tener
+   ítems y precios. MS3 la congela y conserva el envío en su base.
+2. Cuando el efecto es `esperando_aprobacion`, MS3 llama a
+   `POST /ordenes/{orden_id}/envios-presupuesto` con `presupuesto_id` y el JWT
+   original. Las modificaciones posteriores a una aprobación no originan este
+   efecto.
+3. MS2 exige el rol Administrador, bloquea la orden y consulta
+   `GET /presupuestos/{presupuesto_id}/envio-inicial` en MS3. Solo acepta la
+   referencia si MS3 confirma que la versión 1 fue enviada y que el presupuesto
+   corresponde a esa orden. No acepta un destino o actor indicado por el body.
+4. MS2 deriva `ENVIO_PRIMER_PRESUPUESTO`; estado e historial se guardan juntos,
+   con el Administrador autenticado como actor y `origen="usuario"`.
+   `HistorialEstado.envio_presupuesto_id` es una referencia lógica nullable y
+   única, sin FK a MS3. El bloqueo y la clave hacen idempotentes los reintentos.
+5. Si MS3 ya guardó el envío, pero no logra confirmar la respuesta de MS2,
+   responde `503` con la ruta
+   `POST /presupuestos/{presupuesto_id}/envio-inicial/aplicacion`. Repetir esa
+   aplicación devuelve el historial existente si MS2 ya había confirmado.
 
-Es necesario acordar un contrato que permita a MS2 verificar presupuesto, orden,
-versión enviada y actor, aplicar `ENVIO_PRIMER_PRESUPUESTO`, y registrar una sola
-transición ante reintentos o fallos de comunicación. Reutilizar el envío MS3 sería
-posible con esa coordinación, pero requiere definir una operación/contrato nuevo
-antes de restringir este flujo. [SCRUM-435](https://taller-mecanico-sistematizado.atlassian.net/browse/SCRUM-435)
-es la tarea relacionada; su título también menciona "Esperando aprobación de
-documento", que no pertenece al catálogo vigente de ocho estados y sigue pendiente
-de aclaración del equipo. Esta corrección no implementa SCRUM-435 ni un noveno estado.
+Las dos bases no comparten una transacción. La operación conserva el hecho de
+envío en MS3 aunque la transición falle; el cliente puede reintentar la aplicación
+sin volver a enviar la versión. La migración `0007_ms2` agrega la referencia única
+al historial. El catálogo de órdenes continúa compuesto por los ocho estados
+oficiales; “Esperando aprobación de documento” no se incorpora.
+
+**Verificación de despliegue pendiente:** la migración `0007_ms2` no se ha
+validado aplicada sobre una instancia PostgreSQL real. Tampoco se han ejecutado
+las 26 pruebas omitidas del conjunto vinculado a SCRUM-435. La última ejecución
+completa reportó 733 pruebas aprobadas y 197 omitidas; las omitidas no cuentan
+como aprobadas. Hasta ejecutar esas comprobaciones, no se declara validado el
+despliegue PostgreSQL de esta coordinación.
+
+El título de [SCRUM-435](https://taller-mecanico-sistematizado.atlassian.net/browse/SCRUM-435)
+también menciona “Esperando aprobación de documento”. El equipo confirmó que esa
+frase es una discrepancia del ticket y que se conserva el catálogo de ocho estados;
+la corrección del título en Jira sigue pendiente porque no se autorizó editar Jira.
 
 #### Disponibilidad posterior (4 → 5)
 
-El PATCH acepta el destino `5` sin consultar inventario ni comprobar los repuestos
-del alcance aprobado. Puede iniciar trabajo sin unidades suficientes. La decisión
+El PATCH genérico ahora rechaza el destino `5` con `409`; no consulta inventario
+ni comprueba los repuestos del alcance aprobado. Puede iniciar trabajo sin
+unidades suficientes si se habilitara sin esa verificación. La decisión
 original de SCRUM-438 contiene una instantánea inmutable: no sirve como prueba de
 que el stock haya aumentado después. Los endpoints de inventario no comunican un
 evento verificado de disponibilidad a MS2.
@@ -411,11 +477,10 @@ relacionadas, sin sustituir esa implementación.
 
 #### Finalización (5 → 6)
 
-El Mecánico asignado puede declarar `Listo` por PATCH, pero la operación no verifica
-la finalización del alcance autorizado. Además, el permiso genérico permite que
-un Administrador no asignado lo haga, aunque la sistematización atribuye la
-finalización al Mecánico. Se conserva ese comportamiento pendiente por instrucción
-del usuario; las pruebas del caso válido usan un Mecánico realmente asignado.
+Solo el Mecánico asignado puede declarar `Listo` por PATCH. El Administrador y
+cualquier otro usuario reciben `403`, incluso si tienen otros roles. La operación
+todavía no verifica la finalización del alcance autorizado; no se añade aquí esa
+verificación ni una operación nueva.
 
 Se necesita definir una operación de finalización que compruebe rol y responsable,
 el trabajo autorizado terminado y derive `FINALIZACION_TRABAJO`. Puede reutilizar
@@ -438,24 +503,25 @@ es la tarea de pruebas relacionada.
 
 #### Cancelación del cliente (1/2/3 → 8)
 
-El cliente propietario cancela directamente mediante
-`POST /ordenes/{id}/cancelacion` (`cancelar_orden_cliente()`). La operación exige
-rol Cliente, comprueba la propiedad del vehículo, valida un motivo no vacío y
-deriva `CANCELACION_SOLICITADA_CONFIRMADA` desde `1`, `2` o `3`; una orden
-inexistente o ajena responde `404` y una orden ya avanzada o terminal `409`.
-Estado e historial se persisten atómicamente con el motivo como observación.
+El Cliente propietario solicita mediante `POST /ordenes/{id}/cancelacion`. MS2
+comprueba su propiedad, restringe la solicitud a los estados 1, 2 y 3, exige un
+motivo y consulta a MS3 para descartar una aprobación inicial ya persistida. La
+solicitud guarda cliente, estado, motivo y fecha, pero no cambia la orden ni su
+historial. Repetir la misma petición devuelve la solicitud pendiente; una
+solicitud distinta para la misma orden responde `409`.
 
-El PATCH genérico `1/2/3 → 8` sigue disponible para Administrador y Mecánico
-asignado con el mismo motivo obligatorio, y conserva dos brechas: no acredita
-ausencia de una primera aprobación en MS3 ni una confirmación administrativa
-independiente. El riesgo durante un fallo de coordinación también subsiste: MS3
-puede haber confirmado una primera aprobación mientras MS2 sigue en `3` por un
-timeout, y la cancelación no consulta ese hecho. El rechazo inicial verificado por
-SCRUM-438 sí tiene un flujo específico seguro, pero no sustituye esta cancelación
-y ambos comparten el par `3 → 8`. Cerrar esas brechas requiere un contrato para
-comprobar en MS3 que no existe aprobación previa; no se agrega un campo cliente
-que aparente una confirmación confiable. SCRUM-522 cubre pruebas de cancelación
-antes de aprobación.
+El Administrador revisa `GET /ordenes/cancelaciones/pendientes` y confirma con
+`POST /ordenes/{id}/cancelacion/confirmacion`. MS2 vuelve a comprobar en MS3 que
+no exista aprobación inicial y valida que la orden siga en 1, 2 o 3. En una
+transacción local cambia a `Cancelado`, conserva el motivo, registra al Cliente
+solicitante y al Administrador confirmante, y agrega el historial con el actor
+administrativo. Si MS3 no está disponible, responde `503` sin cancelar; una
+aprobación registrada responde `409` y deja la solicitud pendiente.
+
+El rechazo inicial de un presupuesto continúa siendo un flujo distinto: el
+Cliente confirma el rechazo y MS3 aplica la decisión verificada mediante
+SCRUM-438. El `PATCH` genérico sigue rechazando toda transición a `Cancelado`,
+para impedir que Administrador o Mecánico omitan la solicitud y su confirmación.
 
 Los vínculos anteriores se basan en títulos y descripciones consultados en Jira.
 SCRUM-435, 484, 487, 600, 522 y 523 figuran Por hacer. La relación con cada brecha
@@ -475,9 +541,10 @@ reasignación posterior mantiene el estado, y las órdenes `Entregado` o
 `Cancelado` rechazan asignación y reasignación. Por tanto, no corresponde
 reimplementar esta transición en SCRUM-313/SCRUM-314.
 
-## 8. Guía para la implementación futura
+## 8. Trabajo futuro sobre la máquina de estados
 
-La futura tarea de máquina de estados deberá, como mínimo:
+La base estructural está implementada. Para completar los eventos pendientes,
+las operaciones futuras deberán, como mínimo:
 
 1. reutilizar las constantes y `ESTADOS_TERMINALES` existentes;
 2. declarar el mapa cerrado de eventos y transiciones sin duplicar el catálogo;
@@ -489,9 +556,9 @@ La futura tarea de máquina de estados deberá, como mínimo:
 8. probar cada transición permitida y todos los rechazos relevantes, en especial
    terminales, eventos repetidos y condiciones externas desactualizadas.
 
-Esta guía no autoriza endpoints generales ni el flujo completo de las Semanas
-4–6. Es la especificación técnica previa para que esas tareas se implementen sin
-inventar estados o transiciones.
+Esta guía no autoriza endpoints generales ni anticipa el flujo completo de las
+Semanas 4–6. Las operaciones pendientes deben añadirse dentro del orden de Jira,
+sin inventar estados o transiciones.
 
 ## 9. Referencias técnicas del repositorio
 

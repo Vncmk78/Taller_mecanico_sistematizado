@@ -1,6 +1,5 @@
-import { useEffect, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarPlus, ClipboardList, SearchX } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, SearchX } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -8,14 +7,11 @@ import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
-import { OrderStatusBadge } from '@/presentation/components/orders/OrderStatusBadge';
-import { formatDate } from '@/presentation/utils/orderDisplay';
+import { VehicleOrderHistoryPanel } from '@/presentation/components/orders/VehicleOrderHistoryPanel';
 import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
-import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
-import { orderService } from '@/infrastructure/api/OrderService';
 
 export function ClientVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -27,28 +23,6 @@ export function ClientVehicleDetailPage() {
         vehicleService.getVehicleById(vid, clientId)
     );
     const { isOffline, error, requestId } = useVehicleStore();
-    const vehicles = useVehicleStore((s) => s.vehicles);
-    const {
-        orders,
-        status: ordersStatus,
-        error: ordersError,
-        fetchOrders,
-    } = useOrderStore();
-    const loadOrders = () => fetchOrders(() => orderService.getOrders());
-
-    useEffect(() => {
-        loadOrders();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const vehicleOrders = useMemo(
-        () =>
-            [...orders]
-                .filter((o) => o.vehicleId === id)
-                .sort((a, b) => (a.actualizadoEn < b.actualizadoEn ? 1 : -1)),
-        [orders, id]
-    );
-
     if (loading) {
         return <LoadingState message="Cargando ficha del vehículo..." className="p-10" />;
     }
@@ -89,8 +63,6 @@ export function ClientVehicleDetailPage() {
         );
     }
 
-    const ordersServerError = ordersStatus === 'error';
-
     return (
         <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
             <Link
@@ -120,63 +92,12 @@ export function ClientVehicleDetailPage() {
                     </Link>
                 </div>
 
-                <div className="card">
-                    <h3 className="text-xl font-semibold flex items-center justify-between gap-2 mb-4 pb-4 border-b border-border-custom">
-                        <span className="flex items-center gap-2">
-                            <ClipboardList className="w-5 h-5 text-text-muted" aria-hidden />
-                            Historial de Órdenes
-                        </span>
-                        {vehicleOrders.length > 0 && (
-                            <span className="text-sm font-normal text-text-muted">
-                                {vehicleOrders.length} {vehicleOrders.length === 1 ? 'orden' : 'órdenes'}
-                            </span>
-                        )}
-                    </h3>
-
-                    {ordersStatus === 'loading' ? (
-                        <p className="text-text-muted text-sm py-6 text-center">
-                            Cargando historial de mantención...
-                        </p>
-                    ) : ordersServerError ? (
-                        <Alert tone="error" action={<RetryButton tone="error" onClick={loadOrders} />}>
-                            {ordersError ?? 'No se pudieron cargar las órdenes del vehículo.'}
-                        </Alert>
-                    ) : vehicleOrders.length === 0 ? (
-                        <p className="text-text-muted text-sm py-6 text-center">
-                            Este vehículo aún no tiene órdenes de trabajo registradas.
-                        </p>
-                    ) : (
-                        <ul className="flex flex-col gap-3" aria-label="Historial de órdenes del vehículo">
-                            {vehicleOrders.map((order) => {
-                                const vehicleMatch = vehicles.find((v) => v.id === order.vehicleId);
-                                return (
-                                    <li key={order.id}>
-                                        <Link
-                                            to={`/client/ordenes/${order.id}`}
-                                            className="flex items-center justify-between gap-3 bg-bg-secondary rounded-lg px-4 py-3 hover:bg-surface no-underline transition-colors"
-                                        >
-                                            <div className="min-w-0">
-                                                <p className="text-text-main font-semibold truncate">
-                                                    Orden n° {order.id}
-                                                    {vehicleMatch ? ` · ${vehicleMatch.brand} ${vehicleMatch.model}` : ''}
-                                                </p>
-                                                <p className="text-text-muted text-sm">
-                                                    Actualizada el {formatDate(order.actualizadoEn)}
-                                                </p>
-                                            </div>
-                                            <OrderStatusBadge
-                                                estadoCodigo={order.estadoCodigo}
-                                                variant="dot"
-                                                size="sm"
-                                                className="shrink-0"
-                                            />
-                                        </Link>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
-                </div>
+                <VehicleOrderHistoryPanel
+                    key={vehicle.id}
+                    vehicleId={vehicle.id}
+                    detailPathPrefix="/client/ordenes"
+                    vehicleLabel={`${vehicle.brand} ${vehicle.model}`}
+                />
             </div>
         </div>
     );

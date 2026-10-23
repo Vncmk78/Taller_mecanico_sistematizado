@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { Order } from '@/domain/entities/Order';
 import type { Vehicle } from '@/domain/entities/Vehicle';
+import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { AdminVehicleDetailPage } from './AdminVehicleDetailPage';
@@ -16,6 +18,10 @@ vi.mock('@/infrastructure/api/VehicleService', () => ({
     },
 }));
 
+vi.mock('@/infrastructure/api/OrderService', () => ({
+    orderService: { getVehicleOrderHistory: vi.fn() },
+}));
+
 const vehiculo: Vehicle = {
     id: '1',
     patent: 'ABCD-12',
@@ -24,6 +30,17 @@ const vehiculo: Vehicle = {
     year: 2020,
     mileage: 10000,
     clientId: 'c1',
+};
+
+const orden: Order = {
+    id: '101',
+    vehicleId: '1',
+    ingresoId: 1,
+    estadoCodigo: 7,
+    mecanicoActualId: '50',
+    creadoPorId: '99',
+    creadoEn: '2026-09-19T15:00:00.000Z',
+    actualizadoEn: '2026-09-20T10:00:00.000Z',
 };
 
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
@@ -45,6 +62,9 @@ describe('AdminVehicleDetailPage: ficha del vehículo', () => {
     beforeEach(() => {
         useVehicleStore.setState({ vehicles: [], status: 'idle', error: null, isOffline: false });
         vi.clearAllMocks();
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [], total: 0, limit: 20, offset: 0,
+        });
     });
 
     it('muestra la ficha del vehículo', async () => {
@@ -54,6 +74,22 @@ describe('AdminVehicleDetailPage: ficha del vehículo', () => {
 
         expect(await screen.findByText('ABCD-12')).toBeInTheDocument();
         expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
+    });
+
+    it('muestra el historial y enlaza al detalle de la orden en el portal administrador', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(vehiculo);
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [orden], total: 1, limit: 20, offset: 0,
+        });
+
+        renderPage();
+
+        expect(await screen.findByRole('link', { name: /Orden n° 101 · Ford Fiesta/ }))
+            .toHaveAttribute('href', '/admin/ordenes/101');
+        expect(orderService.getVehicleOrderHistory).toHaveBeenCalledWith('1', {
+            limit: 20,
+            offset: 0,
+        });
     });
 
     it('un 404 real muestra el estado vacío, no un error', async () => {

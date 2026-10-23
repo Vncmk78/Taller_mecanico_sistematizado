@@ -43,7 +43,7 @@ function mapHistorialApi(h: HistorialEstadoApi): OrderHistoryEntry {
     };
 }
 
-// Contrato de HistorialEstado (MS2) para el endpoint futuro /ordenes/{id}/historial.
+// Contrato de HistorialEstado (MS2) para /ordenes/{id}/historial.
 interface HistorialEstadoApi {
     historial_id: number;
     orden_id: number;
@@ -56,6 +56,19 @@ interface HistorialEstadoApi {
 }
 
 class OrderService implements OrderPort {
+    async getVehicleOrderHistory(
+        vehicleId: string,
+        page: { limit: number; offset: number }
+    ) {
+        const { data } = await apiClient.get<{
+            items: OrdenRespuesta[];
+            total: number;
+            limit: number;
+            offset: number;
+        }>(`/ordenes/vehiculo/${vehicleId}/historial`, { params: page });
+        return { ...data, items: data.items.map(mapOrdenApi) };
+    }
+
     async getOrders(): Promise<Order[]> {
         const { data } = await apiClient.get<OrdenRespuesta[]>('/ordenes');
         return data.map(mapOrdenApi);

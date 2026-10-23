@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { Order } from '@/domain/entities/Order';
 import type { Vehicle } from '@/domain/entities/Vehicle';
+import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { MechanicVehicleDetailPage } from './MechanicVehicleDetailPage';
@@ -16,6 +18,10 @@ vi.mock('@/infrastructure/api/VehicleService', () => ({
     },
 }));
 
+vi.mock('@/infrastructure/api/OrderService', () => ({
+    orderService: { getVehicleOrderHistory: vi.fn() },
+}));
+
 const vehiculo: Vehicle = {
     id: '1',
     patent: 'ABCD-12',
@@ -24,6 +30,17 @@ const vehiculo: Vehicle = {
     year: 2020,
     mileage: 10000,
     clientId: 'c1',
+};
+
+const orden: Order = {
+    id: '101',
+    vehicleId: '1',
+    ingresoId: 1,
+    estadoCodigo: 5,
+    mecanicoActualId: '50',
+    creadoPorId: '99',
+    creadoEn: '2026-09-19T15:00:00.000Z',
+    actualizadoEn: '2026-09-20T10:00:00.000Z',
 };
 
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
@@ -43,6 +60,9 @@ describe('MechanicVehicleDetailPage: ficha de un vehículo asignado', () => {
     beforeEach(() => {
         useVehicleStore.setState({ vehicles: [], status: 'idle', error: null, isOffline: false });
         vi.clearAllMocks();
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [], total: 0, limit: 20, offset: 0,
+        });
     });
 
     it('muestra la ficha del vehículo', async () => {
@@ -52,6 +72,18 @@ describe('MechanicVehicleDetailPage: ficha de un vehículo asignado', () => {
 
         expect(await screen.findByText('ABCD-12')).toBeInTheDocument();
         expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
+    });
+
+    it('muestra el historial visible y enlaza al detalle del mecánico asignado', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(vehiculo);
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [orden], total: 1, limit: 20, offset: 0,
+        });
+
+        renderPage();
+
+        expect(await screen.findByRole('link', { name: /Orden n° 101 · Ford Fiesta/ }))
+            .toHaveAttribute('href', '/mechanic/ordenes/101');
     });
 
     it('un 404 de la Gateway muestra el estado vacío con el texto del mecánico', async () => {

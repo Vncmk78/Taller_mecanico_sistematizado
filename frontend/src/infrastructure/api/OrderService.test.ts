@@ -45,6 +45,21 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
     vi.clearAllMocks();
   });
 
+  it('getVehicleOrderHistory consulta el historial paginado por vehículo', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { items: [ordenApi], total: 1, limit: 20, offset: 0 },
+    });
+
+    const page = await orderService.getVehicleOrderHistory('7', { limit: 20, offset: 0 });
+
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/vehiculo/7/historial', {
+      params: { limit: 20, offset: 0 },
+    });
+    expect(page).toMatchObject({ total: 1, limit: 20, offset: 0 });
+    expect(page.items[0].id).toBe('3');
+    expect(page.items[0].vehicleId).toBe('7');
+  });
+
   it('getOrders consulta GET /ordenes y traduce OrdenRespuesta al dominio', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: [ordenApi] });
 

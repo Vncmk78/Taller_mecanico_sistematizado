@@ -31,6 +31,7 @@ discrepancias entre el frontend y el contrato de la API".
 | `VehicleService.getVehicleById` | GET | `/api/vehiculos/{id}` | detalle vehículo (cliente, admin, mecánico) | Administrador (cualquiera), Cliente (propio), Mecánico (asignado) | OK (404 fuera de alcance) |
 | `VehicleService.createVehicle` | POST | `/api/vehiculos` | `/client/vehiculos/nuevo` | Cliente | OK |
 | `OrderService.getOrders` | GET | `/api/ordenes` | órdenes (admin, cliente, mecánico) | Filtra por rol | OK |
+| `OrderService.getVehicleOrderHistory` | GET | `/api/ordenes/vehiculo/{vehiculo_id}/historial?limit=20&offset=0` | historial de ficha de vehículo (admin, cliente, mecánico) | Filtra por vehículo y rol; página de hasta 20 elementos | OK |
 | `OrderService.getOrderById` | GET | `/api/ordenes/{id}` | detalle de orden | Alcance por rol | OK |
 | `OrderService.getOrderHistory` | GET | `/api/ordenes/{id}/historial` | historial en detalle de orden | Alcance por rol | OK |
 | `OrderService.cambiarEstado` | PATCH | `/api/ordenes/{id}/estado` | `MechanicStatusPage` | Administrador o mecánico asignado | OK |

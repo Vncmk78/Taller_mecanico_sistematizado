@@ -23,6 +23,9 @@ from services.ms1_auth.schemas.auth import (
     TokenRespuesta as Ms1TokenRespuesta,
     UsuarioRespuesta as Ms1UsuarioRespuesta,
 )
+from services.ms1_auth.schemas.notificacion import (
+    NotificacionRespuesta as Ms1NotificacionRespuesta,
+)
 from services.ms2_taller.config import settings as ms2_settings
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as ms2_app
@@ -55,6 +58,7 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/auth/register", "post"),
     ("/api/auth/login", "post"),
     ("/api/auth/me", "get"),
+    ("/api/notificaciones", "get"),
     ("/api/vehiculos", "post"),
     ("/api/vehiculos", "get"),
     ("/api/vehiculos/asignados", "get"),
@@ -83,6 +87,7 @@ _ENDPOINTS_ESPERADOS = {
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
 _PROTEGIDOS = {
     "/api/auth/me",
+    "/api/notificaciones",
     "/api/vehiculos",
     "/api/vehiculos/asignados",
     "/api/vehiculos/{vehiculo_id}",
@@ -254,6 +259,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         assert esquema_cuerpo["$ref"] == f"#/components/schemas/{ref}"
     for (ruta, metodo) in (
         ("/api/auth/me", "get"),
+        ("/api/notificaciones", "get"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos/asignados", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
@@ -290,6 +296,7 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (contratos_auth.LoginSolicitud, Ms1LoginSolicitud),
         (contratos_auth.UsuarioRespuesta, Ms1UsuarioRespuesta),
         (contratos_auth.TokenRespuesta, Ms1TokenRespuesta),
+        (contratos_auth.NotificacionRespuesta, Ms1NotificacionRespuesta),
         (contratos_vehiculos.VehiculoCrear, Ms2VehiculoCrear),
         (contratos_vehiculos.VehiculoActualizar, Ms2VehiculoActualizar),
         (contratos_vehiculos.VehiculoRespuesta, Ms2VehiculoRespuesta),
@@ -386,6 +393,7 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "LoginSolicitud",
         "UsuarioRespuesta",
         "TokenRespuesta",
+        "NotificacionRespuesta",
         "VehiculoCrear",
         "VehiculoActualizar",
         "VehiculoRespuesta",

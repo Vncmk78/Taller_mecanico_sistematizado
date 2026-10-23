@@ -18,6 +18,7 @@ from gateway.config import settings
 RUTAS: dict[str, str] = {
     # MS1 — Autenticación y Usuarios.
     "auth": settings.MS1_URL,
+    "notificaciones": settings.MS1_URL,
     # MS2 — Vehículos y Órdenes de Trabajo.
     "vehiculos": settings.MS2_URL,
     "vehiculo": settings.MS2_URL,

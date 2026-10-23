@@ -7,6 +7,7 @@ compara estas copias con los esquemas reales de MS1 y avisa si se desactualizan.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -120,3 +121,16 @@ class TokenRespuesta(BaseModel):
     )
     token_type: str = Field(default="bearer", description="Tipo de token.")
     user: UsuarioRespuesta = Field(description="Usuario autenticado.")
+
+
+class NotificacionRespuesta(BaseModel):
+    """Aviso de cambio de estado visible para el usuario autenticado."""
+
+    notificacion_id: int
+    tipo: str
+    orden_id: int
+    vehiculo_id: int
+    titulo: str
+    mensaje: str
+    ocurrido_en: datetime
+    creado_en: datetime

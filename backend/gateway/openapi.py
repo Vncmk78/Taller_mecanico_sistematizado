@@ -108,6 +108,10 @@ _TAGS = [
         ),
     },
     {
+        "name": "Notificaciones",
+        "description": "Bandeja personal de notificaciones (MS1).",
+    },
+    {
         "name": "Presupuestos",
         "description": "Consulta y reintento de la decisión inicial de presupuesto (MS3).",
     },
@@ -122,6 +126,7 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("LoginSolicitud", contratos_auth.LoginSolicitud),
     ("UsuarioRespuesta", contratos_auth.UsuarioRespuesta),
     ("TokenRespuesta", contratos_auth.TokenRespuesta),
+    ("NotificacionRespuesta", contratos_auth.NotificacionRespuesta),
     ("VehiculoCrear", contratos_vehiculos.VehiculoCrear),
     ("VehiculoActualizar", contratos_vehiculos.VehiculoActualizar),
     ("VehiculoRespuesta", contratos_vehiculos.VehiculoRespuesta),
@@ -215,6 +220,23 @@ _PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
     "description": "Orden de trabajo (MS2) cuyas evidencias se listan.",
     "schema": {"type": "integer", "format": "int64", "minimum": 1, "example": 31},
 }
+
+_PARAMETROS_NOTIFICACIONES: list[dict[str, object]] = [
+    {
+        "name": "limite",
+        "in": "query",
+        "required": False,
+        "description": "Cantidad máxima de notificaciones a devolver (1–100).",
+        "schema": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100},
+    },
+    {
+        "name": "offset",
+        "in": "query",
+        "required": False,
+        "description": "Cantidad de notificaciones que se omiten al paginar.",
+        "schema": {"type": "integer", "default": 0, "minimum": 0},
+    },
+]
 
 
 def _ref(nombre: str) -> dict[str, object]:
@@ -526,6 +548,31 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "200": _respuesta("Usuario autenticado.", _ref("UsuarioRespuesta"))
                 },
                 errores_ms={"401": "JWT ausente o inválido"},
+                requiere_auth=True,
+            )
+        },
+        "/api/notificaciones": {
+            "get": _operacion(
+                tag="Notificaciones",
+                resumen="Consultar mis notificaciones",
+                descripcion=(
+                    "Devuelve la bandeja del usuario autenticado, ordenada de "
+                    "más reciente a más antigua. Cada usuario solo puede ver "
+                    "sus propias notificaciones."
+                ),
+                operation_id="consultar_notificaciones",
+                cuerpo=None,
+                parametros_extra=_PARAMETROS_NOTIFICACIONES,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Notificaciones del usuario.",
+                        {"type": "array", "items": _ref("NotificacionRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Parámetros de paginación inválidos",
+                },
                 requiere_auth=True,
             )
         },

@@ -97,6 +97,24 @@ def test_authorization_llega_al_microservicio(
     assert ruta.calls.last.request.headers["authorization"] == "Bearer token.jwt.abc"
 
 
+def test_notificaciones_reenvia_a_ms1_con_paginacion_y_jwt(
+    gateway: TestClient, api_mock: respx.MockRouter
+) -> None:
+    ruta = api_mock.get(
+        f"{settings.MS1_URL}/notificaciones",
+        params={"limite": "20", "offset": "10"},
+    ).mock(return_value=httpx.Response(200, json=[]))
+
+    respuesta = gateway.get(
+        "/api/notificaciones?limite=20&offset=10",
+        headers={"Authorization": "Bearer token.jwt.abc"},
+    )
+
+    assert respuesta.status_code == 200
+    assert ruta.called
+    assert ruta.calls.last.request.headers["authorization"] == "Bearer token.jwt.abc"
+
+
 def test_vehiculos_reenvia_a_ms2(gateway: TestClient, api_mock: respx.MockRouter) -> None:
     ruta = api_mock.get(f"{settings.MS2_URL}/vehiculos")
 

@@ -6,7 +6,7 @@ petición al microservicio que corresponde. No contiene reglas de negocio ni
 accede a bases de datos: solo enruta.
 
 ```
-Web / Móvil ──► API Gateway (:8000) ──► MS1 Auth           (:8001)
+Web / Móvil ──► API Gateway (:8000) ──► MS1 Auth/Usuarios  (:8001)
                                     ├─► MS2 Vehículos/OT   (:8002)
                                     ├─► MS3 Presupuestos   (:8003)
                                     └─► MS4 Evidencias     (:8004)
@@ -67,6 +67,7 @@ microservicio responde `404`; si el servicio destino está caído, `502`.
 | Prefijo | Microservicio | Ejemplo |
 |---|---|---|
 | `auth` | MS1 (Autenticación y Usuarios) | `/api/auth/login` -> MS1 `/auth/login` |
+| `notificaciones` | MS1 (Autenticación y Usuarios) | `/api/notificaciones` -> MS1 `/notificaciones` |
 | `vehiculos`, `vehiculo`, `ordenes`, `orden`, `clientes`, `mecanicos` | MS2 (Vehículos y Órdenes) | `/api/vehiculos` -> MS2 `/vehiculos` |
 | `presupuestos`, `presupuesto`, `repuestos`, `proveedores`, `inventario` | MS3 (Presupuestos) | `/api/presupuestos` -> MS3 `/presupuestos` |
 | `evidencias`, `evidencia` | MS4 (Evidencia Multimedia) | `/api/evidencias` -> MS4 `/evidencias` |

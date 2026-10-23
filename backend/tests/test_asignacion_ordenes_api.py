@@ -33,7 +33,10 @@ from services.ms2_taller.models.estado_orden import (
     EN_REPARACION,
     ENTREGADO,
     ESPERANDO_DIAGNOSTICO,
+    ESPERANDO_APROBACION_PRESUPUESTO,
+    ESPERANDO_REPUESTOS,
     ESTADOS_ORDEN,
+    LISTO,
     RECIBIDO,
 )
 from services.ms2_taller.services.ordenes import (
@@ -516,11 +519,27 @@ def test_configurar_capacidad_registra_cambio_y_reporta_mecanicos_sobre_limite(
     assert historial.fecha_hora is not None
 
 
-def test_asignacion_que_excede_capacidad_es_rechazada_y_auditada(
+@pytest.mark.parametrize(
+    "estado_activo",
+    [
+        RECIBIDO,
+        ESPERANDO_DIAGNOSTICO,
+        ESPERANDO_APROBACION_PRESUPUESTO,
+        ESPERANDO_REPUESTOS,
+        EN_REPARACION,
+        LISTO,
+    ],
+)
+def test_orden_asignada_en_estado_no_terminal_consume_capacidad_y_se_audita(
     api_asignaciones: TestClient,
     db_asignaciones: Session,
+    estado_activo: int,
 ):
-    _crear_orden(db_asignaciones, mecanico_id=50)
+    _crear_orden(
+        db_asignaciones,
+        mecanico_id=50,
+        estado_codigo=estado_activo,
+    )
     orden_pendiente = _crear_orden(db_asignaciones)
     api_asignaciones.put(
         "/ordenes/configuracion/capacidad/mecanicos",
@@ -574,6 +593,46 @@ def test_orden_terminal_no_consume_capacidad(
 
     assert respuesta.status_code == 200
     assert respuesta.json()["mecanico_actual_id"] == 50
+    validacion = db_asignaciones.scalar(
+        select(HistorialValidacionCapacidadMecanico).where(
+            HistorialValidacionCapacidadMecanico.orden_id == orden_pendiente.orden_id
+        )
+    )
+    assert validacion is not None
+    assert validacion.ordenes_activas == 0
+    assert validacion.aceptada is True
+    assert validacion.resultado == "capacidad_disponible"
+
+
+def test_orden_recibida_sin_mecanico_no_consume_capacidad(
+    api_asignaciones: TestClient,
+    db_asignaciones: Session,
+):
+    _crear_orden(db_asignaciones, estado_codigo=RECIBIDO)
+    orden_pendiente = _crear_orden(db_asignaciones)
+    api_asignaciones.put(
+        "/ordenes/configuracion/capacidad/mecanicos",
+        json={"max_ordenes_activas": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    respuesta = api_asignaciones.put(
+        f"/ordenes/{orden_pendiente.orden_id}/mecanico",
+        json={"mecanico_id": 50},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["mecanico_actual_id"] == 50
+    validacion = db_asignaciones.scalar(
+        select(HistorialValidacionCapacidadMecanico).where(
+            HistorialValidacionCapacidadMecanico.orden_id == orden_pendiente.orden_id
+        )
+    )
+    assert validacion is not None
+    assert validacion.ordenes_activas == 0
+    assert validacion.aceptada is True
+    assert validacion.resultado == "capacidad_disponible"
 
 
 def test_consulta_de_orden_usa_for_update_en_postgresql():

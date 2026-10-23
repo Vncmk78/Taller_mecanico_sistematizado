@@ -45,6 +45,13 @@ from services.ms2_taller.models.vehiculo import Vehiculo
 from services.ms2_taller.services.capacidad_mecanicos import (
     validar_capacidad_para_asignacion,
 )
+from services.ms2_taller.services.cupo_ingresos import (
+    CupoDiarioExcedidoError,
+    CupoDiarioNoConfiguradoError,
+    PersistenciaCupoIngresosError,
+    registrar_validacion_cupo_aceptada,
+    validar_cupo_para_nuevo_ingreso,
+)
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
@@ -189,8 +196,9 @@ def crear_orden(
 ) -> OrdenTrabajo:
     """Crea ingreso, orden e historial inicial dentro de una transacción.
 
-    Si ya existe una estancia abierta para el vehículo, se reutiliza. La
-    comprobación del cupo diario configurable queda deliberadamente pendiente.
+    Si ya existe una estancia abierta para el vehículo, se reutiliza sin
+    consumir otro cupo diario. Un nuevo ingreso valida y audita el límite antes
+    de registrarse.
     """
 
     try:
@@ -214,12 +222,22 @@ def crear_orden(
             .limit(1)
         )
         if ingreso is None:
+            validacion_cupo = validar_cupo_para_nuevo_ingreso(
+                db,
+                vehiculo_id=vehiculo_id,
+                administrador_id=administrador_id,
+            )
             ingreso = IngresoVehiculo(
                 vehiculo_id=vehiculo_id,
                 registrado_por_id=administrador_id,
             )
             db.add(ingreso)
             db.flush()
+            registrar_validacion_cupo_aceptada(
+                db,
+                validacion=validacion_cupo,
+                ingreso_id=ingreso.ingreso_id,
+            )
 
         estado_inicial = resolver_transicion(None, EventoOrden.CREACION)
         orden = OrdenTrabajo(
@@ -247,6 +265,13 @@ def crear_orden(
     except VehiculoNoEncontradoError:
         db.rollback()
         raise
+    except (CupoDiarioNoConfiguradoError, CupoDiarioExcedidoError):
+        # Los rechazos ya confirmaron su auditoría y no cambiaron ingreso/orden.
+        db.rollback()
+        raise
+    except PersistenciaCupoIngresosError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible validar el cupo diario") from exc
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaOrdenError("No fue posible crear la orden") from exc

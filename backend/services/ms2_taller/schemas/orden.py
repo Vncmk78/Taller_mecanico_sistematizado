@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,6 +42,27 @@ class CapacidadMecanicoRespuesta(BaseModel):
     actualizado_por_id: int | None
     actualizado_en: datetime
     mecanicos_sobre_limite: list[dict[str, int]]
+
+
+class CupoDiarioIngresosActualizar(BaseModel):
+    """Límite administrativo de ingresos físicos por jornada local."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_ingresos_diarios: int = Field(gt=0, strict=True)
+
+
+class CupoDiarioIngresosRespuesta(BaseModel):
+    """Configuración diaria y uso del cupo en la jornada local actual."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    max_ingresos_diarios: int | None
+    actualizado_por_id: int | None
+    actualizado_en: datetime
+    jornada_local: date
+    ingresos_registrados: int
+    sobre_limite: bool
 
 
 class OrdenRespuesta(BaseModel):

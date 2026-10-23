@@ -581,14 +581,16 @@ historiales, por lo que esos campos no se aceptan en el body.
 
 La orden se crea en `Recibido` (`estado_codigo=1`) y puede permanecer con
 `mecanico_actual_id=null`. En la misma transacción se crea o reutiliza el ingreso
-físico y se registra el historial inicial con el Administrador como actor.
+físico y se registra el historial inicial con el Administrador como actor. Si
+no existe un ingreso abierto, se comprueba y audita el cupo diario antes de
+crear el ingreso. Reutilizar un ingreso abierto no consume otro cupo.
 
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` con rol Administrador |
 | Body | `{"vehiculo_id": int positivo}` |
 | Respuesta OK | `201` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` vehículo inexistente · `422` body inválido o campos controlados · `500` persistencia · `502` MS2 no disponible |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` vehículo inexistente · `409` cupo diario agotado o no configurado · `422` body inválido o campos controlados · `500` persistencia · `502` MS2 no disponible |
 
 ```json
 // Request
@@ -694,6 +696,28 @@ La respuesta incluye `max_ordenes_activas`, `actualizado_por_id`,
 Si el límite aún no se configuró, el valor es `null` y las asignaciones o
 reasignaciones se rechazan con `409` hasta que un Administrador lo establezca.
 Un valor igual al actual no genera una nueva fila de historial.
+
+### GET y PUT `/api/ordenes/configuracion/capacidad/ingresos-diarios`
+
+Permiten consultar y modificar el máximo de ingresos físicos del taller por
+jornada. Ambas operaciones requieren JWT con rol Administrador. El `PUT` acepta
+un entero positivo en `max_ingresos_diarios` y conserva valor anterior, nuevo,
+administrador y fecha/hora. La respuesta incluye la jornada local actual, los
+ingresos ya registrados y `sobre_limite`; si el límite se reduce por debajo del
+uso actual, no elimina ingresos y rechaza nuevas entradas físicas.
+
+```json
+PUT /api/ordenes/configuracion/capacidad/ingresos-diarios
+{ "max_ingresos_diarios": 12 }
+```
+
+El conteo usa `MS2_TIMEZONE` (`America/Santiago` por defecto) y abarca todos los
+ingresos físicos registrados en esa jornada, aunque el vehículo haya salido o
+su orden se haya cancelado. Crear otra orden mientras el vehículo conserva un
+ingreso abierto reutiliza esa estancia y no consume un cupo adicional. Antes
+del primer ingreso, el Administrador debe configurar el límite; de lo
+contrario, `POST /api/ordenes` responde `409`. Los intentos aceptados y
+rechazados quedan auditados en MS2.
 
 ### GET `/api/ordenes/{orden_id}/historial`
 
@@ -1035,7 +1059,7 @@ consumidas como parte del contrato actual:
 | Capacidad | Situación actual |
 |---|---|
 | Máximo de órdenes activas por mecánico | Implementado en MS2; GET/PUT de configuración y validación en asignación |
-| Cupo diario de ingresos físicos | Subsistema posterior; no forma parte de la configuración de capacidad por mecánico |
+| Cupo diario de ingresos físicos | Implementado en MS2; GET/PUT de configuración diaria y validación concurrente al registrar un ingreso nuevo |
 | Presupuestos, repuestos e inventario | Los contratos de MS3 se publicarán cuando sus endpoints estén definidos y verificados |
 
 El frontend web y la aplicación móvil deben consumir exclusivamente las rutas

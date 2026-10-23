@@ -256,6 +256,8 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
         ("/api/ordenes/configuracion/capacidad/mecanicos", "put"),
+        ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
+        ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "put"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos", "post"),
         ("/api/vehiculos/asignados", "get"),

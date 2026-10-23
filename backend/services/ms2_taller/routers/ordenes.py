@@ -19,6 +19,8 @@ from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
     CapacidadMecanicoActualizar,
     CapacidadMecanicoRespuesta,
+    CupoDiarioIngresosActualizar,
+    CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud,
     HistorialEstadoRespuesta,
     OrdenCrear,
@@ -49,6 +51,13 @@ from services.ms2_taller.services.capacidad_mecanicos import (
     configurar_capacidad_mecanicos,
     obtener_configuracion_capacidad_mecanicos,
 )
+from services.ms2_taller.services.cupo_ingresos import (
+    CupoDiarioExcedidoError,
+    CupoDiarioNoConfiguradoError,
+    PersistenciaCupoIngresosError,
+    configurar_cupo_diario_ingresos,
+    obtener_cupo_diario_ingresos,
+)
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
@@ -58,6 +67,80 @@ from shared.contratos_decisiones import (
 )
 
 router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
+
+
+@router_ordenes.get(
+    "/configuracion/capacidad/ingresos-diarios",
+    response_model=CupoDiarioIngresosRespuesta,
+    summary="Consultar el cupo diario de ingresos físicos",
+)
+def consultar_cupo_diario_ingresos(
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> dict[str, object]:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para realizar esta operación",
+        )
+    try:
+        configuracion, jornada, cantidad, excedido = obtener_cupo_diario_ingresos(db)
+        return {
+            "max_ingresos_diarios": configuracion.max_ingresos_diarios,
+            "actualizado_por_id": configuracion.actualizado_por_id,
+            "actualizado_en": configuracion.actualizado_en,
+            "jornada_local": jornada,
+            "ingresos_registrados": cantidad,
+            "sobre_limite": excedido,
+        }
+    except PersistenciaCupoIngresosError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar el cupo diario de ingresos",
+        ) from exc
+
+
+@router_ordenes.put(
+    "/configuracion/capacidad/ingresos-diarios",
+    response_model=CupoDiarioIngresosRespuesta,
+    summary="Configurar el máximo diario de ingresos físicos",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "El máximo debe ser un entero positivo"
+        },
+    },
+)
+def actualizar_cupo_diario_ingresos(
+    body: CupoDiarioIngresosActualizar,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> dict[str, object]:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permiso para realizar esta operación",
+        )
+    try:
+        configuracion, jornada, cantidad, excedido = configurar_cupo_diario_ingresos(
+            db,
+            max_ingresos_diarios=body.max_ingresos_diarios,
+            administrador_id=principal.usuario_id,
+        )
+        return {
+            "max_ingresos_diarios": configuracion.max_ingresos_diarios,
+            "actualizado_por_id": configuracion.actualizado_por_id,
+            "actualizado_en": configuracion.actualizado_en,
+            "jornada_local": jornada,
+            "ingresos_registrados": cantidad,
+            "sobre_limite": excedido,
+        }
+    except PersistenciaCupoIngresosError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible guardar el cupo diario de ingresos",
+        ) from exc
 
 
 @router_ordenes.get(
@@ -224,10 +307,18 @@ def aplicar_decision(
     response_model=OrdenRespuesta,
     status_code=status.HTTP_201_CREATED,
     summary="Crear una orden de trabajo",
+    description=(
+        "Solo Administrador. Si el vehículo no tiene un ingreso físico abierto, "
+        "se valida el cupo de la jornada local antes de registrar el nuevo ingreso. "
+        "Una orden nueva que reutiliza un ingreso abierto no consume otro cupo."
+    ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "Vehículo no encontrado"},
+        status.HTTP_409_CONFLICT: {
+            "description": "Cupo diario agotado o aún no configurado"
+        },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
         },
@@ -246,6 +337,16 @@ def registrar_orden(
 
     try:
         return crear_orden(db, body.vehiculo_id, principal.usuario_id)
+    except CupoDiarioNoConfiguradoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Configura el máximo diario de ingresos físicos antes de recibir vehículos",
+        ) from exc
+    except CupoDiarioExcedidoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El taller ya alcanzó el máximo diario de ingresos físicos",
+        ) from exc
     except VehiculoNoEncontradoError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

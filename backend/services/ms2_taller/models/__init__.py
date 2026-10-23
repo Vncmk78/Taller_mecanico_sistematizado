@@ -24,6 +24,11 @@ from services.ms2_taller.models.configuracion_capacidad_mecanico import (
     HistorialConfiguracionCapacidadMecanico,
     HistorialValidacionCapacidadMecanico,
 )
+from services.ms2_taller.models.configuracion_cupo_ingresos import (
+    ConfiguracionCupoIngresos,
+    HistorialConfiguracionCupoIngresos,
+    HistorialValidacionCupoIngreso,
+)
 
 __all__ = [
     "Base",
@@ -37,4 +42,7 @@ __all__ = [
     "ConfiguracionCapacidadMecanico",
     "HistorialConfiguracionCapacidadMecanico",
     "HistorialValidacionCapacidadMecanico",
+    "ConfiguracionCupoIngresos",
+    "HistorialConfiguracionCupoIngresos",
+    "HistorialValidacionCupoIngreso",
 ]

@@ -138,6 +138,14 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         "CapacidadMecanicoRespuesta",
         contratos_ordenes.CapacidadMecanicoRespuesta,
     ),
+    (
+        "CupoDiarioIngresosActualizar",
+        contratos_ordenes.CupoDiarioIngresosActualizar,
+    ),
+    (
+        "CupoDiarioIngresosRespuesta",
+        contratos_ordenes.CupoDiarioIngresosRespuesta,
+    ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
@@ -646,8 +654,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 resumen="Crear una orden de trabajo",
                 descripcion=(
                     "Solo un Administrador crea la orden para un vehículo "
-                    "registrado. Se asocia o crea el ingreso físico, la orden "
-                    "comienza en Recibido y puede quedar sin mecánico."
+                    "registrado. Si no hay un ingreso abierto, valida el cupo "
+                    "diario antes de crearlo; reutilizar un ingreso abierto no "
+                    "consume otro cupo. La orden comienza en Recibido y puede "
+                    "quedar sin mecánico."
                 ),
                 operation_id="crear_orden",
                 cuerpo="OrdenCrear",
@@ -657,6 +667,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
+                    "409": "Cupo diario agotado o aún no configurado",
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
@@ -774,6 +785,54 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "200": _respuesta(
                         "Configuración actualizada.",
                         _ref("CapacidadMecanicoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "El máximo debe ser un entero positivo",
+                },
+                requiere_auth=True,
+            ),
+        },
+        "/api/ordenes/configuracion/capacidad/ingresos-diarios": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar el cupo diario de ingresos físicos",
+                descripcion=(
+                    "Solo Administrador. Devuelve el límite y el número de "
+                    "ingresos físicos de la jornada local actual. Cuenta nuevas "
+                    "estancias, no órdenes que reutilizan un ingreso abierto."
+                ),
+                operation_id="consultar_cupo_diario_ingresos",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Cupo diario y uso de la jornada.",
+                        _ref("CupoDiarioIngresosRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                },
+                requiere_auth=True,
+            ),
+            "put": _operacion(
+                tag="Órdenes",
+                resumen="Configurar el máximo diario de ingresos físicos",
+                descripcion=(
+                    "Solo Administrador. El máximo debe ser un entero positivo. "
+                    "Se auditan valor anterior, nuevo, administrador y fecha. "
+                    "Si la jornada ya supera el límite reducido, se informa sin "
+                    "eliminar ingresos; se bloquean nuevos ingresos físicos."
+                ),
+                operation_id="actualizar_cupo_diario_ingresos",
+                cuerpo="CupoDiarioIngresosActualizar",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Cupo diario actualizado.",
+                        _ref("CupoDiarioIngresosRespuesta"),
                     )
                 },
                 errores_ms={

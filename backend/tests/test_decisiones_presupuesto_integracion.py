@@ -21,7 +21,8 @@ from services.ms2_taller.config import settings as settings_ms2
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as app_ms2
 from services.ms2_taller.models import (
-    Base as BaseMS2, Cliente, ConfiguracionCapacidadMecanico, EstadoOrden,
+    Base as BaseMS2, Cliente, ConfiguracionCapacidadMecanico,
+    ConfiguracionCupoIngresos, EstadoOrden,
     HistorialEstado, IngresoVehiculo, OrdenTrabajo, Vehiculo,
 )
 from services.ms2_taller.models.estado_orden import (
@@ -80,6 +81,12 @@ def preparar_flujo(monkeypatch, base2, base3):
             db.add(capacidad)
         capacidad.max_ordenes_activas = 5
         capacidad.actualizado_por_id = 99
+        cupo = db.get(ConfiguracionCupoIngresos, 1)
+        if cupo is None:
+            cupo = ConfiguracionCupoIngresos(configuracion_id=1)
+            db.add(cupo)
+        cupo.max_ingresos_diarios = 100
+        cupo.actualizado_por_id = 99
         cliente = Cliente(usuario_id=42)
         vehiculo = Vehiculo(cliente=cliente, patente="TEST438", marca="Marca", modelo="Modelo")
         db.add(vehiculo)

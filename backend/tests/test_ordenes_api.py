@@ -20,8 +20,11 @@ from services.ms2_taller.models import (
     Base,
     Cliente,
     ConfiguracionCapacidadMecanico,
+    ConfiguracionCupoIngresos,
     EstadoOrden,
+    HistorialConfiguracionCupoIngresos,
     HistorialEstado,
+    HistorialValidacionCupoIngreso,
     IngresoVehiculo,
     OrdenTrabajo,
     Vehiculo,
@@ -44,6 +47,10 @@ from services.ms2_taller.services.ordenes import (
     _consulta_vehiculo_para_actualizacion,
     cambiar_estado_orden,
     registrar_historial_estado,
+)
+from services.ms2_taller.services.cupo_ingresos import (
+    _consulta_configuracion_para_actualizacion,
+    _rango_jornada_utc,
 )
 from shared.auth import NombreRol, PrincipalAutenticado, crear_token_acceso
 
@@ -82,6 +89,13 @@ def db_ordenes() -> Generator[Session, None, None]:
         ConfiguracionCapacidadMecanico(
             configuracion_id=1,
             max_ordenes_activas=5,
+            actualizado_por_id=99,
+        )
+    )
+    sesion.add(
+        ConfiguracionCupoIngresos(
+            configuracion_id=1,
+            max_ingresos_diarios=100,
             actualizado_por_id=99,
         )
     )
@@ -193,6 +207,196 @@ def test_post_no_reutiliza_ingreso_cerrado(
     )
     assert ingreso_abierto is not None
     assert respuesta.json()["ingreso_id"] == ingreso_abierto.ingreso_id
+
+
+def test_configurar_cupo_diario_audita_y_devuelve_uso_de_jornada(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    _crear_orden(db_ordenes, usuario_cliente=10)
+
+    respuesta = api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["max_ingresos_diarios"] == 1
+    assert respuesta.json()["ingresos_registrados"] == 1
+    assert respuesta.json()["sobre_limite"] is False
+    assert respuesta.json()["jornada_local"]
+    historial = db_ordenes.scalar(
+        select(HistorialConfiguracionCupoIngresos)
+    )
+    assert historial is not None
+    assert historial.valor_anterior == 100
+    assert historial.valor_nuevo == 1
+    assert historial.administrador_id == 99
+
+
+def test_reducir_cupo_por_debajo_del_uso_informa_exceso_sin_borrar_ingresos(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    _crear_orden(db_ordenes, usuario_cliente=10)
+    _crear_orden(db_ordenes, usuario_cliente=20)
+
+    respuesta = api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["ingresos_registrados"] == 2
+    assert respuesta.json()["sobre_limite"] is True
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 2
+
+
+def test_post_bloquea_nuevo_ingreso_al_alcanzar_cupo_y_audita_rechazo(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    primer_vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    segundo_vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=20)
+    api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    primero = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": primer_vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    segundo = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": segundo_vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert primero.status_code == 201
+    assert segundo.status_code == 409
+    assert segundo.json() == {
+        "detail": "El taller ya alcanzó el máximo diario de ingresos físicos"
+    }
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 1
+    assert db_ordenes.scalar(select(func.count()).select_from(OrdenTrabajo)) == 1
+    validaciones = db_ordenes.scalars(
+        select(HistorialValidacionCupoIngreso).order_by(
+            HistorialValidacionCupoIngreso.validacion_id
+        )
+    ).all()
+    assert [(v.aceptada, v.resultado, v.ingresos_registrados) for v in validaciones] == [
+        (True, "cupo_disponible", 0),
+        (False, "cupo_excedido", 1),
+    ]
+    assert validaciones[0].ingreso_id == primero.json()["ingreso_id"]
+    assert validaciones[1].ingreso_id is None
+
+
+def test_post_reutiliza_ingreso_abierto_sin_consumir_cupo_adicional(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    ingreso = IngresoVehiculo(vehiculo_id=vehiculo.vehiculo_id, registrado_por_id=80)
+    db_ordenes.add(ingreso)
+    db_ordenes.commit()
+    api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    respuesta = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 201
+    assert respuesta.json()["ingreso_id"] == ingreso.ingreso_id
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 1
+    assert db_ordenes.scalar(
+        select(func.count()).select_from(HistorialValidacionCupoIngreso)
+    ) == 0
+
+
+def test_ingreso_de_orden_cancelada_sigue_ocupando_cupo_del_dia(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    orden_cancelada = _crear_orden(db_ordenes, usuario_cliente=10)
+    orden_cancelada.estado_codigo = CANCELADO
+    db_ordenes.commit()
+    api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    otro_vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=20)
+
+    respuesta = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": otro_vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 1
+
+
+def test_post_sin_cupo_configurado_registra_rechazo(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    configuracion = db_ordenes.get(ConfiguracionCupoIngresos, 1)
+    configuracion.max_ingresos_diarios = None
+    db_ordenes.commit()
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+
+    respuesta = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    validacion = db_ordenes.scalar(select(HistorialValidacionCupoIngreso))
+    assert validacion is not None
+    assert validacion.aceptada is False
+    assert validacion.resultado == "cupo_no_configurado"
+    assert validacion.max_ingresos_diarios is None
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 0
+
+
+def test_bloqueo_del_cupo_diario_usa_for_update_en_postgresql():
+    consulta = _consulta_configuracion_para_actualizacion()
+    sql = " ".join(
+        str(
+            consulta.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        ).split()
+    )
+
+    assert "configuracion_cupo_ingresos.configuracion_id = 1" in sql
+    assert sql.endswith("FOR UPDATE")
+
+
+def test_rango_de_jornada_local_respeta_la_zona_del_taller(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "TIMEZONE", "America/Santiago")
+    inicio, fin = _rango_jornada_utc(datetime(2026, 1, 15).date())
+
+    assert inicio.tzinfo == timezone.utc
+    assert fin.tzinfo == timezone.utc
+    assert fin - inicio == timedelta(hours=24)
 
 
 def test_post_multirol_con_administrador_puede_crear(

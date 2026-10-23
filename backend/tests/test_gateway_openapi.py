@@ -36,6 +36,8 @@ from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
     CapacidadMecanicoActualizar as Ms2CapacidadMecanicoActualizar,
     CapacidadMecanicoRespuesta as Ms2CapacidadMecanicoRespuesta,
+    CupoDiarioIngresosActualizar as Ms2CupoDiarioIngresosActualizar,
+    CupoDiarioIngresosRespuesta as Ms2CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
     HistorialEstadoRespuesta as Ms2HistorialEstadoRespuesta,
     OrdenCrear as Ms2OrdenCrear,
@@ -64,6 +66,8 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes/{orden_id}/mecanico", "put"),
     ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
     ("/api/ordenes/configuracion/capacidad/mecanicos", "put"),
+    ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
+    ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
     ("/api/evidencias", "post"),
@@ -85,6 +89,7 @@ _PROTEGIDOS = {
     "/api/ordenes/{orden_id}",
     "/api/ordenes/{orden_id}/mecanico",
     "/api/ordenes/configuracion/capacidad/mecanicos",
+    "/api/ordenes/configuracion/capacidad/ingresos-diarios",
     "/api/ordenes/{orden_id}/historial",
     "/api/ordenes/{orden_id}/estado",
     "/api/evidencias",
@@ -232,6 +237,10 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
             "/api/ordenes/configuracion/capacidad/mecanicos",
             "put",
         ): "CapacidadMecanicoActualizar",
+        (
+            "/api/ordenes/configuracion/capacidad/ingresos-diarios",
+            "put",
+        ): "CupoDiarioIngresosActualizar",
         ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"): "DecisionOrdenSolicitud",
     }
@@ -248,6 +257,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/ordenes", "get"),
         ("/api/ordenes/{orden_id}", "get"),
         ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
+        ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
         ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
@@ -291,6 +301,14 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (
             contratos_ordenes.CapacidadMecanicoRespuesta,
             Ms2CapacidadMecanicoRespuesta,
+        ),
+        (
+            contratos_ordenes.CupoDiarioIngresosActualizar,
+            Ms2CupoDiarioIngresosActualizar,
+        ),
+        (
+            contratos_ordenes.CupoDiarioIngresosRespuesta,
+            Ms2CupoDiarioIngresosRespuesta,
         ),
         (contratos_ordenes.OrdenRespuesta, Ms2OrdenRespuesta),
         (

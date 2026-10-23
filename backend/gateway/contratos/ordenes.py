@@ -6,7 +6,7 @@ OpenAPI comparan sus campos y obligatoriedad con los esquemas reales de MS2.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -127,6 +127,56 @@ class CapacidadMecanicoRespuesta(BaseModel):
     actualizado_en: datetime = Field(description="Fecha y hora de la configuración.")
     mecanicos_sobre_limite: list[dict[str, int]] = Field(
         description="Mecánicos cuya carga actual supera el máximo recién configurado."
+    )
+
+
+class CupoDiarioIngresosActualizar(BaseModel):
+    """Límite de ingresos físicos que un Administrador configura por jornada."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"max_ingresos_diarios": 12}]},
+    )
+
+    max_ingresos_diarios: int = Field(
+        gt=0,
+        strict=True,
+        description="Máximo positivo de ingresos físicos en una jornada local.",
+        examples=[12],
+    )
+
+
+class CupoDiarioIngresosRespuesta(BaseModel):
+    """Límite diario vigente, jornada y número de ingresos registrados."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "max_ingresos_diarios": 12,
+                    "actualizado_por_id": 99,
+                    "actualizado_en": "2026-10-23T10:00:00-03:00",
+                    "jornada_local": "2026-10-23",
+                    "ingresos_registrados": 4,
+                    "sobre_limite": False,
+                }
+            ]
+        }
+    )
+
+    max_ingresos_diarios: int | None = Field(
+        description="Nulo hasta que un Administrador configure el límite."
+    )
+    actualizado_por_id: int | None = Field(
+        description="Referencia lógica al Administrador que configuró el valor."
+    )
+    actualizado_en: datetime
+    jornada_local: date
+    ingresos_registrados: int = Field(
+        description="Ingresos físicos registrados en la jornada local actual."
+    )
+    sobre_limite: bool = Field(
+        description="Indica si el uso actual excede el límite configurado."
     )
 
 

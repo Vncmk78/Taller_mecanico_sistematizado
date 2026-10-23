@@ -109,6 +109,10 @@ ruta no existe.
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
 | `POST /api/ordenes` | ❌ | ❌ | ✅ |
+| `GET /api/ordenes/configuracion/capacidad/mecanicos` | ❌ | ❌ | ✅ |
+| `PUT /api/ordenes/configuracion/capacidad/mecanicos` | ❌ | ❌ | ✅ |
+| `GET /api/ordenes/configuracion/capacidad/ingresos-diarios` | ❌ | ❌ | ✅ |
+| `PUT /api/ordenes/configuracion/capacidad/ingresos-diarios` | ❌ | ❌ | ✅ |
 | `GET /api/ordenes` | ⚠️ de sus vehículos | ⚠️ asignadas | ✅ todas |
 | `GET /api/ordenes/{id}` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
 | `PUT /api/ordenes/{id}/mecanico` | ❌ | ❌ | ✅ |

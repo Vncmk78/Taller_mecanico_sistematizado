@@ -22,12 +22,14 @@ from services.ms2_taller.schemas.orden import (
     CupoDiarioIngresosActualizar,
     CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud,
+    EntregaOrdenRespuesta,
     HistorialOrdenesVehiculoRespuesta,
     HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
 )
 from services.ms2_taller.services.ordenes import (
+    EntregaOrdenInconsistenteError,
     OrdenEstadoInvalidoError,
     OrdenEstadoNoAutorizadoError,
     OrdenNoEncontradaError,
@@ -45,6 +47,7 @@ from services.ms2_taller.services.ordenes import (
     listar_historial_ordenes_vehiculo,
     obtener_historial_orden,
     obtener_orden_visible,
+    registrar_entrega_fisica,
 )
 from services.ms2_taller.services.capacidad_mecanicos import (
     CapacidadMecanicoExcedidaError,
@@ -578,6 +581,73 @@ def cambiar_estado(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible cambiar el estado de la orden",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/entrega",
+    response_model=EntregaOrdenRespuesta,
+    summary="Registrar la entrega física de una orden",
+    description=(
+        "Solo un Administrador puede confirmar la entrega de una orden en "
+        "estado Listo. El responsable y la fecha/hora se obtienen del JWT y "
+        "del servidor. Repetir una entrega ya registrada devuelve el mismo "
+        "registro, sin duplicar el historial."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden debe estar en Listo para registrar su entrega"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible registrar la entrega física"
+        },
+    },
+)
+def confirmar_entrega_orden(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> EntregaOrdenRespuesta:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere rol Administrador",
+        )
+    try:
+        orden, historial = registrar_entrega_fisica(
+            db,
+            orden_id=orden_id,
+            administrador_id=principal.usuario_id,
+        )
+        return EntregaOrdenRespuesta(
+            orden_id=orden.orden_id,
+            estado_codigo=orden.estado_codigo,
+            entregado_en=orden.entregado_en,
+            entregado_por_id=orden.entregado_por_id,
+            historial_id=historial.historial_id,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except EntregaOrdenInconsistenteError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="La orden no conserva un registro de entrega completo",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la entrega física",
         ) from exc
 
 

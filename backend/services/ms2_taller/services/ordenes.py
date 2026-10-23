@@ -36,7 +36,12 @@ from services.ms2_taller.integracion_ms3 import (
     VerificadorDecisiones,
     VerificadorEnviosPresupuesto,
 )
-from services.ms2_taller.models.estado_orden import CANCELADO, RECIBIDO
+from services.ms2_taller.models.estado_orden import (
+    CANCELADO,
+    ENTREGADO,
+    LISTO,
+    RECIBIDO,
+)
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
@@ -114,6 +119,10 @@ class OrdenEstadoNoAutorizadoError(Exception):
 
 class OrdenObservacionInvalidaError(Exception):
     """La observación está vacía o falta el motivo de una cancelación."""
+
+
+class EntregaOrdenInconsistenteError(Exception):
+    """La orden entregada no conserva sus datos de auditoría esperados."""
 
 
 def registrar_historial_estado(
@@ -590,6 +599,79 @@ def cambiar_estado_orden(
         db.rollback()
         raise PersistenciaOrdenError(
             "No fue posible cambiar el estado de la orden"
+        ) from exc
+
+
+def registrar_entrega_fisica(
+    db: Session,
+    *,
+    orden_id: int,
+    administrador_id: int,
+) -> tuple[OrdenTrabajo, HistorialEstado]:
+    """Registra la entrega física y `Listo → Entregado` de forma atómica.
+
+    La fila de la orden queda bloqueada hasta confirmar ambos cambios. Repetir
+    la operación después de una respuesta perdida devuelve la entrega y el
+    historial originales, sin reemplazar la fecha ni agregar otro historial.
+    """
+
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        if orden.estado_codigo == ENTREGADO:
+            historial = db.scalar(
+                select(HistorialEstado)
+                .where(
+                    HistorialEstado.orden_id == orden_id,
+                    HistorialEstado.estado_nuevo == ENTREGADO,
+                )
+                .order_by(HistorialEstado.historial_id)
+                .limit(1)
+            )
+            if historial is None or orden.entregado_en is None or orden.entregado_por_id is None:
+                raise EntregaOrdenInconsistenteError(
+                    "La orden entregada no conserva el registro de entrega completo"
+                )
+            db.commit()
+            return orden, historial
+
+        if orden.estado_codigo != LISTO:
+            raise OrdenTransicionNoPermitidaError(
+                "La entrega física solo se puede registrar desde Listo"
+            )
+
+        estado_nuevo = resolver_transicion(
+            orden.estado_codigo, EventoOrden.ENTREGA_FISICA
+        )
+        estado_anterior = orden.estado_codigo
+        orden.estado_codigo = estado_nuevo
+        orden.entregado_en = func.now()
+        orden.entregado_por_id = administrador_id
+        historial = registrar_historial_estado(
+            db,
+            orden_id=orden.orden_id,
+            estado_anterior=estado_anterior,
+            estado_nuevo=estado_nuevo,
+            actor_usuario_id=administrador_id,
+            origen="usuario",
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden, historial
+    except (
+        OrdenNoEncontradaError,
+        OrdenTransicionNoPermitidaError,
+        EntregaOrdenInconsistenteError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible registrar la entrega física"
         ) from exc
 
 

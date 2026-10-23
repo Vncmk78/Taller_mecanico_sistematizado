@@ -1156,6 +1156,95 @@ def test_patch_no_entrega_sin_operacion_ni_registro_de_entrega(
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
+def test_admin_registra_entrega_desde_listo_con_historial_atomico(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["orden_id"] == orden.orden_id
+    assert datos["estado_codigo"] == ENTREGADO
+    assert datos["entregado_por_id"] == 99
+    assert datos["entregado_en"]
+    db_ordenes.expire_all()
+    actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
+    historial = list(db_ordenes.scalars(select(HistorialEstado)))
+    assert actual.estado_codigo == ENTREGADO
+    assert actual.entregado_por_id == 99
+    assert actual.entregado_en is not None
+    assert len(historial) == 1
+    assert historial[0].historial_id == datos["historial_id"]
+    assert (historial[0].estado_anterior, historial[0].estado_nuevo) == (LISTO, ENTREGADO)
+    assert historial[0].actor_usuario_id == 99
+    assert historial[0].origen == "usuario"
+
+
+def test_entrega_requiere_administrador_y_no_modifica_la_orden_si_no_autoriza(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 403
+    db_ordenes.expire_all()
+    actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
+    assert actual.estado_codigo == LISTO
+    assert actual.entregado_en is None
+    assert actual.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_entrega_solo_desde_listo_y_rechazo_no_escribe_historial(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=EN_REPARACION,
+    )
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    db_ordenes.expire_all()
+    actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
+    assert actual.estado_codigo == EN_REPARACION
+    assert actual.entregado_en is None
+    assert actual.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_repetir_entrega_devuelve_registro_original_sin_duplicar_historial(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+
+    primera = api_ordenes.post(f"/ordenes/{orden.orden_id}/entrega", headers=headers)
+    segunda = api_ordenes.post(f"/ordenes/{orden.orden_id}/entrega", headers=headers)
+
+    assert primera.status_code == segunda.status_code == 200
+    assert segunda.json() == primera.json()
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
+
+
 @pytest.mark.parametrize("observacion", [None, "", " \t\n "])
 def test_service_cancelacion_invalida_hace_rollback_sin_depender_del_schema(
     db_ordenes: Session, observacion: str | None,

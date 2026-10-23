@@ -80,6 +80,18 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime
 
 
+class EntregaOrdenRespuesta(BaseModel):
+    """Confirmación auditable de una entrega física de vehículo."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    orden_id: int
+    estado_codigo: int
+    entregado_en: datetime
+    entregado_por_id: int
+    historial_id: int
+
+
 class HistorialOrdenesVehiculoRespuesta(BaseModel):
     """Página del historial de órdenes visibles de un vehículo."""
 

@@ -701,6 +701,26 @@ capacidad. La reasignación solo se confirma si el destino tiene cupo y el cambi
 se serializa junto con las demás asignaciones mediante la fila de configuración.
 Cada validación aceptada o rechazada queda registrada en el historial de MS2.
 
+### POST `/api/ordenes/{orden_id}/entrega`
+
+Registra la entrega física de una orden que se encuentra en `Listo`. Solo un
+Administrador puede confirmarla. MS2 obtiene el usuario responsable desde el
+JWT y la fecha/hora desde la base de datos; actualiza `OrdenTrabajo`, completa
+`entregado_en` y `entregado_por_id`, y agrega `HistorialEstado` en una sola
+transacción. Si la respuesta se pierde y se repite la petición, devuelve el
+registro original sin cambiar la fecha ni duplicar el historial.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador |
+| Body | — |
+| Respuesta OK | `200` con `orden_id`, `estado_codigo=7`, `entregado_en`, `entregado_por_id` e `historial_id` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` estado distinto de `Listo` · `500` persistencia o auditoría inconsistente |
+
+Una repetición válida devuelve la misma respuesta de entrega. El `PATCH`
+genérico sigue rechazando `Listo → Entregado`; tampoco permite registrar como
+entregada la devolución física de una orden cancelada.
+
 ### GET y PUT `/api/ordenes/configuracion/capacidad/mecanicos`
 
 Permiten consultar y modificar el límite de órdenes activas por mecánico. Ambas

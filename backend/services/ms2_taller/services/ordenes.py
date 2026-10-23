@@ -10,6 +10,9 @@ remota del rol del destino continúa pendiente de contrato con MS1.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from uuid import uuid4
+
 from sqlalchemy import false, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -42,6 +45,7 @@ from services.ms2_taller.models.estado_orden import (
     LISTO,
     RECIBIDO,
 )
+from services.ms2_taller.models.evento_outbox import EventoOutbox
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
@@ -168,6 +172,31 @@ def registrar_historial_estado(
         envio_presupuesto_id=envio_presupuesto_id,
     )
     db.add(historial)
+    if estado_anterior != estado_nuevo:
+        fila = db.execute(
+            select(OrdenTrabajo.vehiculo_id, Cliente.usuario_id)
+            .join(Vehiculo, Vehiculo.vehiculo_id == OrdenTrabajo.vehiculo_id)
+            .join(Cliente, Cliente.cliente_id == Vehiculo.cliente_id)
+            .where(OrdenTrabajo.orden_id == orden_id)
+        ).one()
+        evento_id = uuid4()
+        ocurrido_en = datetime.now(timezone.utc)
+        db.add(
+            EventoOutbox(
+                evento_id=evento_id,
+                tipo="orden.estado_cambiado",
+                payload={
+                    "evento_id": str(evento_id),
+                    "tipo": "orden.estado_cambiado",
+                    "ocurrido_en": ocurrido_en.isoformat(),
+                    "orden_id": orden_id,
+                    "vehiculo_id": fila.vehiculo_id,
+                    "cliente_usuario_id": fila.usuario_id,
+                    "estado_anterior": estado_anterior,
+                    "estado_nuevo": estado_nuevo,
+                },
+            )
+        )
     return historial
 
 

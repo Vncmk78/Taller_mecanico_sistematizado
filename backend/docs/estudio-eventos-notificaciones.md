@@ -24,7 +24,7 @@ crear dependencias entre sus bases de datos.
   evento publicado ni persistido independientemente. No hay bus, broker, outbox
   ni consumidores; la comunicación actual entre servicios usa HTTP síncrono.
 
-## Recomendación
+## Decisión de implementación
 
 Mantener la autoridad sobre cada cambio en el microservicio que posee el
 dominio. Cuando una operación de MS2 confirma una transición que debe avisarse,
@@ -33,16 +33,19 @@ un registro de salida (outbox) mínimo. Un proceso de MS2 envía luego ese event
 por HTTP al contrato de recepción que publique MS1 y reintenta si MS1 no está
 disponible. No hace falta introducir un broker para el alcance actual.
 
-MS1 valida el contrato, determina destinatarios según identidad y permisos,
-crea el aviso lógico de forma idempotente y gestiona por separado los canales y
-sus resultados de entrega. La clave estable del evento permite repetir el
-envío desde MS2 sin duplicar el aviso. Un error al entregar correo o push se
-registra en MS1 y no deshace la operación de negocio.
+MS1 valida el contrato y que el destinatario sea un Cliente activo, crea el aviso
+lógico de forma idempotente y lo expone en su bandeja autenticada. La clave
+estable del evento permite repetir el envío desde MS2 sin duplicar el aviso.
+Esta implementación persiste y consulta el canal web; no afirma que correo o
+push hayan sido enviados. Esos canales requieren proveedores y, para push, el
+registro de dispositivos de Integración IV.
 
-El outbox es una recomendación para no perder el aviso si el proceso cae entre
-guardar el cambio y llamar a MS1. La sistematización requiere solicitudes por
-API y tolerancia a fallos de canales, pero no prescribe outbox ni transporte;
-por eso el patrón debe confirmarse antes de implementarlo.
+Se aprobó el outbox transaccional en MS2 con envío HTTP reintentable a MS1 y un
+secreto dedicado entre ambos servicios, configurado por entorno y distinto del
+secreto JWT. El worker reintenta con espera exponencial de 1, 2, 4… segundos,
+con tope de 300 segundos y sin descartar automáticamente eventos pendientes.
+MS1 utiliza `evento_id` como clave única para que un reintento no duplique el
+aviso lógico.
 
 ## Borrador conceptual del evento
 
@@ -52,7 +55,7 @@ borrador sujeto a aprobación:
 
 ```json
 {
-  "evento_id": "uuid estable generado por MS2",
+  "evento_id": "UUID estable generado por MS2",
   "tipo": "orden.estado_cambiado",
   "ocurrido_en": "fecha-hora ISO 8601 con zona",
   "orden_id": 123,
@@ -79,20 +82,26 @@ completo de la orden.
 | Outbox transaccional en MS2 + envío HTTP reintentable a MS1 | El cambio y la intención de avisar quedan persistidos juntos; no exige broker | Requiere tabla, worker, política de reintentos y operación de eventos atascados | Recomendada para entrega confiable sin cambiar la arquitectura |
 | Broker/event bus | Aísla productores y consumidores y facilita agregar consumidores | Nueva infraestructura y operación no previstas en el repositorio actual | No recomendada para este alcance sin requerimiento y aprobación explícitos |
 
-## Decisiones pendientes antes de implementar
+## Contrato implementado y límites actuales
 
-1. Confirmar el outbox reintentable como estrategia de publicación.
-2. Acordar ruta interna, autenticación servicio-a-servicio y errores del contrato
-   MS2 → MS1; hoy no existe un contrato de notificaciones.
-3. Aprobar nombres/versionado de eventos y la lista de hechos que generan aviso.
-   La sistematización enumera decisiones de presupuesto, cambios de estado,
-   disponibilidad para retiro, cancelaciones, solicitudes de nueva atención,
-   respuestas administrativas y alertas de stock.
-4. Definir idempotencia y retención de eventos/avisos, intervalos y límite de
-   reintentos, y tratamiento de mensajes atascados.
-5. Acordar con Integración IV el registro de dispositivos y los datos necesarios
-   para push, así como el formato consumido por web/móvil.
+El contrato de este incremento es `POST /interno/eventos/ordenes/estado` en MS1,
+fuera de la Gateway. Se autentica con `X-Service-Token`; MS1 lee
+`MS1_EVENT_SHARED_SECRET` y MS2 envía `MS2_EVENT_SHARED_SECRET`. Ambos valores
+deben ser idénticos, aleatorios, de al menos 32 caracteres y estar fuera de Git.
+La bandeja está disponible en `GET /api/notificaciones`; solo devuelve avisos
+del usuario autenticado.
 
-Este estudio no implementa ni reserva nombres de endpoints, tablas, eventos,
-canales o credenciales; las decisiones anteriores deben reflejarse en los
-contratos compartidos antes de ejecutar SCRUM-559 y SCRUM-562.
+El payload implementado es el borrador mostrado arriba. MS2 lo encola para los
+cambios efectivos de estado que pasan por `registrar_historial_estado`, dentro
+de la misma transacción que el historial. MS1 genera un mensaje genérico para el
+Cliente afectado; no acepta texto libre ni destinatarios arbitrarios.
+
+Quedan fuera de este incremento la entrega de email/push, los resultados por
+canal y los tipos de aviso distintos de cambio de estado (decisión de
+presupuesto, disponibilidad, solicitud de nueva atención y alertas de stock).
+El envío push requiere coordinación con Integración IV. Los errores de eventos
+pendientes quedan visibles en `evento_outbox.ultimo_error` e `intentos` para
+diagnóstico; no hay descarte automático ni política de retención configurada.
+
+El contrato puede ampliarse con nuevos tipos cuando las tareas de esos eventos
+se implementen. No se crea un broker y no se comparten tablas entre servicios.

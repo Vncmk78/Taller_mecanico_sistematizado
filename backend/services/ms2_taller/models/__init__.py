@@ -29,6 +29,7 @@ from services.ms2_taller.models.configuracion_cupo_ingresos import (
     HistorialConfiguracionCupoIngresos,
     HistorialValidacionCupoIngreso,
 )
+from services.ms2_taller.models.evento_outbox import EventoOutbox
 
 __all__ = [
     "Base",
@@ -45,4 +46,5 @@ __all__ = [
     "ConfiguracionCupoIngresos",
     "HistorialConfiguracionCupoIngresos",
     "HistorialValidacionCupoIngreso",
+    "EventoOutbox",
 ]

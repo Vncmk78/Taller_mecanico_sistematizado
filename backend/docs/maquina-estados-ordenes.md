@@ -199,16 +199,19 @@ Estos términos describen cosas relacionadas, pero distintas:
   otros componentes para que reaccionen.
 
 `EventoOrden` es un `StrEnum` que identifica hechos y sirve como clave para que
-`resolver_transicion()` encuentre el destino permitido. No es actualmente un
-evento publicado, no se persiste como evento independiente y no tiene
-suscriptores ni handlers de dominio.
+`resolver_transicion()` encuentre el destino permitido. Además, los cambios
+efectivos de estado agregan un evento `orden.estado_cambiado` al outbox de MS2
+dentro de la misma transacción que guarda `HistorialEstado`. El evento publicado
+es un contrato independiente de `EventoOrden`; contiene la clave UUID estable,
+orden, vehículo, cliente y estados anterior/nuevo.
 
-El proyecto no cuenta actualmente con event bus, outbox, broker,
-publishers/consumers ni mensajería asíncrona entre microservicios. La comunicación
-existente entre servicios es principalmente HTTP síncrona. Cada microservicio
-garantiza atomicidad dentro de su propia base. La primera decisión tiene
-coordinación síncrona e idempotencia local en MS2; un fallo distribuido requiere
-reintentar la aplicación de la decisión ya persistida, sin una transacción global.
+MS2 publica el outbox por HTTP reintentable hacia el receptor interno de MS1; no
+se introduce un broker ni se comparten tablas. El receptor autentica a MS2 con un
+secreto de servicio independiente del JWT y deduplica por UUID antes de guardar
+el aviso del cliente. El worker conserva eventos pendientes y aplica espera
+exponencial con tope de cinco minutos. La coordinación de cambios de estado y su
+historial sigue siendo local a MS2; la entrega de la notificación no bloquea ni
+revierte el cambio de negocio.
 
 ### 3.7 Estados terminales
 
@@ -332,9 +335,9 @@ autorizado esté terminado. `Entregado` y `Cancelado` no tienen salidas.
 | Evidencias multimedia asociadas a la orden | MS4; no decide transiciones de esta tabla |
 
 MS2 no debe consultar directamente las tablas de MS1 o MS3 ni crear FK hacia sus
-bases. El evento puede originarse en otro servicio, pero MS2 conserva la autoridad
-sobre el estado de la orden y comprueba que el cambio solicitado sea compatible
-con el estado actual.
+bases. MS2 conserva la autoridad sobre el estado de la orden y comprueba que el
+cambio solicitado sea compatible con el estado actual. Solo después publica un
+evento informativo; MS1 no recibe ni decide el estado de la orden.
 
 Queda **PENDIENTE DE DEFINICIÓN** el contrato para comunicar a MS2 la disponibilidad
 posterior de repuestos.

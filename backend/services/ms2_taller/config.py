@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
@@ -34,7 +34,22 @@ class Settings(ServiceSettings):
 
     MS3_URL: str = "http://localhost:8003"
     MS3_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
+    # Publicación interna MS2 → MS1. El worker no se inicia si falta el secreto.
+    EVENT_SHARED_SECRET: SecretStr | None = Field(default=None, min_length=32)
+    MS1_URL: str = "http://localhost:8001"
+    EVENT_WORKER_ENABLED: bool = False
+    EVENT_POLL_SECONDS: float = Field(default=1.0, gt=0, le=60)
+    EVENT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=60)
+    EVENT_RETRY_MAX_SECONDS: int = Field(default=300, gt=0, le=3600)
     TIMEZONE: str = "America/Santiago"
+
+    @model_validator(mode="after")
+    def validar_publicador_eventos(self) -> "Settings":
+        if self.EVENT_WORKER_ENABLED and self.EVENT_SHARED_SECRET is None:
+            raise ValueError(
+                "MS2_EVENT_SHARED_SECRET es obligatorio al habilitar el worker de eventos"
+            )
+        return self
 
     @field_validator("TIMEZONE")
     @classmethod

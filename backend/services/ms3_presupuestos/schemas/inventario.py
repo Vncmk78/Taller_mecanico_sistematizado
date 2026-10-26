@@ -139,3 +139,51 @@ class PaginaAlertas(BaseModel):
     umbral_general: int | None
     total: int
     alertas: list[AlertaRepuesto]
+
+
+# ------------------------------------------------- disponibilidad (validación) --
+
+
+class ItemRequerido(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    repuesto_id: int = Field(gt=0)
+    cantidad: int = Field(ge=1, le=1_000_000, description="Unidades que se quieren usar")
+
+
+class ConsultaDisponibilidad(BaseModel):
+    """Repuestos que se quieren usar, opcionalmente para una orden.
+
+    Con `orden_id` cuenta como disponible lo que esa orden ya tiene reservado;
+    sin orden, solo lo libre. Un repuesto repetido en la lista se suma.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    orden_id: int | None = Field(default=None, gt=0)
+    items: list[ItemRequerido] = Field(min_length=1, max_length=100)
+
+
+class DisponibilidadRepuesto(BaseModel):
+    repuesto_id: int
+    nombre: str
+    proveedor_nombre: str
+    requerido: int
+    stock: int
+    # Reservado por la orden consultada (0 si no se indicó orden).
+    reservado_para_orden: int
+    comprometido_otras_ordenes: int
+    # Lo que esa orden puede usar: stock − lo comprometido por OTRAS órdenes.
+    disponible: int
+    alcanza: bool
+    faltan: int
+
+
+class ResultadoDisponibilidad(BaseModel):
+    orden_id: int | None
+    # true si TODOS los repuestos alcanzan.
+    disponible: bool
+    repuestos: list[DisponibilidadRepuesto]
+    # Solo en la consulta por orden: presupuesto aprobado del que salen los requeridos.
+    presupuesto_id: int | None = None
+    version: int | None = None

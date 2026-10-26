@@ -19,12 +19,10 @@ presupuesto para que dos peticiones simultáneas no creen dos "versión 3".
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from decimal import Decimal
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import object_session
 
 from services.ms3_presupuestos.models import (
     DecisionPresupuesto,
@@ -38,7 +36,6 @@ from services.ms3_presupuestos.persistencia import (
     ReglaDeDatosViolada,
     UnidadDeTrabajo,
 )
-from services.ms3_presupuestos.persistencia.repositorios import RepositorioMovimientos
 from services.ms3_presupuestos.schemas.presupuesto import (
     DecisionSalida,
     ItemEntrada,
@@ -49,6 +46,7 @@ from services.ms3_presupuestos.schemas.presupuesto import (
     ResultadoOperacion,
     VersionDetalle,
 )
+from services.ms3_presupuestos.services import disponibilidad
 from shared.contratos_decisiones import (
     DecisionPresupuestoVerificada,
     EnvioPresupuestoVerificado,
@@ -258,7 +256,7 @@ def decidir_version(
                 "servicio; confirme con confirmar_cancelacion=true"
             )
 
-        faltantes = _repuestos_faltantes(version) if decision == "aprobado" else []
+        faltantes = _repuestos_faltantes(uow, version) if decision == "aprobado" else []
         registro = DecisionPresupuesto(
             version=version, cliente_usuario_id=cliente_usuario_id,
             decision=decision, motivo=motivo or None,
@@ -287,29 +285,24 @@ def _exigir_ultima(presupuesto: Presupuesto, version: VersionPresupuesto) -> Non
         )
 
 
-def _repuestos_faltantes(version: VersionPresupuesto) -> list[RepuestoFaltante]:
+def _repuestos_faltantes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> list[RepuestoFaltante]:
     """Repuestos de la versión cuya disponibilidad no cubre lo presupuestado.
 
-    Disponible para la orden = stock − lo comprometido por OTRAS órdenes
-    (§4.6: no ofrecer a la vez las mismas unidades a dos órdenes).
+    Usa la validación de disponibilidad (services/disponibilidad.py): para la
+    orden cuenta su propia reserva, pero no lo comprometido por OTRAS órdenes
+    (§4.6). Los repuestos quedan bloqueados (FOR UPDATE) hasta el commit de la
+    decisión, así dos aprobaciones simultáneas no cuentan las mismas unidades.
     """
-    movimientos = RepositorioMovimientos(object_session(version))
-    orden_id = version.presupuesto.orden_id
-    requerido: dict[int, Decimal] = defaultdict(Decimal)
-    repuestos = {}
-    for item in version.items:
-        if item.repuesto is not None:
-            requerido[item.repuesto_id] += item.cantidad
-            repuestos[item.repuesto_id] = item.repuesto
-    faltantes = []
-    for rid, cantidad in sorted(requerido.items()):
-        de_otras = sum(c for o, c in movimientos.comprometido_por_orden(rid).items() if o != orden_id)
-        disponible = repuestos[rid].stock - de_otras
-        if disponible < cantidad:
-            faltantes.append(RepuestoFaltante(
-                repuesto_id=rid, nombre=repuestos[rid].nombre,
-                requerido=_dos_decimales(cantidad), disponible=disponible))
-    return faltantes
+    requeridos = disponibilidad.requeridos_de_version(version)
+    if not requeridos:
+        return []
+    resultado = disponibilidad.evaluar(
+        uow, requeridos, orden_id=version.presupuesto.orden_id, bloquear=True)
+    return [
+        RepuestoFaltante(repuesto_id=d.repuesto_id, nombre=d.nombre,
+                         requerido=_dos_decimales(Decimal(d.requerido)), disponible=d.disponible)
+        for d in resultado.repuestos if not d.alcanza
+    ]
 
 
 # ----------------------------------------------------------------- lectura --

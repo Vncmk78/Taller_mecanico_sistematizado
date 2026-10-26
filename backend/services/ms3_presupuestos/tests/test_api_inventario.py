@@ -315,17 +315,17 @@ def test_aprobacion_considera_lo_comprometido_por_otras_ordenes(api: TestClient,
     version = fabricas.nueva_version(db, items=[ItemPresupuesto(
         tipo="repuesto", repuesto=repuesto, descripcion="x", cantidad=Decimal("3"),
         precio_unitario=Decimal("1000"))])
-    faltantes = casos_presupuestos._repuestos_faltantes(version)
+    faltantes = casos_presupuestos._repuestos_faltantes(UnidadDeTrabajo(db), version)
     assert [(f.repuesto_id, f.disponible) for f in faltantes] == [(repuesto.repuesto_id, 2)]
 
     # Si la otra orden libera, alcanza.
     _mover(api, repuesto, "liberacion", 2, otra_orden)
-    assert casos_presupuestos._repuestos_faltantes(version) == []
+    assert casos_presupuestos._repuestos_faltantes(UnidadDeTrabajo(db), version) == []
 
     # Las reservas de la PROPIA orden sí cuentan como disponibles para ella.
     propia = version.presupuesto.orden_id
     _mover(api, repuesto, "compromiso", 3, propia)
-    assert casos_presupuestos._repuestos_faltantes(version) == []
+    assert casos_presupuestos._repuestos_faltantes(UnidadDeTrabajo(db), version) == []
 
 
 # ================================================= concurrencia real (§4.6) ==

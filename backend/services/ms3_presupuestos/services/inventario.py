@@ -126,7 +126,8 @@ def registrar_movimiento(
         previo = uow.movimientos.por_clave_operacion(datos.clave_operacion)
         if previo is not None:
             iguales = (previo.repuesto_id, previo.tipo, previo.cantidad, previo.orden_id) == \
-                      (datos.repuesto_id, datos.tipo, datos.cantidad, datos.orden_id)
+                      (datos.repuesto_id, datos.tipo, datos.cantidad, datos.orden_id) and \
+                      (datos.proveedor_id is None or datos.proveedor_id == previo.proveedor_id)
             if not iguales:
                 raise ConflictoDeDatos(
                     f"La clave_operacion {datos.clave_operacion!r} ya se usó para otro movimiento")
@@ -146,9 +147,15 @@ def registrar_movimiento(
         # 3) Reglas de disponibilidad y nuevo stock.
         repuesto.stock = _nuevo_stock(uow, repuesto, datos)
 
+        # Trazabilidad: el ingreso guarda qué proveedor entregó las unidades.
+        proveedor_id = None
+        if datos.tipo == "ingreso":
+            proveedor_id = datos.proveedor_id or repuesto.proveedor_id
+            uow.proveedores.obtener_o_error(proveedor_id)
         movimiento = uow.movimientos.agregar(MovimientoInventario(
             clave_operacion=datos.clave_operacion, repuesto=repuesto, tipo=datos.tipo,
-            cantidad=datos.cantidad, orden_id=datos.orden_id, registrado_por_id=usuario_id,
+            cantidad=datos.cantidad, orden_id=datos.orden_id, proveedor_id=proveedor_id,
+            registrado_por_id=usuario_id,
         ))
         uow.sesion.refresh(movimiento)
         queda_bajo = esta_bajo_umbral(repuesto.stock, efectivo)
@@ -196,8 +203,8 @@ def _nuevo_stock(uow: UnidadDeTrabajo, repuesto: Repuesto, datos: MovimientoCrea
 
 
 def listar_movimientos(uow: UnidadDeTrabajo, *, repuesto_id: int | None, orden_id: int | None,
-                       tipo: str | None, desde: int, limite: int):
-    filtros = dict(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo)
+                       tipo: str | None, desde: int, limite: int, proveedor_id: int | None = None):
+    filtros = dict(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo, proveedor_id=proveedor_id)
     return (uow.movimientos.contar_busqueda(**filtros),
             uow.movimientos.buscar(**filtros, desde=desde, limite=limite))
 

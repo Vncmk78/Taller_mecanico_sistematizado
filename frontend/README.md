@@ -229,6 +229,30 @@ y arquitectura hexagonal.
   `useEvidenceStore.test.ts` (subir/errores), `ProgressBar.test.tsx`,
   `EvidenceUploadForm.test.tsx` y `OrderEvidencePage.test.tsx`.
 
+### Tarea 15 — Crear pruebas de formularios y flujo de evidencia
+- **Formulario de carga** (`EvidenceUploadForm.validacion.test.tsx`, 19 pruebas):
+  - Validaciones antes de enviar: sin archivo (botón deshabilitado y aviso),
+    tipos no permitidos (PDF, sin tipo), videos aceptados y el límite exacto de
+    **12 MiB** (justo en el límite pasa, un byte más se rechaza).
+  - Datos enviados según el contexto: los cuatro contextos oficiales, la casilla
+    *Visible para el cliente*, y en **presupuesto** la asociación automática
+    (sin casilla, una sola consulta del presupuesto, espera mientras llega y
+    bloqueo si la orden no tiene presupuesto o la consulta falla).
+  - Durante y después de la subida: controles bloqueados y un solo envío,
+    limpieza del archivo tras el éxito, `onSuccess` con la evidencia creada,
+    `Referencia` del error para soporte y reintento después de un fallo.
+- **Flujo completo** (`OrderEvidenceFlow.test.tsx`, 7 pruebas) con un servidor
+  falso en memoria que guarda lo subido, informa el progreso y filtra por
+  visibilidad cuando consulta el cliente:
+  - El mecánico sube y la evidencia aparece en su galería sin recargar.
+  - El cliente ve solo lo marcado como visible; la evidencia de presupuesto
+    queda asociada y siempre visible.
+  - El cliente abre la vista previa de un video recién subido; el personal
+    abre una foto recién subida y la descarga.
+  - Si la subida falla no aparece nada y al reintentar se completa el flujo.
+  - Sin permiso de carga se ve la galería pero no el formulario.
+- Ejecutar: `npx vitest run src/presentation/components/evidence src/presentation/pages/shared`.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en

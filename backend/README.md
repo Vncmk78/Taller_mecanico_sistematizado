@@ -344,6 +344,9 @@ Migración `0007_ms3`. Responde de dónde viene cada repuesto y cada unidad:
 | `GET /inventario/historial-umbral?repuesto_id=&solo_general=` | Cambios de umbral |
 | `POST /inventario/disponibilidad` | `{"orden_id"?, "items": [{"repuesto_id", "cantidad"}]}`: valida **antes de usar** si alcanza el stock (no mueve nada). Por repuesto: stock, reservado para la orden, comprometido por otras, disponible, `alcanza` y `faltan` |
 | `GET /inventario/ordenes/{orden_id}/disponibilidad` | Lo mismo para lo que falta usar del presupuesto aprobado de la orden (requerido − ya consumido); `409` si no tiene presupuesto aprobado |
+| `POST /inventario/ordenes/{orden_id}/reserva` | Reserva lo que falta usar del presupuesto aprobado (todo o nada): `reservado`, `faltantes` y los movimientos. Sirve para reintentar una orden que espera repuestos |
+| `POST /inventario/ordenes/{orden_id}/consumos` | `{"clave_operacion", "items": [...]}`: descuenta varios repuestos usados en la orden, todos o ninguno; misma clave → `200`, `repetido: true` |
+| `POST /inventario/ordenes/{orden_id}/liberacion` | `{"clave_operacion"}`: libera todo lo reservado por la orden (p. ej. al cancelarla) |
 
 **Validación de disponibilidad** (`services/disponibilidad.py`): para una orden,
 disponible = stock − lo comprometido por **otras** órdenes (su propia reserva
@@ -351,6 +354,21 @@ cuenta para ella). Las cantidades decimales del presupuesto se redondean hacia
 arriba (1,5 litros → 2 unidades). Aprobar un presupuesto usa la misma
 validación con los repuestos bloqueados (`FOR UPDATE`, en orden de id) hasta el
 commit, para que dos aprobaciones simultáneas no cuenten las mismas unidades.
+
+**Reglas de reserva, descuento y rechazo** (`services/reservas.py`):
+
+- **Reserva**: al aprobar un presupuesto con stock suficiente se reservan
+  (compromisos) las unidades que falta usar, en la misma transacción de la
+  decisión (`repuestos_reservados` en la respuesta). Si algo no alcanza no se
+  reserva nada y la orden espera repuestos. Una modificación aprobada ajusta la
+  reserva: reserva la diferencia o libera el sobrante.
+- **Descuento**: consumir usa primero lo reservado por la orden y el resto debe
+  estar libre; nunca toma lo reservado por otra orden. Varios repuestos se
+  descuentan juntos o ninguno.
+- **Rechazo**: stock insuficiente responde `409` con `faltantes`
+  (`repuesto_id`, `nombre`, `solicitado`, `disponible`, `faltan`) y no aplica nada.
+- **Saldo reservado** por orden en orden cronológico: un consumo mayor que lo
+  reservado no deja deuda que se coma una reserva posterior.
 
 Cada movimiento responde `alerta: {activa, nueva}`; `nueva` indica que ese
 movimiento dejó el repuesto bajo su umbral (para avisar una sola vez; el envío

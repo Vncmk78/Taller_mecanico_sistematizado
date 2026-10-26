@@ -9,6 +9,12 @@
     GET  /inventario/historial-umbral?repuesto_id=&solo_general=
     POST /inventario/disponibilidad                ¿alcanza el stock para usar estos repuestos?
     GET  /inventario/ordenes/{orden_id}/disponibilidad  ¿alcanza para lo aprobado de la orden?
+    POST /inventario/ordenes/{orden_id}/reserva    reservar lo pendiente del presupuesto aprobado
+    POST /inventario/ordenes/{orden_id}/consumos   descontar varios repuestos (todo o nada)
+    POST /inventario/ordenes/{orden_id}/liberacion liberar todo lo reservado (p. ej. al cancelar)
+
+Stock insuficiente → 409 con `faltantes` (solicitado, disponible, faltan) y no
+se aplica nada de la operación.
 
 Acceso: Mecánico y Administrador leen. Ingresos, ajustes y umbral general:
 solo Administrador. Compromisos, consumos y liberaciones (siempre de una
@@ -24,12 +30,17 @@ from services.ms3_presupuestos.persistencia.repositorios import LIMITE_MAXIMO
 from services.ms3_presupuestos.schemas.inventario import (
     CambioUmbral,
     ConsultaDisponibilidad,
+    ConsumoOrden,
+    LiberacionOrden,
     MovimientoCrear,
     MovimientoSalida,
     PaginaAlertas,
     PaginaMovimientos,
+    RechazoStock,
     ResultadoDisponibilidad,
     ResultadoMovimiento,
+    ResultadoOperacionOrden,
+    ResultadoReserva,
     StockSalida,
     TipoMovimiento,
     UmbralGeneralEntrada,
@@ -37,6 +48,7 @@ from services.ms3_presupuestos.schemas.inventario import (
 )
 from services.ms3_presupuestos.services import disponibilidad
 from services.ms3_presupuestos.services import inventario as casos
+from services.ms3_presupuestos.services import reservas
 from shared.auth import NombreRol, PrincipalAutenticado
 
 router = APIRouter(prefix="/inventario", tags=["inventario"])
@@ -63,8 +75,9 @@ _404_REPUESTOS = status.HTTP_404_NOT_FOUND
     responses={
         **_401, **_403, **_404,
         status.HTTP_200_OK: {"description": "Clave repetida: se devuelve el movimiento original"},
-        status.HTTP_409_CONFLICT: {"description": "Stock insuficiente, liberación mayor a lo "
-                                                  "comprometido o clave usada con otros datos"},
+        status.HTTP_409_CONFLICT: {"model": RechazoStock,
+                                   "description": "Stock insuficiente (con `faltantes`), liberación "
+                                                  "mayor a lo comprometido o clave usada con otros datos"},
         422: {"description": "Datos inválidos"},
     },
 )
@@ -188,3 +201,67 @@ def disponibilidad_de_orden(
     orden_id: int = Path(gt=0), uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
 ) -> ResultadoDisponibilidad:
     return disponibilidad.evaluar_orden(uow, orden_id)
+
+
+_409_STOCK = {status.HTTP_409_CONFLICT: {
+    "model": RechazoStock,
+    "description": "Stock insuficiente: `faltantes` por repuesto; no se aplicó nada"}}
+
+
+@router.post(
+    "/ordenes/{orden_id}/reserva", response_model=ResultadoReserva,
+    summary="Reservar lo que falta usar del presupuesto aprobado (todo o nada)",
+    description=(
+        "Ajusta la reserva de la orden a lo pendiente de su presupuesto aprobado: reserva lo que "
+        "falta y libera lo que sobra. Si algún repuesto no alcanza no reserva nada y responde "
+        "`reservado: false` con los faltantes (la orden sigue esperando repuestos)."
+    ),
+    responses={**_401, **_403, _404_REPUESTOS: {"description": "La orden no tiene presupuesto"},
+               status.HTTP_409_CONFLICT: {"description": "La orden no tiene un presupuesto aprobado"}},
+)
+def reservar(
+    orden_id: int = Path(gt=0), uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal),
+) -> ResultadoReserva:
+    return reservas.reservar_presupuesto_aprobado(uow, orden_id, usuario_id=principal.usuario_id)
+
+
+@router.post(
+    "/ordenes/{orden_id}/consumos", response_model=ResultadoOperacionOrden,
+    status_code=status.HTTP_201_CREATED,
+    summary="Descontar varios repuestos usados en la orden (todo o nada)",
+    description=(
+        "Usa primero lo reservado por la orden y el resto debe estar libre; nunca toma lo "
+        "reservado por otra orden. Reenviar la misma `clave_operacion` devuelve lo ya aplicado "
+        "con 200 y `repetido: true`."
+    ),
+    responses={**_401, **_403, **_409_STOCK,
+               _404_REPUESTOS: {"description": "Algún repuesto no existe"},
+               status.HTTP_200_OK: {"description": "Clave repetida: no se descontó de nuevo"},
+               422: {"description": "Datos inválidos"}},
+)
+def consumir(
+    body: ConsumoOrden, response: Response, orden_id: int = Path(gt=0),
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal),
+) -> ResultadoOperacionOrden:
+    resultado = reservas.consumir_para_orden(
+        uow, orden_id, disponibilidad.requeridos_de_items(body.items),
+        usuario_id=principal.usuario_id, clave_operacion=body.clave_operacion)
+    if resultado.repetido:
+        response.status_code = status.HTTP_200_OK
+    return resultado
+
+
+@router.post(
+    "/ordenes/{orden_id}/liberacion", response_model=ResultadoOperacionOrden,
+    summary="Liberar todo lo reservado por la orden (p. ej. al cancelarla)",
+    responses={**_401, **_403, 422: {"description": "Datos inválidos"}},
+)
+def liberar(
+    body: LiberacionOrden, orden_id: int = Path(gt=0),
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal),
+) -> ResultadoOperacionOrden:
+    return reservas.liberar_orden(uow, orden_id, usuario_id=principal.usuario_id,
+                                  clave_operacion=body.clave_operacion)

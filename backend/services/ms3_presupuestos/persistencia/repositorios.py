@@ -264,21 +264,33 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
     def comprometido_por_orden(self, repuesto_id: int) -> dict[int, int]:
         """Unidades reservadas y aún no usadas, por orden.
 
-        Por orden: compromisos − liberaciones − consumos (nunca menos de 0:
-        un consumo mayor que lo reservado toma el resto del stock libre).
+        Se recorre el historial EN ORDEN (movimiento_id), porque el saldo de una
+        orden nunca baja de 0: un consumo mayor que lo reservado toma el resto
+        del stock libre y no deja "deuda" que se coma una reserva posterior.
+
+            compromiso  saldo += n
+            liberacion  saldo −= n
+            consumo     saldo = max(0, saldo − n)
+
+        (Una suma simple daría mal: consumir 2 sin reserva y después reservar 3
+        dejaría 1 reservada en vez de 3.)
         """
-        saldo = func.sum(case(
-            (MovimientoInventario.tipo == "compromiso", MovimientoInventario.cantidad),
-            (MovimientoInventario.tipo.in_(("liberacion", "consumo")), -MovimientoInventario.cantidad),
-            else_=0,
-        ))
         filas = self.sesion.execute(
-            select(MovimientoInventario.orden_id, saldo)
+            select(MovimientoInventario.orden_id, MovimientoInventario.tipo,
+                   MovimientoInventario.cantidad)
             .where(MovimientoInventario.repuesto_id == repuesto_id,
                    MovimientoInventario.orden_id.is_not(None))
-            .group_by(MovimientoInventario.orden_id)
+            .order_by(MovimientoInventario.movimiento_id)
         ).all()
-        return {orden: int(valor) for orden, valor in filas if valor and valor > 0}
+        saldo: dict[int, int] = {}
+        for orden, tipo, cantidad in filas:
+            actual = saldo.get(orden, 0)
+            if tipo == "compromiso":
+                actual += cantidad
+            else:  # liberacion / consumo
+                actual = max(0, actual - cantidad)
+            saldo[orden] = actual
+        return {orden: valor for orden, valor in saldo.items() if valor > 0}
 
     def _filtro(self, *, repuesto_id: int | None, orden_id: int | None, tipo: str | None,
                 proveedor_id: int | None = None) -> Select:

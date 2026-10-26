@@ -80,7 +80,12 @@ def _error_de_persistencia(_: Request, exc: ErrorDePersistencia) -> JSONResponse
 
     Nunca devuelve SQL ni parámetros: solo el mensaje pensado para el cliente.
     """
-    return JSONResponse(status_code=exc.codigo_http, content={"detail": exc.mensaje})
+    contenido: dict = {"detail": exc.mensaje}
+    # Rechazo por stock insuficiente: detalle de lo que falta por repuesto.
+    faltantes = getattr(exc, "faltantes", None)
+    if faltantes:
+        contenido["faltantes"] = [f.model_dump() for f in faltantes]
+    return JSONResponse(status_code=exc.codigo_http, content=contenido)
 
 
 @app.exception_handler(ServicioOrdenesNoDisponible)

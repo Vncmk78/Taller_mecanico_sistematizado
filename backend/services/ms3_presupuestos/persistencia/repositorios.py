@@ -12,7 +12,7 @@ Reglas del patrón en este servicio:
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Generic, Literal, TypeVar
 
@@ -168,6 +168,23 @@ class RepositorioRepuestos(RepositorioBase[Repuesto]):
         if repuesto is None:
             raise RecursoNoEncontrado(f"Repuesto {repuesto_id} no existe")
         return repuesto
+
+    def bloquear_varios(self, repuesto_ids: Iterable[int]) -> dict[int, Repuesto]:
+        """Bloquea (FOR UPDATE) varios repuestos SIEMPRE en orden de id.
+
+        Si dos transacciones bloquean los mismos repuestos, ambas lo hacen en el
+        mismo orden: la segunda espera a la primera en vez de quedar en un
+        interbloqueo (deadlock) con ella. Los inexistentes no aparecen.
+        """
+        ids = sorted(set(repuesto_ids))
+        if not ids:
+            return {}
+        consulta = (
+            select(Repuesto).where(Repuesto.repuesto_id.in_(ids))
+            .order_by(Repuesto.repuesto_id).with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return {r.repuesto_id: r for r in self.sesion.scalars(consulta)}
 
     def con_nombre_similar(
         self, proveedor_id: int, nombre: str, *, excepto: int | None = None

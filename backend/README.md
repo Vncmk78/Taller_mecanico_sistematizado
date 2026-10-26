@@ -370,6 +370,14 @@ commit, para que dos aprobaciones simultáneas no cuenten las mismas unidades.
 - **Saldo reservado** por orden en orden cronológico: un consumo mayor que lo
   reservado no deja deuda que se coma una reserva posterior.
 
+**Pruebas de límites de stock** (`tests/test_stock_insuficiente_exacto_multiple.py`):
+para cada forma de usar stock (consumo, compromiso, ajuste, aprobación, validación
+y descuento de varios repuestos), el stock exacto se acepta y deja 0, y una
+unidad más responde `409` con `faltan = 1` sin cambiar nada. También el consumo
+de varias unidades (un movimiento, varios pasos hasta agotar, reservado + libre,
+varios repuestos) y en paralelo: dos descuentos del stock exacto (solo pasa uno)
+y descuentos cruzados `[A, B]` / `[B, A]` sin interbloqueo.
+
 Cada movimiento responde `alerta: {activa, nueva}`; `nueva` indica que ese
 movimiento dejó el repuesto bajo su umbral (para avisar una sola vez; el envío
 del aviso lo hará MS1). Todas las operaciones de stock bloquean el repuesto

@@ -118,8 +118,11 @@ class RepositorioProveedores(RepositorioBase[Proveedor]):
             consulta = consulta.where(Proveedor.proveedor_id != excepto)
         return self.sesion.scalar(consulta)
 
-    def _filtro(self, texto: str | None, con_repuestos: bool | None) -> Select:
+    def _filtro(self, texto: str | None, con_repuestos: bool | None,
+                tipo_distribuidor: str | None = None) -> Select:
         consulta = select(Proveedor)
+        if tipo_distribuidor is not None:
+            consulta = consulta.where(Proveedor.tipo_distribuidor == tipo_distribuidor)
         if texto and texto.strip():
             # Índices ix_proveedor_nombre_trgm / ix_proveedor_contacto_trgm.
             consulta = consulta.where(contiene_texto(Proveedor.nombre, texto)
@@ -130,18 +133,19 @@ class RepositorioProveedores(RepositorioBase[Proveedor]):
         return consulta
 
     def buscar(self, *, texto: str | None = None, con_repuestos: bool | None = None,
+               tipo_distribuidor: str | None = None,
                desde: int = 0, limite: int = 50) -> Sequence[Proveedor]:
         limite = max(1, min(limite, LIMITE_MAXIMO))
         # Orden = índice ix_proveedor_nombre_orden (lower(nombre), proveedor_id).
-        consulta = (self._filtro(texto, con_repuestos)
+        consulta = (self._filtro(texto, con_repuestos, tipo_distribuidor)
                     .order_by(func.lower(Proveedor.nombre), Proveedor.proveedor_id)
                     .offset(max(desde, 0)).limit(limite))
         return self.sesion.scalars(consulta).all()
 
-    def contar_busqueda(self, *, texto: str | None = None, con_repuestos: bool | None = None) -> int:
-        return self.sesion.scalar(
-            select(func.count()).select_from(self._filtro(texto, con_repuestos).subquery())
-        ) or 0
+    def contar_busqueda(self, *, texto: str | None = None, con_repuestos: bool | None = None,
+                        tipo_distribuidor: str | None = None) -> int:
+        filtro = self._filtro(texto, con_repuestos, tipo_distribuidor)
+        return self.sesion.scalar(select(func.count()).select_from(filtro.subquery())) or 0
 
 
 class RepositorioRepuestos(RepositorioBase[Repuesto]):
@@ -276,8 +280,11 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
         ).all()
         return {orden: int(valor) for orden, valor in filas if valor and valor > 0}
 
-    def _filtro(self, *, repuesto_id: int | None, orden_id: int | None, tipo: str | None) -> Select:
+    def _filtro(self, *, repuesto_id: int | None, orden_id: int | None, tipo: str | None,
+                proveedor_id: int | None = None) -> Select:
         consulta = select(MovimientoInventario)
+        if proveedor_id is not None:
+            consulta = consulta.where(MovimientoInventario.proveedor_id == proveedor_id)
         if repuesto_id is not None:
             consulta = consulta.where(MovimientoInventario.repuesto_id == repuesto_id)
         if orden_id is not None:
@@ -288,11 +295,12 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
 
     def buscar(
         self, *, repuesto_id: int | None = None, orden_id: int | None = None,
-        tipo: str | None = None, desde: int = 0, limite: int = 50,
+        tipo: str | None = None, proveedor_id: int | None = None, desde: int = 0, limite: int = 50,
     ) -> Sequence[MovimientoInventario]:
         """Más recientes primero."""
         limite = max(1, min(limite, LIMITE_MAXIMO))
-        consulta = (self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo)
+        consulta = (self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo,
+                                 proveedor_id=proveedor_id)
                     .order_by(MovimientoInventario.fecha_hora.desc(),
                               MovimientoInventario.movimiento_id.desc())
                     .offset(max(desde, 0)).limit(limite))
@@ -300,8 +308,10 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
 
     def contar_busqueda(
         self, *, repuesto_id: int | None = None, orden_id: int | None = None, tipo: str | None = None,
+        proveedor_id: int | None = None,
     ) -> int:
-        consulta = self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo)
+        consulta = self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo,
+                                proveedor_id=proveedor_id)
         return self.sesion.scalar(select(func.count()).select_from(consulta.subquery())) or 0
 
     def de_orden(self, orden_id: int) -> Sequence[MovimientoInventario]:

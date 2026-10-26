@@ -301,6 +301,33 @@ El **stock no se edita** por estos endpoints: cambia solo con movimientos de
 inventario. Un proveedor no puede tener dos repuestos con el mismo nombre
 (migración `0005_ms3`: índice único `(proveedor_id, lower(nombre))`).
 
+### Trazabilidad Repuesto–Proveedor/Distribuidor (MS3)
+
+Migración `0007_ms3`. Responde de dónde viene cada repuesto y cada unidad:
+
+- **Tipo de distribuidor**: `tipo_distribuidor` = `oficial` (de la marca) o
+  `generico` en proveedores (por defecto `generico`). Filtro
+  `GET /proveedores?tipo_distribuidor=oficial` y `proveedor_tipo_distribuidor`
+  en cada repuesto.
+- **Historial de proveedores** (`historial_proveedor_repuesto`): el alta y cada
+  cambio de proveedor de un repuesto, con el administrador y la `observacion`
+  del `PATCH /repuestos/{id}`. Lo escribe el modelo (eventos del ORM), así
+  ninguna vía de creación se lo salta.
+- **Proveedor de cada ingreso** (`movimiento_inventario.proveedor_id`): por
+  defecto el proveedor actual del repuesto; se puede indicar otro en el ingreso
+  (compra puntual). La base exige proveedor en los ingresos y solo en ellos.
+  Las unidades ingresadas siguen asociadas a quien las entregó aunque el
+  repuesto cambie de proveedor.
+- Un **proveedor que figura en la trazabilidad** (historial o ingresos) no se
+  elimina (`409`). Un repuesto que nunca se usó sí se puede eliminar, y su
+  historial se va con él.
+
+| Método y ruta | Qué devuelve |
+|---|---|
+| `GET /repuestos/{id}/trazabilidad` | Proveedor actual, historial de proveedores, ingresos por proveedor (cantidad, unidades, primero y último) y uso por orden (reservado y consumido) |
+| `GET /proveedores/{id}/trazabilidad` | Repuestos que abastece (`actual: true`) o abasteció, con las unidades que entregó de cada uno |
+| `GET /inventario/movimientos?proveedor_id=` | Ingresos entregados por ese proveedor |
+
 ### Inventario y stock (MS3)
 
 - **stock**: unidades físicas. Solo lo cambian `ingreso`, `ajuste` y `consumo`.

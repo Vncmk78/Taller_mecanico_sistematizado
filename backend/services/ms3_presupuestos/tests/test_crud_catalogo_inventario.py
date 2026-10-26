@@ -111,7 +111,8 @@ def test_ciclo_crud_completo_de_proveedor(api: TestClient, db: Session) -> None:
     creado = _crear_proveedor(api, nombre)
     pid = creado["proveedor_id"]
     assert creado == {"proveedor_id": pid, "nombre": nombre,
-                      "contacto": "crud@prueba.cl", "cantidad_repuestos": 0}
+                      "contacto": "crud@prueba.cl", "tipo_distribuidor": "generico",
+                      "cantidad_repuestos": 0}
     assert db.get(Proveedor, pid).nombre == nombre
 
     # Leer (detalle) y listar
@@ -199,7 +200,8 @@ def test_detalle_de_proveedor_lista_sus_repuestos_ordenados(api: TestClient) -> 
     assert all(r["proveedor_id"] == pid for r in detalle["repuestos"])
 
 
-def test_proveedor_se_elimina_tras_reasignar_sus_repuestos(api: TestClient, db: Session) -> None:
+def test_proveedor_que_abastecio_repuestos_no_se_elimina(api: TestClient, db: Session) -> None:
+    """Trazabilidad (0007_ms3): aunque ya no tenga repuestos, queda en su historial."""
     origen = _crear_proveedor(api)
     destino = _crear_proveedor(api)
     repuesto = _crear_repuesto(api, origen["proveedor_id"])
@@ -208,12 +210,12 @@ def test_proveedor_se_elimina_tras_reasignar_sus_repuestos(api: TestClient, db: 
     r = api.patch(f"/repuestos/{repuesto['repuesto_id']}", headers=ADMIN,
                   json={"proveedor_id": destino["proveedor_id"]})
     assert r.status_code == 200 and r.json()["proveedor_nombre"] == destino["nombre"]
-    assert api.delete(f"/proveedores/{origen['proveedor_id']}", headers=ADMIN).status_code == 204
 
+    r = api.delete(f"/proveedores/{origen['proveedor_id']}", headers=ADMIN)
+    assert r.status_code == 409 and "trazabilidad" in r.json()["detail"]
     db.expire_all()
     assert db.get(Repuesto, repuesto["repuesto_id"]).proveedor_id == destino["proveedor_id"]
-    detalle = api.get(f"/proveedores/{destino['proveedor_id']}", headers=MECANICO).json()
-    assert detalle["cantidad_repuestos"] == 1
+    assert db.get(Proveedor, origen["proveedor_id"]) is not None
 
 
 # ================================================================== REPUESTOS ==

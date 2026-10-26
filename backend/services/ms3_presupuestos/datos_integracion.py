@@ -16,6 +16,7 @@ todos los casos de inventario:
     stock corregido con un ajuste          Filtro de aire
     búsqueda con tildes y eñes             Importadora Ñuble / Bujía
     proveedor sin repuestos                Neumáticos Cautín
+    distribuidor oficial                   Electro Auto Sur (el resto, genéricos)
 
 Las EXISTENCIAS no se escriben a mano: cada repuesto declara la secuencia de
 movimientos (ingreso, ajuste, compromiso, consumo, liberación) que explica su
@@ -78,6 +79,7 @@ class ProveedorIntegracion:
     nombre: str
     contacto: str
     repuestos: tuple[RepuestoIntegracion, ...] = ()
+    tipo_distribuidor: str = "generico"  # "oficial" o "generico"
 
 
 def _ingreso(n: int) -> MovimientoDato:
@@ -106,6 +108,7 @@ CATALOGO_INTEGRACION: tuple[ProveedorIntegracion, ...] = (
             RepuestoIntegracion("Bujía de iridio", (_ingreso(5),)),
             RepuestoIntegracion("Alternador reacondicionado", (_ingreso(1),), umbral_particular=2),
         ),
+        tipo_distribuidor="oficial",
     ),
     ProveedorIntegracion(
         "Suspensiones Pérez",

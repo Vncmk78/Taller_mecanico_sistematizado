@@ -2,6 +2,7 @@
 
 MER (recuadro "BD MS3"):
   MOVIMIENTO_INVENTARIO(movimiento_id PK, clave_operacion UK, repuesto_id FK,
+                        proveedor_id? FK (solo ingresos),
                         orden_id? REF → MS2, tipo, cantidad, fecha_hora,
                         registrado_por_id REF → MS1)
   PARAMETRO_INVENTARIO(parametro_id PK, umbral_general,
@@ -33,7 +34,9 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    event,
     func,
+    select,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -68,6 +71,13 @@ class MovimientoInventario(Base):
         ),
         CheckConstraint("orden_id is null or orden_id > 0", name="orden_positiva"),
         CheckConstraint("registrado_por_id > 0", name="registrado_por_positivo"),
+        # Trazabilidad: todo ingreso dice qué proveedor entregó las unidades;
+        # los demás movimientos no llevan proveedor.
+        CheckConstraint(
+            "(tipo = 'ingreso' and proveedor_id is not null) or "
+            "(tipo <> 'ingreso' and proveedor_id is null)",
+            name="proveedor_solo_en_ingreso",
+        ),
         # Consulta típica: "compromisos/consumos de la orden X".
         Index("ix_movimiento_inventario_orden_id", "orden_id"),
     )
@@ -81,6 +91,9 @@ class MovimientoInventario(Base):
         index=True,
         nullable=False,
     )
+    # Proveedor que entregó las unidades (solo en ingresos).
+    proveedor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("proveedor.proveedor_id", ondelete="RESTRICT"), nullable=True, index=True)
     # REF lógica a OrdenTrabajo (MS2). Sin ForeignKey a propósito (§8).
     orden_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tipo: Mapped[str] = mapped_column(String(12), nullable=False)
@@ -137,3 +150,15 @@ class ParametroInventario(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<ParametroInventario umbral_general={self.umbral_general}>"
+
+
+@event.listens_for(MovimientoInventario, "before_insert")
+def _proveedor_del_ingreso(_mapper, connection, movimiento: MovimientoInventario) -> None:
+    """Un ingreso sin proveedor explícito lo recibe del proveedor actual del repuesto."""
+    if movimiento.tipo != "ingreso" or movimiento.proveedor_id is not None:
+        return
+    from services.ms3_presupuestos.models.proveedor import Repuesto
+
+    repuesto_id = movimiento.repuesto_id or (movimiento.repuesto and movimiento.repuesto.repuesto_id)
+    movimiento.proveedor_id = connection.scalar(
+        select(Repuesto.proveedor_id).where(Repuesto.repuesto_id == repuesto_id))

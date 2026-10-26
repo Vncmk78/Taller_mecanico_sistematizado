@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,6 +23,46 @@ class AsignacionMecanicoActualizar(BaseModel):
 
     mecanico_id: int = Field(gt=0)
     observacion: str | None = Field(default=None, min_length=1)
+
+
+class CapacidadMecanicoActualizar(BaseModel):
+    """Límite administrativo de órdenes activas asignadas a cada mecánico."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_ordenes_activas: int = Field(gt=0, strict=True)
+
+
+class CapacidadMecanicoRespuesta(BaseModel):
+    """Límite vigente y carga que supera el valor recién configurado."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    max_ordenes_activas: int | None
+    actualizado_por_id: int | None
+    actualizado_en: datetime
+    mecanicos_sobre_limite: list[dict[str, int]]
+
+
+class CupoDiarioIngresosActualizar(BaseModel):
+    """Límite administrativo de ingresos físicos por jornada local."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_ingresos_diarios: int = Field(gt=0, strict=True)
+
+
+class CupoDiarioIngresosRespuesta(BaseModel):
+    """Configuración diaria y uso del cupo en la jornada local actual."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    max_ingresos_diarios: int | None
+    actualizado_por_id: int | None
+    actualizado_en: datetime
+    jornada_local: date
+    ingresos_registrados: int
+    sobre_limite: bool
 
 
 class OrdenRespuesta(BaseModel):
@@ -53,7 +93,7 @@ class EntregaSolicitud(BaseModel):
 
 
 class CancelacionClienteSolicitud(BaseModel):
-    """Motivo obligatorio con el que el cliente cancela su orden."""
+    """Motivo obligatorio con el que el cliente solicita cancelar su orden."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
@@ -61,6 +101,22 @@ class CancelacionClienteSolicitud(BaseModel):
         min_length=1,
         description="Motivo de la cancelación; no puede estar vacío.",
     )
+
+
+class SolicitudCancelacionRespuesta(BaseModel):
+    """Solicitud con actor y tiempos para revisión administrativa."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    solicitud_id: int
+    orden_id: int
+    cliente_usuario_id: int
+    estado_al_solicitar: int
+    motivo: str
+    estado: Literal["pendiente", "confirmada"]
+    solicitada_en: datetime
+    administrador_id: int | None
+    confirmada_en: datetime | None
 
 
 class CambioEstadoSolicitud(BaseModel):

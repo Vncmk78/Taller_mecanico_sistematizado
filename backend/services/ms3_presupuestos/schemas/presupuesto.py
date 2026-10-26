@@ -15,7 +15,10 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from shared.contratos_decisiones import AplicacionDecisionRespuesta
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta,
+    AplicacionEnvioPresupuestoRespuesta,
+)
 
 TipoItem = Literal["repuesto", "mano_de_obra"]
 EstadoVersion = Literal["borrador", "enviada", "aprobada", "rechazada"]
@@ -188,4 +191,4 @@ class ResultadoOperacion(BaseModel):
     efecto_en_orden: EfectoOrden | None
     repuestos_faltantes: list[RepuestoFaltante] = []
     decision_id: int | None = None
-    aplicacion_en_orden: AplicacionDecisionRespuesta | None = None
+    aplicacion_en_orden: AplicacionDecisionRespuesta | AplicacionEnvioPresupuestoRespuesta | None = None

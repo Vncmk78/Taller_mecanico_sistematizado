@@ -121,15 +121,23 @@ Base: `https://tallerconect.vercel.app`
 ## 3. Usuarios de prueba (web y móvil)
 
 Usuarios sembrados con `backend/scripts/seed_usuarios_prueba.py` (idempotente).
-Ya están creados en Neon.
+Cubre los tres roles y las siete combinaciones posibles entre ellos, para poder
+probar cada papel por separado y en cuentas multirol.
 
 | Rol | Correo | Contraseña |
 | --- | --- | --- |
 | **Cliente** | `cliente@pruebas.cl` | `ClientePrueba123!` |
 | **Mecánico** | `mecanico@pruebas.cl` | `MecanicoPrueba123!` |
 | **Administrador** | `administrador@pruebas.cl` | `AdminPrueba123!` |
+| **Cliente + Mecánico** | `cliente-mecanico@pruebas.cl` | `ClienteMecanicoPrueba123!` |
+| **Cliente + Administrador** | `cliente-administrador@pruebas.cl` | `ClienteAdministradorPrueba123!` |
+| **Mecánico + Administrador** | `mecanico-administrador@pruebas.cl` | `MecanicoAdministradorPrueba123!` |
+| **Cliente + Mecánico + Administrador** | `cliente-mecanico-administrador@pruebas.cl` | `ClienteMecanicoAdministradorPrueba123!` |
 
-- El usuario **Cliente** tiene perfil creado en MS2 (para usar `/api/vehiculos/mios`).
+- Las siete cuentas están creadas en Neon (seed ejecutado el 2026-10-20; volver
+  a correrlo solo las re-hashea y las re-activa, nunca duplica).
+- Toda cuenta con el rol **Cliente** tiene perfil creado en MS2 (requisito de
+  `GET /api/vehiculos`, que lista los vehículos propios).
 - Los roles provienen de la migración `0002_roles_iniciales_ms1`
   (`cliente`, `mecanico`, `administrador`).
 
@@ -180,7 +188,7 @@ python scripts/seed_usuarios_prueba.py
 ```
 
 > Estado actual de la BD en producción: **migraciones MS1/MS2/MS3 aplicadas** y
-> **seed ejecutado** (clientes de prueba ya creados).
+> **seed ejecutado con las siete cuentas de la §3** (2026-10-20).
 
 ---
 

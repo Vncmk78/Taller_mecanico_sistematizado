@@ -3,9 +3,9 @@
 INT-32 aporta el alta en estado ``Recibido`` y la visibilidad por recurso.
 INT-33 agrega la asignación y reasignación auditada del mecánico. La primera
 asignación de una orden recibida la deja esperando diagnóstico; las posteriores
-no cambian automáticamente el estado. La validación remota del rol del destino
-y la capacidad configurable siguen pendientes porque su infraestructura todavía
-no está disponible.
+no cambian automáticamente el estado. La asignación valida y audita la
+capacidad configurable del mecánico en la base propia de MS2. La validación
+remota del rol del destino continúa pendiente de contrato con MS1.
 """
 
 from __future__ import annotations
@@ -30,28 +30,60 @@ from services.ms2_taller.models.cliente import Cliente
 from services.ms2_taller.integracion_ms3 import (
     DecisionNoAplicableError,
     DecisionNoVisibleError,
+    EnvioPresupuestoNoVisibleError,
+    EnvioPresupuestoNoAplicableError,
     ServicioPresupuestosNoDisponibleError,
+    VerificadorAprobacionInicial,
     VerificadorDecisiones,
+    VerificadorEnviosPresupuesto,
 )
 from services.ms2_taller.models.estado_orden import CANCELADO, RECIBIDO
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
+from services.ms2_taller.models.solicitud_cancelacion import SolicitudCancelacion
 from services.ms2_taller.models.vehiculo import Vehiculo
+from services.ms2_taller.services.capacidad_mecanicos import (
+    validar_capacidad_para_asignacion,
+)
+from services.ms2_taller.services.cupo_ingresos import (
+    CupoDiarioExcedidoError,
+    CupoDiarioNoConfiguradoError,
+    PersistenciaCupoIngresosError,
+    registrar_validacion_cupo_aceptada,
+    validar_cupo_para_nuevo_ingreso,
+)
 from shared.auth import NombreRol, PrincipalAutenticado
-from shared.contratos_decisiones import AplicacionDecisionRespuesta
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta,
+    AplicacionEnvioPresupuestoRespuesta,
+)
 
 
-# Solo eventos con una operación existente que verifica su hecho de negocio.
-# Las demás brechas del PATCH se conservan pendientes de definición explícita.
+# El PATCH solo permite las transiciones cuyo hecho de negocio puede comprobar
+# por sí mismo. Los eventos sin operación coordinadora quedan bloqueados hasta
+# que su flujo específico se implemente.
 _OPERACIONES_ESPECIFICAS_POR_EVENTO = {
     EventoOrden.PRIMERA_ASIGNACION: "PUT /ordenes/{orden_id}/mecanico",
+    EventoOrden.ENVIO_PRIMER_PRESUPUESTO:
+        "POST /ordenes/{orden_id}/envios-presupuesto",
     EventoOrden.PRIMERA_APROBACION_CON_REPUESTOS:
         "POST /ordenes/{orden_id}/decisiones-presupuesto",
     EventoOrden.PRIMERA_APROBACION_SIN_REPUESTOS:
         "POST /ordenes/{orden_id}/decisiones-presupuesto",
     EventoOrden.ENTREGA_FISICA: "POST /ordenes/{orden_id}/entrega",
+}
+
+_EVENTOS_SIN_OPERACION_FUNCIONAL = {
+    EventoOrden.DISPONIBILIDAD_REPUESTOS:
+        "La disponibilidad de repuestos aún no tiene una operación verificada",
+    EventoOrden.ENTREGA_FISICA:
+        "La entrega requiere el registro válido de entrega, aún no disponible",
+    EventoOrden.RECHAZO_PRIMER_PRESUPUESTO:
+        "Usa la operación específica de decisión del presupuesto",
+    EventoOrden.CANCELACION_SOLICITADA_CONFIRMADA:
+        "La cancelación requiere su flujo de negocio específico, aún no disponible",
 }
 
 
@@ -87,6 +119,136 @@ class OrdenObservacionInvalidaError(Exception):
     """La observación está vacía o falta el motivo de una cancelación."""
 
 
+def listar_solicitudes_cancelacion_pendientes(db: Session) -> list[SolicitudCancelacion]:
+    return list(db.scalars(
+        select(SolicitudCancelacion)
+        .where(SolicitudCancelacion.estado == "pendiente")
+        .order_by(SolicitudCancelacion.solicitada_en, SolicitudCancelacion.solicitud_id)
+    ))
+
+
+def solicitar_cancelacion_orden(
+    db: Session, *, orden_id: int, principal: PrincipalAutenticado, token: str,
+    motivo: str, verificador: VerificadorAprobacionInicial,
+) -> tuple[SolicitudCancelacion, bool]:
+    """Registra la solicitud del propietario sin cambiar el estado de la orden."""
+    if NombreRol.CLIENTE not in principal.roles:
+        raise OrdenEstadoNoAutorizadoError("Se requiere rol Cliente")
+    motivo = motivo.strip()
+    if not motivo:
+        raise OrdenObservacionInvalidaError("El motivo de cancelación no puede estar vacío")
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        propietario = db.scalar(
+            select(Cliente.usuario_id)
+            .join(Vehiculo, Vehiculo.cliente_id == Cliente.cliente_id)
+            .where(Vehiculo.vehiculo_id == orden.vehiculo_id)
+        )
+        if propietario != principal.usuario_id:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        existente = db.scalar(select(SolicitudCancelacion).where(
+            SolicitudCancelacion.orden_id == orden_id,
+        ).with_for_update())
+        if existente is not None:
+            if (existente.cliente_usuario_id == principal.usuario_id
+                    and existente.motivo == motivo):
+                db.commit()
+                return existente, False
+            raise OrdenTransicionNoPermitidaError(
+                "La orden ya tiene una solicitud de cancelación"
+            )
+        if orden.estado_codigo not in (1, 2, 3):
+            raise OrdenTransicionNoPermitidaError(
+                "La cancelación solo se puede solicitar antes de la primera aprobación"
+            )
+        aprobacion = verificador.consultar(orden_id, token)
+        if aprobacion.aprobacion_registrada:
+            raise OrdenTransicionNoPermitidaError(
+                "No se puede cancelar: ya existe una aprobación inicial del presupuesto"
+            )
+        solicitud = SolicitudCancelacion(
+            orden_id=orden_id,
+            cliente_usuario_id=principal.usuario_id,
+            estado_al_solicitar=orden.estado_codigo,
+            motivo=motivo,
+        )
+        db.add(solicitud)
+        db.flush()
+        db.refresh(solicitud)
+        db.commit()
+        return solicitud, True
+    except (OrdenNoEncontradaError, OrdenEstadoNoAutorizadoError,
+            OrdenObservacionInvalidaError, OrdenTransicionNoPermitidaError,
+            DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible registrar la solicitud de cancelación") from exc
+
+
+def confirmar_cancelacion_orden(
+    db: Session, *, orden_id: int, principal: PrincipalAutenticado, token: str,
+    verificador: VerificadorAprobacionInicial,
+) -> OrdenTrabajo:
+    """El Administrador confirma la solicitud y vuelve a verificar MS3 antes de cancelar."""
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise OrdenEstadoNoAutorizadoError("Se requiere rol Administrador")
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        solicitud = db.scalar(select(SolicitudCancelacion).where(
+            SolicitudCancelacion.orden_id == orden_id,
+        ).with_for_update())
+        if solicitud is None:
+            raise OrdenTransicionNoPermitidaError(
+                "No existe una solicitud de cancelación pendiente"
+            )
+        if solicitud.estado == "confirmada" and orden.estado_codigo == CANCELADO:
+            db.commit()
+            return orden
+        if solicitud.estado != "pendiente" or orden.estado_codigo not in (1, 2, 3):
+            raise OrdenTransicionNoPermitidaError(
+                "La solicitud ya no se puede confirmar en el estado actual"
+            )
+        aprobacion = verificador.consultar(orden_id, token)
+        if aprobacion.aprobacion_registrada:
+            raise OrdenTransicionNoPermitidaError(
+                "No se puede confirmar: existe una aprobación inicial del presupuesto"
+            )
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.CANCELACION_SOLICITADA_CONFIRMADA,
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+        anterior = orden.estado_codigo
+        orden.estado_codigo = destino
+        solicitud.estado = "confirmada"
+        solicitud.administrador_id = principal.usuario_id
+        solicitud.confirmada_en = func.now()
+        registrar_historial_estado(
+            db, orden_id=orden_id, estado_anterior=anterior, estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id, origen="usuario",
+            observacion=solicitud.motivo,
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (OrdenNoEncontradaError, OrdenEstadoNoAutorizadoError,
+            OrdenTransicionNoPermitidaError, DecisionNoVisibleError,
+            ServicioPresupuestosNoDisponibleError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible confirmar la cancelación") from exc
+
+
 def registrar_historial_estado(
     db: Session,
     *,
@@ -97,6 +259,7 @@ def registrar_historial_estado(
     origen: str,
     observacion: str | None = None,
     decision_presupuesto_id: int | None = None,
+    envio_presupuesto_id: int | None = None,
 ) -> HistorialEstado:
     """Agrega el cambio de estado a la sesión sin confirmar la transacción.
 
@@ -126,6 +289,7 @@ def registrar_historial_estado(
         origen=origen,
         observacion=observacion,
         decision_presupuesto_id=decision_presupuesto_id,
+        envio_presupuesto_id=envio_presupuesto_id,
     )
     db.add(historial)
     return historial
@@ -165,8 +329,9 @@ def crear_orden(
 ) -> OrdenTrabajo:
     """Crea ingreso, orden e historial inicial dentro de una transacción.
 
-    Si ya existe una estancia abierta para el vehículo, se reutiliza. La
-    comprobación del cupo diario configurable queda deliberadamente pendiente.
+    Si ya existe una estancia abierta para el vehículo, se reutiliza sin
+    consumir otro cupo diario. Un nuevo ingreso valida y audita el límite antes
+    de registrarse.
     """
 
     try:
@@ -190,12 +355,22 @@ def crear_orden(
             .limit(1)
         )
         if ingreso is None:
+            validacion_cupo = validar_cupo_para_nuevo_ingreso(
+                db,
+                vehiculo_id=vehiculo_id,
+                administrador_id=administrador_id,
+            )
             ingreso = IngresoVehiculo(
                 vehiculo_id=vehiculo_id,
                 registrado_por_id=administrador_id,
             )
             db.add(ingreso)
             db.flush()
+            registrar_validacion_cupo_aceptada(
+                db,
+                validacion=validacion_cupo,
+                ingreso_id=ingreso.ingreso_id,
+            )
 
         estado_inicial = resolver_transicion(None, EventoOrden.CREACION)
         orden = OrdenTrabajo(
@@ -223,6 +398,13 @@ def crear_orden(
     except VehiculoNoEncontradoError:
         db.rollback()
         raise
+    except (CupoDiarioNoConfiguradoError, CupoDiarioExcedidoError):
+        # Los rechazos ya confirmaron su auditoría y no cambiaron ingreso/orden.
+        db.rollback()
+        raise
+    except PersistenciaCupoIngresosError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible validar el cupo diario") from exc
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaOrdenError("No fue posible crear la orden") from exc
@@ -242,8 +424,9 @@ def asignar_mecanico(
     una operación concurrente sobre la misma orden observa el responsable que
     haya confirmado la operación anterior. En la primera asignación, una orden
     ``Recibida`` pasa a ``Esperando diagnóstico`` y se auditan ambos cambios.
-    La comprobación remota del rol del destino y la capacidad configurable quedan
-    deliberadamente fuera de INT-33.
+    La operación valida la capacidad configurada del mecánico de destino y deja
+    constancia del resultado. La verificación remota del rol del destino sigue
+    pendiente del contrato correspondiente con MS1.
     """
 
     try:
@@ -263,6 +446,14 @@ def asignar_mecanico(
             # sin emitir UPDATE ni insertar una fila de historial.
             db.commit()
             return orden
+
+        validar_capacidad_para_asignacion(
+            db,
+            orden_id=orden.orden_id,
+            mecanico_anterior_id=mecanico_anterior_id,
+            mecanico_id=mecanico_id,
+            administrador_id=administrador_id,
+        )
 
         orden.mecanico_actual_id = mecanico_id
         db.add(
@@ -405,22 +596,37 @@ def cambiar_estado_orden(
         except TransicionOrdenNoPermitidaError as exc:
             raise OrdenTransicionNoPermitidaError(str(exc)) from exc
 
+        # El contrato existente exige motivo para Cancelado. Mantener primero
+        # ese error de validación (422); un motivo válido no sustituye el flujo
+        # de negocio de rechazo/cancelación, que se bloquea más abajo.
+        if estado_destino == CANCELADO:
+            if observacion is None:
+                raise OrdenObservacionInvalidaError(
+                    "Toda transición a Cancelado requiere una observación o motivo no vacío"
+                )
+            if not observacion.strip():
+                raise OrdenObservacionInvalidaError(
+                    "La observación no puede estar vacía ni contener solo espacios"
+                )
+
         for (origen, evento), destino in TRANSICIONES_PERMITIDAS.items():
             if origen == orden.estado_codigo and destino == estado_destino:
                 operacion = _OPERACIONES_ESPECIFICAS_POR_EVENTO.get(evento)
                 if operacion is not None:
-                    # Permitir 1->2 vía PATCH cuando la orden ya está asignada
-                    if (
-                        origen == 1  # RECIBIDO
-                        and evento == EventoOrden.PRIMERA_ASIGNACION
-                        and destino == 2  # ESPERANDO_DIAGNOSTICO
-                        and orden.mecanico_actual_id is not None
-                    ):
-                        operacion = None
-                    if operacion is not None:
-                        raise OrdenTransicionNoPermitidaError(
-                            f"Esta transición requiere la operación específica {operacion}"
-                        )
+                    raise OrdenTransicionNoPermitidaError(
+                        f"Esta transición requiere la operación específica {operacion}"
+                    )
+                motivo_bloqueo = _EVENTOS_SIN_OPERACION_FUNCIONAL.get(evento)
+                if motivo_bloqueo is not None:
+                    raise OrdenTransicionNoPermitidaError(motivo_bloqueo)
+
+                if evento == EventoOrden.FINALIZACION_TRABAJO and not (
+                    NombreRol.MECANICO in principal.roles
+                    and orden.mecanico_actual_id == principal.usuario_id
+                ):
+                    raise OrdenEstadoNoAutorizadoError(
+                        "Solo el mecánico asignado puede finalizar el trabajo"
+                    )
 
         estado_anterior = orden.estado_codigo
         orden.estado_codigo = estado_destino
@@ -516,70 +722,6 @@ def registrar_entrega(
         ) from exc
 
 
-def cancelar_orden_cliente(
-    db: Session,
-    *,
-    orden_id: int,
-    principal: PrincipalAutenticado,
-    motivo: str,
-) -> OrdenTrabajo:
-    """Cancela la orden a solicitud de su cliente propietario (estados 1 a 3).
-
-    El cliente solo cancela sus propias órdenes mientras el taller no haya
-    iniciado la reparación; el motivo es obligatorio y se audita como
-    observación del historial. Una orden ajena responde el mismo recurso ausente.
-    """
-
-    if NombreRol.CLIENTE not in principal.roles:
-        raise OrdenEstadoNoAutorizadoError("Se requiere rol Cliente")
-    try:
-        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
-        if orden is None:
-            raise OrdenNoEncontradaError("Orden no encontrada")
-
-        propietario = db.scalar(
-            select(Cliente.usuario_id)
-            .join(Vehiculo, Vehiculo.cliente_id == Cliente.cliente_id)
-            .where(Vehiculo.vehiculo_id == orden.vehiculo_id)
-        )
-        if propietario != principal.usuario_id:
-            raise OrdenNoEncontradaError("Orden no encontrada")
-
-        try:
-            destino = resolver_transicion(
-                orden.estado_codigo, EventoOrden.CANCELACION_SOLICITADA_CONFIRMADA
-            )
-        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
-            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
-
-        estado_anterior = orden.estado_codigo
-        orden.estado_codigo = destino
-        registrar_historial_estado(
-            db,
-            orden_id=orden.orden_id,
-            estado_anterior=estado_anterior,
-            estado_nuevo=destino,
-            actor_usuario_id=principal.usuario_id,
-            origen="usuario",
-            observacion=motivo,
-        )
-        db.flush()
-        db.refresh(orden)
-        db.commit()
-        return orden
-    except (
-        OrdenNoEncontradaError,
-        OrdenEstadoNoAutorizadoError,
-        OrdenTransicionNoPermitidaError,
-        OrdenObservacionInvalidaError,
-    ):
-        db.rollback()
-        raise
-    except SQLAlchemyError as exc:
-        db.rollback()
-        raise PersistenciaOrdenError("No fue posible cancelar la orden") from exc
-
-
 def aplicar_decision_presupuesto(
     db: Session, *, orden_id: int, decision_id: int,
     principal: PrincipalAutenticado, token: str, verificador: VerificadorDecisiones,
@@ -655,9 +797,70 @@ def aplicar_decision_presupuesto(
         raise PersistenciaOrdenError("No fue posible aplicar la decisión") from exc
 
 
+def aplicar_envio_inicial_presupuesto(
+    db: Session, *, orden_id: int, presupuesto_id: int,
+    principal: PrincipalAutenticado, token: str,
+    verificador: VerificadorEnviosPresupuesto,
+) -> AplicacionEnvioPresupuestoRespuesta:
+    """Aplica el primer envío confirmado por MS3 con estado e historial atómicos."""
+    try:
+        if NombreRol.ADMINISTRADOR not in principal.roles:
+            raise OrdenEstadoNoAutorizadoError("Se requiere rol Administrador")
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        historial = db.scalar(select(HistorialEstado).where(
+            HistorialEstado.envio_presupuesto_id == presupuesto_id,
+        ))
+        if historial is not None:
+            if historial.orden_id != orden_id:
+                raise EnvioPresupuestoNoVisibleError("Envío inicial no encontrado")
+            respuesta = _aplicacion_de_envio(historial)
+            db.commit()
+            return respuesta
+
+        envio = verificador.consultar(presupuesto_id, token)
+        if envio.orden_id != orden_id or envio.presupuesto_id != presupuesto_id:
+            raise EnvioPresupuestoNoVisibleError("Envío inicial no encontrado")
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.ENVIO_PRIMER_PRESUPUESTO,
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        historial = registrar_historial_estado(
+            db, orden_id=orden_id, estado_anterior=orden.estado_codigo,
+            estado_nuevo=destino, actor_usuario_id=principal.usuario_id,
+            origen="usuario", envio_presupuesto_id=presupuesto_id,
+        )
+        orden.estado_codigo = destino
+        db.flush()
+        respuesta = _aplicacion_de_envio(historial)
+        db.commit()
+        return respuesta
+    except (OrdenEstadoNoAutorizadoError, OrdenNoEncontradaError,
+            OrdenTransicionNoPermitidaError, EnvioPresupuestoNoVisibleError,
+            EnvioPresupuestoNoAplicableError,
+            ServicioPresupuestosNoDisponibleError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible aplicar el envío del presupuesto") from exc
+
+
 def _aplicacion_de_historial(historial: HistorialEstado) -> AplicacionDecisionRespuesta:
     return AplicacionDecisionRespuesta(
         decision_id=historial.decision_presupuesto_id, orden_id=historial.orden_id,
+        estado_aplicado=historial.estado_nuevo, historial_id=historial.historial_id,
+    )
+
+
+def _aplicacion_de_envio(historial: HistorialEstado) -> AplicacionEnvioPresupuestoRespuesta:
+    return AplicacionEnvioPresupuestoRespuesta(
+        presupuesto_id=historial.envio_presupuesto_id, orden_id=historial.orden_id,
         estado_aplicado=historial.estado_nuevo, historial_id=historial.historial_id,
     )
 

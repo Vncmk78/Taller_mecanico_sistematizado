@@ -91,6 +91,11 @@ y con un rol distinto, `403`. El listado y el detalle incluyen también las
 cuentas sin roles (`roles: []`). Cada asignación o retirada queda registrada en
 `historial_rol` con el administrador responsable y la fecha y hora.
 
+Una cuenta sin roles puede ser consultada, pero no iniciar sesión: `POST
+/api/auth/login` responde `403` y `/api/auth/me` devuelve `roles: []`, en lugar
+del `500` que daba hasta la corrección del hallazgo §8.3 de
+`estudio-rbac-multiples-roles.md`.
+
 ### 4.2 Vehículos (MS2)
 
 Todos los endpoints pasan por `resolver_cliente_actual`, que exige rol `cliente` y
@@ -115,13 +120,19 @@ ruta no existe.
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
 | `POST /api/ordenes` | ❌ | ❌ | ✅ |
+| `GET /api/ordenes/configuracion/capacidad/mecanicos` | ❌ | ❌ | ✅ |
+| `PUT /api/ordenes/configuracion/capacidad/mecanicos` | ❌ | ❌ | ✅ |
+| `GET /api/ordenes/configuracion/capacidad/ingresos-diarios` | ❌ | ❌ | ✅ |
+| `PUT /api/ordenes/configuracion/capacidad/ingresos-diarios` | ❌ | ❌ | ✅ |
 | `GET /api/ordenes` | ⚠️ de sus vehículos | ⚠️ asignadas | ✅ todas |
 | `GET /api/ordenes/{id}` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
 | `PUT /api/ordenes/{id}/mecanico` | ❌ | ❌ | ✅ |
 | `GET /api/ordenes/{id}/historial` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
 | `PATCH /api/ordenes/{id}/estado` | ❌ 403 | ⚠️ solo asignadas | ✅ cualquiera |
 | `POST /api/ordenes/{id}/entrega` | ❌ 403 | ❌ 403 | ✅ |
-| `POST /api/ordenes/{id}/cancelacion` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
+| `POST /api/ordenes/{id}/cancelacion` | ⚠️ solicita solo el propietario | ❌ 403 | ❌ 403 |
+| `GET /api/ordenes/cancelaciones/pendientes` | ❌ 403 | ❌ 403 | ✅ |
+| `POST /api/ordenes/{id}/cancelacion/confirmacion` | ❌ 403 | ❌ 403 | ✅ |
 | `POST /api/ordenes/{id}/decisiones-presupuesto` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
 
 Detalles que condicionan la matriz:
@@ -149,10 +160,18 @@ Detalles que condicionan la matriz:
 - **Entrega física** (`POST /api/ordenes/{id}/entrega`): exclusiva del
   Administrador. Cierra `6 → 7`, registra `entregado_en` y `entregado_por_id` con
   la identidad del JWT y el historial. El PATCH `6 → 7` responde `409`.
-- **Cancelación del cliente** (`POST /api/ordenes/{id}/cancelacion`): solo el
-  Cliente propietario del vehículo mientras la orden esté en `1`, `2` o `3`. El
-  motivo es obligatorio; una orden inexistente o ajena responde `404` y una orden
-  ya avanzada o terminal `409`.
+- **Solicitud de cancelación** (`POST /api/ordenes/{id}/cancelacion`): el Cliente
+  propietario puede solicitarla mientras la orden esté en `1`, `2` o `3`. Se
+  guarda su motivo y fecha sin cambiar el estado; MS2 verifica que MS3 no tenga
+  una aprobación inicial. Una orden inexistente o ajena responde `404`.
+- **Revisión y confirmación**: el Administrador consulta
+  `GET /api/ordenes/cancelaciones/pendientes` y confirma por
+  `POST /api/ordenes/{id}/cancelacion/confirmacion`. MS2 vuelve a verificar la
+  aprobación inicial y solo entonces actualiza a `Cancelado` e historial en una
+  transacción. `PATCH` no permite saltarse el flujo.
+- `mecanico_id` es una **referencia lógica** a MS1. MS2 valida localmente el
+  máximo configurable de órdenes activas, pero aún no comprueba por contrato
+  que el usuario de destino exista, esté activo o tenga el rol `mecanico`.
 
 ### 4.4 Presupuestos, repuestos, proveedores e inventario (MS3)
 

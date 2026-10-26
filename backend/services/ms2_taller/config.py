@@ -6,8 +6,9 @@ puedan convivir en un mismo archivo .env sin pisarse.
 from __future__ import annotations
 
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
@@ -33,6 +34,16 @@ class Settings(ServiceSettings):
 
     MS3_URL: str = "http://localhost:8003"
     MS3_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
+    TIMEZONE: str = "America/Santiago"
+
+    @field_validator("TIMEZONE")
+    @classmethod
+    def validar_zona_horaria(cls, valor: str) -> str:
+        try:
+            ZoneInfo(valor)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("MS2_TIMEZONE debe ser una zona IANA válida") from exc
+        return valor
 
 
 settings = Settings()

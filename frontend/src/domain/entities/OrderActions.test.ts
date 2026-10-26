@@ -26,14 +26,15 @@ const CLIENTE: ActorOrden = { rol: 'cliente', userId: 'c1' };
 describe('OrderActions: catálogo centralizado de acciones por estado y rol', () => {
     describe('destinosAvanceMecanico', () => {
         it('devuelve los destinos del catálogo del mecánico', () => {
-            expect(destinosAvanceMecanico(2)).toEqual([3]);
-            expect(destinosAvanceMecanico(4)).toEqual([5]);
+            // SCRUM-408: el mecánico solo avanza de "En reparación" a "Listo".
             expect(destinosAvanceMecanico(5)).toEqual([6]);
         });
 
         it('devuelve lista vacía en estados sin avance', () => {
             expect(destinosAvanceMecanico(1)).toEqual([]);
+            expect(destinosAvanceMecanico(2)).toEqual([]);
             expect(destinosAvanceMecanico(3)).toEqual([]);
+            expect(destinosAvanceMecanico(4)).toEqual([]);
             expect(destinosAvanceMecanico(6)).toEqual([]);
             expect(destinosAvanceMecanico(7)).toEqual([]);
             expect(destinosAvanceMecanico(8)).toEqual([]);
@@ -42,8 +43,6 @@ describe('OrderActions: catálogo centralizado de acciones por estado y rol', ()
 
     describe('mecánico', () => {
         it.each([
-            [2, [3]],
-            [4, [5]],
             [5, [6]],
         ])('en estado %i ofrece avanzar a %j cuando la orden es suya', (estado, destinos) => {
             const acciones = accionesDisponibles(orden(estado, 'm1'), MECANICO);
@@ -73,7 +72,9 @@ describe('OrderActions: catálogo centralizado de acciones por estado y rol', ()
 
         it('no ofrece acciones en estados sin avance del mecánico', () => {
             expect(accionesDisponibles(orden(1), MECANICO)).toEqual([]);
+            expect(accionesDisponibles(orden(2), MECANICO)).toEqual([]);
             expect(accionesDisponibles(orden(3), MECANICO)).toEqual([]);
+            expect(accionesDisponibles(orden(4), MECANICO)).toEqual([]);
             expect(accionesDisponibles(orden(6), MECANICO)).toEqual([]);
             expect(accionesDisponibles(orden(7), MECANICO)).toEqual([]);
             expect(accionesDisponibles(orden(8), MECANICO)).toEqual([]);

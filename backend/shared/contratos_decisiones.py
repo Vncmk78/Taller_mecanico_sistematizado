@@ -14,6 +14,35 @@ class DecisionOrdenSolicitud(BaseModel):
     decision_id: int = Field(gt=0)
 
 
+class EnvioPresupuestoSolicitud(BaseModel):
+    """Referencia al presupuesto cuyo envío inicial activó la orden."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    presupuesto_id: int = Field(gt=0)
+
+
+class EnvioPresupuestoVerificado(BaseModel):
+    """Hecho persistido por MS3: hay un presupuesto inicial enviado."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    presupuesto_id: int = Field(gt=0)
+    orden_id: int = Field(gt=0)
+    envio_inicial_confirmado: Literal[True]
+
+
+class AplicacionEnvioPresupuestoRespuesta(BaseModel):
+    """Transición inicial ya aplicada en MS2, incluso cuando se reintenta."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    presupuesto_id: int = Field(gt=0)
+    orden_id: int = Field(gt=0)
+    estado_aplicado: int = Field(ge=1, le=8)
+    historial_id: int = Field(gt=0)
+
+
 class DecisionPresupuestoVerificada(BaseModel):
     """Hecho persistido de MS3, visible únicamente para su cliente responsable."""
 
@@ -27,6 +56,15 @@ class DecisionPresupuestoVerificada(BaseModel):
     # Evaluación guardada al decidir; no se recalcula con el stock del reintento.
     repuestos_disponibles: bool | None
     motivo: str | None
+
+
+class AprobacionInicialOrdenVerificada(BaseModel):
+    """Estado autoritativo de aprobación inicial en MS3 para una orden."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    orden_id: int = Field(gt=0)
+    aprobacion_registrada: bool
 
 
 class AplicacionDecisionRespuesta(BaseModel):
@@ -47,6 +85,19 @@ class DecisionAplicacionPendiente(BaseModel):
     decision_id: int
     orden_id: int
     decision_registrada: Literal[True] = True
+    aplicacion_confirmada: Literal[False] = False
+    reintento: str
+    estado_ms2: int | None = None
+    detalle_ms2: str | None = None
+
+
+class EnvioPresupuestoAplicacionPendiente(BaseModel):
+    """MS3 confirmó el envío; MS2 aún no confirmó la transición de la orden."""
+
+    detail: str
+    presupuesto_id: int
+    orden_id: int
+    envio_confirmado: Literal[True] = True
     aplicacion_confirmada: Literal[False] = False
     reintento: str
     estado_ms2: int | None = None

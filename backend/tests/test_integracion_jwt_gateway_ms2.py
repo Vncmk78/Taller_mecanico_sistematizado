@@ -25,7 +25,15 @@ from services.ms1_auth.main import app as ms1_app
 from services.ms2_taller.config import settings as ms2_settings
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as ms2_app
-from services.ms2_taller.models import Base, Cliente, EstadoOrden, HistorialEstado, OrdenTrabajo, Vehiculo
+from services.ms2_taller.models import (
+    Base,
+    Cliente,
+    ConfiguracionCupoIngresos,
+    EstadoOrden,
+    HistorialEstado,
+    OrdenTrabajo,
+    Vehiculo,
+)
 from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN
 from shared.auth import NombreRol
 from test_ordenes_api import _crear_orden
@@ -51,6 +59,15 @@ def db_integracion_ms2() -> Generator[Session, None, None]:
         )
 
     Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine)() as sesion:
+        sesion.add(
+            ConfiguracionCupoIngresos(
+                configuracion_id=1,
+                max_ingresos_diarios=100,
+                actualizado_por_id=99,
+            )
+        )
+        sesion.commit()
     try:
         with sessionmaker(bind=engine, expire_on_commit=False)() as sesion:
             yield sesion

@@ -315,6 +315,15 @@ inventario. Un proveedor no puede tener dos repuestos con el mismo nombre
 | `GET /inventario/alertas` | Repuestos con stock < umbral efectivo (igual no es alerta), los que más faltan primero |
 | `GET` / `PUT /inventario/umbral-general` | Ver o cambiar (Administrador) el umbral general; cierra el vigente y deja historial |
 | `GET /inventario/historial-umbral?repuesto_id=&solo_general=` | Cambios de umbral |
+| `POST /inventario/disponibilidad` | `{"orden_id"?, "items": [{"repuesto_id", "cantidad"}]}`: valida **antes de usar** si alcanza el stock (no mueve nada). Por repuesto: stock, reservado para la orden, comprometido por otras, disponible, `alcanza` y `faltan` |
+| `GET /inventario/ordenes/{orden_id}/disponibilidad` | Lo mismo para lo que falta usar del presupuesto aprobado de la orden (requerido − ya consumido); `409` si no tiene presupuesto aprobado |
+
+**Validación de disponibilidad** (`services/disponibilidad.py`): para una orden,
+disponible = stock − lo comprometido por **otras** órdenes (su propia reserva
+cuenta para ella). Las cantidades decimales del presupuesto se redondean hacia
+arriba (1,5 litros → 2 unidades). Aprobar un presupuesto usa la misma
+validación con los repuestos bloqueados (`FOR UPDATE`, en orden de id) hasta el
+commit, para que dos aprobaciones simultáneas no cuenten las mismas unidades.
 
 Cada movimiento responde `alerta: {activa, nueva}`; `nueva` indica que ese
 movimiento dejó el repuesto bajo su umbral (para avisar una sola vez; el envío

@@ -73,11 +73,12 @@ def ajustar_reserva(
     con faltantes no se escribe nada.
     """
     repuestos = uow.repuestos.bloquear_varios(objetivo)
+    todos = uow.movimientos.comprometido_por_ordenes(objetivo)
     cambios: list[tuple[Repuesto, int]] = []
     faltantes: list[FaltanteStock] = []
     for rid, quiero in sorted(objetivo.items()):
         repuesto = repuestos[rid]
-        compromisos = uow.movimientos.comprometido_por_orden(rid)
+        compromisos = todos.get(rid, {})
         tengo = compromisos.get(orden_id, 0)
         libre = repuesto.stock - sum(compromisos.values())
         diferencia = quiero - tengo
@@ -146,8 +147,10 @@ def consumir_para_orden(
                 orden_id=orden_id, movimientos=_salida(list(previos.values())), repetido=True)
 
         faltantes = []
+        compromisos = uow.movimientos.comprometido_por_ordenes(requeridos)
         for rid, cantidad in sorted(requeridos.items()):
-            d = disponibilidad.evaluar_repuesto(uow, repuestos[rid], cantidad, orden_id)
+            d = disponibilidad.evaluar_repuesto(uow, repuestos[rid], cantidad, orden_id,
+                                                compromisos.get(rid, {}))
             if not d.alcanza:
                 faltantes.append(FaltanteStock(repuesto_id=rid, nombre=d.nombre, solicitado=cantidad,
                                                disponible=max(0, d.disponible), faltan=d.faltan))
@@ -177,9 +180,10 @@ def liberar_orden(
         reservados = {m.repuesto_id for m in uow.movimientos.de_orden(orden_id)
                       if m.tipo == "compromiso"}
         repuestos = uow.repuestos.bloquear_varios(reservados)
+        compromisos = uow.movimientos.comprometido_por_ordenes(repuestos)
         movimientos = []
         for rid, repuesto in sorted(repuestos.items()):
-            tengo = uow.movimientos.comprometido_por_orden(rid).get(orden_id, 0)
+            tengo = compromisos.get(rid, {}).get(orden_id, 0)
             if tengo:
                 movimientos.append(_mover(uow, repuesto, "liberacion", tengo, orden_id, usuario_id,
                                           f"{clave_operacion}:{rid}"))

@@ -46,7 +46,7 @@ from services.ms3_presupuestos.schemas.presupuesto import (
     ResultadoOperacion,
     VersionDetalle,
 )
-from services.ms3_presupuestos.services import disponibilidad
+from services.ms3_presupuestos.services import disponibilidad, reservas
 from shared.contratos_decisiones import (
     DecisionPresupuestoVerificada,
     EnvioPresupuestoVerificado,
@@ -239,6 +239,9 @@ def decidir_version(
     - Rechazar una modificación posterior conserva la aprobación vigente.
     - Aprobar bloquea la versión (trigger) y, según el stock de los repuestos,
       la orden pasa a "En reparación" o a "Esperando repuestos".
+    - Con stock suficiente, aprobar RESERVA lo que falta usar (compromisos de
+      la orden, services/reservas.py) en la misma transacción; sin stock no se
+      reserva nada y la orden espera repuestos.
     """
     with uow.transaccion():
         presupuesto = uow.presupuestos.obtener_para_actualizar(presupuesto_id)
@@ -257,6 +260,14 @@ def decidir_version(
             )
 
         faltantes = _repuestos_faltantes(uow, version) if decision == "aprobado" else []
+        reservados: dict[int, int] = {}
+        if decision == "aprobado" and not faltantes:
+            # Regla de reserva: con stock suficiente, las unidades quedan
+            # comprometidas para la orden en esta misma transacción.
+            pendientes = _pendientes(uow, version)
+            reservas.ajustar_reserva(
+                uow, presupuesto.orden_id, pendientes, usuario_id=cliente_usuario_id)
+            reservados = {rid: n for rid, n in pendientes.items() if n}
         registro = DecisionPresupuesto(
             version=version, cliente_usuario_id=cliente_usuario_id,
             decision=decision, motivo=motivo or None,
@@ -272,7 +283,7 @@ def decidir_version(
             efecto = "cancelado" if primera_decision else None
     return ResultadoOperacion(
         presupuesto=a_detalle(presupuesto), efecto_en_orden=efecto,
-        repuestos_faltantes=faltantes,
+        repuestos_faltantes=faltantes, repuestos_reservados=reservados,
         decision_id=registro.decision_id,
     )
 
@@ -285,19 +296,26 @@ def _exigir_ultima(presupuesto: Presupuesto, version: VersionPresupuesto) -> Non
         )
 
 
+def _pendientes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> dict[int, int]:
+    """Unidades de cada repuesto que la orden todavía tiene que usar con esta versión."""
+    consumido = disponibilidad.consumido_por_orden(uow, version.presupuesto.orden_id)
+    return {rid: max(0, cantidad - consumido.get(rid, 0))
+            for rid, cantidad in disponibilidad.requeridos_de_version(version).items()}
+
+
 def _repuestos_faltantes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> list[RepuestoFaltante]:
-    """Repuestos de la versión cuya disponibilidad no cubre lo presupuestado.
+    """Repuestos de la versión cuya disponibilidad no cubre lo que falta usar.
 
     Usa la validación de disponibilidad (services/disponibilidad.py): para la
     orden cuenta su propia reserva, pero no lo comprometido por OTRAS órdenes
     (§4.6). Los repuestos quedan bloqueados (FOR UPDATE) hasta el commit de la
     decisión, así dos aprobaciones simultáneas no cuentan las mismas unidades.
     """
-    requeridos = disponibilidad.requeridos_de_version(version)
-    if not requeridos:
+    pendientes = _pendientes(uow, version)
+    if not pendientes:
         return []
     resultado = disponibilidad.evaluar(
-        uow, requeridos, orden_id=version.presupuesto.orden_id, bloquear=True)
+        uow, pendientes, orden_id=version.presupuesto.orden_id, bloquear=True)
     return [
         RepuestoFaltante(repuesto_id=d.repuesto_id, nombre=d.nombre,
                          requerido=_dos_decimales(Decimal(d.requerido)), disponible=d.disponible)

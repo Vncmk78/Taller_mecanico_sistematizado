@@ -43,6 +43,7 @@ from services.ms3_presupuestos.schemas.inventario import (
     AlertaRepuesto,
     AlertaStock,
     CambioUmbral,
+    FaltanteStock,
     CompromisoOrden,
     MovimientoCrear,
     MovimientoSalida,
@@ -55,7 +56,15 @@ TIPOS_ADMINISTRADOR = frozenset({"ingreso", "ajuste"})
 
 
 class StockInsuficiente(ConflictoDeDatos):
-    """La operación pide más unidades de las que hay disponibles (409)."""
+    """La operación pide más unidades de las que hay disponibles (409).
+
+    Lleva el detalle por repuesto (`faltantes`) para que el cliente sepa qué
+    falta; la respuesta es un RechazoStock y no se aplica nada.
+    """
+
+    def __init__(self, mensaje: str, faltantes: list[FaltanteStock] | None = None) -> None:
+        super().__init__(mensaje)
+        self.faltantes = faltantes or []
 
 
 # ------------------------------------------------------------------ consultas --
@@ -178,21 +187,24 @@ def _nuevo_stock(uow: UnidadDeTrabajo, repuesto: Repuesto, datos: MovimientoCrea
     if datos.tipo == "ajuste":
         if repuesto.stock + n < 0:
             raise StockInsuficiente(
-                f"El ajuste dejaría el stock de {repuesto.nombre!r} en {repuesto.stock + n}")
+                f"El ajuste dejaría el stock de {repuesto.nombre!r} en {repuesto.stock + n}",
+                [_faltante(repuesto, -n, repuesto.stock)])
         return repuesto.stock + n
     if datos.tipo == "compromiso":
         disponible = repuesto.stock - comprometido
         if n > disponible:
             raise StockInsuficiente(
                 f"Stock insuficiente de {repuesto.nombre!r}: se piden {n}, disponibles {disponible} "
-                f"(stock {repuesto.stock}, comprometidas {comprometido})")
+                f"(stock {repuesto.stock}, comprometidas {comprometido})",
+                [_faltante(repuesto, n, disponible)])
         return repuesto.stock
     if datos.tipo == "consumo":
         utilizable = repuesto.stock - (comprometido - propio)
         if n > utilizable:
             raise StockInsuficiente(
                 f"Stock insuficiente de {repuesto.nombre!r}: se consumen {n}, la orden puede usar "
-                f"{utilizable} (reservadas por ella {propio}, libres {repuesto.stock - comprometido})")
+                f"{utilizable} (reservadas por ella {propio}, libres {repuesto.stock - comprometido})",
+                [_faltante(repuesto, n, utilizable)])
         return repuesto.stock - n
     # liberacion
     if n > propio:
@@ -200,6 +212,12 @@ def _nuevo_stock(uow: UnidadDeTrabajo, repuesto: Repuesto, datos: MovimientoCrea
             f"La orden {datos.orden_id} tiene {propio} unidad(es) de {repuesto.nombre!r} "
             f"comprometidas; no se pueden liberar {n}")
     return repuesto.stock
+
+
+def _faltante(repuesto: Repuesto, solicitado: int, disponible: int) -> FaltanteStock:
+    return FaltanteStock(repuesto_id=repuesto.repuesto_id, nombre=repuesto.nombre,
+                         solicitado=solicitado, disponible=max(0, disponible),
+                         faltan=solicitado - max(0, disponible))
 
 
 def listar_movimientos(uow: UnidadDeTrabajo, *, repuesto_id: int | None, orden_id: int | None,

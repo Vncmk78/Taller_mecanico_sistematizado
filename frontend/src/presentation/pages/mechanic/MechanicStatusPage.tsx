@@ -101,9 +101,12 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
                     <label className="flex flex-col gap-1 text-sm flex-1 min-w-40">
                         <span className="text-text-muted">Siguiente estado</span>
                         <select
+                            id={`orden-${order.id}-destino`}
+                            name="destino"
                             value={destino}
                             onChange={(e) => setDestino(e.target.value)}
                             aria-label={`Siguiente estado de la orden ${order.id}`}
+                            aria-required="true"
                             className="w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
                         >
                             <option value="">Seleccionar...</option>
@@ -117,6 +120,8 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
                     <label className="flex flex-col gap-1 text-sm flex-1">
                         <span className="text-text-muted">Observación (opcional)</span>
                         <input
+                            id={`orden-${order.id}-observacion`}
+                            name="observacion"
                             type="text"
                             value={observacion}
                             onChange={(e) => setObservacion(e.target.value)}

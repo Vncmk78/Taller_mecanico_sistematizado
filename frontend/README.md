@@ -253,6 +253,34 @@ y arquitectura hexagonal.
   - Sin permiso de carga se ve la galería pero no el formulario.
 - Ejecutar: `npx vitest run src/presentation/components/evidence src/presentation/pages/shared`.
 
+### Tarea 16 — Revisar accesibilidad de inputs, validaciones y mensajes
+- **Campos compartidos**: `Input` admite `hint` y combina `aria-describedby`
+  (descripción externa + ayuda + error); `required` se refleja en `required` y
+  `aria-required`. `Alert` expone `id` y `aria-atomic="true"`. Los diálogos
+  `ConfirmDialog`, `ApproveBudgetDialog` y `RejectBudgetDialog` se asocian con su
+  título y descripción mediante `aria-labelledby`/`aria-describedby`.
+- **Validaciones por campo**: en `BitacoraForm`, `OrderActionsPanel`,
+  `EvidenceUploadForm`, `RejectBudgetDialog` y `MechanicStatusPage` cada error
+  tiene `id` y el campo lo referencia con `aria-describedby` y `aria-invalid`
+  (después de interactuar). El error de archivo de evidencia se separa del error
+  general (presupuesto/servidor) y el campo muestra formatos y tamaño máximo.
+- **Formularios públicos y de cliente**: `LoginPage` usa `h2`, `noValidate` y
+  logos decorativos con `aria-hidden`; `ClientVehicleFormPage` marca
+  patente/marca/modelo como obligatorios y usa teclado numérico en año y
+  kilometraje.
+- **Búsquedas**: `OrderListToolbar`, los listados de vehículos y la búsqueda
+  global del layout admin exponen `role="search"`, `type="search"`, `name` y
+  `autoComplete="off"`; las pruebas consultan el rol `searchbox`.
+- Pruebas: `Input.test.tsx`, `Alert.test.tsx`, `ConfirmDialog.test.tsx`,
+  `BitacoraForm.test.tsx`, `EvidenceUploadForm.validacion.test.tsx`,
+  `RejectBudgetDialog.test.tsx` (nuevo), `ApproveBudgetDialog.test.tsx`,
+  `OrderActionsPanel.test.tsx`, `OrderListToolbar.test.tsx` (nuevo),
+  `MechanicStatusPage.test.tsx`, `LoginPage.test.tsx` y
+  `ClientVehicleFormPage.test.tsx`. Total del frontend: **619/619** pruebas en
+  85 archivos; `npm run lint` y `npx tsc -b` sin errores.
+- Documentación: [`docs/revision-accesibilidad.md`](docs/revision-accesibilidad.md)
+  (Tarea 16).
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en

@@ -113,6 +113,20 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         expect(within(selector).getByRole('option', { name: 'Listo' })).toBeInTheDocument();
     });
 
+    it('marca el destino como obligatorio y expone ids estables en los campos', async () => {
+        vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+
+        renderPage();
+
+        const selector = await screen.findByLabelText('Siguiente estado de la orden 101');
+        expect(selector).toHaveAttribute('id', 'orden-101-destino');
+        expect(selector).toHaveAttribute('aria-required', 'true');
+
+        const observacion = screen.getByLabelText('Observación de la orden 101');
+        expect(observacion).toHaveAttribute('id', 'orden-101-observacion');
+        expect(observacion).toHaveAttribute('name', 'observacion');
+    });
+
     it('pide confirmación antes de avanzar y recién entonces llama a cambiarEstado', async () => {
         vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
         vi.mocked(orderService.cambiarEstado).mockResolvedValue({

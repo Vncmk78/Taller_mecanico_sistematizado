@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, type ReactNode } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { useDialogFocus } from '@/presentation/hooks/useDialogFocus';
@@ -27,6 +27,8 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const { ref: dialogRef, handleKeyDown: handleDialogKeyDown } = useDialogFocus<HTMLDivElement>(open);
+  const titleId = useId();
+  const descriptionId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -51,7 +53,8 @@ export function ConfirmDialog({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         onKeyDown={handleDialogKeyDown}
         className="card relative w-full max-w-[440px] p-8 text-center outline-none"
@@ -69,9 +72,13 @@ export function ConfirmDialog({
           <AlertTriangle className="w-8 h-8 text-status-red" aria-hidden />
         </div>
 
-        <h3 className="text-2xl font-bold tracking-tight text-text-main">{title}</h3>
+        <h3 id={titleId} className="text-2xl font-bold tracking-tight text-text-main">
+          {title}
+        </h3>
         {description && (
-          <p className="mt-3 text-text-muted text-base whitespace-pre-line">{description}</p>
+          <p id={descriptionId} className="mt-3 text-text-muted text-base whitespace-pre-line">
+            {description}
+          </p>
         )}
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-center gap-3 mt-8">

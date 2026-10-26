@@ -1,7 +1,7 @@
 """Endpoints de inventario y stock (MS3, §4.6).
 
     POST /inventario/movimientos                  registrar movimiento (idempotente por clave)
-    GET  /inventario/movimientos?repuesto_id=&orden_id=&tipo=&desde=&limite=
+    GET  /inventario/movimientos?repuesto_id=&orden_id=&tipo=&proveedor_id=&desde=&limite=
     GET  /inventario/stock/{repuesto_id}          stock, comprometido, disponible y alerta
     GET  /inventario/alertas                      repuestos con stock < umbral efectivo
     GET  /inventario/umbral-general               umbral general vigente
@@ -90,12 +90,15 @@ def listar_movimientos(
     repuesto_id: int | None = Query(default=None, gt=0),
     orden_id: int | None = Query(default=None, gt=0),
     tipo: TipoMovimiento | None = Query(default=None),
+    proveedor_id: int | None = Query(default=None, gt=0,
+                                     description="Ingresos entregados por ese proveedor"),
     desde: int = Query(default=0, ge=0),
     limite: int = Query(default=50, ge=1, le=LIMITE_MAXIMO),
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
 ) -> PaginaMovimientos:
     total, movimientos = casos.listar_movimientos(
-        uow, repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo, desde=desde, limite=limite)
+        uow, repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo, proveedor_id=proveedor_id,
+        desde=desde, limite=limite)
     return PaginaMovimientos(total=total, desde=desde, limite=limite,
                              movimientos=[MovimientoSalida.model_validate(m) for m in movimientos])
 

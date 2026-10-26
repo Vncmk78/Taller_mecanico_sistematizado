@@ -30,6 +30,10 @@ class MovimientoCrear(BaseModel):
     # Ajuste: positivo suma, negativo resta. El resto: siempre positivo.
     cantidad: int = Field(ge=-1_000_000, le=1_000_000)
     orden_id: int | None = Field(default=None, gt=0)
+    proveedor_id: int | None = Field(
+        default=None, gt=0,
+        description="Solo en ingresos: proveedor que entregó las unidades "
+                    "(por defecto, el proveedor actual del repuesto)")
 
     @model_validator(mode="after")
     def _reglas_por_tipo(self) -> "MovimientoCrear":
@@ -42,6 +46,8 @@ class MovimientoCrear(BaseModel):
             raise ValueError(f"Un {self.tipo} debe indicar orden_id")
         if self.tipo not in TIPOS_CON_ORDEN and self.orden_id is not None:
             raise ValueError(f"Un {self.tipo} no se asocia a una orden")
+        if self.tipo != "ingreso" and self.proveedor_id is not None:
+            raise ValueError("Solo un ingreso indica el proveedor que entregó las unidades")
         return self
 
 
@@ -54,6 +60,7 @@ class MovimientoSalida(BaseModel):
     tipo: TipoMovimiento
     cantidad: int
     orden_id: int | None
+    proveedor_id: int | None
     fecha_hora: datetime
     registrado_por_id: int
 

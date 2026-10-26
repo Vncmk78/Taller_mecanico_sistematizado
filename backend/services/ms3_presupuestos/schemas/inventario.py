@@ -194,3 +194,56 @@ class ResultadoDisponibilidad(BaseModel):
     # Solo en la consulta por orden: presupuesto aprobado del que salen los requeridos.
     presupuesto_id: int | None = None
     version: int | None = None
+
+
+# ------------------------------------------- reserva, descuento y rechazo --
+
+
+class FaltanteStock(BaseModel):
+    """Por qué se rechazó una reserva o un consumo."""
+
+    repuesto_id: int
+    nombre: str
+    solicitado: int
+    disponible: int
+    faltan: int
+
+
+class RechazoStock(BaseModel):
+    """Cuerpo del 409 por stock insuficiente: no se aplicó NADA de la operación."""
+
+    detail: str
+    faltantes: list[FaltanteStock]
+
+
+class ConsumoOrden(BaseModel):
+    """Descontar varios repuestos de una orden en una sola operación (todo o nada)."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    clave_operacion: str = Field(min_length=8, max_length=60, pattern=r"^[A-Za-z0-9._:-]+$",
+                                 description="Identificador único de la operación (reintentos seguros)")
+    items: list[ItemRequerido] = Field(min_length=1, max_length=100)
+
+
+class LiberacionOrden(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    clave_operacion: str = Field(min_length=8, max_length=60, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class ResultadoOperacionOrden(BaseModel):
+    """Movimientos que dejó una reserva, un descuento o una liberación de una orden."""
+
+    orden_id: int
+    movimientos: list[MovimientoSalida]
+    # true si la operación ya se había aplicado (misma clave): no se repitió.
+    repetido: bool = False
+
+
+class ResultadoReserva(BaseModel):
+    orden_id: int
+    # true: todo lo pendiente del presupuesto aprobado quedó reservado.
+    reservado: bool
+    faltantes: list[FaltanteStock]
+    movimientos: list[MovimientoSalida]

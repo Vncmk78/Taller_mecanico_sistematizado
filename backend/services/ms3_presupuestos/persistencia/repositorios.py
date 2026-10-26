@@ -16,7 +16,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Generic, Literal, TypeVar
 
-from sqlalchemy import case, exists, func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.sql import Select
 from sqlalchemy.orm import Session
 
@@ -275,22 +275,35 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
         (Una suma simple daría mal: consumir 2 sin reserva y después reservar 3
         dejaría 1 reservada en vez de 3.)
         """
+        return self.comprometido_por_ordenes([repuesto_id]).get(repuesto_id, {})
+
+    def comprometido_por_ordenes(self, repuesto_ids: Iterable[int]) -> dict[int, dict[int, int]]:
+        """`comprometido_por_orden` de varios repuestos en UNA consulta.
+
+        {repuesto_id: {orden_id: reservado}}. Evita una consulta por repuesto
+        al validar o reservar varios a la vez. Usa ix_movimiento_inventario_saldo
+        (lectura solo del índice, ya en orden de movimiento).
+        """
+        ids = sorted(set(repuesto_ids))
+        if not ids:
+            return {}
         filas = self.sesion.execute(
-            select(MovimientoInventario.orden_id, MovimientoInventario.tipo,
-                   MovimientoInventario.cantidad)
-            .where(MovimientoInventario.repuesto_id == repuesto_id,
+            select(MovimientoInventario.repuesto_id, MovimientoInventario.orden_id,
+                   MovimientoInventario.tipo, MovimientoInventario.cantidad)
+            .where(MovimientoInventario.repuesto_id.in_(ids),
                    MovimientoInventario.orden_id.is_not(None))
-            .order_by(MovimientoInventario.movimiento_id)
+            .order_by(MovimientoInventario.repuesto_id, MovimientoInventario.movimiento_id)
         ).all()
-        saldo: dict[int, int] = {}
-        for orden, tipo, cantidad in filas:
+        saldos: dict[int, dict[int, int]] = {}
+        for repuesto_id, orden, tipo, cantidad in filas:
+            saldo = saldos.setdefault(repuesto_id, {})
             actual = saldo.get(orden, 0)
             if tipo == "compromiso":
                 actual += cantidad
             else:  # liberacion / consumo
                 actual = max(0, actual - cantidad)
             saldo[orden] = actual
-        return {orden: valor for orden, valor in saldo.items() if valor > 0}
+        return {rid: {o: v for o, v in saldo.items() if v > 0} for rid, saldo in saldos.items()}
 
     def _filtro(self, *, repuesto_id: int | None, orden_id: int | None, tipo: str | None,
                 proveedor_id: int | None = None) -> Select:

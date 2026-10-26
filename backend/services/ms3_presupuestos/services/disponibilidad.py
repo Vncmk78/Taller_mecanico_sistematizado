@@ -63,9 +63,11 @@ def requeridos_de_version(version: VersionPresupuesto) -> dict[int, int]:
 
 
 def evaluar_repuesto(
-    uow: UnidadDeTrabajo, repuesto: Repuesto, requerido: int, orden_id: int | None
+    uow: UnidadDeTrabajo, repuesto: Repuesto, requerido: int, orden_id: int | None,
+    compromisos: dict[int, int] | None = None,
 ) -> DisponibilidadRepuesto:
-    compromisos = uow.movimientos.comprometido_por_orden(repuesto.repuesto_id)
+    if compromisos is None:
+        compromisos = uow.movimientos.comprometido_por_orden(repuesto.repuesto_id)
     propio = compromisos.get(orden_id, 0) if orden_id is not None else 0
     de_otras = sum(compromisos.values()) - propio
     disponible = repuesto.stock - de_otras
@@ -97,7 +99,9 @@ def evaluar(
     if inexistentes:
         raise RecursoNoEncontrado(
             "No existen los repuestos: " + ", ".join(str(i) for i in inexistentes))
-    detalle = [evaluar_repuesto(uow, repuestos[rid], cantidad, orden_id)
+    # Una sola consulta para lo comprometido de todos los repuestos.
+    compromisos = uow.movimientos.comprometido_por_ordenes(requeridos)
+    detalle = [evaluar_repuesto(uow, repuestos[rid], cantidad, orden_id, compromisos.get(rid, {}))
                for rid, cantidad in sorted(requeridos.items())]
     return ResultadoDisponibilidad(
         orden_id=orden_id, disponible=all(d.alcanza for d in detalle), repuestos=detalle)

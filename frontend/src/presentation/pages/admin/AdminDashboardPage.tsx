@@ -8,12 +8,17 @@ import {
   Wrench,
   ClipboardList,
   Users,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { authService } from '@/infrastructure/api/AuthService';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
+import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { Button } from '@/presentation/components/ui/Button';
 
 interface CargaMecanico {
   mecanicoId: string;
@@ -21,6 +26,8 @@ interface CargaMecanico {
   totalOrdenes: number;
   activas: number;
 }
+
+const CARGA_POR_PAGINA = 5;
 
 export function AdminDashboardPage() {
   const [totalVehiculos, setTotalVehiculos] = useState<number | null>(null);
@@ -32,126 +39,121 @@ export function AdminDashboardPage() {
   const [cargaMecanicos, setCargaMecanicos] = useState<CargaMecanico[]>([]);
   const [cargandoResumen, setCargandoResumen] = useState(true);
   const [errorResumen, setErrorResumen] = useState<string | null>(null);
+  const [paginaCarga, setPaginaCarga] = useState(1);
 
-  useEffect(() => {
-    let activo = true;
+  const cargarResumen = async () => {
+    setCargandoResumen(true);
+    setErrorResumen(null);
+    try {
+      const [vehiculos, usuarios, ordenes] = await Promise.allSettled([
+        vehicleService.getAllVehicles(),
+        authService.listarUsuarios(),
+        orderService.getOrders(),
+      ]);
 
-    const cargarResumen = async () => {
-      setCargandoResumen(true);
-      setErrorResumen(null);
-      try {
-        const [vehiculos, usuarios, ordenes] = await Promise.allSettled([
-          vehicleService.getAllVehicles(),
-          authService.listarUsuarios(),
-          orderService.getOrders(),
-        ]);
+      if (vehiculos.status === 'fulfilled') {
+        setTotalVehiculos(vehiculos.value.length);
+      } else {
+        setTotalVehiculos(null);
+      }
 
-        if (!activo) return;
+      if (usuarios.status === 'fulfilled') {
+        const listaUsuarios = usuarios.value;
+        const mecanicos = listaUsuarios.filter((usuario) =>
+          (usuario.roles ?? []).includes('mecanico')
+        );
+        setTotalMecanicos(mecanicos.length);
 
-        if (vehiculos.status === 'fulfilled') {
-          setTotalVehiculos(vehiculos.value.length);
-        } else {
-          setTotalVehiculos(null);
-        }
+        if (ordenes.status === 'fulfilled') {
+          const listaOrdenes = ordenes.value;
+          setTotalOrdenes(listaOrdenes.length);
 
-        if (usuarios.status === 'fulfilled') {
-          const listaUsuarios = usuarios.value;
-          const mecanicos = listaUsuarios.filter((usuario) =>
-            (usuario.roles ?? []).includes('mecanico')
-          );
-          setTotalMecanicos(mecanicos.length);
+          const activas = listaOrdenes.filter((orden) => orden.estadoCodigo !== 7 && orden.estadoCodigo !== 8).length;
+          setOrdenesActivas(activas);
+          setEsperandoDiagnostico(listaOrdenes.filter((orden) => orden.estadoCodigo === 2).length);
+          setListosParaEntrega(listaOrdenes.filter((orden) => orden.estadoCodigo === 6).length);
 
-          if (ordenes.status === 'fulfilled') {
-            const listaOrdenes = ordenes.value;
-            setTotalOrdenes(listaOrdenes.length);
-
-            const activas = listaOrdenes.filter((orden) => orden.estadoCodigo !== 7 && orden.estadoCodigo !== 8).length;
-            setOrdenesActivas(activas);
-            setEsperandoDiagnostico(listaOrdenes.filter((orden) => orden.estadoCodigo === 2).length);
-            setListosParaEntrega(listaOrdenes.filter((orden) => orden.estadoCodigo === 6).length);
-
-            const mapaMecanicos = new Map<string, CargaMecanico>();
-            for (const mecanico of mecanicos) {
-              mapaMecanicos.set(mecanico.id, {
-                mecanicoId: mecanico.id,
-                nombre: mecanico.full_name || mecanico.email,
-                totalOrdenes: 0,
-                activas: 0,
-              });
-            }
-
-            for (const orden of listaOrdenes) {
-              if (!orden.mecanicoActualId) continue;
-              const existente = mapaMecanicos.get(orden.mecanicoActualId);
-              if (!existente) {
-                mapaMecanicos.set(orden.mecanicoActualId, {
-                  mecanicoId: orden.mecanicoActualId,
-                  nombre: orden.mecanicoNombre || `Mecánico ${orden.mecanicoActualId}`,
-                  totalOrdenes: 1,
-                  activas: orden.estadoCodigo !== 7 && orden.estadoCodigo !== 8 ? 1 : 0,
-                });
-                continue;
-              }
-              existente.totalOrdenes += 1;
-              if (orden.estadoCodigo !== 7 && orden.estadoCodigo !== 8) {
-                existente.activas += 1;
-              }
-            }
-
-            const cargaOrdenada = Array.from(mapaMecanicos.values()).sort((a, b) => {
-              if (b.activas !== a.activas) return b.activas - a.activas;
-              return b.totalOrdenes - a.totalOrdenes;
+          const mapaMecanicos = new Map<string, CargaMecanico>();
+          for (const mecanico of mecanicos) {
+            mapaMecanicos.set(mecanico.id, {
+              mecanicoId: mecanico.id,
+              nombre: mecanico.full_name || mecanico.email,
+              totalOrdenes: 0,
+              activas: 0,
             });
-            setCargaMecanicos(cargaOrdenada);
-          } else {
-            setTotalOrdenes(null);
-            setOrdenesActivas(null);
-            setEsperandoDiagnostico(null);
-            setListosParaEntrega(null);
-            setCargaMecanicos([]);
           }
-        } else {
-          setTotalMecanicos(null);
-          setCargaMecanicos([]);
-          if (ordenes.status === 'fulfilled') {
-            const listaOrdenes = ordenes.value;
-            setTotalOrdenes(listaOrdenes.length);
-            const activas = listaOrdenes.filter((orden) => orden.estadoCodigo !== 7 && orden.estadoCodigo !== 8).length;
-            setOrdenesActivas(activas);
-            setEsperandoDiagnostico(listaOrdenes.filter((orden) => orden.estadoCodigo === 2).length);
-            setListosParaEntrega(listaOrdenes.filter((orden) => orden.estadoCodigo === 6).length);
-          } else {
-            setTotalOrdenes(null);
-            setOrdenesActivas(null);
-            setEsperandoDiagnostico(null);
-            setListosParaEntrega(null);
-          }
-        }
 
-        if (
-          vehiculos.status === 'rejected' &&
-          usuarios.status === 'rejected' &&
-          ordenes.status === 'rejected'
-        ) {
-          setErrorResumen(
-            getApiErrorMessage(
-              vehiculos.reason,
-              'No se pudo cargar el resumen de órdenes, vehículos y mecánicos.'
-            )
-          );
+          for (const orden of listaOrdenes) {
+            if (!orden.mecanicoActualId) continue;
+            const existente = mapaMecanicos.get(orden.mecanicoActualId);
+            if (!existente) {
+              mapaMecanicos.set(orden.mecanicoActualId, {
+                mecanicoId: orden.mecanicoActualId,
+                nombre: orden.mecanicoNombre || `Mecánico ${orden.mecanicoActualId}`,
+                totalOrdenes: 1,
+                activas: orden.estadoCodigo !== 7 && orden.estadoCodigo !== 8 ? 1 : 0,
+              });
+              continue;
+            }
+            existente.totalOrdenes += 1;
+            if (orden.estadoCodigo !== 7 && orden.estadoCodigo !== 8) {
+              existente.activas += 1;
+            }
+          }
+
+          const cargaOrdenada = Array.from(mapaMecanicos.values()).sort((a, b) => {
+            if (b.activas !== a.activas) return b.activas - a.activas;
+            return b.totalOrdenes - a.totalOrdenes;
+          });
+          setCargaMecanicos(cargaOrdenada);
+          setPaginaCarga(1);
+        } else {
+          setTotalOrdenes(null);
+          setOrdenesActivas(null);
+          setEsperandoDiagnostico(null);
+          setListosParaEntrega(null);
+          setCargaMecanicos([]);
+          setPaginaCarga(1);
         }
-      } finally {
-        if (activo) {
-          setCargandoResumen(false);
+      } else {
+        setTotalMecanicos(null);
+        setCargaMecanicos([]);
+        setPaginaCarga(1);
+        if (ordenes.status === 'fulfilled') {
+          const listaOrdenes = ordenes.value;
+          setTotalOrdenes(listaOrdenes.length);
+          const activas = listaOrdenes.filter((orden) => orden.estadoCodigo !== 7 && orden.estadoCodigo !== 8).length;
+          setOrdenesActivas(activas);
+          setEsperandoDiagnostico(listaOrdenes.filter((orden) => orden.estadoCodigo === 2).length);
+          setListosParaEntrega(listaOrdenes.filter((orden) => orden.estadoCodigo === 6).length);
+        } else {
+          setTotalOrdenes(null);
+          setOrdenesActivas(null);
+          setEsperandoDiagnostico(null);
+          setListosParaEntrega(null);
         }
       }
-    };
 
+      if (
+        vehiculos.status === 'rejected' &&
+        usuarios.status === 'rejected' &&
+        ordenes.status === 'rejected'
+      ) {
+        setErrorResumen(
+          getApiErrorMessage(
+            vehiculos.reason,
+            'No se pudo cargar el resumen de órdenes, vehículos y mecánicos.'
+          )
+        );
+      }
+    } finally {
+      setCargandoResumen(false);
+    }
+  };
+
+  useEffect(() => {
     void cargarResumen();
-
-    return () => {
-      activo = false;
-    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const formatValor = (valor: number | null) => {
@@ -159,6 +161,11 @@ export function AdminDashboardPage() {
     if (valor === null) return '—';
     return valor.toLocaleString('es-CL');
   };
+
+  const totalPaginasCarga = Math.max(1, Math.ceil(cargaMecanicos.length / CARGA_POR_PAGINA));
+  const paginaCargaSegura = Math.min(paginaCarga, totalPaginasCarga);
+  const inicioCarga = (paginaCargaSegura - 1) * CARGA_POR_PAGINA;
+  const cargaPaginada = cargaMecanicos.slice(inicioCarga, inicioCarga + CARGA_POR_PAGINA);
 
   const stats = [
     {
@@ -253,9 +260,12 @@ export function AdminDashboardPage() {
 
       {errorResumen && (
         <div className="px-10 pb-4">
-          <div className="rounded-lg border border-status-red/40 bg-status-red/10 px-4 py-2 text-sm text-status-red">
-            {errorResumen}
-          </div>
+          <ErrorState
+            title="No se pudo cargar el resumen del panel"
+            message={errorResumen}
+            onRetry={() => void cargarResumen()}
+            className="py-6"
+          />
         </div>
       )}
 
@@ -290,15 +300,24 @@ export function AdminDashboardPage() {
           </div>
           <div className="flex flex-col gap-3.5">
             {cargandoResumen && (
-              <p className="text-text-muted text-center py-10">Cargando indicadores...</p>
+              <div className="flex items-center justify-center py-10">
+                <LoadingState message="Cargando indicadores..." />
+              </div>
             )}
-            {!cargandoResumen && cargaMecanicos.length === 0 && (
+            {!cargandoResumen && errorResumen && cargaMecanicos.length === 0 && (
+              <ErrorState
+                title="No se pudo cargar la carga de mecánicos"
+                message={errorResumen}
+                onRetry={() => void cargarResumen()}
+              />
+            )}
+            {!cargandoResumen && !errorResumen && cargaMecanicos.length === 0 && (
               <p className="text-text-muted text-center py-10">
                 No hay mecánicos con órdenes asignadas.
               </p>
             )}
             {!cargandoResumen &&
-              cargaMecanicos.map((mecanico) => (
+              cargaPaginada.map((mecanico) => (
                 <div
                   key={mecanico.mecanicoId}
                   className="flex items-center justify-between rounded-lg border border-border-custom px-4 py-3"
@@ -322,6 +341,39 @@ export function AdminDashboardPage() {
                   </div>
                 </div>
               ))}
+            {!cargandoResumen && cargaMecanicos.length > CARGA_POR_PAGINA && (
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-sm text-text-muted">
+                  Mostrando {inicioCarga + 1} - {Math.min(inicioCarga + CARGA_POR_PAGINA, cargaMecanicos.length)} de{' '}
+                  {cargaMecanicos.length} mecánicos
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setPaginaCarga((p) => Math.max(1, p - 1))}
+                    disabled={paginaCargaSegura <= 1}
+                    className="inline-flex items-center gap-2"
+                  >
+                    <ChevronLeft className="w-4 h-4" aria-hidden />
+                    Anterior
+                  </Button>
+                  <span className="text-sm text-text-muted">
+                    Página {paginaCargaSegura} de {totalPaginasCarga}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setPaginaCarga((p) => Math.min(totalPaginasCarga, p + 1))}
+                    disabled={paginaCargaSegura >= totalPaginasCarga}
+                    className="inline-flex items-center gap-2"
+                  >
+                    Siguiente
+                    <ChevronRight className="w-4 h-4" aria-hidden />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

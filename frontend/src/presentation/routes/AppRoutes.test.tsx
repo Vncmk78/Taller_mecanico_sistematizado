@@ -11,6 +11,7 @@ vi.mock('@/infrastructure/api/AuthService', () => ({
   authService: {
     login: vi.fn(),
     getProfile: vi.fn(() => new Promise<never>(() => {})),
+    listarUsuarios: vi.fn(() => Promise.resolve([])),
   },
 }));
 

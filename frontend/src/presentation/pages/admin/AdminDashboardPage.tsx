@@ -5,48 +5,133 @@ import {
   FileText,
   TrendingUp,
   AlertTriangle,
+  Wrench,
 } from 'lucide-react';
-
-const stats = [
-  {
-    label: 'Vehículos en Taller',
-    value: '—',
-    valueColor: 'text-primary-blue',
-    icon: <Car className="w-6 h-6" />,
-    iconColor: 'text-primary-blue',
-    iconBg: 'bg-primary-blue/10',
-    borderLeft: 'border-l-4 border-l-primary-blue',
-  },
-  {
-    label: 'Esperando Diagnóstico',
-    value: '—',
-    valueColor: 'text-status-yellow',
-    icon: <Clock className="w-6 h-6" />,
-    iconColor: 'text-status-yellow',
-    iconBg: 'bg-status-yellow/15',
-    borderLeft: 'border-l-4 border-l-status-orange',
-  },
-  {
-    label: 'Listos para Entrega',
-    value: '—',
-    valueColor: 'text-status-green',
-    icon: <CheckCircle className="w-6 h-6" />,
-    iconColor: 'text-status-green',
-    iconBg: 'bg-status-green/15',
-    borderLeft: 'border-l-4 border-l-status-green',
-  },
-  {
-    label: 'Presupuestos por Revisar',
-    value: '—',
-    valueColor: 'text-status-orange',
-    icon: <FileText className="w-6 h-6" />,
-    iconColor: 'text-status-orange',
-    iconBg: 'bg-status-orange/15',
-    borderLeft: 'border-l-4 border-l-status-red',
-  },
-];
+import { useEffect, useState } from 'react';
+import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { authService } from '@/infrastructure/api/AuthService';
+import { getApiErrorMessage } from '@/infrastructure/api/errors';
 
 export function AdminDashboardPage() {
+  const [totalVehiculos, setTotalVehiculos] = useState<number | null>(null);
+  const [totalMecanicos, setTotalMecanicos] = useState<number | null>(null);
+  const [cargandoResumen, setCargandoResumen] = useState(true);
+  const [errorResumen, setErrorResumen] = useState<string | null>(null);
+
+  useEffect(() => {
+    let activo = true;
+
+    const cargarResumen = async () => {
+      setCargandoResumen(true);
+      setErrorResumen(null);
+      try {
+        const [vehiculos, usuarios] = await Promise.allSettled([
+          vehicleService.getAllVehicles(),
+          authService.listarUsuarios(),
+        ]);
+
+        if (!activo) return;
+
+        if (vehiculos.status === 'fulfilled') {
+          setTotalVehiculos(vehiculos.value.length);
+        } else {
+          setTotalVehiculos(null);
+        }
+
+        if (usuarios.status === 'fulfilled') {
+          const mecanicos = usuarios.value.filter((usuario) =>
+            (usuario.roles ?? []).includes('mecanico')
+          ).length;
+          setTotalMecanicos(mecanicos);
+        } else {
+          setTotalMecanicos(null);
+        }
+
+        if (vehiculos.status === 'rejected' && usuarios.status === 'rejected') {
+          setErrorResumen(
+            getApiErrorMessage(
+              vehiculos.reason,
+              'No se pudo cargar el resumen de vehículos y mecánicos.'
+            )
+          );
+        }
+      } finally {
+        if (activo) {
+          setCargandoResumen(false);
+        }
+      }
+    };
+
+    void cargarResumen();
+
+    return () => {
+      activo = false;
+    };
+  }, []);
+
+  const formatValor = (valor: number | null) => {
+    if (cargandoResumen) return '—';
+    if (valor === null) return '—';
+    return valor.toLocaleString('es-CL');
+  };
+
+  const stats = [
+    {
+      label: 'Vehículos registrados',
+      value: formatValor(totalVehiculos),
+      valueColor: 'text-primary-blue',
+      icon: <Car className="w-6 h-6" />,
+      iconColor: 'text-primary-blue',
+      iconBg: 'bg-primary-blue/10',
+      borderLeft: 'border-l-4 border-l-primary-blue',
+    },
+    {
+      label: 'Mecánicos',
+      value: formatValor(totalMecanicos),
+      valueColor: 'text-status-green',
+      icon: <Wrench className="w-6 h-6" />,
+      iconColor: 'text-status-green',
+      iconBg: 'bg-status-green/15',
+      borderLeft: 'border-l-4 border-l-status-green',
+    },
+    {
+      label: 'Vehículos en Taller',
+      value: '—',
+      valueColor: 'text-primary-blue',
+      icon: <Car className="w-6 h-6" />,
+      iconColor: 'text-primary-blue',
+      iconBg: 'bg-primary-blue/10',
+      borderLeft: 'border-l-4 border-l-primary-blue',
+    },
+    {
+      label: 'Esperando Diagnóstico',
+      value: '—',
+      valueColor: 'text-status-yellow',
+      icon: <Clock className="w-6 h-6" />,
+      iconColor: 'text-status-yellow',
+      iconBg: 'bg-status-yellow/15',
+      borderLeft: 'border-l-4 border-l-status-orange',
+    },
+    {
+      label: 'Listos para Entrega',
+      value: '—',
+      valueColor: 'text-status-green',
+      icon: <CheckCircle className="w-6 h-6" />,
+      iconColor: 'text-status-green',
+      iconBg: 'bg-status-green/15',
+      borderLeft: 'border-l-4 border-l-status-green',
+    },
+    {
+      label: 'Presupuestos por Revisar',
+      value: '—',
+      valueColor: 'text-status-orange',
+      icon: <FileText className="w-6 h-6" />,
+      iconColor: 'text-status-orange',
+      iconBg: 'bg-status-orange/15',
+      borderLeft: 'border-l-4 border-l-status-red',
+    },
+  ];
+
   return (
     <div className="animate-fade-in">
       <div className="flex justify-between items-center px-10 pt-10 pb-5">
@@ -63,7 +148,15 @@ export function AdminDashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-5 px-10 pb-7">
+      {errorResumen && (
+        <div className="px-10 pb-4">
+          <div className="rounded-lg border border-status-red/40 bg-status-red/10 px-4 py-2 text-sm text-status-red">
+            {errorResumen}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-5 px-10 pb-7">
         {stats.map((stat) => (
           <div
             key={stat.label}

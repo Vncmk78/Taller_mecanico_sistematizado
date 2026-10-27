@@ -117,4 +117,35 @@ describe('ProtectedRoute: acceso a rutas protegidas', () => {
     expect(screen.getByTestId('access-denied')).toBeInTheDocument();
     expect(screen.queryByTestId('admin-panel')).not.toBeInTheDocument();
   });
+
+  it('redirige a /login cuando está autenticado pero no hay usuario cargado (evita acceso al panel sin rol)', async () => {
+    const { authService } = await import('@/infrastructure/api/AuthService');
+    vi.mocked(authService.getProfile).mockRejectedValue(new Error('Token inválido'));
+    localStorage.setItem('token', 'token-sin-perfil');
+    useAuthStore.setState({
+      user: null,
+      token: 'token-sin-perfil',
+      isAuthenticated: false,
+      isInitializing: true,
+    });
+
+    renderProtectedRoute({ entry: '/admin', allowedRoles: ['administrador'] });
+
+    expect(await screen.findByTestId('login')).toBeInTheDocument();
+    expect(screen.queryByTestId('admin-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('access-denied')).not.toBeInTheDocument();
+  });
+
+  it('solo permite el acceso al panel con rol administrador', () => {
+    useAuthStore.setState({
+      user: adminUser,
+      token: 'token-admin',
+      isAuthenticated: true,
+      isInitializing: false,
+    });
+
+    renderProtectedRoute({ entry: '/admin', allowedRoles: ['administrador'] });
+
+    expect(screen.getByTestId('admin-panel')).toBeInTheDocument();
+  });
 });

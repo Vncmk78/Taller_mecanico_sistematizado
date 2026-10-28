@@ -352,6 +352,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 disabled={!accion.habilitada || isOffline || !puedeConfirmar(accion)}
                                 onClick={() => abrir(accion)}
                                 className="self-start"
+                                title={!accion.habilitada && accion.motivoBloqueo ? accion.motivoBloqueo : undefined}
                             >
                                 {accion.etiqueta}
                             </Button>

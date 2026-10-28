@@ -5,6 +5,7 @@ import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import { setForbiddenHandler, setUnauthorizedHandler } from '@/infrastructure/config/apiClient';
 import { AuthContext, type AuthContextValue } from '@/presentation/components/auth/authContext';
+import { getUserRoles, hasAllRoles, hasAnyRole } from '@/presentation/utils/roleVisibility';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -38,6 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void restoreSession();
   }, [restoreSession]);
 
+  const roles = useMemo(() => getUserRoles(user), [user]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -50,7 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       restoreSession,
       clearSession,
       getProfile,
-      hasRole: (...roles) => (user ? roles.includes(user.role) : false),
+      roles,
+      hasRole: (...rolesToCheck) => hasAnyRole(user, ...rolesToCheck),
+      hasAnyRole: (...rolesToCheck) => hasAnyRole(user, ...rolesToCheck),
+      hasAllRoles: (...rolesToCheck) => hasAllRoles(user, ...rolesToCheck),
     }),
     [
       user,
@@ -63,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       restoreSession,
       clearSession,
       getProfile,
+      roles,
     ]
   );
 

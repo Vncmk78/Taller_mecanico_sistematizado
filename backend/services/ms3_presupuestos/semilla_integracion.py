@@ -73,7 +73,8 @@ def cargar_integracion(
     for prov in integ.CATALOGO_INTEGRACION:
         proveedor = uow.proveedores.con_nombre_similar(prov.nombre)
         if proveedor is None:
-            proveedor = catalogo.crear_proveedor(uow, nombre=prov.nombre, contacto=prov.contacto)
+            proveedor = catalogo.crear_proveedor(uow, nombre=prov.nombre, contacto=prov.contacto,
+                                                 tipo_distribuidor=prov.tipo_distribuidor)
             resumen.proveedores_creados.append(prov.nombre)
 
         for dato in prov.repuestos:

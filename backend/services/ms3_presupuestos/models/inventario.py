@@ -2,6 +2,7 @@
 
 MER (recuadro "BD MS3"):
   MOVIMIENTO_INVENTARIO(movimiento_id PK, clave_operacion UK, repuesto_id FK,
+                        proveedor_id? FK (solo ingresos),
                         orden_id? REF → MS2, tipo, cantidad, fecha_hora,
                         registrado_por_id REF → MS1)
   PARAMETRO_INVENTARIO(parametro_id PK, umbral_general,
@@ -33,7 +34,9 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    event,
     func,
+    select,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -68,8 +71,14 @@ class MovimientoInventario(Base):
         ),
         CheckConstraint("orden_id is null or orden_id > 0", name="orden_positiva"),
         CheckConstraint("registrado_por_id > 0", name="registrado_por_positivo"),
-        # Consulta típica: "compromisos/consumos de la orden X".
-        Index("ix_movimiento_inventario_orden_id", "orden_id"),
+        # Trazabilidad: todo ingreso dice qué proveedor entregó las unidades;
+        # los demás movimientos no llevan proveedor.
+        CheckConstraint(
+            "(tipo = 'ingreso' and proveedor_id is not null) or "
+            "(tipo <> 'ingreso' and proveedor_id is null)",
+            name="proveedor_solo_en_ingreso",
+        ),
+        # Índices de consulta: ver al final del archivo (0008_ms3).
     )
 
     movimiento_id: Mapped[int] = mapped_column(primary_key=True)
@@ -78,9 +87,11 @@ class MovimientoInventario(Base):
     )
     repuesto_id: Mapped[int] = mapped_column(
         ForeignKey("repuesto.repuesto_id", ondelete="RESTRICT"),
-        index=True,
         nullable=False,
     )
+    # Proveedor que entregó las unidades (solo en ingresos).
+    proveedor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("proveedor.proveedor_id", ondelete="RESTRICT"), nullable=True)
     # REF lógica a OrdenTrabajo (MS2). Sin ForeignKey a propósito (§8).
     orden_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tipo: Mapped[str] = mapped_column(String(12), nullable=False)
@@ -137,3 +148,44 @@ class ParametroInventario(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<ParametroInventario umbral_general={self.umbral_general}>"
+
+
+# --------------------------------------------------------------------------- #
+# Índices de las consultas de inventario y trazabilidad (revisión 0008_ms3).   #
+# Cada uno corresponde a una consulta del repositorio; las pruebas de          #
+# test_indices_inventario.py verifican con EXPLAIN que se usan.               #
+# --------------------------------------------------------------------------- #
+_M = MovimientoInventario
+# Saldo reservado por orden (comprometido_por_orden): historial del repuesto en
+# orden de movimiento, solo con orden. INCLUDE → lectura solo del índice.
+Index("ix_movimiento_inventario_saldo", _M.repuesto_id, _M.movimiento_id,
+      postgresql_include=["orden_id", "tipo", "cantidad"],
+      postgresql_where=text("orden_id is not null"))
+# Movimientos de un repuesto, más recientes primero (listado paginado). Su
+# primera columna también sirve a la FK repuesto_id.
+Index("ix_movimiento_inventario_repuesto_fecha",
+      _M.repuesto_id, _M.fecha_hora.desc(), _M.movimiento_id.desc())
+# Movimientos de una orden (listado, consumido por orden, liberación).
+Index("ix_movimiento_inventario_orden_fecha",
+      _M.orden_id, _M.fecha_hora.desc(), _M.movimiento_id.desc(),
+      postgresql_where=text("orden_id is not null"))
+# Ingresos de un proveedor (trazabilidad del proveedor y filtro proveedor_id).
+Index("ix_movimiento_inventario_proveedor_fecha",
+      _M.proveedor_id, _M.fecha_hora.desc(), _M.movimiento_id.desc(),
+      postgresql_include=["repuesto_id", "cantidad"],
+      postgresql_where=text("proveedor_id is not null"))
+# Ingresos de un repuesto agrupados por proveedor (trazabilidad del repuesto).
+Index("ix_movimiento_inventario_ingresos", _M.repuesto_id, _M.proveedor_id,
+      postgresql_include=["cantidad", "fecha_hora"],
+      postgresql_where=text("tipo = 'ingreso'"))
+
+@event.listens_for(MovimientoInventario, "before_insert")
+def _proveedor_del_ingreso(_mapper, connection, movimiento: MovimientoInventario) -> None:
+    """Un ingreso sin proveedor explícito lo recibe del proveedor actual del repuesto."""
+    if movimiento.tipo != "ingreso" or movimiento.proveedor_id is not None:
+        return
+    from services.ms3_presupuestos.models.proveedor import Repuesto
+
+    repuesto_id = movimiento.repuesto_id or (movimiento.repuesto and movimiento.repuesto.repuesto_id)
+    movimiento.proveedor_id = connection.scalar(
+        select(Repuesto.proveedor_id).where(Repuesto.repuesto_id == repuesto_id))

@@ -37,6 +37,7 @@ class ProveedorDato:
     nombre: str
     contacto: str
     repuestos: tuple[RepuestoDato, ...]
+    tipo_distribuidor: str = "generico"  # "oficial" o "generico"
 
 
 CATALOGO: tuple[ProveedorDato, ...] = (
@@ -48,6 +49,7 @@ CATALOGO: tuple[ProveedorDato, ...] = (
             # Bajo su umbral (2 < 3): sirve para probar alertas de stock.
             RepuestoDato("Disco de freno delantero", stock=2, umbral_particular=3),
         ),
+        tipo_distribuidor="oficial",
     ),
     ProveedorDato(
         "Repuestos Temuco",

@@ -17,11 +17,11 @@ export function ProtectedRoute({ allowedRoles, children }: ProtectedRouteProps) 
     return <FullScreenLoader />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
     return (
       <Navigate
         to="/acceso-denegado"

@@ -30,6 +30,10 @@ class MovimientoCrear(BaseModel):
     # Ajuste: positivo suma, negativo resta. El resto: siempre positivo.
     cantidad: int = Field(ge=-1_000_000, le=1_000_000)
     orden_id: int | None = Field(default=None, gt=0)
+    proveedor_id: int | None = Field(
+        default=None, gt=0,
+        description="Solo en ingresos: proveedor que entregó las unidades "
+                    "(por defecto, el proveedor actual del repuesto)")
 
     @model_validator(mode="after")
     def _reglas_por_tipo(self) -> "MovimientoCrear":
@@ -42,6 +46,8 @@ class MovimientoCrear(BaseModel):
             raise ValueError(f"Un {self.tipo} debe indicar orden_id")
         if self.tipo not in TIPOS_CON_ORDEN and self.orden_id is not None:
             raise ValueError(f"Un {self.tipo} no se asocia a una orden")
+        if self.tipo != "ingreso" and self.proveedor_id is not None:
+            raise ValueError("Solo un ingreso indica el proveedor que entregó las unidades")
         return self
 
 
@@ -54,6 +60,7 @@ class MovimientoSalida(BaseModel):
     tipo: TipoMovimiento
     cantidad: int
     orden_id: int | None
+    proveedor_id: int | None
     fecha_hora: datetime
     registrado_por_id: int
 
@@ -139,3 +146,104 @@ class PaginaAlertas(BaseModel):
     umbral_general: int | None
     total: int
     alertas: list[AlertaRepuesto]
+
+
+# ------------------------------------------------- disponibilidad (validación) --
+
+
+class ItemRequerido(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    repuesto_id: int = Field(gt=0)
+    cantidad: int = Field(ge=1, le=1_000_000, description="Unidades que se quieren usar")
+
+
+class ConsultaDisponibilidad(BaseModel):
+    """Repuestos que se quieren usar, opcionalmente para una orden.
+
+    Con `orden_id` cuenta como disponible lo que esa orden ya tiene reservado;
+    sin orden, solo lo libre. Un repuesto repetido en la lista se suma.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    orden_id: int | None = Field(default=None, gt=0)
+    items: list[ItemRequerido] = Field(min_length=1, max_length=100)
+
+
+class DisponibilidadRepuesto(BaseModel):
+    repuesto_id: int
+    nombre: str
+    proveedor_nombre: str
+    requerido: int
+    stock: int
+    # Reservado por la orden consultada (0 si no se indicó orden).
+    reservado_para_orden: int
+    comprometido_otras_ordenes: int
+    # Lo que esa orden puede usar: stock − lo comprometido por OTRAS órdenes.
+    disponible: int
+    alcanza: bool
+    faltan: int
+
+
+class ResultadoDisponibilidad(BaseModel):
+    orden_id: int | None
+    # true si TODOS los repuestos alcanzan.
+    disponible: bool
+    repuestos: list[DisponibilidadRepuesto]
+    # Solo en la consulta por orden: presupuesto aprobado del que salen los requeridos.
+    presupuesto_id: int | None = None
+    version: int | None = None
+
+
+# ------------------------------------------- reserva, descuento y rechazo --
+
+
+class FaltanteStock(BaseModel):
+    """Por qué se rechazó una reserva o un consumo."""
+
+    repuesto_id: int
+    nombre: str
+    solicitado: int
+    disponible: int
+    faltan: int
+
+
+class RechazoStock(BaseModel):
+    """Cuerpo del 409 por stock insuficiente: no se aplicó NADA de la operación."""
+
+    detail: str
+    faltantes: list[FaltanteStock]
+
+
+class ConsumoOrden(BaseModel):
+    """Descontar varios repuestos de una orden en una sola operación (todo o nada)."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    clave_operacion: str = Field(min_length=8, max_length=60, pattern=r"^[A-Za-z0-9._:-]+$",
+                                 description="Identificador único de la operación (reintentos seguros)")
+    items: list[ItemRequerido] = Field(min_length=1, max_length=100)
+
+
+class LiberacionOrden(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    clave_operacion: str = Field(min_length=8, max_length=60, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+class ResultadoOperacionOrden(BaseModel):
+    """Movimientos que dejó una reserva, un descuento o una liberación de una orden."""
+
+    orden_id: int
+    movimientos: list[MovimientoSalida]
+    # true si la operación ya se había aplicado (misma clave): no se repitió.
+    repetido: bool = False
+
+
+class ResultadoReserva(BaseModel):
+    orden_id: int
+    # true: todo lo pendiente del presupuesto aprobado quedó reservado.
+    reservado: bool
+    faltantes: list[FaltanteStock]
+    movimientos: list[MovimientoSalida]

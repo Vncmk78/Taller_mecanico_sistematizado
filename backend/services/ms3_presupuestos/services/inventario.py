@@ -43,6 +43,7 @@ from services.ms3_presupuestos.schemas.inventario import (
     AlertaRepuesto,
     AlertaStock,
     CambioUmbral,
+    FaltanteStock,
     CompromisoOrden,
     MovimientoCrear,
     MovimientoSalida,
@@ -55,7 +56,15 @@ TIPOS_ADMINISTRADOR = frozenset({"ingreso", "ajuste"})
 
 
 class StockInsuficiente(ConflictoDeDatos):
-    """La operación pide más unidades de las que hay disponibles (409)."""
+    """La operación pide más unidades de las que hay disponibles (409).
+
+    Lleva el detalle por repuesto (`faltantes`) para que el cliente sepa qué
+    falta; la respuesta es un RechazoStock y no se aplica nada.
+    """
+
+    def __init__(self, mensaje: str, faltantes: list[FaltanteStock] | None = None) -> None:
+        super().__init__(mensaje)
+        self.faltantes = faltantes or []
 
 
 # ------------------------------------------------------------------ consultas --
@@ -126,7 +135,8 @@ def registrar_movimiento(
         previo = uow.movimientos.por_clave_operacion(datos.clave_operacion)
         if previo is not None:
             iguales = (previo.repuesto_id, previo.tipo, previo.cantidad, previo.orden_id) == \
-                      (datos.repuesto_id, datos.tipo, datos.cantidad, datos.orden_id)
+                      (datos.repuesto_id, datos.tipo, datos.cantidad, datos.orden_id) and \
+                      (datos.proveedor_id is None or datos.proveedor_id == previo.proveedor_id)
             if not iguales:
                 raise ConflictoDeDatos(
                     f"La clave_operacion {datos.clave_operacion!r} ya se usó para otro movimiento")
@@ -146,9 +156,15 @@ def registrar_movimiento(
         # 3) Reglas de disponibilidad y nuevo stock.
         repuesto.stock = _nuevo_stock(uow, repuesto, datos)
 
+        # Trazabilidad: el ingreso guarda qué proveedor entregó las unidades.
+        proveedor_id = None
+        if datos.tipo == "ingreso":
+            proveedor_id = datos.proveedor_id or repuesto.proveedor_id
+            uow.proveedores.obtener_o_error(proveedor_id)
         movimiento = uow.movimientos.agregar(MovimientoInventario(
             clave_operacion=datos.clave_operacion, repuesto=repuesto, tipo=datos.tipo,
-            cantidad=datos.cantidad, orden_id=datos.orden_id, registrado_por_id=usuario_id,
+            cantidad=datos.cantidad, orden_id=datos.orden_id, proveedor_id=proveedor_id,
+            registrado_por_id=usuario_id,
         ))
         uow.sesion.refresh(movimiento)
         queda_bajo = esta_bajo_umbral(repuesto.stock, efectivo)
@@ -171,21 +187,24 @@ def _nuevo_stock(uow: UnidadDeTrabajo, repuesto: Repuesto, datos: MovimientoCrea
     if datos.tipo == "ajuste":
         if repuesto.stock + n < 0:
             raise StockInsuficiente(
-                f"El ajuste dejaría el stock de {repuesto.nombre!r} en {repuesto.stock + n}")
+                f"El ajuste dejaría el stock de {repuesto.nombre!r} en {repuesto.stock + n}",
+                [_faltante(repuesto, -n, repuesto.stock)])
         return repuesto.stock + n
     if datos.tipo == "compromiso":
         disponible = repuesto.stock - comprometido
         if n > disponible:
             raise StockInsuficiente(
                 f"Stock insuficiente de {repuesto.nombre!r}: se piden {n}, disponibles {disponible} "
-                f"(stock {repuesto.stock}, comprometidas {comprometido})")
+                f"(stock {repuesto.stock}, comprometidas {comprometido})",
+                [_faltante(repuesto, n, disponible)])
         return repuesto.stock
     if datos.tipo == "consumo":
         utilizable = repuesto.stock - (comprometido - propio)
         if n > utilizable:
             raise StockInsuficiente(
                 f"Stock insuficiente de {repuesto.nombre!r}: se consumen {n}, la orden puede usar "
-                f"{utilizable} (reservadas por ella {propio}, libres {repuesto.stock - comprometido})")
+                f"{utilizable} (reservadas por ella {propio}, libres {repuesto.stock - comprometido})",
+                [_faltante(repuesto, n, utilizable)])
         return repuesto.stock - n
     # liberacion
     if n > propio:
@@ -195,9 +214,15 @@ def _nuevo_stock(uow: UnidadDeTrabajo, repuesto: Repuesto, datos: MovimientoCrea
     return repuesto.stock
 
 
+def _faltante(repuesto: Repuesto, solicitado: int, disponible: int) -> FaltanteStock:
+    return FaltanteStock(repuesto_id=repuesto.repuesto_id, nombre=repuesto.nombre,
+                         solicitado=solicitado, disponible=max(0, disponible),
+                         faltan=solicitado - max(0, disponible))
+
+
 def listar_movimientos(uow: UnidadDeTrabajo, *, repuesto_id: int | None, orden_id: int | None,
-                       tipo: str | None, desde: int, limite: int):
-    filtros = dict(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo)
+                       tipo: str | None, desde: int, limite: int, proveedor_id: int | None = None):
+    filtros = dict(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo, proveedor_id=proveedor_id)
     return (uow.movimientos.contar_busqueda(**filtros),
             uow.movimientos.buscar(**filtros, desde=desde, limite=limite))
 

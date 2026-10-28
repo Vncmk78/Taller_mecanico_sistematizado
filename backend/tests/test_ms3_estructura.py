@@ -84,16 +84,17 @@ def test_modelos_del_mer_registrados_en_la_metadata() -> None:
     esperadas = {
         "proveedor", "repuesto", "movimiento_inventario", "parametro_inventario",
         "historial_umbral", "presupuesto", "version_presupuesto",
-        "item_presupuesto", "decision_presupuesto",
+        "item_presupuesto", "decision_presupuesto", "historial_proveedor_repuesto",
     }
     assert esperadas <= set(Base.metadata.tables)
 
 
 def test_alembic_tiene_una_sola_cadena_lineal() -> None:
     script = ScriptDirectory.from_config(Config(RUTA_ALEMBIC))
-    assert script.get_heads() == ["0006_ms3"]
+    assert script.get_heads() == ["0008_ms3"]
     cadena = [rev.revision for rev in script.walk_revisions("base", "heads")]
-    assert list(reversed(cadena)) == ["0001_ms3", "0002_ms3", "0003_ms3", "0004_ms3", "0005_ms3", "0006_ms3"]
+    assert list(reversed(cadena)) == ["0001_ms3", "0002_ms3", "0003_ms3", "0004_ms3", "0005_ms3", "0006_ms3",
+                                    "0007_ms3", "0008_ms3"]
 
 
 # --------------------------------------------------------------------------- #

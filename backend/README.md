@@ -301,6 +301,33 @@ El **stock no se edita** por estos endpoints: cambia solo con movimientos de
 inventario. Un proveedor no puede tener dos repuestos con el mismo nombre
 (migración `0005_ms3`: índice único `(proveedor_id, lower(nombre))`).
 
+### Trazabilidad Repuesto–Proveedor/Distribuidor (MS3)
+
+Migración `0007_ms3`. Responde de dónde viene cada repuesto y cada unidad:
+
+- **Tipo de distribuidor**: `tipo_distribuidor` = `oficial` (de la marca) o
+  `generico` en proveedores (por defecto `generico`). Filtro
+  `GET /proveedores?tipo_distribuidor=oficial` y `proveedor_tipo_distribuidor`
+  en cada repuesto.
+- **Historial de proveedores** (`historial_proveedor_repuesto`): el alta y cada
+  cambio de proveedor de un repuesto, con el administrador y la `observacion`
+  del `PATCH /repuestos/{id}`. Lo escribe el modelo (eventos del ORM), así
+  ninguna vía de creación se lo salta.
+- **Proveedor de cada ingreso** (`movimiento_inventario.proveedor_id`): por
+  defecto el proveedor actual del repuesto; se puede indicar otro en el ingreso
+  (compra puntual). La base exige proveedor en los ingresos y solo en ellos.
+  Las unidades ingresadas siguen asociadas a quien las entregó aunque el
+  repuesto cambie de proveedor.
+- Un **proveedor que figura en la trazabilidad** (historial o ingresos) no se
+  elimina (`409`). Un repuesto que nunca se usó sí se puede eliminar, y su
+  historial se va con él.
+
+| Método y ruta | Qué devuelve |
+|---|---|
+| `GET /repuestos/{id}/trazabilidad` | Proveedor actual, historial de proveedores, ingresos por proveedor (cantidad, unidades, primero y último) y uso por orden (reservado y consumido) |
+| `GET /proveedores/{id}/trazabilidad` | Repuestos que abastece (`actual: true`) o abasteció, con las unidades que entregó de cada uno |
+| `GET /inventario/movimientos?proveedor_id=` | Ingresos entregados por ese proveedor |
+
 ### Inventario y stock (MS3)
 
 - **stock**: unidades físicas. Solo lo cambian `ingreso`, `ajuste` y `consumo`.
@@ -315,6 +342,47 @@ inventario. Un proveedor no puede tener dos repuestos con el mismo nombre
 | `GET /inventario/alertas` | Repuestos con stock < umbral efectivo (igual no es alerta), los que más faltan primero |
 | `GET` / `PUT /inventario/umbral-general` | Ver o cambiar (Administrador) el umbral general; cierra el vigente y deja historial |
 | `GET /inventario/historial-umbral?repuesto_id=&solo_general=` | Cambios de umbral |
+| `POST /inventario/disponibilidad` | `{"orden_id"?, "items": [{"repuesto_id", "cantidad"}]}`: valida **antes de usar** si alcanza el stock (no mueve nada). Por repuesto: stock, reservado para la orden, comprometido por otras, disponible, `alcanza` y `faltan` |
+| `GET /inventario/ordenes/{orden_id}/disponibilidad` | Lo mismo para lo que falta usar del presupuesto aprobado de la orden (requerido − ya consumido); `409` si no tiene presupuesto aprobado |
+| `POST /inventario/ordenes/{orden_id}/reserva` | Reserva lo que falta usar del presupuesto aprobado (todo o nada): `reservado`, `faltantes` y los movimientos. Sirve para reintentar una orden que espera repuestos |
+| `POST /inventario/ordenes/{orden_id}/consumos` | `{"clave_operacion", "items": [...]}`: descuenta varios repuestos usados en la orden, todos o ninguno; misma clave → `200`, `repetido: true` |
+| `POST /inventario/ordenes/{orden_id}/liberacion` | `{"clave_operacion"}`: libera todo lo reservado por la orden (p. ej. al cancelarla) |
+
+**Validación de disponibilidad** (`services/disponibilidad.py`): para una orden,
+disponible = stock − lo comprometido por **otras** órdenes (su propia reserva
+cuenta para ella). Las cantidades decimales del presupuesto se redondean hacia
+arriba (1,5 litros → 2 unidades). Aprobar un presupuesto usa la misma
+validación con los repuestos bloqueados (`FOR UPDATE`, en orden de id) hasta el
+commit, para que dos aprobaciones simultáneas no cuenten las mismas unidades.
+
+**Reglas de reserva, descuento y rechazo** (`services/reservas.py`):
+
+- **Reserva**: al aprobar un presupuesto con stock suficiente se reservan
+  (compromisos) las unidades que falta usar, en la misma transacción de la
+  decisión (`repuestos_reservados` en la respuesta). Si algo no alcanza no se
+  reserva nada y la orden espera repuestos. Una modificación aprobada ajusta la
+  reserva: reserva la diferencia o libera el sobrante.
+- **Descuento**: consumir usa primero lo reservado por la orden y el resto debe
+  estar libre; nunca toma lo reservado por otra orden. Varios repuestos se
+  descuentan juntos o ninguno.
+- **Rechazo**: stock insuficiente responde `409` con `faltantes`
+  (`repuesto_id`, `nombre`, `solicitado`, `disponible`, `faltan`) y no aplica nada.
+- **Saldo reservado** por orden en orden cronológico: un consumo mayor que lo
+  reservado no deja deuda que se coma una reserva posterior.
+
+**Índices de inventario y trazabilidad** (`0008_ms3`): índices compuestos que
+entregan el orden de cada listado y el saldo reservado leyendo solo el índice;
+el saldo de varios repuestos sale en una consulta. Revisión y mediciones en
+[`docs/revision-indices-inventario.md`](docs/revision-indices-inventario.md);
+`tests/test_indices_inventario.py` lo verifica con `EXPLAIN`.
+
+**Pruebas de límites de stock** (`tests/test_stock_insuficiente_exacto_multiple.py`):
+para cada forma de usar stock (consumo, compromiso, ajuste, aprobación, validación
+y descuento de varios repuestos), el stock exacto se acepta y deja 0, y una
+unidad más responde `409` con `faltan = 1` sin cambiar nada. También el consumo
+de varias unidades (un movimiento, varios pasos hasta agotar, reservado + libre,
+varios repuestos) y en paralelo: dos descuentos del stock exacto (solo pasa uno)
+y descuentos cruzados `[A, B]` / `[B, A]` sin interbloqueo.
 
 Cada movimiento responde `alerta: {activa, nueva}`; `nueva` indica que ese
 movimiento dejó el repuesto bajo su umbral (para avisar una sola vez; el envío

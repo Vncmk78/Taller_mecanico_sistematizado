@@ -12,7 +12,10 @@ export interface AuthContextValue {
   restoreSession: () => Promise<void>;
   clearSession: () => void;
   getProfile: () => Promise<User>;
+  roles: UserRole[];
   hasRole: (...roles: UserRole[]) => boolean;
+  hasAnyRole: (...roles: UserRole[]) => boolean;
+  hasAllRoles: (...roles: UserRole[]) => boolean;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

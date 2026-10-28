@@ -1,9 +1,9 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ClipboardX } from 'lucide-react';
+import { ArrowLeft, ClipboardX, Images } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
 import { OrderBitacoraSection } from '@/presentation/components/orders/OrderBitacoraSection';
-import { OrderEvidenceSection } from '@/presentation/components/evidence/OrderEvidenceSection';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -17,6 +17,8 @@ import { orderService } from '@/infrastructure/api/OrderService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { EvidenceUploadForm } from '@/presentation/components/evidence/EvidenceUploadForm';
+import { EvidenceList } from '@/presentation/components/evidence/EvidenceList';
 
 export function MechanicOrderDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -26,6 +28,9 @@ export function MechanicOrderDetailPage() {
     const { isOffline, error, requestId } = useOrderStore();
     const user = useAuthStore((s) => s.user);
     const vehicles = useVehicleStore((s) => s.vehicles);
+    const [evidenciasAbiertas, setEvidenciasAbiertas] = useState(true);
+    const [evidenciasRefresh, setEvidenciasRefresh] = useState(0);
+    const puedeSubir = user?.role === 'mecanico' || user?.role === 'administrador';
 
     if (loading) {
         return <LoadingState message="Cargando detalle de la orden..." className="p-10" />;
@@ -94,12 +99,35 @@ export function MechanicOrderDetailPage() {
 
             <OrderBitacoraSection order={order} canWrite={user?.role === 'mecanico'} />
 
-            <OrderEvidenceSection
-                orderId={order.id}
-                canUpload={user?.role === 'mecanico'}
-                moreHref={`/mechanic/ordenes/${order.id}/evidencias`}
-                className="mt-6"
-            />
+            <section className="card p-6 mt-6" aria-labelledby="mechanic-order-evidence-title">
+                <button
+                    type="button"
+                    onClick={() => setEvidenciasAbiertas((prev) => !prev)}
+                    className="w-full flex items-center justify-between gap-4 text-left"
+                    aria-expanded={evidenciasAbiertas}
+                    aria-controls="mechanic-order-evidence-panel"
+                >
+                    <h3 id="mechanic-order-evidence-title" className="flex items-center gap-2 text-xl font-semibold">
+                        <Images className="h-5 w-5 text-text-muted" aria-hidden />
+                        Evidencias
+                    </h3>
+                    <span className="text-sm text-text-muted">{evidenciasAbiertas ? 'Ocultar' : 'Mostrar'}</span>
+                </button>
+
+                {evidenciasAbiertas && (
+                    <div id="mechanic-order-evidence-panel" className="mt-6">
+                        {puedeSubir && (
+                            <EvidenceUploadForm
+                                orderId={order.id}
+                                className="mb-6 border-b border-border-custom pb-6"
+                                onSuccess={() => setEvidenciasRefresh((n) => n + 1)}
+                            />
+                        )}
+
+                        <EvidenceList ordenId={order.id} refreshKey={evidenciasRefresh} />
+                    </div>
+                )}
+            </section>
 
             <OrderActionsPanel order={order} className="mt-6" />
         </div>

@@ -85,7 +85,22 @@ describe('EvidenceUploadForm: validaciones antes de enviar', () => {
 
         expect(await screen.findByText('Selecciona una foto o un video.')).toBeInTheDocument();
         expect(inputArchivo()).toHaveAttribute('aria-invalid', 'true');
+        expect(inputArchivo().getAttribute('aria-describedby')).toBe(
+            'evidencia-archivo-hint evidencia-archivo-error'
+        );
+        expect(document.getElementById('evidencia-archivo-error')).toHaveTextContent(
+            'Selecciona una foto o un video.'
+        );
         expect(evidenciaService.crear).not.toHaveBeenCalled();
+    });
+
+    it('describe el campo de archivo con el formato y el tamaño permitidos', () => {
+        renderForm();
+
+        expect(inputArchivo().getAttribute('aria-describedby')).toBe('evidencia-archivo-hint');
+        expect(document.getElementById('evidencia-archivo-hint')).toHaveTextContent(
+            'Formatos permitidos: imágenes y videos. Tamaño máximo 12 MB.'
+        );
     });
 
     it('al elegir un archivo muestra su nombre y tamaño y habilita el envío', () => {
@@ -241,6 +256,22 @@ describe('EvidenceUploadForm: datos enviados según el contexto', () => {
 
         expect(await screen.findByText('Esperando el presupuesto de la orden...')).toBeInTheDocument();
         expect(evidenciaService.crear).not.toHaveBeenCalled();
+    });
+
+    it('un error del presupuesto no marca el archivo como inválido', async () => {
+        vi.mocked(presupuestoService.getByOrder).mockResolvedValue(null);
+        renderForm();
+
+        fireEvent.change(screen.getByLabelText('Contexto'), { target: { value: 'presupuesto' } });
+        expect(await screen.findByText('Esta orden no tiene un presupuesto registrado.')).toBeInTheDocument();
+        seleccionar(foto());
+        fireEvent.click(botonSubir());
+
+        expect(
+            await screen.findByText('Esta orden no tiene un presupuesto al que asociar la evidencia.')
+        ).toBeInTheDocument();
+        expect(inputArchivo()).not.toHaveAttribute('aria-invalid');
+        expect(inputArchivo().getAttribute('aria-describedby')).toBe('evidencia-archivo-hint');
     });
 });
 

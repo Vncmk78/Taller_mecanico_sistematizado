@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Upload } from 'lucide-react';
-import {
-    CONTEXTO_EVIDENCIA_LABEL,
-    TAMANO_MAXIMO_EVIDENCIA_BYTES,
-    esContentTypeEvidenciaPermitido,
-    type ContextoEvidencia,
-    type Evidencia,
-} from '@/domain/entities/Evidencia';
+import { CONTEXTO_EVIDENCIA_LABEL, type ContextoEvidencia, type Evidencia } from '@/domain/entities/Evidencia';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
@@ -14,6 +8,7 @@ import { ProgressBar } from '@/presentation/components/ui/ProgressBar';
 import { useToast } from '@/presentation/components/ui/toastContext';
 import { useEvidenceUpload } from '@/presentation/hooks/useEvidenceUpload';
 import { formatBytes } from '@/presentation/utils/evidenceDisplay';
+import { formatearLimitesParaTexto, validarArchivoEvidencia } from '@/presentation/utils/evidenceValidation';
 
 const CONTEXTOS: ContextoEvidencia[] = ['diagnostico', 'presupuesto', 'reparacion', 'resultado_final'];
 
@@ -83,8 +78,23 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
     };
 
     const seleccionarArchivo = (evento: ChangeEvent<HTMLInputElement>) => {
-        setArchivo(evento.target.files?.[0] ?? null);
+        const archivoSeleccionado = evento.target.files?.[0] ?? null;
         limpiarResultado();
+
+        if (!archivoSeleccionado) {
+            setArchivo(null);
+            return;
+        }
+
+        const resultado = validarArchivoEvidencia(archivoSeleccionado);
+        if (!resultado.valido) {
+            setErrorArchivo(resultado.error ?? 'Archivo inválido.');
+            setArchivo(null);
+            if (fileRef.current) fileRef.current.value = '';
+            return;
+        }
+
+        setArchivo(archivoSeleccionado);
     };
 
     const onSubmit = async (evento: FormEvent) => {
@@ -98,12 +108,12 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
             setErrorArchivo('Selecciona una foto o un video.');
             return;
         }
-        if (!esContentTypeEvidenciaPermitido(archivo.type)) {
-            setErrorArchivo('Solo se permiten imágenes o videos.');
-            return;
-        }
-        if (archivo.size > TAMANO_MAXIMO_EVIDENCIA_BYTES) {
-            setErrorArchivo(`El archivo supera el límite de ${formatBytes(TAMANO_MAXIMO_EVIDENCIA_BYTES)}.`);
+
+        const resultado = validarArchivoEvidencia(archivo);
+        if (!resultado.valido) {
+            setErrorArchivo(resultado.error ?? 'Archivo inválido.');
+            setArchivo(null);
+            if (fileRef.current) fileRef.current.value = '';
             return;
         }
         if (esPresupuesto && estadoPresupuesto === 'loading') {
@@ -159,8 +169,7 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
                         </span>
                     )}
                     <span id="evidencia-archivo-hint" className="text-xs text-text-muted">
-                        Formatos permitidos: imágenes y videos. Tamaño máximo{' '}
-                        {formatBytes(TAMANO_MAXIMO_EVIDENCIA_BYTES)}.
+                        {formatearLimitesParaTexto()}
                     </span>
                     {errorArchivo && (
                         <p id="evidencia-archivo-error" role="alert" className="text-sm text-status-red">

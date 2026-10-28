@@ -133,6 +133,27 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         );
     });
 
+    it('asocia el error del motivo de cancelación con el campo', async () => {
+        useAuthStore.setState({ user: sesion('cliente'), token: 't', isAuthenticated: true });
+
+        renderPanel(orden({ estadoCodigo: 2 }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cancelar solicitud' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Cancelar orden' }));
+
+        expect(await screen.findByText('Debe indicar un motivo.')).toBeInTheDocument();
+
+        const motivo = screen.getByLabelText('Motivo de la orden 101');
+        expect(motivo).toHaveAttribute('aria-required', 'true');
+        expect(motivo).toHaveAttribute('aria-invalid', 'true');
+        expect(motivo.getAttribute('aria-describedby')).toBe(
+            'orden-101-cancelar-motivo-error'
+        );
+        expect(document.getElementById('orden-101-cancelar-motivo-error')).toHaveTextContent(
+            'Debe indicar un motivo.'
+        );
+    });
+
     it('el mecánico no asignado ve su acción bloqueada y el asignado solo con destino', () => {
         useAuthStore.setState({ user: sesion('mecanico', '60'), token: 't', isAuthenticated: true });
         const noAsignada = renderPanel(orden({ estadoCodigo: 5, mecanicoActualId: '50' }));

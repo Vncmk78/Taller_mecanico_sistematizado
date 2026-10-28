@@ -187,4 +187,28 @@ describe('LoginPage: flujo funcional de inicio de sesión', () => {
 
     expect(passwordInput.type).toBe('text');
   });
+
+  it('usa un encabezado de nivel 2 y desactiva la validación nativa del formulario', () => {
+    const { container } = renderLogin();
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Iniciar Sesión' })).toBeInTheDocument();
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    expect(form).not.toBeNull();
+    expect(form.noValidate).toBe(true);
+  });
+
+  it('asocia el error de validación con el campo de correo', async () => {
+    renderLogin();
+
+    await completarLogin('', 'ClientePrueba123!');
+    await screen.findByText('Ingrese un correo válido');
+
+    const email = screen.getByLabelText('Correo Electrónico');
+    expect(email).toHaveAttribute('aria-invalid', 'true');
+
+    const errorId = email.getAttribute('aria-describedby');
+    expect(errorId).toBeTruthy();
+    expect(document.getElementById(errorId as string)).toHaveTextContent('Ingrese un correo válido');
+  });
 });

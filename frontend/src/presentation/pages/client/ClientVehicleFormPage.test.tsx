@@ -271,4 +271,20 @@ describe('ClientVehicleFormPage: el formulario sigue el contrato de MS2', () => 
             expect.objectContaining({ year: 1995, mileage: 1500000 })
         );
     });
+
+    it('marca los campos obligatorios y usa teclado numérico en año y kilometraje', () => {
+        renderPage();
+
+        for (const label of [/Patente/, /Marca/, /Modelo/]) {
+            const campo = screen.getByLabelText(label);
+            expect(campo).toBeRequired();
+            expect(campo).toHaveAttribute('aria-required', 'true');
+        }
+
+        expect(screen.getByLabelText(/Año/)).toHaveAttribute('inputmode', 'numeric');
+        expect(screen.getByLabelText(/Kilometraje actual/)).toHaveAttribute(
+            'inputmode',
+            'numeric'
+        );
+    });
 });

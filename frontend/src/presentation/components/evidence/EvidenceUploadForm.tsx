@@ -44,6 +44,7 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
     const [archivo, setArchivo] = useState<File | null>(null);
     const [contexto, setContexto] = useState<ContextoEvidencia>('diagnostico');
     const [visibleCliente, setVisibleCliente] = useState(false);
+    const [errorArchivo, setErrorArchivo] = useState('');
     const [errorLocal, setErrorLocal] = useState('');
     const [presupuestoId, setPresupuestoId] = useState<string | null>(null);
     const [estadoPresupuesto, setEstadoPresupuesto] = useState<EstadoPresupuesto>('idle');
@@ -77,6 +78,7 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
 
     const limpiarResultado = () => {
         reset();
+        setErrorArchivo('');
         setErrorLocal('');
     };
 
@@ -89,16 +91,19 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
         evento.preventDefault();
         if (isUploading) return;
 
+        setErrorArchivo('');
+        setErrorLocal('');
+
         if (!archivo) {
-            setErrorLocal('Selecciona una foto o un video.');
+            setErrorArchivo('Selecciona una foto o un video.');
             return;
         }
         if (!esContentTypeEvidenciaPermitido(archivo.type)) {
-            setErrorLocal('Solo se permiten imágenes o videos.');
+            setErrorArchivo('Solo se permiten imágenes o videos.');
             return;
         }
         if (archivo.size > TAMANO_MAXIMO_EVIDENCIA_BYTES) {
-            setErrorLocal(`El archivo supera el límite de ${formatBytes(TAMANO_MAXIMO_EVIDENCIA_BYTES)}.`);
+            setErrorArchivo(`El archivo supera el límite de ${formatBytes(TAMANO_MAXIMO_EVIDENCIA_BYTES)}.`);
             return;
         }
         if (esPresupuesto && estadoPresupuesto === 'loading') {
@@ -110,7 +115,6 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
             return;
         }
 
-        setErrorLocal('');
         const evidencia = await subir({
             archivo,
             contexto,
@@ -125,36 +129,57 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
         }
     };
 
-    const mensajeError = errorLocal || error;
+    const mensajeErrorGeneral = errorLocal || error;
 
     return (
         <form onSubmit={onSubmit} className={className} noValidate aria-label="Subir evidencia">
             <div className="grid gap-4 sm:grid-cols-2">
-                <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-text-muted">Archivo (foto o video)</span>
+                <div className="flex flex-col gap-1 text-sm">
+                    <label htmlFor="evidencia-archivo" className="text-text-muted">
+                        Archivo (foto o video)
+                    </label>
                     <input
                         ref={fileRef}
+                        id="evidencia-archivo"
                         type="file"
+                        name="archivo"
                         accept="image/*,video/*"
                         onChange={seleccionarArchivo}
                         className={INPUT_CLASS}
-                        aria-invalid={!!errorLocal && !archivo}
+                        aria-invalid={errorArchivo ? true : undefined}
+                        aria-describedby={
+                            errorArchivo
+                                ? 'evidencia-archivo-hint evidencia-archivo-error'
+                                : 'evidencia-archivo-hint'
+                        }
                     />
                     {archivo && (
                         <span className="text-xs text-text-muted">
                             {archivo.name} · {formatBytes(archivo.size)}
                         </span>
                     )}
-                </label>
+                    <span id="evidencia-archivo-hint" className="text-xs text-text-muted">
+                        Formatos permitidos: imágenes y videos. Tamaño máximo{' '}
+                        {formatBytes(TAMANO_MAXIMO_EVIDENCIA_BYTES)}.
+                    </span>
+                    {errorArchivo && (
+                        <p id="evidencia-archivo-error" role="alert" className="text-sm text-status-red">
+                            {errorArchivo}
+                        </p>
+                    )}
+                </div>
 
                 <label className="flex flex-col gap-1 text-sm">
                     <span className="text-text-muted">Contexto</span>
                     <select
+                        id="evidencia-contexto"
+                        name="contexto"
                         value={contexto}
                         onChange={(evento) => {
                             setContexto(evento.target.value as ContextoEvidencia);
                             limpiarResultado();
                         }}
+                        aria-describedby={esPresupuesto ? 'evidencia-contexto-hint' : undefined}
                         className={INPUT_CLASS}
                         disabled={isUploading}
                     >
@@ -168,7 +193,7 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
             </div>
 
             {esPresupuesto ? (
-                <p className="mt-3 text-sm text-text-muted">
+                <p id="evidencia-contexto-hint" className="mt-3 text-sm text-text-muted">
                     La evidencia del presupuesto se asocia automáticamente y siempre es visible para
                     el cliente.
                     {estadoPresupuesto === 'ausente' && (
@@ -178,15 +203,25 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
                     )}
                 </p>
             ) : (
-                <label className="mt-4 flex items-center gap-2 text-sm">
-                    <input
-                        type="checkbox"
-                        checked={visibleCliente}
-                        onChange={(evento) => setVisibleCliente(evento.target.checked)}
-                        disabled={isUploading}
-                    />
-                    <span className="text-text-muted">Visible para el cliente</span>
-                </label>
+                <div className="mt-4 flex items-center justify-between rounded-lg border border-border-custom px-4 py-3">
+                    <div>
+                        <p className="text-sm font-medium">Visible para el cliente</p>
+                        <p className="text-xs text-text-muted">
+                            Permite que el cliente vea esta evidencia desde su portal.
+                        </p>
+                    </div>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                            id="evidencia-visible-cliente"
+                            type="checkbox"
+                            className="peer sr-only"
+                            checked={visibleCliente}
+                            disabled={isUploading}
+                            onChange={(event) => setVisibleCliente(event.target.checked)}
+                        />
+                        <div className="peer h-6 w-11 rounded-full bg-bg-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-border-custom after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary-blue peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-primary-blue peer-disabled:opacity-50"></div>
+                    </label>
+                </div>
             )}
 
             {isUploading && (
@@ -205,11 +240,11 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
                 </Alert>
             )}
 
-            {mensajeError && !isUploading && (
+            {mensajeErrorGeneral && !isUploading && (
                 <Alert tone="error" className="mt-4">
                     {isOffline
                         ? 'Sin conexión: no se pudo subir la evidencia. Revisa tu red e inténtalo de nuevo.'
-                        : mensajeError}
+                        : mensajeErrorGeneral}
                     {requestId && (
                         <span className="block mt-1 font-mono text-xs opacity-80">
                             Referencia: {requestId}

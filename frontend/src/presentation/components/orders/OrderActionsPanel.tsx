@@ -76,6 +76,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
     const [destino, setDestino] = useState('');
     const [observacion, setObservacion] = useState('');
     const [motivo, setMotivo] = useState('');
+    const [motivoError, setMotivoError] = useState('');
     const [mecanicoId, setMecanicoId] = useState('');
     const [mecanicos, setMecanicos] = useState<UsuarioListado[]>([]);
     const [submitting, setSubmitting] = useState(false);
@@ -109,6 +110,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
         setDestino('');
         setObservacion('');
         setMotivo('');
+        setMotivoError('');
         setMecanicoId('');
     };
 
@@ -124,7 +126,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
         if (pending.id === 'avanzar_estado' && !destino) return;
         if (pending.id === 'asignar_mecanico' && !mecanicoId) return;
         if (pending.requiereMotivo && !motivo.trim()) {
-            setError('Debe indicar un motivo.');
+            setMotivoError('Debe indicar un motivo.');
             return;
         }
 
@@ -177,6 +179,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
 
     const abrir = (accion: AccionOrden) => {
         setError('');
+        setMotivoError('');
         setPending(accion);
     };
 
@@ -227,9 +230,12 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <label className="flex flex-col gap-1 text-sm">
                                     <span className="text-text-muted">Siguiente estado</span>
                                     <select
+                                        id={`orden-${order.id}-${accion.id}-destino`}
+                                        name="destino"
                                         value={destino}
                                         onChange={(e) => setDestino(e.target.value)}
                                         aria-label={`Siguiente estado de la orden ${order.id}`}
+                                        aria-required="true"
                                         className={INPUT_CLASS}
                                     >
                                         <option value="">Seleccionar...</option>
@@ -246,9 +252,12 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <label className="flex flex-col gap-1 text-sm">
                                     <span className="text-text-muted">Mecánico responsable</span>
                                     <select
+                                        id={`orden-${order.id}-${accion.id}-mecanico`}
+                                        name="mecanico"
                                         value={mecanicoId}
                                         onChange={(e) => setMecanicoId(e.target.value)}
                                         aria-label={`Mecánico para la orden ${order.id}`}
+                                        aria-required="true"
                                         disabled={loadingMecanicos}
                                         className={INPUT_CLASS}
                                     >
@@ -268,20 +277,50 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <label className="flex flex-col gap-1 text-sm">
                                     <span className="text-text-muted">Motivo (obligatorio)</span>
                                     <input
+                                        id={`orden-${order.id}-${accion.id}-motivo`}
                                         type="text"
+                                        name="motivo"
                                         value={motivo}
-                                        onChange={(e) => setMotivo(e.target.value)}
+                                        onChange={(e) => {
+                                            setMotivo(e.target.value);
+                                            if (motivoError) setMotivoError('');
+                                        }}
                                         placeholder="Explique el motivo de la cancelación..."
                                         aria-label={`Motivo de la orden ${order.id}`}
+                                        aria-required="true"
+                                        aria-invalid={motivoError ? true : undefined}
+                                        aria-describedby={
+                                            motivoError
+                                                ? `orden-${order.id}-${accion.id}-motivo-error`
+                                                : `orden-${order.id}-${accion.id}-motivo-hint`
+                                        }
                                         className={INPUT_CLASS}
                                     />
+                                    {motivoError ? (
+                                        <p
+                                            id={`orden-${order.id}-${accion.id}-motivo-error`}
+                                            role="alert"
+                                            className="text-sm text-status-red"
+                                        >
+                                            {motivoError}
+                                        </p>
+                                    ) : (
+                                        <span
+                                            id={`orden-${order.id}-${accion.id}-motivo-hint`}
+                                            className="text-xs text-text-muted"
+                                        >
+                                            Obligatorio para cancelar la orden.
+                                        </span>
+                                    )}
                                 </label>
                             ) : (
                                 accion.id !== 'asignar_mecanico' && (
                                     <label className="flex flex-col gap-1 text-sm">
                                         <span className="text-text-muted">Observación (opcional)</span>
                                         <input
+                                            id={`orden-${order.id}-${accion.id}-observacion`}
                                             type="text"
+                                            name="observacion"
                                             value={observacion}
                                             onChange={(e) => setObservacion(e.target.value)}
                                             placeholder="Comentario..."
@@ -296,7 +335,9 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <label className="flex flex-col gap-1 text-sm">
                                     <span className="text-text-muted">Observación (opcional)</span>
                                     <input
+                                        id={`orden-${order.id}-${accion.id}-observacion`}
                                         type="text"
+                                        name="observacion"
                                         value={observacion}
                                         onChange={(e) => setObservacion(e.target.value)}
                                         placeholder="Comentario de la asignación..."

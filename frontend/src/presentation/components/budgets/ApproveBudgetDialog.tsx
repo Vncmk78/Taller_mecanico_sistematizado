@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { CheckCircle2, X } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -33,6 +33,8 @@ export function ApproveBudgetDialog({
 }: ApproveBudgetDialogProps) {
     const [revisado, setRevisado] = useState(false);
     const { ref: dialogRef, handleKeyDown: handleDialogKeyDown } = useDialogFocus<HTMLDivElement>();
+    const titleId = useId();
+    const descriptionId = useId();
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -53,7 +55,8 @@ export function ApproveBudgetDialog({
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
-                aria-label="Aprobar presupuesto"
+                aria-labelledby={titleId}
+                aria-describedby={descriptionId}
                 tabIndex={-1}
                 onKeyDown={handleDialogKeyDown}
                 className="card relative w-full max-w-[480px] p-8 outline-none"
@@ -72,10 +75,10 @@ export function ApproveBudgetDialog({
                     <CheckCircle2 className="w-8 h-8 text-status-green" aria-hidden />
                 </div>
 
-                <h3 className="text-2xl font-bold tracking-tight text-text-main text-center">
+                <h3 id={titleId} className="text-2xl font-bold tracking-tight text-text-main text-center">
                     Aprobar presupuesto
                 </h3>
-                <p className="mt-2 text-text-muted text-sm text-center">
+                <p id={descriptionId} className="mt-2 text-text-muted text-sm text-center">
                     Al aprobar, autoriza al taller a utilizar los repuestos indicados y avanzar con la
                     reparación. Esta acción no se puede deshacer.
                 </p>
@@ -90,16 +93,23 @@ export function ApproveBudgetDialog({
 
                 <label className="flex items-start gap-3 mt-5 text-sm text-text-main cursor-pointer">
                     <input
+                        id="aprobar-revisado"
                         type="checkbox"
+                        name="aprobar-revisado"
                         checked={revisado}
                         onChange={(event) => setRevisado(event.target.checked)}
                         disabled={isLoading}
+                        aria-required="true"
+                        aria-describedby="aprobar-revisado-hint"
                         className="mt-0.5 accent-status-green"
                     />
                     <span>
                         He revisado las partidas y el total de {formatMoneyCLP(total)}.
                     </span>
                 </label>
+                <p id="aprobar-revisado-hint" className="mt-1 text-xs text-text-muted">
+                    Marque la casilla para habilitar la confirmación.
+                </p>
 
                 {error && (
                     <Alert tone="error" className="mt-4">

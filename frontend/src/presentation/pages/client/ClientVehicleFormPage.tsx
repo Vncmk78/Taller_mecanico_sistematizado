@@ -119,6 +119,7 @@ export function ClientVehicleFormPage() {
             placeholder="AB1234"
             icon={<Hash className="w-5 h-5" />}
             error={errors.patent?.message}
+            required
             {...register('patent')}
             />
             <Input
@@ -126,18 +127,21 @@ export function ClientVehicleFormPage() {
             placeholder="Ford"
             icon={<Car className="w-5 h-5" />}
             error={errors.brand?.message}
+            required
             {...register('brand')}
             />
             <Input
             label="Modelo"
             placeholder="Fiesta"
             error={errors.model?.message}
+            required
             {...register('model')}
             />
             <div className="grid grid-cols-2 gap-4">
             <Input
                 label="Año (opcional)"
                 type="number"
+                inputMode="numeric"
                 icon={<Calendar className="w-5 h-5" />}
                 error={errors.year?.message}
                 {...register('year')}
@@ -145,6 +149,7 @@ export function ClientVehicleFormPage() {
             <Input
                 label="Kilometraje actual (opcional)"
                 type="number"
+                inputMode="numeric"
                 icon={<Gauge className="w-5 h-5" />}
                 error={errors.mileage?.message}
                 {...register('mileage')}

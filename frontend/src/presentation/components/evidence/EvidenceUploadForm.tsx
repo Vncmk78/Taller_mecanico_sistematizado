@@ -203,17 +203,25 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
                     )}
                 </p>
             ) : (
-                <label className="mt-4 flex items-center gap-2 text-sm">
-                    <input
-                        id="evidencia-visible-cliente"
-                        type="checkbox"
-                        name="visible-cliente"
-                        checked={visibleCliente}
-                        onChange={(evento) => setVisibleCliente(evento.target.checked)}
-                        disabled={isUploading}
-                    />
-                    <span className="text-text-muted">Visible para el cliente</span>
-                </label>
+                <div className="mt-4 flex items-center justify-between rounded-lg border border-border-custom px-4 py-3">
+                    <div>
+                        <p className="text-sm font-medium">Visible para el cliente</p>
+                        <p className="text-xs text-text-muted">
+                            Permite que el cliente vea esta evidencia desde su portal.
+                        </p>
+                    </div>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                            id="evidencia-visible-cliente"
+                            type="checkbox"
+                            className="peer sr-only"
+                            checked={visibleCliente}
+                            disabled={isUploading}
+                            onChange={(event) => setVisibleCliente(event.target.checked)}
+                        />
+                        <div className="peer h-6 w-11 rounded-full bg-bg-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-border-custom after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary-blue peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-primary-blue peer-disabled:opacity-50"></div>
+                    </label>
+                </div>
             )}
 
             {isUploading && (

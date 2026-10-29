@@ -17,6 +17,11 @@ from services.ms1_auth.security.passwords import hash_contrasena, verificar_cont
 from shared.auth import NombreRol
 
 
+# Hash dummy para normalizar el tiempo de verificación y evitar enumeración
+# de usuarios por diferencias de tiempo entre cuentas existentes e inexistentes.
+_DUMMY_HASH_VERIFICACION = hash_contrasena("TallerMecanico_Dummy_Timing_9f3e8a2b!")
+
+
 class CorreoRegistradoError(Exception):
     """El correo ya pertenece a una cuenta."""
 
@@ -115,6 +120,10 @@ def autenticar_usuario(db: Session, *, correo: str, contrasena: str) -> Usuario:
     bloqueada `LOGIN_BLOQUEO_MINUTOS` minutos: mientras el bloqueo siga
     vigente no se verifica la contraseña y se lanza `CuentaBloqueadaError`.
     Un ingreso correcto reinicia el contador y el bloqueo.
+
+    Para evitar enumeración de usuarios, cuando el correo no existe se
+    ejecuta una verificación con hash dummy con el mismo tiempo aproximado,
+    se registra el fallo sin usuario y se devuelve el mismo error genérico.
     """
 
     try:
@@ -133,16 +142,22 @@ def autenticar_usuario(db: Session, *, correo: str, contrasena: str) -> Usuario:
         if segundos_restantes > 0:
             raise CuentaBloqueadaError(segundos_restantes)
 
-    if (
-        usuario is None
-        or not usuario.activo
-        or not verificar_contrasena(contrasena, usuario.contrasena_hash)
+    if usuario is not None and usuario.activo and verificar_contrasena(
+        contrasena, usuario.contrasena_hash
     ):
-        _registrar_intento_fallido(db, usuario)
-        raise CredencialesInvalidasError("Correo o contraseña incorrectos")
+        _reiniciar_intentos(db, usuario)
+        return usuario
 
-    _reiniciar_intentos(db, usuario)
-    return usuario
+    if usuario is None:
+        # Normalizar tiempo para no distinguir entre usuario inexistente
+        # y credenciales incorrectas (enumeración por tiempo).
+        verificar_contrasena(contrasena, _DUMMY_HASH_VERIFICACION)
+    elif not usuario.activo:
+        # Cuenta inactiva: mismo error genérico para evitar enumeración.
+        pass
+
+    _registrar_intento_fallido(db, usuario)
+    raise CredencialesInvalidasError("Correo o contraseña incorrectos")
 
 
 def _ahora() -> datetime:
@@ -177,10 +192,18 @@ def _registrar_intento_fallido(db: Session, usuario: Usuario | None) -> None:
     que el contador debe quedar guardado antes de propagar el error. Cuando un
     bloqueo anterior ya venció, el contador arranca de nuevo para que el usuario
     vuelva a disponer de todos sus intentos.
+
+    Si el correo no existe, no se crea ni modifica ninguna cuenta, pero la
+    operación persiste para mantener el comportamiento del camino de error.
     """
 
     if usuario is None:
         # El correo no existe: no hay cuenta a la que contar el fallo.
+        # Asegurar transacción limpia sin escrituras.
+        try:
+            db.rollback()
+        except SQLAlchemyError:
+            pass
         return
 
     if usuario.bloqueado_hasta is not None and _segundos_bloqueo_restantes(usuario) == 0:

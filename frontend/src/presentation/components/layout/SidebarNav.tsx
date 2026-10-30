@@ -9,9 +9,9 @@ export function SidebarNav({ sections }: SidebarNavProps) {
   return (
     <aside
       aria-label="Menú lateral"
-      className="w-[280px] bg-surface border-r border-border-custom flex flex-col z-10 shrink-0"
+      className="w-[280px] bg-primary-blue border-r border-[#0B1017] flex flex-col z-10 shrink-0"
     >
-      <div className="flex items-center gap-2.5 p-7 border-b border-border-custom">
+      <div className="flex items-center gap-2.5 p-7 border-b border-white/10">
         <AppBrand />
       </div>
 
@@ -19,7 +19,7 @@ export function SidebarNav({ sections }: SidebarNavProps) {
         {sections.map((section, indice) => (
           <div key={section.title ?? `seccion-${indice}`} className="flex flex-col">
             {section.title && (
-              <div className="text-xs text-text-muted uppercase font-bold tracking-[1.5px] mx-4 mt-4 mb-2">
+              <div className="text-xs text-[#64748B] uppercase font-bold tracking-[1.5px] mx-4 mt-4 mb-2">
                 {section.title}
               </div>
             )}

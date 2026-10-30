@@ -1286,6 +1286,84 @@ def test_repetir_entrega_devuelve_registro_original_sin_duplicar_historial(
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
 
 
+def test_finalizacion_y_entrega_conservan_actores_historial_y_eventos(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=EN_REPARACION,
+    )
+    orden_id = orden.orden_id
+
+    finalizacion = api_ordenes.patch(
+        f"/ordenes/{orden_id}/estado",
+        json={"estado_destino": LISTO, "observacion": "Trabajo autorizado terminado"},
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+    entrega = api_ordenes.post(
+        f"/ordenes/{orden_id}/entrega",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    consulta = api_ordenes.get(
+        f"/ordenes/{orden_id}/historial",
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+
+    assert finalizacion.status_code == entrega.status_code == consulta.status_code == 200
+    assert finalizacion.json()["estado_codigo"] == LISTO
+    assert entrega.json()["estado_codigo"] == ENTREGADO
+    assert entrega.json()["entregado_por_id"] == 99
+    cambios = consulta.json()
+    assert [
+        (c["estado_anterior"], c["estado_nuevo"], c["actor_usuario_id"], c["origen"])
+        for c in cambios
+    ] == [
+        (EN_REPARACION, LISTO, 50, "usuario"),
+        (LISTO, ENTREGADO, 99, "usuario"),
+    ]
+    assert cambios[-1]["historial_id"] == entrega.json()["historial_id"]
+    assert all(c["fecha_hora"] for c in cambios)
+    eventos = db_ordenes.scalars(
+        select(EventoOutbox).order_by(EventoOutbox.outbox_id)
+    ).all()
+    assert [
+        (e.payload["estado_anterior"], e.payload["estado_nuevo"])
+        for e in eventos
+    ] == [(EN_REPARACION, LISTO), (LISTO, ENTREGADO)]
+    assert all(e.payload["cliente_usuario_id"] == 10 for e in eventos)
+    db_ordenes.expire_all()
+    persistida = db_ordenes.get(OrdenTrabajo, orden_id)
+    assert persistida.estado_codigo == ENTREGADO
+    assert persistida.entregado_por_id == 99
+    assert persistida.entregado_en is not None
+
+
+def test_fallo_al_confirmar_entrega_revierte_estado_fechas_historial_y_outbox(
+    api_ordenes: TestClient, db_ordenes: Session, monkeypatch: pytest.MonkeyPatch,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    orden_id = orden.orden_id
+
+    def fallar_commit() -> None:
+        raise SQLAlchemyError("Fallo de persistencia después de escribir la entrega")
+
+    monkeypatch.setattr(db_ordenes, "commit", fallar_commit)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden_id}/entrega",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 500
+    db_ordenes.expire_all()
+    persistida = db_ordenes.get(OrdenTrabajo, orden_id)
+    assert persistida.estado_codigo == LISTO
+    assert persistida.entregado_en is None
+    assert persistida.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+
+
 @pytest.mark.parametrize("observacion", [None, "", " \t\n "])
 def test_service_cancelacion_invalida_hace_rollback_sin_depender_del_schema(
     db_ordenes: Session, observacion: str | None,

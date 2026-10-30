@@ -16,7 +16,12 @@ el envío y la primera decisión de presupuesto se coordinan por operaciones
 específicas. Los flujos sin precondiciones verificables (disponibilidad de
 repuestos, entrega y cancelación independiente) quedan bloqueados en el PATCH.
 La primera decisión se verifica por HTTP contra MS3, con atribución al Cliente e
-idempotencia persistida por `decision_id`.
+idempotencia persistida por `decision_id`. La disponibilidad posterior y la
+entrega física ya tienen operaciones específicas, descritas en §6.2. El PATCH
+continúa sin sustituir esas operaciones.
+
+La [guía del ciclo completo](ciclo-completo-orden.md) conecta las operaciones,
+roles, reintentos y brechas actuales desde la creación hasta la entrega.
 
 ## 1. Fuentes y alcance
 
@@ -413,16 +418,17 @@ no es el Mecánico asignado al finalizar devuelve `403`.
 | 2 → 3 | Envío del primer presupuesto; Administrador | Primera versión confirmada como enviada por MS3 | `POST /presupuestos/{id}/versiones/{numero}/envio` coordina con `POST /ordenes/{id}/envios-presupuesto` | PATCH rechazado con `409`; operación específica verificada (SCRUM-435) |
 | 3 → 4 | Primera aprobación sin repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Decisión MS3 y `POST /ordenes/{id}/decisiones-presupuesto` | PATCH rechazado con `409`; usar decisión verificada |
 | 3 → 5 | Primera aprobación con repuestos; Cliente propietario | Decisión inicial real y evaluación de disponibilidad conservada en MS3 | Mismo flujo SCRUM-438 | PATCH rechazado con `409`; usar decisión verificada |
-| 4 → 5 | Disponibilidad posterior; Administrador confirma stock libre para el alcance aprobado | Reserva idempotente confirmada por MS3 | MS3 `POST /inventario/ordenes/{id}/disponibilidad`; MS2 verifica la reserva | `En reparación`, compromisos y `HistorialEstado` atómicos en MS2; reintento idempotente |
+| 4 → 5 | Disponibilidad posterior; Administrador confirma stock libre para el alcance aprobado | Reserva idempotente confirmada por MS3 | MS3 `POST /inventario/ordenes/{id}/disponibilidad`; MS2 verifica la reserva | Compromisos en MS3; estado e historial atómicos en MS2; reintento idempotente sin transacción global |
 | 5 → 6 | Finalización; Mecánico asignado | Trabajo autorizado terminado | `PATCH /ordenes/{id}/estado` | Permitido solo al Mecánico asignado (`403` para otros); la evidencia de finalización sigue pendiente |
-| 6 → 7 | Entrega física; Administrador | Entrega confirmada y sus datos de auditoría | No hay operación de entrega disponible | PATCH rechazado con `409` hasta registrar la entrega y sus datos |
+| 6 → 7 | Entrega física; Administrador | Entrega confirmada y sus datos de auditoría | `POST /ordenes/{id}/entrega` | Fecha, responsable, estado e historial atómicos; reintento idempotente; PATCH rechazado con `409` |
 | 3 → 8 | Rechazo inicial; Cliente propietario | Rechazo confirmado y motivo, sin aprobación previa | Decisión MS3 y aplicación verificada SCRUM-438 | PATCH rechazado con `409`; usar decisión verificada |
 | 1/2/3 → 8 | Solicitud del Cliente confirmada por Administrador | Solicitud real, confirmación, ausencia de primera aprobación y motivo | Falta operación específica | PATCH rechazado con `409`; requiere flujo futuro de cancelación independiente |
 | 7/8 → cualquier estado | Ninguno | Son terminales | Validación existente | Rechazado |
 
 El `PATCH` genérico no sustituye estas operaciones: rechaza `1 → 2`, `2 → 3` y
-`3 → 4/5/8`; bloquea `4 → 5`, `6 → 7` y los destinos genéricos `Cancelado` hasta
-que existan operaciones con las comprobaciones funcionales correspondientes.
+`3 → 4/5/8`; también bloquea `4 → 5`, `6 → 7` y los destinos genéricos
+`Cancelado`. Disponibilidad y entrega usan sus operaciones específicas;
+la cancelación independiente aún requiere integrar su flujo en esta rama.
 El portal mecánico ofrece `5 → 6`, y MS2 exige que el actor tenga rol Mecánico y
 sea el responsable asignado. Esa transición todavía no acredita por sí sola que
 el alcance autorizado esté terminado.
@@ -492,8 +498,9 @@ de disponibilidad ya cubren el flujo implementado.
 
 #### Finalización (5 → 6)
 
-Solo el Mecánico asignado puede declarar `Listo` por PATCH. El Administrador y
-cualquier otro usuario reciben `403`, incluso si tienen otros roles. La operación
+Solo el Mecánico asignado puede declarar `Listo` por PATCH. Un Administrador sin
+ese rol y asignación, o cualquier otro usuario que no los cumpla, recibe `403`.
+Una cuenta con varios roles debe cumplir igualmente ambas condiciones. La operación
 todavía no verifica la finalización del alcance autorizado; no se añade aquí esa
 verificación ni una operación nueva.
 
@@ -541,10 +548,11 @@ atribución trazable. SCRUM-522 cubre pruebas de cancelación antes de aprobaci�
 la operación y el contrato faltantes requieren trabajo adicional. No se agrega un
 campo cliente que aparente una aprobación o confirmación confiable.
 
-Los vínculos anteriores se basan en títulos y descripciones consultados en Jira.
-SCRUM-435, 484, 487, 600, 522 y 523 figuran Por hacer. La relación con cada brecha
-es análisis técnico; no se crearon enlaces ni se actualizó ningún ticket. SCRUM-400
-y SCRUM-440 quedan fuera del cambio.
+Los vínculos anteriores relacionan tareas y brechas técnicas; los estados del
+backlog se consultan en Jira y no son evidencia de implementación por sí solos.
+SCRUM-523 / SCRUM-707 cubre pruebas de finalización y entrega; SCRUM-522 /
+SCRUM-706 conserva el pendiente de integrar y verificar la cancelación desde
+`origin/Develop`. SCRUM-400 y SCRUM-440 quedan fuera de esta revisión.
 
 ## 7. Relación con INT-33
 

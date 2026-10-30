@@ -153,7 +153,7 @@ python scripts/seed_usuarios_prueba.py
 
 El seed de **main** crea o actualiza **siete** cuentas: tres de un solo rol
 y cuatro combinaciones multirrol, más los perfiles Cliente correspondientes
-en MS2. El seed de MartinH es distinto y solo contiene tres cuentas. También
+en MS2. El seed integrado en MartinH conserva esas siete cuentas. También
 restablece sus contraseñas; revisar el script antes de ejecutarlo sobre una
 base con datos. No se ejecuta automáticamente. Se ejecutó en las bases temporales locales
 de verificación; no se ha ejecutado en Kubero.
@@ -664,3 +664,134 @@ Nota: al correr desde una consola de Python en Windows, el keep-alive de httpx
 contra uvicorn se cae al reutilizar el socket (WinError 10054); el script usó
 `httpx.Limits(max_keepalive_connections=1, keepalive_expiry=0)`. Correr pytest
 solo también exige que el puerto 5432 esté libre y las 3 bases migradas.
+
+## Confirmaciones y bloqueo offline en acciones que modifican estado (2026-10-13)
+
+Auditoría de cierre: toda acción de la interfaz que cambia el estado de una orden
+pide confirmación antes de llamar a la API y queda deshabilitada sin conexión.
+
+| Acción (muta estado) | Dónde | Confirmación |
+| --- | --- | --- |
+| Avance de estado (mecánico) | `OrderActionsPanel.tsx`, `MechanicStatusPage.tsx` | `ConfirmDialog` con origen → destino |
+| Asignar mecánico (admin) | `OrderActionsPanel.tsx` | `ConfirmDialog` |
+| Registrar entrega (admin) | `OrderActionsPanel.tsx` | `ConfirmDialog` |
+| Cancelar orden / solicitud (admin, cliente) | `OrderActionsPanel.tsx` | `ConfirmDialog` + motivo obligatorio |
+| Aprobar / rechazar presupuesto (cliente) | `ApproveBudgetDialog`, `RejectBudgetDialog` | diálogo + revisión / motivo obligatorio |
+
+Cambios de esta ronda (sin cambios de backend; la confirmación es responsabilidad
+de la UI):
+
+- `OrderActionsPanel.tsx`: el botón de cada acción solo se habilita cuando su
+  entrada requerida está completa (`destino` para el avance, `mecanicoId` para la
+  asignación) y hay conexión; se muestra un `Alert` de "sin conexión"; el toast de
+  éxito usa el tono `success`.
+- `MechanicStatusPage.tsx`: "Confirmar avance" se deshabilita si no hay destino o
+  si el store está offline, con el mismo aviso de conexión en la tarjeta.
+
+Pruebas nuevas/ajustadas:
+
+- `OrderActionsPanel.test.tsx`: 9 casos. Además de la matriz ya cubierta, ahora
+  verifica que asignar mecánico y avanzar estado abren el diálogo, **no** llaman
+  al servicio antes de confirmar y lo llaman después; que sin selección el botón
+  está deshabilitado; y que offline deshabilita las acciones y avisa.
+- `MechanicStatusPage.test.tsx`: 32 casos; agrega el bloqueo offline del avance.
+
+Verificación frontend: `npm test` **515 passed** (72 archivos), `npm run lint`
+0 warnings / 0 errors (203 archivos), `npx tsc -p tsconfig.app.json --noEmit`
+sin errores.
+
+## Bitácora de trabajo del mecánico (RF-11) (2026-10-14)
+
+Feature completo en las tres capas. A diferencia del historial de estados, cada
+entrada **no** exige un cambio de estado: documenta lo que el mecánico observa o
+ejecuta durante el trabajo.
+
+### Backend (MS2)
+
+- Tablas nuevas: `bitacora_orden` (`bitacora_id`, `orden_id` FK, `autor_usuario_id`,
+  `tipo`, `descripcion`, `creado_en`) y `bitacora_repuesto` (`repuesto_bitacora_id`,
+  `bitacora_id` FK, `nombre`, `cantidad`). Migración `0007_bitacora_orden_ms2`
+  (head `0007_ms2`).
+- `tipo` ∈ {`observacion`, `accion`}; solo una acción puede registrar repuestos
+  (si no, `422`). Los repuestos son texto libre + cantidad: MS2 **no** referencia
+  el catálogo de MS3 (§8).
+- Endpoints `GET /ordenes/{id}/bitacora` (`200`, lista) y
+  `POST /ordenes/{id}/bitacora` (`201`), autorizados para el mecánico responsable.
+
+### Gateway
+
+- `gateway/openapi.py` documenta las dos operaciones (**22 endpoints** en total)
+  y `gateway/contratos/ordenes.py` copia los contratos `BitacoraRespuesta`,
+  `BitacoraCrear` y `RepuestoBitacoraEntrada/Respuesta`.
+
+### Frontend
+
+- `OrderService.getOrderBitacora` / `registrarBitacora`; caché
+  `useOrderBitacoraStore` (con `addEntry`) y hook `useOrderBitacora`.
+- `OrderBitacoraTimeline` (etiqueta de tipo, descripción, repuestos, autor y
+  fecha) y `BitacoraForm` (RHF + Zod: tipo, descripción y repuestos dinámicos)
+  se reúnen en `OrderBitacoraSection`, integrado en el detalle del mecánico. El
+  formulario oculta y limpia los repuestos al elegir "observación" y se bloquea
+  sin conexión; la acción solo la ve el rol mecánico.
+
+### Pruebas
+
+- Backend: 24 casos de bitácora en `test_ordenes_api.py`.
+- Gateway: set de operaciones y contratos actualizado en `test_gateway_openapi.py`,
+  `test_gateway_openapi_ejemplos.py` y `test_migraciones_decisiones.py`.
+- Frontend: `OrderService.test.ts`, `useOrderBitacoraStore.test.ts`,
+  `OrderBitacoraTimeline.test.tsx`, `BitacoraForm.test.tsx`,
+  `OrderBitacoraSection.test.tsx` y `MechanicOrderDetailPage.test.tsx`.
+
+Verificación frontend: `npm test` **536 passed** (76 archivos), `npm run lint`
+0 warnings / 0 errors (213 archivos), `npx tsc -p tsconfig.app.json --noEmit`
+sin errores.
+
+## Carga de evidencia con progreso, éxito y error (2026-10-14)
+
+Feature de frontend (sin cambios de backend): el contrato de subida ya existía
+(`POST /api/evidencias`, multipart, solo Mecánico/Administrador; el Cliente recibe
+`403`). Se implementó la subida con retroalimentación de progreso real, éxito y
+error en los portales de **Mecánico** y **Administrador**, y se reutiliza la
+lectura existente del portal Cliente.
+
+### Gateway / contrato
+
+- No se tocó el backend: `POST /api/evidencias` (multipart `archivo`, `orden_id`,
+  `contexto`, `presupuesto_id` opcional, `visible_cliente`) ya estaba documentado
+  en la Gateway (**22 endpoints**). El Cliente recibe `403`; fuera de alcance
+  `404`; reglas de negocio `422`; almacenamiento/órdenes `503`.
+
+### Frontend
+
+- Capas: `domain/entities/Evidencia.ts` (+ `EvidenciaEntradaCrear`,
+  `TAMANO_MAXIMO_EVIDENCIA_BYTES` = 12 MiB alineado con el límite de la Gateway y
+  `esContentTypeEvidenciaPermitido`), `domain/ports/EvidenciaPort.ts`
+  (`crear(entrada, onProgress)`), `infrastructure/api/EvidenciaService.ts`
+  (multipart con `onUploadProgress`), `infrastructure/stores/useEvidenceStore.ts`
+  (estado `uploadStatus`/`uploadProgress`/`uploadError`/`uploadRequestId`/
+  `uploadIsOffline`, `subir` con guard anti-duplicado y `upsertById`).
+- UI: `ProgressBar` (barra accesible), `hook useEvidenceUpload`,
+  `EvidenceUploadForm` (validación de tipo/tamaño, contexto presupuesto resuelto
+  con `PresupuestoService.getByOrder`, éxito con `Alert`+toast, error/sin conexión
+  con `Referencia`) y `OrderEvidenceSection`; `OrderEvidencePage` reúne la sección
+  en la ruta propia. Integrado en `MechanicOrderDetailPage` y
+  `AdminOrderDetailPage`, y en `/mechanic/ordenes/:id/evidencias` y
+  `/admin/ordenes/:id/evidencias`.
+- Contexto `presupuesto`: la evidencia se asocia al presupuesto de la orden y
+  queda **siempre visible al cliente**; si la orden no tiene presupuesto no se
+  envía y se avisa.
+- El portal Cliente sigue en **solo lectura** (`POST /api/evidencias` → `403`).
+
+### Pruebas
+
+- Frontend: `EvidenciaService.test.ts` (crear multipart + progreso),
+  `useEvidenceStore.test.ts` (subir/duplicado/errores), `ProgressBar.test.tsx`,
+  `EvidenceUploadForm.test.tsx` (éxito, progreso, validaciones, error del
+  servidor, sin conexión y presupuesto) y `OrderEvidencePage.test.tsx` (sección,
+  vacío y `404`); `MechanicOrderDetailPage.test.tsx` y
+  `AdminOrderDetailPage.test.tsx` actualizados.
+
+Verificación frontend: `npm test` **557 passed** (80 archivos), `npm run lint`
+0 warnings / 0 errors (223 archivos), `npx tsc -p tsconfig.app.json --noEmit`
+sin errores.

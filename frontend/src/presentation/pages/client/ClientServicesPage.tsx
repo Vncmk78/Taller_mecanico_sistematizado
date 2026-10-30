@@ -55,11 +55,11 @@ export function ClientServicesPage() {
     ): ReactElement | null =>
         items.length === 0 ? null : (
             <section aria-label={title} className="mb-8">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                     <ClipboardList className="w-5 h-5 text-text-muted" aria-hidden />
                     {title}
                     <span className="text-sm font-normal text-text-muted">({items.length})</span>
-                </h3>
+                </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     {items.map((order) => (
                         <ServiceCard
@@ -67,6 +67,7 @@ export function ClientServicesPage() {
                             order={order}
                             detailPath={`/client/ordenes/${order.id}`}
                             vehiclePath={`/client/vehiculos/${order.vehicleId}`}
+                            evidencePath={`/client/ordenes/${order.id}/evidencias`}
                             patente={orderPatente(order, vehicles)}
                             vehicleLabel={orderVehicleLabel(order, vehicles)}
                             requiresAttention={attention}
@@ -84,7 +85,7 @@ export function ClientServicesPage() {
     return (
         <div className="p-5 sm:p-8 lg:p-10 animate-fade-in">
             <div className="mb-6">
-                <h2 className="text-3xl font-bold mb-1">Estado del Servicio</h2>
+                <h1 className="text-3xl font-bold mb-1">Estado del Servicio</h1>
                 <p className="text-text-muted">Seguimiento en tiempo real del estado de sus servicios en el taller</p>
             </div>
 

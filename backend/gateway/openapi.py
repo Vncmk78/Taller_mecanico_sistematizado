@@ -97,8 +97,9 @@ _TAGS = [
     {
         "name": "Órdenes",
         "description": (
-            "Creación, consulta, historial, cambio de estado y asignación "
-            "inicial de órdenes (MS2)."
+            "Creación, consulta, historial, bitácora de trabajo, cambio de "
+            "estado, asignación inicial, entrega física y solicitudes de "
+            "cancelación con revisión administrativa (MS2)."
         ),
     },
     {
@@ -167,7 +168,15 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         contratos_ordenes.HistorialOrdenesVehiculoRespuesta,
     ),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
+    ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
+    ("EntregaOrdenRespuesta", contratos_ordenes.EntregaOrdenRespuesta),
+    ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
+    ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
+    ("RepuestoBitacoraEntrada", contratos_ordenes.RepuestoBitacoraEntrada),
+    ("RepuestoBitacoraRespuesta", contratos_ordenes.RepuestoBitacoraRespuesta),
+    ("BitacoraCrear", contratos_ordenes.BitacoraCrear),
+    ("BitacoraRespuesta", contratos_ordenes.BitacoraRespuesta),
     ("EvidenciaSubida", contratos_evidencias.EvidenciaSubida),
     ("EvidenciaRespuesta", contratos_evidencias.EvidenciaRespuesta),
     ("UrlDescargaRespuesta", contratos_evidencias.UrlDescargaRespuesta),
@@ -279,6 +288,7 @@ def _operacion(
     con_orden_id: bool = False,
     parametros_extra: list[dict[str, object]] | None = None,
     cuerpo_multipart: str | None = None,
+    cuerpo_requerido: bool = True,
     descripcion_404: str = (
         "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA)."
     ),
@@ -341,7 +351,7 @@ def _operacion(
     }
     if cuerpo is not None:
         operacion["requestBody"] = {
-            "required": True,
+            "required": cuerpo_requerido,
             "content": {"application/json": {"schema": _ref(cuerpo)}},
         }
     if cuerpo_multipart is not None:
@@ -362,8 +372,9 @@ def _operacion_evidencias(**kwargs: object) -> dict[str, object]:
     operacion = _operacion(tag="Evidencias", requiere_auth=True, **kwargs)  # type: ignore[arg-type]
     operacion["responses"]["503"] = _respuesta(
         (
-            "No disponible. MS4 responde {'detail': ...} si el almacenamiento "
-            "o el servicio de órdenes no responden; la Gateway responde "
+            "No disponible. MS4 responde {'detail': ...} si el almacenamiento, "
+            "la base o el servicio de órdenes/presupuestos no responden (la "
+            "subida se compensa, sin archivos ni filas a medias); la Gateway responde "
             "GATEWAY_SATURADA si su pool está agotado."
         ),
         {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
@@ -382,8 +393,13 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
             "(de una orden que atiende) o Administrador; un Cliente recibe 403 "
             "antes de procesar el archivo. MS4 verifica la orden contra MS2 con "
             "el mismo JWT antes de guardar nada. El autor sale del token y el "
-            "`X-Request-ID` queda registrado con la evidencia. La Gateway "
-            "rechaza con 413 un body mayor a 12 MiB."
+            "`X-Request-ID` queda registrado con la evidencia. La orden no "
+            "puede estar entregada ni cancelada (409) y un `presupuesto_id` "
+            "debe pertenecer a la misma orden (MS3). Formatos aceptados: JPG, "
+            "PNG, WEBP, MP4 y MOV, verificados por su contenido (415 para el "
+            "resto o si los bytes no coinciden con el tipo declarado; 422 si "
+            "el archivo está dañado). Fotos hasta 10 MiB (413 de MS4); la "
+            "Gateway rechaza con 413 un body mayor a 12 MiB."
         ),
         operation_id="subir_evidencia",
         cuerpo=None,
@@ -394,7 +410,16 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
         errores_ms={
             "401": "JWT ausente o inválido",
             "403": "Se requiere rol Mecánico o Administrador",
-            "422": "Archivo vacío, tipo no permitido o datos del formulario inválidos",
+            "400": "No se pudo leer el archivo enviado",
+            "409": "La orden está entregada o cancelada",
+            "415": (
+                "Formato no permitido (solo JPG, PNG, WEBP, MP4 y MOV) o "
+                "contenido distinto al tipo declarado"
+            ),
+            "422": (
+                "Archivo vacío o dañado, presupuesto inexistente o de otra "
+                "orden, o datos del formulario inválidos"
+            ),
         },
         descripcion_404=(
             "Orden no encontrada: no existe o no es visible para el usuario "
@@ -403,8 +428,10 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
         esquema_404=error_404_ms4,
     )
     subir["responses"]["413"] = _respuesta(
-        "La Gateway rechazó el body por superar el límite (CUERPO_DEMASIADO_GRANDE).",
-        _ref("ErrorRespuesta"),
+        "El archivo es demasiado grande: la Gateway rechaza un body mayor a "
+        "12 MiB (CUERPO_DEMASIADO_GRANDE) y MS4 una foto mayor a 10 MiB o un "
+        "video mayor a su límite (`{\"detail\": ...}`).",
+        {"oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]},
     )
     return {
         "/api/evidencias": {
@@ -1070,6 +1097,64 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             )
         },
+        "/api/ordenes/{orden_id}/bitacora": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar la bitácora de trabajo de una orden",
+                descripcion=(
+                    "Devuelve todos los registros por fecha/hora e identificador "
+                    "ascendente, con el autor, el tipo (observación o acción), el "
+                    "texto y los repuestos utilizados. Aplica la misma visibilidad "
+                    "del detalle: Administrador ve todas; Cliente sus vehículos; "
+                    "Mecánico sus órdenes asignadas; multirol combina los alcances. "
+                    "Una orden inexistente o ajena responde 404; una visible sin "
+                    "registros devuelve []."
+                ),
+                operation_id="consultar_bitacora_orden",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Bitácora de trabajo de la orden.",
+                        {"type": "array", "items": _ref("BitacoraRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de orden inválido",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            ),
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar una observación o acción en la bitácora",
+                descripcion=(
+                    "Registra lo que el mecánico observa o ejecuta sobre una orden "
+                    "sin cambiar su estado. Una observación es una nota libre; una "
+                    "acción puede declarar los repuestos utilizados (texto libre y "
+                    "cantidad). Solo el mecánico asignado o un administrador pueden "
+                    "registrarla. No acepta estado, actor ni fecha en el cuerpo."
+                ),
+                operation_id="registrar_bitacora_orden",
+                cuerpo="BitacoraCrear",
+                respuestas_ok={
+                    "201": _respuesta(
+                        "Entrada registrada.", _ref("BitacoraRespuesta")
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere ser el mecánico asignado o Administrador",
+                    "422": "Tipo, descripción o repuestos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada o ajena.",
+                esquema_404=error_404_recurso,
+            ),
+        },
         "/api/ordenes/{orden_id}/estado": {
             "patch": _operacion(
                 tag="Órdenes",
@@ -1103,6 +1188,104 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "403": "Se requiere rol Administrador o ser el mecánico asignado",
                     "409": "Transición no permitida, terminal o reservada a una operación específica",
                     "422": "Estado de destino desconocido, cancelación sin motivo o datos inválidos",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/entrega": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar la entrega física de una orden lista",
+                descripcion=(
+                    "Cierra el ciclo normal (6 → 7): registra la fecha de entrega "
+                    "y la identidad que la autorizó. Solo el Administrador puede "
+                    "invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. "
+                    "Repetir una entrega válida devuelve el registro original sin "
+                    "duplicar historial. Otro estado responde 409; una entrega "
+                    "histórica sin auditoría completa responde 500."
+                ),
+                operation_id="registrar_entrega_orden",
+                cuerpo="EntregaSolicitud",
+                cuerpo_requerido=False,
+                respuestas_ok={
+                    "200": _respuesta("Orden entregada; un reintento conserva la entrega original.", _ref("EntregaOrdenRespuesta"))
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "La orden no está Lista o ya es terminal",
+                    "422": "Observación de entrega vacía",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/cancelacion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Solicitar la cancelación administrativa de una orden",
+                descripcion=(
+                    "El Cliente propietario registra un motivo auditable sin cambiar "
+                    "el estado. Un Administrador debe revisar y confirmar por la "
+                    "operación específica. MS2 verifica en MS3 que no exista una "
+                    "aprobación inicial. Repetir el mismo motivo devuelve la solicitud "
+                    "pendiente existente."
+                ),
+                operation_id="solicitar_cancelacion_orden",
+                cuerpo="CancelacionClienteSolicitud",
+                respuestas_ok={
+                    "201": _respuesta("Solicitud pendiente de revisión.", _ref("SolicitudCancelacionRespuesta")),
+                    "200": _respuesta("Solicitud pendiente existente.", _ref("SolicitudCancelacionRespuesta")),
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Cliente",
+                    "409": "Orden no cancelable, solicitud existente o aprobación inicial registrada",
+                    "422": "Motivo de cancelación vacío o datos inválidos",
+                    "503": "No fue posible verificar MS3",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada o ajena.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/cancelaciones/pendientes": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Listar solicitudes pendientes de cancelación",
+                descripcion="Solo Administrador. Devuelve los datos necesarios para revisar la solicitud.",
+                operation_id="listar_cancelaciones_pendientes",
+                cuerpo=None,
+                respuestas_ok={"200": _respuesta(
+                    "Solicitudes pendientes.",
+                    {"type": "array", "items": _ref("SolicitudCancelacionRespuesta")},
+                )},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador"},
+                requiere_auth=True,
+            )
+        },
+        "/api/ordenes/{orden_id}/cancelacion/confirmacion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Confirmar administrativamente una cancelación",
+                descripcion=(
+                    "Solo Administrador. Vuelve a comprobar en MS3 que no exista "
+                    "aprobación inicial y registra el estado Cancelado con el "
+                    "Administrador confirmante e historial en una transacción."
+                ),
+                operation_id="confirmar_cancelacion_orden",
+                cuerpo=None,
+                respuestas_ok={"200": _respuesta("Orden cancelada.", _ref("OrdenRespuesta"))},
+                errores_ms={
+                    "401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                    "409": "No hay solicitud pendiente o existe una aprobación inicial",
+                    "503": "No fue posible verificar MS3",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
@@ -1217,7 +1400,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 18 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 22 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:

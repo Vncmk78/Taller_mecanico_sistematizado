@@ -123,10 +123,47 @@ alembic -c services/ms3_presupuestos/alembic.ini upgrade head
 #    Con --orden-id agrega un presupuesto de ejemplo (versión 1 enviada).
 python scripts/seed_datos_ms3.py --orden-id 1
 
+#    Con --integracion agrega el catálogo de integración con sus existencias;
+#    --verificar solo revisa que el stock cuadre con los movimientos.
+python scripts/seed_datos_ms3.py --integracion
+python scripts/seed_datos_ms3.py --verificar
+
 # 3. Pruebas de persistencia ORM contra PostgreSQL migrado (se omiten si no hay base)
 MS3_ORM_TEST_DATABASE_URL=postgresql+psycopg://taller:taller@localhost:5435/taller_ms3 \
     pytest services/ms3_presupuestos/tests -q
 ```
+
+### Datos semilla de integración de MS3
+
+Para que el frontend, la app móvil y los otros servicios prueben contra datos
+realistas, `services/ms3_presupuestos/datos_integracion.py` define 5
+proveedores y 12 repuestos más (además de los 4 de `datos_prueba.py`). Cada
+repuesto declara los **movimientos** que explican su stock; la semilla los
+registra con los mismos casos de uso que la API, así el stock siempre coincide
+con el historial.
+
+| Caso | Repuesto | Stock / umbral |
+|---|---|---|
+| Stock holgado | Aceite sintético 5W-30 (litro) | 40 / 5 (general) |
+| Sin stock (alerta) | Líquido de frenos DOT4 (500 ml) | 0 / 3 — se consumió en la orden 1 |
+| Bajo umbral particular (alerta) | Alternador reacondicionado | 1 / 2 |
+| Bajo umbral general (alerta) | Kit de embrague | 3 / 5 — 1 consumido en la orden 1 |
+| Justo en el umbral (no es alerta) | Bujía de iridio | 5 / 5 |
+| Unidades reservadas | Amortiguador delantero | 6, 2 comprometidas para la orden 2 → disponible 4 |
+| Corregido con ajuste | Filtro de aire | 12 − 2 = 10 |
+| Búsqueda con tildes y eñes | Importadora Ñuble, Bujía de iridio | `q=nuble`, `q=bujia` |
+| Proveedor sin repuestos | Neumáticos Cautín | `con_repuestos=false`, se puede eliminar |
+
+- **Idempotente**: proveedores y repuestos se buscan por nombre y cada
+  movimiento tiene una `clave_operacion` fija (`semilla-int:<repuesto_id>:<n>`);
+  si una carga se cortó, la siguiente la completa.
+- Las órdenes son referencias lógicas a MS2: por defecto 1 (en reparación) y 2
+  (recibida); se cambian con `--orden-en-reparacion` y `--orden-recibida`.
+- Al terminar, el script verifica que el stock de **todos** los repuestos
+  coincida con sus movimientos (sale con código 1 si no). Las diferencias con
+  los valores de la semilla se muestran como aviso, porque pueden deberse al
+  uso real de la app.
+- Pruebas: `services/ms3_presupuestos/tests/test_semilla_integracion.py`.
 
 ### Datos mínimos y fixtures de prueba de MS3
 
@@ -228,6 +265,149 @@ presupuesto su `version_vigente` (última aprobada). Capas: `routers/presupuesto
 → `services/presupuestos.py` (una transacción por caso de uso) →
 `persistencia/` (repositorio + unidad de trabajo) → modelos ORM.
 
+### Proveedores y repuestos (MS3)
+
+Lectura: Mecánico y Administrador. Escritura: solo Administrador. Cliente → `403`.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `GET /proveedores?q=&con_repuestos=&desde=&limite=` | Lista / busca por nombre o contacto; `con_repuestos=true/false` |
+| `GET /proveedores/{id}` | Detalle con sus repuestos |
+| `POST /proveedores` · `PATCH /proveedores/{id}` | Alta y cambios (`409` si el nombre ya existe, sin distinguir mayúsculas) |
+| `DELETE /proveedores/{id}` | Solo si no tiene repuestos (`409`) |
+| `GET /repuestos?proveedor_id=&q=&bajo_umbral=&con_stock=&ordenar=&desde=&limite=` | Lista con `umbral_efectivo` y `bajo_umbral`; `bajo_umbral=true` = alerta de stock bajo; `con_stock=true/false`; `ordenar=nombre\|stock_asc\|stock_desc` |
+| `GET /repuestos/{id}` | Detalle |
+| `POST /repuestos` | Alta `{"proveedor_id", "nombre", "stock_inicial", "umbral_particular"}`; el stock inicial deja un movimiento `ingreso` |
+| `PATCH /repuestos/{id}` | Nombre, proveedor o `umbral_particular` (`null` = volver al general); cada cambio de umbral queda en `historial_umbral` |
+| `DELETE /repuestos/{id}` | Solo si nunca tuvo movimientos, presupuestos ni cambios de umbral (`409`) |
+
+**Búsqueda (`q`)**: "contiene el texto" sin distinguir mayúsculas ni tildes
+(`bujia` encuentra `Bujía`); `%` y `_` se buscan literalmente. La migración
+`0006_ms3` instala `pg_trgm` y `unaccent` (extensiones *trusted*: no requieren
+superusuario, funcionan en Neon), crea `ms3_normalizar(text)` y estos índices:
+
+| Índice | Para qué |
+|---|---|
+| `ix_repuesto_nombre_trgm`, `ix_proveedor_nombre_trgm`, `ix_proveedor_contacto_trgm` | GIN de trigramas: `q` (`LIKE '%texto%'`) |
+| `ix_repuesto_nombre_orden`, `ix_proveedor_nombre_orden` | Listar ordenado por nombre y paginar |
+| `uq_proveedor_nombre_ci` | Proveedor único sin distinguir mayúsculas |
+| `uq_repuesto_proveedor_nombre` (0005), `ix_repuesto_proveedor_id` | Filtro por proveedor |
+
+Con 100.000 repuestos, buscar `q=bujia modelo 4242` tarda ~9 ms con el índice y
+~217 ms sin él. `test_busquedas_catalogo.py` verifica con `EXPLAIN` que la
+consulta real del repositorio usa cada índice.
+
+El **stock no se edita** por estos endpoints: cambia solo con movimientos de
+inventario. Un proveedor no puede tener dos repuestos con el mismo nombre
+(migración `0005_ms3`: índice único `(proveedor_id, lower(nombre))`).
+
+### Trazabilidad Repuesto–Proveedor/Distribuidor (MS3)
+
+Migración `0007_ms3`. Responde de dónde viene cada repuesto y cada unidad:
+
+- **Tipo de distribuidor**: `tipo_distribuidor` = `oficial` (de la marca) o
+  `generico` en proveedores (por defecto `generico`). Filtro
+  `GET /proveedores?tipo_distribuidor=oficial` y `proveedor_tipo_distribuidor`
+  en cada repuesto.
+- **Historial de proveedores** (`historial_proveedor_repuesto`): el alta y cada
+  cambio de proveedor de un repuesto, con el administrador y la `observacion`
+  del `PATCH /repuestos/{id}`. Lo escribe el modelo (eventos del ORM), así
+  ninguna vía de creación se lo salta.
+- **Proveedor de cada ingreso** (`movimiento_inventario.proveedor_id`): por
+  defecto el proveedor actual del repuesto; se puede indicar otro en el ingreso
+  (compra puntual). La base exige proveedor en los ingresos y solo en ellos.
+  Las unidades ingresadas siguen asociadas a quien las entregó aunque el
+  repuesto cambie de proveedor.
+- Un **proveedor que figura en la trazabilidad** (historial o ingresos) no se
+  elimina (`409`). Un repuesto que nunca se usó sí se puede eliminar, y su
+  historial se va con él.
+
+| Método y ruta | Qué devuelve |
+|---|---|
+| `GET /repuestos/{id}/trazabilidad` | Proveedor actual, historial de proveedores, ingresos por proveedor (cantidad, unidades, primero y último) y uso por orden (reservado y consumido) |
+| `GET /proveedores/{id}/trazabilidad` | Repuestos que abastece (`actual: true`) o abasteció, con las unidades que entregó de cada uno |
+| `GET /inventario/movimientos?proveedor_id=` | Ingresos entregados por ese proveedor |
+
+### Inventario y stock (MS3)
+
+- **stock**: unidades físicas. Solo lo cambian `ingreso`, `ajuste` y `consumo`.
+- **comprometido**: reservado para órdenes (compromisos − liberaciones − consumos, por orden).
+- **disponible** = stock − comprometido. No se ofrecen las mismas unidades a dos órdenes (§4.6).
+
+| Método y ruta | Qué hace |
+|---|---|
+| `POST /inventario/movimientos` | `{"clave_operacion", "repuesto_id", "tipo", "cantidad", "orden_id"?}`. Ingreso/ajuste: Administrador. Compromiso/consumo/liberación (con `orden_id`): Mecánico o Administrador. `409` si no alcanza el stock. La misma `clave_operacion` reenviada devuelve el original (`200`, `repetido: true`) sin descontar dos veces |
+| `GET /inventario/movimientos?repuesto_id=&orden_id=&tipo=` | Historial de movimientos |
+| `GET /inventario/stock/{repuesto_id}` | Stock, comprometido por orden, disponible y si está bajo el umbral |
+| `GET /inventario/alertas` | Repuestos con stock < umbral efectivo (igual no es alerta), los que más faltan primero |
+| `GET` / `PUT /inventario/umbral-general` | Ver o cambiar (Administrador) el umbral general; cierra el vigente y deja historial |
+| `GET /inventario/historial-umbral?repuesto_id=&solo_general=` | Cambios de umbral |
+| `POST /inventario/disponibilidad` | `{"orden_id"?, "items": [{"repuesto_id", "cantidad"}]}`: valida **antes de usar** si alcanza el stock (no mueve nada). Por repuesto: stock, reservado para la orden, comprometido por otras, disponible, `alcanza` y `faltan` |
+| `GET /inventario/ordenes/{orden_id}/disponibilidad` | Lo mismo para lo que falta usar del presupuesto aprobado de la orden (requerido − ya consumido); `409` si no tiene presupuesto aprobado |
+| `POST /inventario/ordenes/{orden_id}/reserva` | Reserva lo que falta usar del presupuesto aprobado (todo o nada): `reservado`, `faltantes` y los movimientos. Sirve para reintentar una orden que espera repuestos |
+| `POST /inventario/ordenes/{orden_id}/consumos` | `{"clave_operacion", "items": [...]}`: descuenta varios repuestos usados en la orden, todos o ninguno; misma clave → `200`, `repetido: true` |
+| `POST /inventario/ordenes/{orden_id}/liberacion` | `{"clave_operacion"}`: libera todo lo reservado por la orden (p. ej. al cancelarla) |
+
+**Validación de disponibilidad** (`services/disponibilidad.py`): para una orden,
+disponible = stock − lo comprometido por **otras** órdenes (su propia reserva
+cuenta para ella). Las cantidades decimales del presupuesto se redondean hacia
+arriba (1,5 litros → 2 unidades). Aprobar un presupuesto usa la misma
+validación con los repuestos bloqueados (`FOR UPDATE`, en orden de id) hasta el
+commit, para que dos aprobaciones simultáneas no cuenten las mismas unidades.
+
+**Reglas de reserva, descuento y rechazo** (`services/reservas.py`):
+
+- **Reserva**: al aprobar un presupuesto con stock suficiente se reservan
+  (compromisos) las unidades que falta usar, en la misma transacción de la
+  decisión (`repuestos_reservados` en la respuesta). Si algo no alcanza no se
+  reserva nada y la orden espera repuestos. Una modificación aprobada ajusta la
+  reserva: reserva la diferencia o libera el sobrante.
+- **Descuento**: consumir usa primero lo reservado por la orden y el resto debe
+  estar libre; nunca toma lo reservado por otra orden. Varios repuestos se
+  descuentan juntos o ninguno.
+- **Rechazo**: stock insuficiente responde `409` con `faltantes`
+  (`repuesto_id`, `nombre`, `solicitado`, `disponible`, `faltan`) y no aplica nada.
+- **Saldo reservado** por orden en orden cronológico: un consumo mayor que lo
+  reservado no deja deuda que se coma una reserva posterior.
+
+**Índices de inventario y trazabilidad** (`0008_ms3`): índices compuestos que
+entregan el orden de cada listado y el saldo reservado leyendo solo el índice;
+el saldo de varios repuestos sale en una consulta. Revisión y mediciones en
+[`docs/revision-indices-inventario.md`](docs/revision-indices-inventario.md);
+`tests/test_indices_inventario.py` lo verifica con `EXPLAIN`.
+
+**Pruebas de límites de stock** (`tests/test_stock_insuficiente_exacto_multiple.py`):
+para cada forma de usar stock (consumo, compromiso, ajuste, aprobación, validación
+y descuento de varios repuestos), el stock exacto se acepta y deja 0, y una
+unidad más responde `409` con `faltan = 1` sin cambiar nada. También el consumo
+de varias unidades (un movimiento, varios pasos hasta agotar, reservado + libre,
+varios repuestos) y en paralelo: dos descuentos del stock exacto (solo pasa uno)
+y descuentos cruzados `[A, B]` / `[B, A]` sin interbloqueo.
+
+Cada movimiento responde `alerta: {activa, nueva}`; `nueva` indica que ese
+movimiento dejó el repuesto bajo su umbral (para avisar una sola vez; el envío
+del aviso lo hará MS1). Todas las operaciones de stock bloquean el repuesto
+(`SELECT ... FOR UPDATE`): dos consumos simultáneos nunca dejan stock negativo.
+La aprobación de un presupuesto también descuenta lo comprometido por otras
+órdenes al decidir si faltan repuestos.
+
+### Pruebas CRUD de repuestos, proveedores e inventario (MS3)
+
+`services/ms3_presupuestos/tests/test_crud_catalogo_inventario.py` recorre por
+HTTP el ciclo completo de cada recurso y revisa la base después de cada paso:
+
+- **Proveedores y repuestos**: crear → leer → listar → modificar → eliminar →
+  `404`. Cambios parciales, `umbral_particular: null` vuelve al general,
+  reasignar repuestos antes de borrar un proveedor.
+- **Inventario**: secuencia de movimientos y stock resultante (físico,
+  comprometido por orden, disponible), paginación y filtros. Los movimientos
+  no se modifican ni se borran (`405`) y un movimiento rechazado no deja rastro.
+- Datos inválidos (`422`, sin guardar nada), ids inválidos y sin token (`401`).
+
+```bash
+pytest services/ms3_presupuestos/tests/test_crud_catalogo_inventario.py -v
+```
+
 ### Pruebas de rollback y consistencia de presupuestos (MS3)
 
 `services/ms3_presupuestos/tests/test_rollback_consistencia.py` (requiere
@@ -291,9 +471,35 @@ Endpoints de negocio (por la Gateway, con `Authorization: Bearer <token>`):
 (`curl` y `fetch`) en
 [`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md#evidencias-multimedia-ms4).
 
+La subida solo acepta JPG, PNG, WEBP, MP4 y MOV, verificados por su contenido,
+con un máximo de 10 MiB por foto y 100 MiB por video (`MS4_TIPOS_PERMITIDOS`,
+`MS4_MAX_BYTES_FOTO`, `MS4_MAX_BYTES_VIDEO`). Para validar la asociación con la
+orden, MS4 consulta a MS2 (`MS4_MS2_URL`) y, en evidencias de presupuesto, a MS3
+(`MS4_MS3_URL`); ambos deben estar levantados para subir.
+
+MS4 escribe un log por solicitud y por evento de negocio, en formato
+`evento=... clave=valor` (nivel con `MS4_LOG_LEVEL`). Para seguir una subida
+desde la Gateway basta con filtrar por su `request_id`:
+
+```text
+INFO ms4.evidencias evento=evidencia_subida request_id=req-123 evidencia_id=... orden_id=31 tipo_archivo=foto content_type=image/jpeg tamano_bytes=20480 usuario_id=7
+WARNING ms4.evidencias evento=subida_rechazada request_id=req-124 motivo=contenido_no_coincide estado_http=415 orden_id=31 usuario_id=7
+```
+
+Nunca se registran el JWT, la URL firmada, la clave del objeto, el nombre del
+archivo ni su contenido (checklist 5.5).
+
+Para encontrar y limpiar archivos del bucket que quedaron sin fila en la base
+(huérfanos), ver `docs/modelo-evidencias.md` § Archivos huérfanos:
+
+```bash
+python scripts/limpiar_huerfanos_ms4.py              # solo informa
+python scripts/limpiar_huerfanos_ms4.py --eliminar   # borra los huérfanos
+```
+
 ```bash
 # Pruebas de MS4 (las que usan MinIO real se omiten si no está levantado)
-python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py -q
+python -m pytest tests/test_ms4_*.py tests/test_gateway_evidencias.py tests/test_gateway_rechazos_evidencias.py -q
 ```
 
 ## API Gateway

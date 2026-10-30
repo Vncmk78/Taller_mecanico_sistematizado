@@ -28,15 +28,17 @@ export function OrderListToolbar({
         .sort((a, b) => a - b);
 
     return (
-        <div className={`flex flex-wrap items-center gap-4 ${className}`}>
+        <div role="search" aria-label="Buscar y filtrar órdenes" className={`flex flex-wrap items-center gap-4 ${className}`}>
             <div className="relative flex-1 min-w-[240px]">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden />
                 <input
-                    type="text"
+                    type="search"
+                    name="buscar-ordenes"
                     value={search}
                     onChange={(e) => onSearchChange(e.target.value)}
                     placeholder={searchPlaceholder}
                     aria-label="Buscar órdenes"
+                    autoComplete="off"
                     className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
                 />
             </div>

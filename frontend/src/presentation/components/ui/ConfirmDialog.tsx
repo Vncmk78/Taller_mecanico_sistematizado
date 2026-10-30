@@ -1,6 +1,7 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, type ReactNode } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
+import { useDialogFocus } from '@/presentation/hooks/useDialogFocus';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -25,6 +26,10 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const { ref: dialogRef, handleKeyDown: handleDialogKeyDown } = useDialogFocus<HTMLDivElement>(open);
+  const titleId = useId();
+  const descriptionId = useId();
+
   useEffect(() => {
     if (!open) return;
 
@@ -45,10 +50,14 @@ export function ConfirmDialog({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
-        className="card relative w-full max-w-[440px] p-8 text-center"
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        tabIndex={-1}
+        onKeyDown={handleDialogKeyDown}
+        className="card relative w-full max-w-[440px] p-8 text-center outline-none"
       >
         <button
           type="button"
@@ -56,16 +65,20 @@ export function ConfirmDialog({
           onClick={onCancel}
           className="absolute right-4 top-4 text-text-muted hover:text-text-main bg-transparent border-none cursor-pointer"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5" aria-hidden />
         </button>
 
         <div className="w-16 h-16 rounded-full mx-auto mb-5 flex items-center justify-center bg-status-red/10">
-          <AlertTriangle className="w-8 h-8 text-status-red" />
+          <AlertTriangle className="w-8 h-8 text-status-red" aria-hidden />
         </div>
 
-        <h3 className="text-2xl font-bold tracking-tight text-text-main">{title}</h3>
+        <h3 id={titleId} className="text-2xl font-bold tracking-tight text-text-main">
+          {title}
+        </h3>
         {description && (
-          <p className="mt-3 text-text-muted text-base whitespace-pre-line">{description}</p>
+          <p id={descriptionId} className="mt-3 text-text-muted text-base whitespace-pre-line">
+            {description}
+          </p>
         )}
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-center gap-3 mt-8">

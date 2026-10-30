@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from shared.errores_auth import NO_AUTENTICADO, SIN_PERMISO
+
 ESTADOS_DOCUMENTADOS = {
     1: "Recibido",
     2: "Esperando diagnóstico",
@@ -132,11 +134,9 @@ def agregar_ejemplos_ordenes(esquema: dict, *, prefijo: str = "") -> None:
 
         errores = {
             "401": {
-                "sin_token": _ejemplo(
-                    "Token ausente", {"detail": "No se proporcionó un token de acceso"}
-                ),
+                "sin_token": _ejemplo("Token ausente", {"detail": NO_AUTENTICADO}),
                 "token_invalido": _ejemplo(
-                    "Token inválido o expirado", {"detail": "Token inválido o expirado"}
+                    "Token inválido o expirado", {"detail": NO_AUTENTICADO}
                 ),
             },
         }
@@ -145,7 +145,7 @@ def agregar_ejemplos_ordenes(esquema: dict, *, prefijo: str = "") -> None:
             errores["403"] = {
                 "rol_no_autorizado": _ejemplo(
                     "Usuario autenticado sin rol Administrador",
-                    {"detail": "No tienes permiso para realizar esta operación"},
+                    {"detail": SIN_PERMISO},
                 )
             }
             errores["422"] = {

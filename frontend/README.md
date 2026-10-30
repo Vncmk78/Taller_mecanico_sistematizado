@@ -132,6 +132,158 @@ y arquitectura hexagonal.
   `OrderStateStepper` (ciclo), `OrderHistoryTimeline` (seguimiento) y
   `OrderStatusBadge` (etiqueta del estado).
 
+### Tarea 11 — Implementar flujo visual de aprobación y rechazo de presupuesto
+- **`/client/presupuestos`** (lista): muestra los presupuestos de las órdenes del
+  cliente, destacando los que **esperan su decisión** (versión enviada pendiente)
+  frente a los ya aprobados o rechazados. Como el contrato de MS3 no expone un
+  listado global para el cliente, el listado se deriva de las órdenes del cliente
+  y se resuelve cada una con `GET /api/presupuestos?orden_id={id}` (consultas en
+  paralelo vía `useClientBudgets`/`useBudgetStore`).
+- **`/client/presupuestos/:ordenId`** (detalle y decisión):
+  - Trae el detalle con versiones e ítems (`GET /api/presupuestos/{id}`), muestra
+    las **partidas** (repuesto / mano de obra) y el **total** en CLP.
+  - **Aprobar** pide confirmación y envía
+    `{ decision: "aprobado" }`.
+  - **Rechazar** exige `motivo`; si se rechaza **antes de la primera aprobación**
+    (cancela el servicio) además exige confirmar la cancelación, tal como lo
+    declara el contrato (`confirmar_cancelacion`).
+  - `201` refleja el nuevo estado en caché y muestra el **efecto en la orden**;
+    `409/422` muestran el mensaje de negocio y `503` se informa como decisión
+    guardada con aplicación pendiente (sin invitar a repetir la decisión).
+- Componentes y utilidades: `BudgetStatusBadge`, `BudgetItemRow`, `BudgetCard`,
+  `RejectBudgetDialog`; `formatMoneyCLP` (CLP sin decimales) y `EFECTO_EN_ORDEN_LABEL`.
+- Estados de carga, vacío, *offline* con caché y error reintentable coherentes con
+  el resto del portal.
+- Pruebas: `PresupuestoService.test.ts` (mapeo del contrato),
+  `ClientBudgetsPage.test.tsx` y `ClientBudgetDetailPage.test.tsx` (lista,
+  aprobación, rechazo con motivo/cancelación y estados de error).
+
+### Tarea 12 — Agregar confirmaciones y validaciones antes de aprobar o rechazar
+- **Aprobar**: nuevo diálogo `ApproveBudgetDialog` que resume el **total** y la
+  cantidad de partidas y exige marcar *"He revisado las partidas y el total"*
+  antes de habilitar la confirmación (aprobar autoriza el cobro y no se deshace).
+- **Rechazar**: el **motivo** ahora exige un mínimo de 5 caracteres (con contador),
+  además de ser obligatorio; se conserva la confirmación de cancelación cuando
+  rechazar cancela el servicio.
+- **Versión vigente**: se recuerda la versión pendiente al abrir el diálogo y se
+  compara antes de enviar; si cambió —o el backend responde `409`— **no** se envía
+  la decisión obsoleta: se refresca el detalle y se avisa al cliente.
+- **Sin conexión**: se bloquean aprobar y rechazar con un aviso (no se envía una
+  decisión que el servidor no registraría). Un presupuesto **sin partidas** no se
+  puede aprobar.
+- **Doble envío**: la decisión queda bloqueada mientras hay una petición en curso.
+- Pruebas: `ApproveBudgetDialog.test.tsx` y casos nuevos en
+  `ClientBudgetDetailPage.test.tsx` (bloqueo de aprobación, conflicto `409` y
+  decisiones bloqueadas sin conexión).
+
+### Tarea 13 — Crear pruebas de presupuesto y evidencia multimedia
+- **Pruebas de presupuesto**: se suman `Presupuesto.test.ts` (reglas de decisión
+  del dominio: versión pendiente/vigente y cancelación del servicio) y pruebas de
+  `formatMoneyCLP`/diálogos ya existentes, para cubrir la lógica sin depender de la UI.
+- **Evidencia multimedia (MS4, portal Cliente)**: nueva vista
+  **`/client/ordenes/:id/evidencias`** que lista las fotos y videos que el taller
+  marcó como **visibles para el cliente** (`GET /api/evidencias?orden_id={id}`).
+  - Cada archivo se muestra con una **URL prefirmada** obtenida al momento
+    (`GET /api/evidencias/{id}/descarga`); como es efímera **no se cachea** y se
+    vuelve a pedir al ver o descargar.
+  - Vista previa a pantalla completa (`EvidencePreviewDialog`) con opción de
+    **descargar el original**; si la URL falla, la tarjeta ofrece reintentar.
+  - El cliente **no puede subir** evidencia (`POST /api/evidencias` responde `403`):
+    la vista es de solo lectura.
+  - Accesos desde **Estado del Servicio** (`ServiceCard`) y desde el detalle del
+    presupuesto. Estados de carga, vacío, *offline* con caché y error reintentable
+    coherentes con el resto del portal.
+- Capas: `domain/entities/Evidencia.ts` (+ `domain/ports/EvidenciaPort.ts`),
+  `infrastructure/api/EvidenciaService.ts`, `infrastructure/stores/useEvidenceStore.ts`,
+  `presentation/hooks/useOrderEvidence.ts` y
+  `presentation/components/evidence/*` (`EvidenceCard`, `EvidenceGallery`,
+  `EvidencePreviewDialog`).
+- Pruebas: `EvidenciaService.test.ts` (mapeo del contrato),
+  `ClientOrderEvidencePage.test.tsx` (listado, vacío, `404`, error, *offline*,
+  vista previa/descarga y reintento de URL) y `evidenceDisplay.test.ts`.
+
+### Tarea 14 — Carga de evidencia con progreso, éxito y error
+- **Subida de evidencia (MS4, Mecánico y Administrador)**: el personal sube fotos
+  o videos con `POST /api/evidencias` (multipart) desde el detalle de la orden y
+  desde rutas propias **`/admin/ordenes/:id/evidencias`** y
+  **`/mechanic/ordenes/:id/evidencias`**.
+  - **Progreso real** con la barra accesible `ProgressBar` (`role="progressbar"`),
+    alimentada por `onUploadProgress` de axios (no una animación simulada).
+  - **Éxito** confirmado con `Alert` + toast y la evidencia nueva entra a la caché
+    (`upsertById`); **error** diferenciado: validación local (tipo/tamaño), error
+    del servidor (con `Referencia` si el contrato da `request_id`) y **sin
+    conexión**.
+  - Formulario con `archivo`, `contexto` (`diagnostico`/`presupuesto`/
+    `reparacion`/`resultado_final`) y `visible_cliente`; en contexto
+    **presupuesto** se resuelve el presupuesto de la orden
+    (`GET /api/presupuestos?orden_id={id}`), se asocia y queda visible al cliente.
+  - Un envío a la vez (`subir` ignora un segundo intento en curso) y límite de
+    **12 MiB** alineado con el cuerpo de la Gateway.
+  - El Cliente sigue siendo **solo lectura** (`POST /api/evidencias` → `403`).
+- Capas: `domain/entities/Evidencia.ts` (`EvidenciaEntradaCrear`,
+  `TAMANO_MAXIMO_EVIDENCIA_BYTES`, `esContentTypeEvidenciaPermitido`),
+  `domain/ports/EvidenciaPort.ts`, `infrastructure/api/EvidenciaService.ts`
+  (`crear`), `infrastructure/stores/useEvidenceStore.ts` (estado de subida),
+  `presentation/hooks/useEvidenceUpload.ts`,
+  `presentation/components/ui/ProgressBar.tsx` y
+  `presentation/components/evidence/*` (`EvidenceUploadForm`,
+  `OrderEvidenceSection`), con `OrderEvidencePage` como página compartida.
+- Pruebas: `EvidenciaService.test.ts` (crear multipart + progreso),
+  `useEvidenceStore.test.ts` (subir/errores), `ProgressBar.test.tsx`,
+  `EvidenceUploadForm.test.tsx` y `OrderEvidencePage.test.tsx`.
+
+### Tarea 15 — Crear pruebas de formularios y flujo de evidencia
+- **Formulario de carga** (`EvidenceUploadForm.validacion.test.tsx`, 19 pruebas):
+  - Validaciones antes de enviar: sin archivo (botón deshabilitado y aviso),
+    tipos no permitidos (PDF, sin tipo), videos aceptados y el límite exacto de
+    **12 MiB** (justo en el límite pasa, un byte más se rechaza).
+  - Datos enviados según el contexto: los cuatro contextos oficiales, la casilla
+    *Visible para el cliente*, y en **presupuesto** la asociación automática
+    (sin casilla, una sola consulta del presupuesto, espera mientras llega y
+    bloqueo si la orden no tiene presupuesto o la consulta falla).
+  - Durante y después de la subida: controles bloqueados y un solo envío,
+    limpieza del archivo tras el éxito, `onSuccess` con la evidencia creada,
+    `Referencia` del error para soporte y reintento después de un fallo.
+- **Flujo completo** (`OrderEvidenceFlow.test.tsx`, 7 pruebas) con un servidor
+  falso en memoria que guarda lo subido, informa el progreso y filtra por
+  visibilidad cuando consulta el cliente:
+  - El mecánico sube y la evidencia aparece en su galería sin recargar.
+  - El cliente ve solo lo marcado como visible; la evidencia de presupuesto
+    queda asociada y siempre visible.
+  - El cliente abre la vista previa de un video recién subido; el personal
+    abre una foto recién subida y la descarga.
+  - Si la subida falla no aparece nada y al reintentar se completa el flujo.
+  - Sin permiso de carga se ve la galería pero no el formulario.
+- Ejecutar: `npx vitest run src/presentation/components/evidence src/presentation/pages/shared`.
+
+### Tarea 16 — Revisar accesibilidad de inputs, validaciones y mensajes
+- **Campos compartidos**: `Input` admite `hint` y combina `aria-describedby`
+  (descripción externa + ayuda + error); `required` se refleja en `required` y
+  `aria-required`. `Alert` expone `id` y `aria-atomic="true"`. Los diálogos
+  `ConfirmDialog`, `ApproveBudgetDialog` y `RejectBudgetDialog` se asocian con su
+  título y descripción mediante `aria-labelledby`/`aria-describedby`.
+- **Validaciones por campo**: en `BitacoraForm`, `OrderActionsPanel`,
+  `EvidenceUploadForm`, `RejectBudgetDialog` y `MechanicStatusPage` cada error
+  tiene `id` y el campo lo referencia con `aria-describedby` y `aria-invalid`
+  (después de interactuar). El error de archivo de evidencia se separa del error
+  general (presupuesto/servidor) y el campo muestra formatos y tamaño máximo.
+- **Formularios públicos y de cliente**: `LoginPage` usa `h2`, `noValidate` y
+  logos decorativos con `aria-hidden`; `ClientVehicleFormPage` marca
+  patente/marca/modelo como obligatorios y usa teclado numérico en año y
+  kilometraje.
+- **Búsquedas**: `OrderListToolbar`, los listados de vehículos y la búsqueda
+  global del layout admin exponen `role="search"`, `type="search"`, `name` y
+  `autoComplete="off"`; las pruebas consultan el rol `searchbox`.
+- Pruebas: `Input.test.tsx`, `Alert.test.tsx`, `ConfirmDialog.test.tsx`,
+  `BitacoraForm.test.tsx`, `EvidenceUploadForm.validacion.test.tsx`,
+  `RejectBudgetDialog.test.tsx` (nuevo), `ApproveBudgetDialog.test.tsx`,
+  `OrderActionsPanel.test.tsx`, `OrderListToolbar.test.tsx` (nuevo),
+  `MechanicStatusPage.test.tsx`, `LoginPage.test.tsx` y
+  `ClientVehicleFormPage.test.tsx`. Total del frontend: **619/619** pruebas en
+  85 archivos; `npm run lint` y `npx tsc -b` sin errores.
+- Documentación: [`docs/revision-accesibilidad.md`](docs/revision-accesibilidad.md)
+  (Tarea 16).
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -149,7 +301,9 @@ El mapa completo de rutas está documentado en
 | `/client/agendar` | Agendar mantención | Provisional "Próximamente" |
 | `/client/servicios` | Estado del Servicio (consulta de servicios) | Funcional |
 | `/client/ordenes` (+ `/:id`) | Órdenes del cliente y detalle de estado y seguimiento | Funcional |
-| `/client/presupuestos` | Presupuestos | Placeholder |
+| `/client/presupuestos` (+ `/:ordenId`) | Presupuestos: lista y detalle con aprobación/rechazo | Funcional |
+| `/client/ordenes/:id/evidencias` | Evidencia multimedia del servicio (fotos y videos visibles) | Funcional |
+| `/admin/ordenes/:id/evidencias` y `/mechanic/ordenes/:id/evidencias` | Evidencia multimedia con carga (progreso/éxito/error) para el personal | Funcional |
 | `/mechanic` | Portal Mecánico (dashboard) | Funcional (solo rol mecánico) |
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |
@@ -157,6 +311,12 @@ El mapa completo de rutas está documentado en
 Nota: el login consume la **API Gateway** (`POST /auth/login`). Si ni la Gateway ni
 el `auth-service` están desplegados, se muestra el error de credenciales. Las vistas
 de vehículos usan datos mock mientras MS2 no esté disponible.
+
+### Accesibilidad
+
+La revisión básica de accesibilidad del portal Cliente (criterios WCAG 2.1 A/AA,
+hallazgos y correcciones aplicadas) está documentada en
+[`docs/revision-accesibilidad.md`](docs/revision-accesibilidad.md).
 
 ## Cómo ejecutar el proyecto localmente
 

@@ -69,8 +69,10 @@ export function ClientVehicleDetailPage() {
                 to="/client/vehiculos"
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
             >
-                <ArrowLeft className="w-4 h-4" /> Volver a mis vehículos
+                <ArrowLeft className="w-4 h-4" aria-hidden /> Volver a mis vehículos
             </Link>
+
+            <h1 className="sr-only">Ficha del vehículo {vehicle.brand} {vehicle.model}</h1>
 
             {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
@@ -88,7 +90,7 @@ export function ClientVehicleDetailPage() {
                         to="/client/agendar"
                         className="bg-primary-blue text-white py-3 rounded-lg font-bold text-center flex items-center justify-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors"
                     >
-                        <CalendarPlus className="w-4 h-4" /> Agendar mantención para este vehículo
+                        <CalendarPlus className="w-4 h-4" aria-hidden /> Agendar mantención para este vehículo
                     </Link>
                 </div>
 

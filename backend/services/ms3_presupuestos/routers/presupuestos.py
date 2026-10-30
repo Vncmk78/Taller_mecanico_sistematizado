@@ -32,6 +32,7 @@ from services.ms3_presupuestos.integracion_ms2 import (
     CoordinadorOrdenes,
     CoordinadorEnviosPresupuesto,
     OrdenNoVisible,
+    ServicioOrdenesNoDisponible,
     VerificadorOrdenes,
     obtener_verificador_ordenes,
     obtener_coordinador_ordenes,
@@ -52,7 +53,7 @@ from services.ms3_presupuestos.schemas.presupuesto import (
 from services.ms3_presupuestos.services import presupuestos as casos
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
-    AplicacionDecisionRespuesta, AplicacionEnvioPresupuestoRespuesta,
+    AprobacionInicialOrdenVerificada, AplicacionDecisionRespuesta, AplicacionEnvioPresupuestoRespuesta,
     DecisionAplicacionPendiente, DecisionPresupuestoVerificada,
     EnvioPresupuestoVerificado,
 )
@@ -153,6 +154,39 @@ def listar(
     visibles = [casos.a_resumen(p, solo_enviadas=True)
                 for p in encontrados if any(v.enviada for v in p.versiones)]
     return PaginaPresupuestos(total=len(visibles), desde=0, limite=limite, presupuestos=visibles)
+
+
+@router.get(
+    "/ordenes/{orden_id}/primera-aprobacion",
+    response_model=AprobacionInicialOrdenVerificada,
+    summary="Comprobar si una orden tiene una aprobación inicial persistida",
+    description=(
+        "Solo Administrador o Cliente propietario. Consulta el registro persistido "
+        "en MS3, incluso si MS2 aún no alcanzó a aplicar la transición."
+    ),
+    responses={**_401, **_NO_EXISTE, **_503,
+               403: {"description": "Se requiere Administrador o Cliente propietario"}},
+)
+def consultar_aprobacion_inicial_orden(
+    orden_id: int = Path(gt=0),
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(requerir_roles(NombreRol.CLIENTE, NombreRol.ADMINISTRADOR)),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
+) -> AprobacionInicialOrdenVerificada:
+    try:
+        if NombreRol.ADMINISTRADOR in principal.roles:
+            verificador.verificar_acceso(orden_id, token)
+        else:
+            verificador.verificar_propiedad(orden_id, token)
+    except OrdenNoVisible as exc:
+        raise HTTPException(status_code=404, detail="Orden no encontrada") from exc
+    except ServicioOrdenesNoDisponible as exc:
+        raise HTTPException(status_code=503, detail="No fue posible verificar la orden") from exc
+    return AprobacionInicialOrdenVerificada(
+        orden_id=orden_id,
+        aprobacion_registrada=casos.existe_aprobacion_inicial(uow, orden_id=orden_id),
+    )
 
 
 @router.get(

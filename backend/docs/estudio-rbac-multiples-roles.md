@@ -261,6 +261,7 @@ mientras los guards responden con los roles **emitidos**.
 ## 8. Hallazgos
 
 Ninguno está corregido por este estudio: se documentan para su decisión.
+§8.3 y §8.4 se corrigieron después; el detalle está en cada uno.
 
 ### 8.1 Los roles del token caducan con él, no con la base
 
@@ -292,24 +293,31 @@ distinto de `false()`.
 Es código defensivo legítimo, no un defecto. Se documenta para que nadie lo
 interprete como una rama con comportamiento propio que deba probarse.
 
-### 8.3 Las cuentas sin roles responden `500` en `login` y `/auth/me`
+### 8.3 CORREGIDO: las cuentas sin roles respondían `500` en `login` y `/auth/me`
 
-Defecto conocido y **pendiente de decisión**: `roles_del_usuario` lanza
-`ConfiguracionRolesError` con una lista vacía y ambos endpoints lo traducen en
+Defecto conocido en su momento: `roles_del_usuario` lanzaba
+`ConfiguracionRolesError` con una lista vacía y ambos endpoints lo traducían en
 `500`. Los endpoints de consulta (`GET /auth/usuarios`, `GET /auth/usuarios/{id}`)
-y el `DELETE` de roles **sí** toleran `roles: []`.
+y el `DELETE` de roles **sí** toleraban `roles: []`, así que el mismo estado de
+la cuenta se atendía de dos formas distintas.
 
-No se corrigió aquí por estar fuera del alcance de este estudio.
+*Corrección aplicada:* el estado «cuenta sin roles» se separó del error de
+configuración con la excepción `UsuarioSinRolesError`. `login` la responde
+`403` con `{"detail": "El usuario no posee roles"}` (las credenciales son
+correctas, pero el contrato del token exige un claim `roles` no vacío) y
+`/auth/me` devuelve `roles: []`, igual que la consulta administrativa. Cubierto
+por `test_usuarios_roles.py`.
 
 ### 8.4 `matriz-autorizacion-roles.md` §4.1 está desactualizada
 
-La sección 4.1 todavía dice «Ver datos de **otros** usuarios | — | — | —» y
+La sección 4.1 todavía decía «Ver datos de **otros** usuarios | — | — | —» y
 «No existe ningún endpoint de administración de usuarios», pero ya existen
 `GET /auth/usuarios`, `GET /auth/usuarios/{id}`, `POST` y `DELETE` de roles,
 todos exclusivos de Administrador. §8 de esa matriz exige actualizarla cuando
 cambia un endpoint.
 
-Pendiente de decisión; no se modificó en este estudio.
+Resuelto: la matriz §4.1 vigente ya lista los cuatro endpoints y su autorización
+(verificado al corregir §8.3).
 
 ### 8.5 `requerir_roles` está duplicado en MS1 y MS3
 

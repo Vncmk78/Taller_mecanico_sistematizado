@@ -103,12 +103,30 @@ MS3 conserva el rechazo confirmado y MS2 verifica la decisión antes de derivar
 3 → `Cancelado` (8). Un rechazo inicial sin confirmación o sin motivo se rechaza
 con `422`. Una decisión ajena no autoriza transiciones sobre la orden.
 
-La cancelación sin rechazar un presupuesto es un flujo distinto: el Cliente la
-solicita y el Administrador confirma, comprobando que todavía no exista una
-primera aprobación persistida en MS3. Ese flujo existe en `origin/Develop`, pero
-no está integrado en la rama `MartinH` sobre la que se escribió esta guía.
-SCRUM-522 / SCRUM-706 conserva ese pendiente de integración y verificación.
-El PATCH genérico a `Cancelado` está bloqueado; enviar un motivo no lo habilita.
+La cancelación sin rechazar un presupuesto es un flujo distinto, integrado en
+`MartinH` por SCRUM-522 / SCRUM-706:
+
+1. El Cliente propietario envía `POST /api/ordenes/{id}/cancelacion` con
+   `{"motivo": "No continuaré con el servicio"}`. MS2 verifica propiedad, estado
+   1/2/3 y ausencia de aprobación inicial en MS3. Devuelve una solicitud pendiente
+   (`201`), sin cambiar el estado ni crear un historial de transición.
+2. El Administrador consulta `GET /api/ordenes/cancelaciones/pendientes` y confirma
+   con `POST /api/ordenes/{id}/cancelacion/confirmacion`, sin body. MS2 vuelve a
+   consultar la aprobación persistida en MS3 antes de cancelar.
+3. La confirmación guarda estado 8, motivo, solicitante, Administrador, fecha,
+   historial y evento de outbox de forma atómica en MS2. Repetirla devuelve la
+   orden sin duplicar historial o evento. Repetir la solicitud con el mismo motivo
+   conserva su ID; cambiar el motivo de una solicitud ya registrada responde `409`.
+
+Una aprobación ya persistida en MS3 impide solicitar o confirmar (`409`), incluso
+si la aplicación de esa decisión en MS2 quedó atrasada. Un fallo al verificar MS3
+responde `503` sin cancelar. Un fallo de persistencia revierte la confirmación y
+conserva la solicitud pendiente para reintentar. El PATCH genérico a `Cancelado`
+sigue bloqueado; enviar un motivo no lo habilita.
+
+El frontend conserva el estado real de la orden después de solicitar y muestra
+que falta confirmación administrativa. El Administrador usa el endpoint de
+confirmación específico; no intenta cancelar por PATCH.
 
 Las órdenes `Cancelado` y `Entregado` son terminales. Devolver físicamente un
 vehículo cancelado no lo convierte en `Entregado`. Una nueva atención crea
@@ -148,10 +166,20 @@ Las pruebas relevantes son `test_ordenes_api.py`, `test_asignacion_ordenes_api.p
 y `test_eventos_notificaciones_integracion.py`, dentro de `backend/tests/`.
 SCRUM-707 agrega la secuencia finalización/entrega y el rollback de una entrega
 fallida. Son comprobaciones de operaciones y contratos en entornos aislados;
-no se presenta esta guía como evidencia de un despliegue integral en PostgreSQL.
+las pruebas de PostgreSQL usan bases y esquemas locales descartables, no un
+despliegue de producción.
 
-Siguen pendientes la integración de cancelación y la definición de cómo acreditar
-que todo el trabajo autorizado terminó antes de `Listo`. Tampoco se presume
+La integración reúne las ramas de migraciones con `0005_integracion_ms1`
+(login y notificaciones) y `0012_integracion_ms2` (cancelación/bitácora y
+outbox/disponibilidad). Las revisiones de unión no eliminan tablas ni datos.
+El entorno Alembic de MS2 amplía `alembic_version.version_num` a 64 caracteres
+para conservar un ID histórico que excede los 32 predeterminados.
+Se comprobó la migración de bases vacías y la actualización de un esquema
+histórico de MartinH en `0009_ms2` con una orden e historial existentes:
+sus datos se conservaron y quedaron disponibles bitácora, cancelación y outbox.
+
+Sigue pendiente definir cómo acreditar que todo el trabajo autorizado terminó
+antes de `Listo`. Tampoco se presume
 implementación de diagnóstico, devolución o nueva atención por existir columnas
 o transiciones documentadas. Ninguna de estas brechas se resuelve inventando
 permisos, estados o campos controlados por el cliente.

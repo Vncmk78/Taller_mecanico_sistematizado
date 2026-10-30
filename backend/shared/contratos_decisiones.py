@@ -87,6 +87,15 @@ class DecisionPresupuestoVerificada(BaseModel):
     motivo: str | None
 
 
+class AprobacionInicialOrdenVerificada(BaseModel):
+    """Estado autoritativo de aprobación inicial en MS3 para una orden."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    orden_id: int = Field(gt=0)
+    aprobacion_registrada: bool
+
+
 class AplicacionDecisionRespuesta(BaseModel):
     """Efecto ya aplicado, también cuando la petición es un reintento."""
 

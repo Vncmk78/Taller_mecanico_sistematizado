@@ -26,29 +26,52 @@ verifica** · **cuándo** se implementa (tarea del plan).
 
 ## 1. Recepción del archivo
 
-- [ ] **1.1 Lista blanca de formatos.** Solo se aceptan `image/jpeg`,
+- [x] **1.1 Lista blanca de formatos.** Solo se aceptan `image/jpeg`,
   `image/png`, `image/webp`, `video/mp4` y `video/quicktime` (MOV).
   - Por qué: SVG y HTML pueden contener scripts (XSS); ejecutables, ZIP o
     PDF no son evidencia y abren otros vectores de ataque.
   - Verificación: test que sube un `.svg`, un `.html` y un `.exe` y espera
     `415 Unsupported Media Type`.
   - Cuándo: Semana 6 — *Validar tamaño, formato y asociación de archivos*.
+  - ✅ Implementado (Semana 6 — *Implementar límites de tamaño y lista
+    permitida de tipos de archivo*): `PoliticaArchivos.validar_tipo`
+    (`services/validacion_archivos.py`) aplica la lista blanca
+    `MS4_TIPOS_PERMITIDOS` antes de leer o subir el archivo y responde `415`.
+    La configuración solo admite formatos de `FORMATOS_SOPORTADOS`
+    (`config.py`), para que nadie habilite un tipo que MS4 no sabe verificar.
+    Verificado en `tests/test_ms4_limites_archivos.py` (SVG, HTML, EXE, PDF,
+    ZIP y GIF → `415` sin objetos ni filas; cada formato permitido → `201`).
 
-- [ ] **1.2 El tipo se valida por el contenido, no por el nombre.** Se leen
+- [x] **1.2 El tipo se valida por el contenido, no por el nombre.** Se leen
   los primeros bytes del archivo (firma o *magic bytes*) y se comparan con el
   formato declarado. No se confía en la extensión ni en el `Content-Type` que
   envía el cliente.
   - Por qué: renombrar `script.html` a `foto.jpg` es trivial.
   - Verificación: test con un HTML renombrado a `.jpg` que debe ser rechazado.
   - Cuándo: Semana 6.
+  - ✅ Implementado (Semana 6 — *Validar tamaño, formato y asociación de
+    archivos con órdenes*): `detectar_formato` / `validar_contenido`
+    (`services/validacion_archivos.py`) leen los primeros 16 bytes y
+    reconocen JPEG, PNG, WEBP y MP4/MOV (caja `ftyp`, sin confundir HEIC/AVIF
+    con video). Si la firma no es de un formato permitido o no coincide con
+    el declarado → `415`; MP4 y MOV son intercambiables. Se guarda el tipo
+    **detectado**, que es el que firma la descarga (3.4). Verificado en
+    `tests/test_ms4_validacion_contenido.py` (HTML renombrado a `.jpg`, SVG,
+    EXE, PNG declarado como JPEG, HEIC → `415` sin objetos ni filas).
 
-- [ ] **1.3 Tamaño máximo.** Imágenes hasta **10 MB**; videos hasta
+- [x] **1.3 Tamaño máximo.** Imágenes hasta **10 MB**; videos hasta
   **100 MB** (valores iniciales, ajustables por configuración `MS4_*`).
   Si se supera, se corta la lectura y se responde `413 Payload Too Large`.
   - Por qué: evita agotar disco, memoria y ancho de banda (denegación de
     servicio).
   - Verificación: test con un archivo de 10 MB + 1 byte.
   - Cuándo: Semana 6.
+  - ✅ Implementado: `MS4_MAX_BYTES_FOTO` (10 MiB) y `MS4_MAX_BYTES_VIDEO`
+    (100 MiB) en `config.py`; `calcular_sha256_y_tamano(maximo=...)` corta la
+    lectura apenas se supera el límite del tipo y el router responde `413`
+    con el límite en el mensaje, sin subir nada. Verificado en
+    `tests/test_ms4_limites_archivos.py` (foto de 10 MiB + 1 byte → `413`,
+    exacta de 10 MiB → `201`, límite propio para video y lectura cortada).
 
 - [x] **1.4 Nombre de almacenamiento generado por el servidor.** El archivo
   se guarda con un UUID (`{uuid}.{ext}`); el nombre original solo se guarda
@@ -75,9 +98,17 @@ verifica** · **cuándo** se implementa (tarea del plan).
     tiene.
   - Cuándo: Semana 6.
 
-- [ ] **1.6 Archivo vacío o corrupto se rechaza.** Tamaño 0 o imagen que no
+- [x] **1.6 Archivo vacío o corrupto se rechaza.** Tamaño 0 o imagen que no
   se puede abrir → `422`.
   - Cuándo: Semana 6.
+  - ✅ Implementado: 0 bytes → `422` (`recibir_evidencia`) y, sin depender de
+    librerías de imágenes, una revisión estructural por formato: JPEG debe
+    tener el marcador de fin `FF D9`, PNG el chunk `IEND`, el tamaño RIFF de
+    WEBP no puede superar al real, y en MP4/MOV todas las cajas de primer
+    nivel deben caber en el archivo y debe existir `moov`. Verificado en
+    `tests/test_ms4_validacion_contenido.py`. Límite conocido: no decodifica
+    los píxeles; una imagen con estructura completa pero datos internos
+    alterados no se detecta.
 
 ## 2. Almacenamiento (MinIO / S3)
 
@@ -273,15 +304,37 @@ verifica** · **cuándo** se implementa (tarea del plan).
   borra el objeto en MinIO **y** el metadato en la base; si falla uno, no
   quedan registros huérfanos.
   - Cuándo: Semana 6.
+  - Avance (Semana 6 — *Implementar limpieza o manejo de archivos huérfanos
+    ante fallos*): la subida ya no deja huérfanos sin rastro. Si la base falla
+    se borra el objeto y, si ese borrado también falla, la clave queda en
+    `GuardadoEvidenciaError.clave_huerfana`. La conciliación
+    `services/huerfanos.py` + `scripts/limpiar_huerfanos_ms4.py` encuentra y
+    borra los objetos sin fila (solo claves de la convención y con más de 60
+    minutos) e informa las filas sin archivo. Verificado en
+    `tests/test_ms4_huerfanos.py`. Queda pendiente el endpoint de borrado de
+    evidencias, que debe reutilizar esta misma lógica.
 
 - [ ] **5.4 Política de retención definida.** Cuánto tiempo se conservan las
   evidencias de órdenes entregadas (propuesta inicial: mientras exista la
   ficha técnica del vehículo).
   - Cuándo: decisión del equipo antes del despliegue (Semana 11).
 
-- [ ] **5.5 Logs sin datos sensibles.** Los logs no incluyen el contenido del
+- [x] **5.5 Logs sin datos sensibles.** Los logs no incluyen el contenido del
   archivo, tokens JWT ni URLs prefirmadas completas.
   - Cuándo: transversal.
+  - ✅ Implementado (Semana 6 — *Agregar logs útiles sin exponer contenido
+    sensible*): todo log de MS4 pasa por `registrar`
+    (`services/registro.py`), que solo acepta campos de una lista blanca
+    (ids, tipo, tamaño, estado, motivo, servicio, tipo de error), neutraliza
+    saltos de línea y trunca a 80 caracteres. El middleware `MiddlewareRegistro`
+    agrega el `request_id` de la Gateway y registra cada solicitud sin
+    cabeceras, body ni query string. Tampoco se registran la clave del objeto,
+    el nombre original del archivo ni el mensaje de las excepciones (solo su
+    tipo; el traceback queda en DEBUG). Eventos: `evidencia_subida`,
+    `subida_rechazada` (con `motivo`), `subida_fallida`,
+    `dependencia_no_disponible`, `descarga_autorizada`, `error_no_controlado`
+    y `solicitud`. Nivel con `MS4_LOG_LEVEL`. Verificado en
+    `tests/test_ms4_logs.py`.
 
 ---
 
@@ -294,9 +347,14 @@ verifica** · **cuándo** se implementa (tarea del plan).
 | 1.4, 2.4, 2.5, 3.2 (diseño), 3.5, 5.1 | Definir modelo de metadatos / base de recepción y almacenamiento | 3 |
 | 3.1, 3.2, 3.3, 3.4 | Implementar subida y consulta de archivos en MS4 | 5 |
 | 4.2, 4.3, 4.5 | Integrar operaciones multimedia mediante API Gateway | 5 |
-| 1.1, 1.2, 1.3, 1.5, 1.6, 5.2, 5.3 | Validar tamaño, formato y asociación de archivos con órdenes | 6 |
+| 1.1, 1.2, 1.3, 1.5, 1.6, 5.2, 5.3 | Validar tamaño, formato y asociación de archivos con órdenes (1.1 y 1.3 en *Implementar límites de tamaño y lista permitida*) | 6 |
 | 4.4, 4.5 | Tratamiento de indisponibilidad, timeout y errores en Gateway | 10 |
 | 2.3, 4.1, 5.4 | Despliegue de Gateway y servicios en ambiente público | 11 |
+
+El fundamento de los controles de recepción (1.x), de los límites de carga y
+de los códigos `400/413/415/422` está en
+[`estudio-seguridad-archivos-mime.md`](estudio-seguridad-archivos-mime.md)
+(Semana 6).
 
 ## Cómo usar este checklist
 

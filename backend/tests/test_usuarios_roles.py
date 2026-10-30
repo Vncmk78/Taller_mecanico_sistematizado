@@ -596,3 +596,41 @@ def test_me_refleja_los_roles_actuales_tras_una_asignacion(
 
     assert me.status_code == 200
     assert me.json()["roles"] == ["cliente", "mecanico"]
+
+
+def test_login_de_cuenta_sin_roles_responde_403(
+    api: TestClient,
+    admin_headers: dict[str, str],
+):
+    """Sin roles no hay token que emitir: el `403` distingue de un fallo del servidor."""
+
+    usuario_id = _registrar(api, "login-sinroles@correo.cl")
+    api.delete(f"/auth/usuarios/{usuario_id}/roles/cliente", headers=admin_headers)
+
+    login = api.post(
+        "/auth/login",
+        json={"email": "login-sinroles@correo.cl", "password": CONTRASENA},
+    )
+
+    assert login.status_code == 403
+    assert login.json() == {"detail": "El usuario no posee roles"}
+
+
+def test_me_de_cuenta_sin_roles_devuelve_lista_vacia(
+    api: TestClient,
+    admin_headers: dict[str, str],
+):
+    """`/auth/me` informa el estado vigente: la cuenta existe y ya no tiene roles."""
+
+    usuario_id = _registrar(api, "me-sinroles@correo.cl")
+    login = api.post(
+        "/auth/login",
+        json={"email": "me-sinroles@correo.cl", "password": CONTRASENA},
+    )
+    token = login.json()["access_token"]
+    api.delete(f"/auth/usuarios/{usuario_id}/roles/cliente", headers=admin_headers)
+
+    me = api.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert me.status_code == 200
+    assert me.json()["roles"] == []

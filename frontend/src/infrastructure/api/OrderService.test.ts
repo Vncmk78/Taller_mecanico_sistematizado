@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { orderService } from '@/infrastructure/api/OrderService';
 import apiClient from '@/infrastructure/config/apiClient';
 import {
+  bitacoraEntradaReal,
   historialEstadoDeCreacion,
   historialEstadoReal,
   ordenRespuestaConMecanico,
@@ -15,6 +16,7 @@ vi.mock('@/infrastructure/config/apiClient', () => ({
   default: {
     get: vi.fn(),
     patch: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -260,5 +262,94 @@ describe('OrderService: mapeo contra el payload real de la Gateway', () => {
     // mapeo no debe inventar un actor para poder pintar la línea de tiempo.
     expect(entry.origen).toBe('sistema');
     expect(entry.actorUsuarioId).toBeNull();
+  });
+});
+
+// Cuerpos literales de gateway/contratos/ordenes.py:214-233, los mismos que
+// valida backend/tests/test_gateway_openapi.py contra los esquemas reales.
+describe('OrderService: Bitácora de trabajo (contrato HTTP de MS2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('getOrderBitacora consulta GET /ordenes/{id}/bitacora y traduce la entrada', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: [bitacoraEntradaReal] });
+
+    const entries = await orderService.getOrderBitacora('31');
+
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/31/bitacora');
+    expect(entries[0]).toEqual({
+      id: '77',
+      ordenId: '31',
+      autorUsuarioId: '50',
+      tipo: 'accion',
+      descripcion: 'Se reemplazaron las pastillas delanteras',
+      creadoEn: '2026-09-28T12:15:00-03:00',
+      repuestos: [{ nombre: 'Pastillas de freno', cantidad: 2 }],
+    });
+  });
+
+  it('registrarBitacora publica POST /ordenes/{id}/bitacora recortando espacios', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ data: bitacoraEntradaReal });
+
+    const entry = await orderService.registrarBitacora('31', {
+      tipo: 'accion',
+      descripcion: '  Se reemplazaron las pastillas delanteras  ',
+      repuestos: [{ nombre: '  Pastillas de freno ', cantidad: 2 }],
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith('/ordenes/31/bitacora', {
+      tipo: 'accion',
+      descripcion: 'Se reemplazaron las pastillas delanteras',
+      repuestos: [{ nombre: 'Pastillas de freno', cantidad: 2 }],
+    });
+    expect(entry.id).toBe('77');
+  });
+
+  // El modelo de MS2 tiene extra="forbid" y repuestos por defecto []; enviarlo
+  // vacío en una observación es válido.
+  it('registrarBitacora normaliza los repuestos omitidos a una lista vacía', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { ...bitacoraEntradaReal, tipo: 'observacion', repuestos: [] },
+    });
+
+    const entry = await orderService.registrarBitacora('31', {
+      tipo: 'observacion',
+      descripcion: 'El cliente reporta ruido al frenar',
+    });
+
+    expect(entry.repuestos).toEqual([]);
+    const cuerpo = vi.mocked(apiClient.post).mock.calls[0][1] as Record<string, unknown>;
+    expect(cuerpo.repuestos).toEqual([]);
+  });
+});
+
+describe('OrderService: solicitud y confirmación de cancelación', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('después de solicitar consulta la orden sin interpretar la solicitud como estado Cancelado', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { solicitud_id: 5, orden_id: 3, estado: 'pendiente', motivo: 'No continuar' },
+    });
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { ...ordenApi, estado_codigo: 3 } });
+
+    const resultado = await orderService.cancelarComoCliente('3', ' No continuar ');
+
+    expect(apiClient.post).toHaveBeenCalledWith('/ordenes/3/cancelacion', { motivo: 'No continuar' });
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/3');
+    expect(resultado.id).toBe('3');
+    expect(resultado.estadoCodigo).toBe(3);
+    expect(resultado.vehicleId).toBe(String(ordenApi.vehiculo_id));
+  });
+
+  it('el administrador usa la confirmación específica y recibe la orden cancelada', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ data: { ...ordenApi, estado_codigo: 8 } });
+
+    const resultado = await orderService.confirmarCancelacion('3');
+
+    expect(apiClient.post).toHaveBeenCalledWith('/ordenes/3/cancelacion/confirmacion');
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(resultado.id).toBe('3');
+    expect(resultado.estadoCodigo).toBe(8);
   });
 });

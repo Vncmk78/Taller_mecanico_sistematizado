@@ -35,4 +35,42 @@ describe('Input: campo de formulario accesible', () => {
     expect(input).not.toHaveAttribute('aria-invalid');
     expect(input).not.toHaveAttribute('aria-describedby');
   });
+
+  it('describe el campo con la ayuda y conserva las descripciones externas', () => {
+    render(
+      <Input
+        label="Teléfono"
+        hint="Solo números, sin +56"
+        error="Ingrese un teléfono válido"
+        aria-describedby="ayuda-externa"
+      />
+    );
+
+    const input = screen.getByLabelText('Teléfono');
+    const ids = (input.getAttribute('aria-describedby') ?? '').split(' ');
+
+    expect(ids).toContain('ayuda-externa');
+    expect(ids).toHaveLength(3);
+    expect(document.getElementById(ids[1])).toHaveTextContent('Solo números, sin +56');
+    expect(document.getElementById(ids[2])).toHaveTextContent('Ingrese un teléfono válido');
+  });
+
+  it('usa la ayuda como descripción sin marcar el campo como inválido', () => {
+    render(<Input label="RUT" hint="Sin puntos ni guion" />);
+
+    const input = screen.getByLabelText('RUT');
+    expect(input).not.toHaveAttribute('aria-invalid');
+
+    const hintId = input.getAttribute('aria-describedby');
+    expect(hintId).toBeTruthy();
+    expect(document.getElementById(hintId as string)).toHaveTextContent('Sin puntos ni guion');
+  });
+
+  it('expone required y aria-required cuando el campo es obligatorio', () => {
+    render(<Input label="Patente" required />);
+
+    const input = screen.getByLabelText('Patente');
+    expect(input).toBeRequired();
+    expect(input).toHaveAttribute('aria-required', 'true');
+  });
 });

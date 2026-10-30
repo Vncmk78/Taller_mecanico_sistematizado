@@ -1,14 +1,20 @@
 """Seed de usuarios de prueba para el despliegue (SGTM).
 
-Crea en MS1 tres cuentas funcionales —Cliente, Mecánico y Administrador— con sus
-roles, y en MS2 el perfil de Cliente correspondiente al usuario cliente (MS1 y
-MS2 no comparten base: la relación Usuario↔Cliente es lógica, §8). El script es
-idempotente: si una cuenta ya existe, la actualiza sin duplicarla.
+Crea en MS1 una cuenta controlada por cada rol y por cada combinación de roles:
+las tres de un solo rol, las tres de dos roles y la que reúne a los tres (siete
+en total), y en MS2 un perfil de Cliente por cada cuenta que incluya el rol
+Cliente (MS1 y MS2 no comparten base: la relación Usuario↔Cliente es lógica,
+§8). El script es idempotente: si una cuenta ya existe, la actualiza sin
+duplicarla.
 
 Credenciales (para documentar en CONEXIONES.md):
-    cliente@pruebas.cl      / ClientePrueba123!
-    mecanico@pruebas.cl     / MecanicoPrueba123!
-    administrador@pruebas.cl/ AdminPrueba123!
+    cliente@pruebas.cl                        / ClientePrueba123!
+    mecanico@pruebas.cl                       / MecanicoPrueba123!
+    administrador@pruebas.cl                  / AdminPrueba123!
+    cliente-mecanico@pruebas.cl               / ClienteMecanicoPrueba123!
+    cliente-administrador@pruebas.cl          / ClienteAdministradorPrueba123!
+    mecanico-administrador@pruebas.cl         / MecanicoAdministradorPrueba123!
+    cliente-mecanico-administrador@pruebas.cl / ClienteMecanicoAdministradorPrueba123!
 
 Uso (desde backend/ con las dependencias instaladas y .env con los DSN de Neon):
     python scripts/seed_usuarios_prueba.py
@@ -51,6 +57,35 @@ USUARIOS = [
         "contrasena": "AdminPrueba123!",
         "roles": [NombreRol.ADMINISTRADOR],
     },
+    # Combinaciones de dos roles.
+    {
+        "nombre": "Cliente y Mecánico de Prueba",
+        "correo": "cliente-mecanico@pruebas.cl",
+        "contrasena": "ClienteMecanicoPrueba123!",
+        "roles": [NombreRol.CLIENTE, NombreRol.MECANICO],
+        "telefono": "+56911111112",
+    },
+    {
+        "nombre": "Cliente y Administrador de Prueba",
+        "correo": "cliente-administrador@pruebas.cl",
+        "contrasena": "ClienteAdministradorPrueba123!",
+        "roles": [NombreRol.CLIENTE, NombreRol.ADMINISTRADOR],
+        "telefono": "+56911111113",
+    },
+    {
+        "nombre": "Mecánico y Administrador de Prueba",
+        "correo": "mecanico-administrador@pruebas.cl",
+        "contrasena": "MecanicoAdministradorPrueba123!",
+        "roles": [NombreRol.MECANICO, NombreRol.ADMINISTRADOR],
+    },
+    # Los tres roles en la misma cuenta.
+    {
+        "nombre": "Cliente, Mecánico y Administrador de Prueba",
+        "correo": "cliente-mecanico-administrador@pruebas.cl",
+        "contrasena": "ClienteMecanicoAdministradorPrueba123!",
+        "roles": [NombreRol.CLIENTE, NombreRol.MECANICO, NombreRol.ADMINISTRADOR],
+        "telefono": "+56911111114",
+    },
 ]
 
 
@@ -66,10 +101,11 @@ def _ocultar_correo(correo: str) -> str:
     return f"{visible}***@{dominio}" if dominio else f"{visible}***"
 
 
-def _sembrar_ms1() -> int:
+def _sembrar_ms1() -> list[tuple[int, str]]:
     """Crea o actualiza las cuentas y sus roles en la base de MS1.
 
-    Devuelve el usuario_id del cliente (necesario para su perfil en MS2).
+    Devuelve `(usuario_id, teléfono)` de cada cuenta con rol Cliente, que es lo
+    necesario para su perfil en MS2.
     """
     with SessionLocalMS1() as db:
         roles_existentes = {
@@ -84,7 +120,7 @@ def _sembrar_ms1() -> int:
                 + ", ".join(faltantes)
             )
 
-        usuario_id_cliente: int | None = None
+        cuentas_cliente: list[tuple[int, str]] = []
         for datos in USUARIOS:
             correo = datos["correo"].strip().lower()
             usuario = db.scalar(select(Usuario).where(Usuario.correo == correo))
@@ -113,34 +149,37 @@ def _sembrar_ms1() -> int:
             db.flush()
 
             if NombreRol.CLIENTE in datos["roles"]:
-                usuario_id_cliente = usuario.usuario_id
+                cuentas_cliente.append((usuario.usuario_id, datos["telefono"]))
 
         db.commit()
-        if usuario_id_cliente is None:
-            raise SystemExit("No se encontro un usuario con rol Cliente")
-        return usuario_id_cliente
+        if not cuentas_cliente:
+            raise SystemExit("No se encontro ninguna cuenta con rol Cliente")
+        return cuentas_cliente
 
 
-def _sembrar_ms2(usuario_id: int) -> None:
-    """Crea el perfil de Cliente en MS2 para el usuario cliente de MS1."""
+def _sembrar_ms2(cuentas_cliente: list[tuple[int, str]]) -> None:
+    """Crea en MS2 un perfil de Cliente por cada cuenta con rol Cliente."""
     with SessionLocalMS2() as db:
-        perfil = db.scalar(
-            select(Cliente).where(Cliente.usuario_id == usuario_id)
-        )
-        if perfil is not None:
-            print(f"  ~ Perfil Cliente ya existia (cliente_id={perfil.cliente_id})")
-            return
+        for usuario_id, telefono in cuentas_cliente:
+            perfil = db.scalar(
+                select(Cliente).where(Cliente.usuario_id == usuario_id)
+            )
+            if perfil is not None:
+                print(
+                    f"  ~ Perfil Cliente ya existia (cliente_id={perfil.cliente_id})"
+                )
+                continue
 
-        db.add(Cliente(usuario_id=usuario_id, telefono="+56911111111"))
+            db.add(Cliente(usuario_id=usuario_id, telefono=telefono))
+            print(f"  + Perfil Cliente creado en MS2 para usuario_id={usuario_id}")
         db.commit()
-        print(f"  + Perfil Cliente creado en MS2 para usuario_id={usuario_id}")
 
 
 def main() -> None:
     print("Sembrando usuarios de prueba en MS1 (auth)...")
-    usuario_id_cliente = _sembrar_ms1()
-    print("Sembrando perfil Cliente en MS2 (taller)...")
-    _sembrar_ms2(usuario_id_cliente)
+    cuentas_cliente = _sembrar_ms1()
+    print("Sembrando perfiles Cliente en MS2 (taller)...")
+    _sembrar_ms2(cuentas_cliente)
     print("Seed completado.")
 
 

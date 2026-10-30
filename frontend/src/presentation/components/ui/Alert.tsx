@@ -8,6 +8,7 @@ interface AlertProps {
   children: ReactNode;
   className?: string;
   action?: ReactNode;
+  id?: string;
 }
 
 const toneClasses: Record<AlertTone, string> = {
@@ -26,12 +27,14 @@ const toneIcons: Record<AlertTone, typeof AlertCircle> = {
   orange: AlertTriangle,
 };
 
-export function Alert({ tone = 'info', children, className = '', action }: AlertProps) {
+export function Alert({ tone = 'info', children, className = '', action, id }: AlertProps) {
   const Icon = toneIcons[tone];
   const role = tone === 'error' || tone === 'warning' ? 'alert' : 'status';
   return (
     <div
+      id={id}
       role={role}
+      aria-atomic="true"
       className={`flex items-center gap-3 flex-wrap text-sm border border-solid rounded-lg px-4 py-3 ${toneClasses[tone]} ${className}`}
     >
       <span className="flex items-center gap-2 min-w-0">

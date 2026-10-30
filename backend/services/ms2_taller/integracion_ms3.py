@@ -9,6 +9,7 @@ from services.ms2_taller.config import settings
 from shared.contratos_decisiones import (
     DisponibilidadRepuestosSolicitud,
     DisponibilidadRepuestosVerificada,
+    AprobacionInicialOrdenVerificada,
     DecisionPresupuestoVerificada,
     EnvioPresupuestoVerificado,
 )
@@ -42,6 +43,10 @@ class VerificadorDisponibilidadRepuestos(Protocol):
 
 class VerificadorDecisiones(Protocol):
     def consultar(self, decision_id: int, token: str) -> DecisionPresupuestoVerificada: ...
+
+
+class VerificadorAprobacionInicial(Protocol):
+    def consultar(self, orden_id: int, token: str) -> AprobacionInicialOrdenVerificada: ...
 
 
 class EnvioPresupuestoNoVisibleError(Exception):
@@ -116,8 +121,40 @@ class VerificadorDecisionesHttp:
         return decision
 
 
+class VerificadorAprobacionInicialHttp:
+    def __init__(self, url_base: str, timeout: float) -> None:
+        self.url_base = url_base.rstrip("/")
+        self.timeout = timeout
+
+    def consultar(self, orden_id: int, token: str) -> AprobacionInicialOrdenVerificada:
+        try:
+            respuesta = httpx.get(
+                f"{self.url_base}/presupuestos/ordenes/{orden_id}/primera-aprobacion",
+                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise ServicioPresupuestosNoDisponibleError("No fue posible consultar MS3") from exc
+        if respuesta.status_code in (403, 404):
+            raise DecisionNoVisibleError("Orden no encontrada")
+        if respuesta.status_code != 200:
+            raise ServicioPresupuestosNoDisponibleError(
+                "MS3 no devolvió una verificación de aprobación inicial"
+            )
+        try:
+            resultado = AprobacionInicialOrdenVerificada.model_validate(respuesta.json())
+        except ValueError as exc:
+            raise ServicioPresupuestosNoDisponibleError("Respuesta inválida de MS3") from exc
+        if resultado.orden_id != orden_id:
+            raise ServicioPresupuestosNoDisponibleError("La referencia devuelta por MS3 no coincide")
+        return resultado
+
+
 def obtener_verificador_decisiones() -> VerificadorDecisiones:
     return VerificadorDecisionesHttp(settings.MS3_URL, settings.MS3_TIMEOUT_SEGUNDOS)
+
+
+def obtener_verificador_aprobacion_inicial() -> VerificadorAprobacionInicial:
+    return VerificadorAprobacionInicialHttp(settings.MS3_URL, settings.MS3_TIMEOUT_SEGUNDOS)
 
 
 def obtener_verificador_envios_presupuesto() -> VerificadorEnviosPresupuesto:

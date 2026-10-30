@@ -34,18 +34,23 @@
 
 ## 📋 RESUMEN
 
-La suite vigente cubre, con **304 pruebas** en 21 archivos:
+La suite vigente cubre, con **1113 pruebas** en 54 archivos:
 
-- ✅ Autenticación (registro, login, `/auth/me`)
-- ✅ JWT: firma, expiración, claims obligatorios, formato de `sub` y `roles`
-- ✅ Autorización por rol, incluidos multirol y `401` vs `403`
+- ✅ Autenticación (registro, login, `/auth/me`, intentos fallidos, historial de roles)
+- ✅ JWT: firma, expiración, claims obligatorios, formato de `sub` y `roles`, integridad del token
+- ✅ Autorización por rol, incluidos multirol, `401` vs `403` y normalización
 - ✅ Propiedad de recursos y acceso cruzado, con `404` indistinguible
-- ✅ API Gateway: enrutamiento, formato de errores, OpenAPI, CORS
+- ✅ Acceso indebido entre roles y recursos ajenos del mismo rol
+- ✅ Autenticación por canales web y móvil
+- ✅ API Gateway: enrutamiento, formato de errores, OpenAPI, CORS, evidencias, health
 - ✅ Integración real del JWT emitido por MS1 validado en MS2 a través de la Gateway
-- ✅ Contratos de MS3 (presupuestos) y MS4 (evidencias)
+- ✅ Contratos de MS3 (presupuestos, aislamiento, persistencia) y MS4 (evidencias, ciclo de archivos, huérfanos)
+- ✅ Decisiones de presupuesto (integración y migraciones)
 
-**Total:** 304 pruebas, más 2 de integración con MinIO que se omiten si el
-servicio no está levantado (y que dicen cómo habilitarse).
+**Total:** 1113 pruebas → **1054 pasan, 55 se omiten y 4 son `xfail` estricto**
+(que registran huecos de seguridad abiertos; ver la sección «Casos pendientes»).
+Las omitidas son las que requieren un servicio externo levantado (MinIO o
+PostgreSQL descartable) y se habilitan siguiendo la sección «Cómo ejecutar».
 
 Además de `pytest`, el repositorio tiene **dos suites más** que también se
 ejecutan hoy:
@@ -70,34 +75,70 @@ dos sustituye a `pytest`.
 backend/
 ├── tests/
 │   ├── conftest.py                    Fixtures: SQLite en memoria, .env de pruebas
-│   ├── test_auth_api.py                (8)  Registro, login, /auth/me
-│   ├── test_jwt.py                     (11) Claims, firma, expiración
-│   ├── test_autorizacion.py            (6)  401 vs 403, multirol
-│   ├── test_vehiculos_api.py           (49) Propiedad y CRUD de vehículos
-│   ├── test_ordenes_api.py             (28) Visibilidad y creación de órdenes
-│   ├── test_asignacion_ordenes_api.py  (24) Asignación, reasignación, idempotencia
-│   ├── test_validadores_orden.py       (22) Validadores de dominio
-│   ├── test_gateway_rutas.py           (19) Enrutamiento y reenvío
-│   ├── test_gateway_formato.py         (15) Formato común de errores
-│   ├── test_gateway_openapi.py         (26) Swagger y esquemas
-│   ├── test_gateway_estructura.py      (6)  Estructura de la Gateway
-│   ├── test_integracion_jwt_gateway_ms2.py (2) JWT real MS1→Gateway→MS2
-│   ├── test_ms3_estructura.py          (10) Estructura de MS3
-│   ├── test_ms3_persistencia_base.py   (15) Persistencia de MS3
-│   ├── test_ms4_estructura.py           (6) Estructura de MS4
-│   ├── test_ms4_config.py               (2) Configuración de MS4
-│   ├── test_ms4_modelo_evidencia.py    (17) Modelo de evidencia
-│   ├── test_ms4_recepcion.py           (18) Recepción de evidencias
-│   ├── test_ms4_minio_integracion.py    (1) Integración MinIO (se omite sin MinIO)
-│   └── test_ms4_recepcion_minio.py      (1) Integración MinIO (se omite sin MinIO)
+│   ├── test_acceso_indebido_roles.py               (10)  Acceso indebido entre roles (4 xfail)
+│   ├── test_acceso_recursos_ajenos_mismo_rol.py    (8)  Recursos ajenos del mismo rol
+│   ├── test_asignacion_ordenes_api.py              (24)  Asignación, reasignación, idempotencia
+│   ├── test_autenticacion_canales.py               (10)  Autenticación por canales web/móvil
+│   ├── test_auth_api.py                            (8)  Registro, login, /auth/me
+│   ├── test_autorizacion.py                        (6)  401 vs 403, multirol
+│   ├── test_decisiones_presupuesto_integracion.py  (28)  Decisiones de presupuesto
+│   ├── test_decisiones_presupuesto_postgresql.py   (45)  Decisiones en PostgreSQL (se omiten sin PG)
+│   ├── test_gateway_errores_proxy.py               (28)  Errores del proxy
+│   ├── test_gateway_estructura.py                  (6)  Estructura de la Gateway
+│   ├── test_gateway_evidencias.py                  (14)  Límites de la ruta de evidencias
+│   ├── test_gateway_formato.py                     (15)  Formato común de errores
+│   ├── test_gateway_health_servicios.py            (10)  Health de servicios
+│   ├── test_gateway_openapi.py                     (42)  Swagger y esquemas
+│   ├── test_gateway_openapi_ejemplos.py            (20)  Ejemplos del OpenAPI
+│   ├── test_gateway_openapi_evidencias.py          (4)  OpenAPI de evidencias
+│   ├── test_gateway_rechazos_evidencias.py         (25)  Rechazos de evidencias
+│   ├── test_gateway_rutas.py                       (43)  Enrutamiento y reenvío
+│   ├── test_historial_roles.py                     (6)  Historial de roles
+│   ├── test_integracion_jwt_gateway_ms2.py         (5)  JWT real MS1→Gateway→MS2
+│   ├── test_integracion_prefijos.py                (21)  Prefijos de enrutamiento
+│   ├── test_integridad_token_jwt.py                (12)  Integridad del token JWT
+│   ├── test_jwt.py                                 (11)  Claims, firma, expiración
+│   ├── test_login_intentos_fallidos.py             (2)  Intentos fallidos de login
+│   ├── test_migraciones_decisiones.py              (2)  Migraciones de decisiones
+│   ├── test_ms2_integracion_ms3.py                 (12)  Integración MS2 → MS3
+│   ├── test_ms3_aislamiento.py                     (20)  Aislamiento de MS3
+│   ├── test_ms3_estructura.py                      (12)  Estructura de MS3
+│   ├── test_ms3_integracion_ms2.py                 (17)  Integración MS3 → MS2
+│   ├── test_ms3_persistencia_base.py               (15)  Persistencia de MS3
+│   ├── test_ms3_presupuestos_contratos.py          (15)  Contratos de presupuestos
+│   ├── test_ms4_api_evidencias.py                  (20)  API de evidencias
+│   ├── test_ms4_asociacion_ordenes.py              (38)  Asociación de evidencias con órdenes
+│   ├── test_ms4_autorizacion_evidencias.py         (24)  Autorización de evidencias
+│   ├── test_ms4_ciclo_archivos.py                  (12)  Ciclo de archivos (6 se omiten sin MinIO)
+│   ├── test_ms4_config.py                          (2)  Configuración de MS4
+│   ├── test_ms4_convencion_metadatos.py            (19)  Convención de metadatos
+│   ├── test_ms4_errores_carga.py                   (12)  Errores de carga
+│   ├── test_ms4_estructura.py                      (6)  Estructura de MS4
+│   ├── test_ms4_huerfanos.py                       (23)  Evidencias huérfanas (1 se omite sin MinIO)
+│   ├── test_ms4_limites_archivos.py                (49)  Límites de tamaño y cantidad
+│   ├── test_ms4_logs.py                            (23)  Logs de evidencias
+│   ├── test_ms4_minio_integracion.py               (2)  Integración MinIO (se omite sin MinIO)
+│   ├── test_ms4_modelo_evidencia.py                (17)  Modelo de evidencia
+│   ├── test_ms4_recepcion.py                       (18)  Recepción de evidencias
+│   ├── test_ms4_recepcion_minio.py                 (1)  Recepción MinIO (se omite sin MinIO)
+│   ├── test_ms4_url_firmada.py                     (17)  URLs firmadas
+│   ├── test_ms4_validacion_contenido.py            (43)  Validación de contenido
+│   ├── test_normalizacion_401_403.py               (14)  Normalización de 401 vs 403
+│   ├── test_ordenes_api.py                         (142)  Visibilidad y creación de órdenes
+│   ├── test_seguridad_autenticacion.py             (12)  Seguridad de autenticación
+│   ├── test_usuarios_roles.py                      (43)  Usuarios y roles
+│   ├── test_validadores_orden.py                   (22)  Validadores de dominio
+│   └── test_vehiculos_api.py                       (58)  Propiedad y CRUD de vehículos
 │
 ├── requirements-dev.txt               pytest, httpx, respx
 └── verificar_conexion.py              Conexiones a las 4 bases de datos
 ```
 
 `tests/conftest.py` fija las variables `MS*_JWT_SECRET_KEY` y `MS*_DATABASE_URL`
-por defecto, así que la suite corre sin `.env` y sin PostgreSQL. Solo las dos
-pruebas de MinIO requieren `docker compose up -d minio minio_init`.
+por defecto, así que la suite corre sin `.env` y sin PostgreSQL. 55 pruebas se
+omiten si no hay servicios externos: 10 de MinIO
+(`docker compose up -d minio minio_init`) y 45 de PostgreSQL descartable; ver
+la sección «Casos pendientes».
 
 ### Suite histórica (Jest) — no ejecutable
 
@@ -277,22 +318,32 @@ python -m pytest tests -q
 
 ### Resultado verificado
 ```
-304 passed, 2 skipped, 1 warning in 51.55s
+1054 passed, 55 skipped, 4 xfailed, 51 warnings in 295.78s (0:04:55)
 ```
 
-Las 2 omitidas son las de integración con MinIO, que se describen solas:
+De las 1113 pruebas, **55 se omiten** por depender de un servicio externo no
+levantado y **4 son `xfail` estricto** (huecos de seguridad registrados, no
+fallos). El desglose completo está en la sección
+[«Casos pendientes»](#-casos-pendientes).
+
+Las omitidas se describen solas con `-rs` y son de dos grupos:
+
 ```
-SKIPPED tests/test_ms4_minio_integracion.py:73: MinIO no está disponible
-        (docker compose up -d minio minio_init)
-SKIPPED tests/test_ms4_recepcion_minio.py:76: MinIO no está disponible
-        (docker compose up -d minio minio_init)
+SKIPPED tests/test_ms4_ciclo_archivos.py:389: MinIO no está disponible
+        (docker compose up -d minio minio_init)      ← 10 omitidas de MinIO (una de test_ms4_huerfanos.py)
+SKIPPED tests/test_decisiones_presupuesto_postgresql.py:92:
+        Se requieren dos PostgreSQL locales descartables para SCRUM-397/438
+                                                      ← 45 omitidas de PostgreSQL
 ```
 
 Para incluirlas:
 ```bash
-docker compose up -d minio minio_init
+docker compose up -d minio minio_init        # habilita las 10 de MinIO
 python -m pytest tests -q
 ```
+
+Las 45 de PostgreSQL necesitan además dos bases descartables levantadas; ver
+`test_decisiones_presupuesto_postgresql.py`.
 
 ### Ejecutar un subconjunto
 ```bash
@@ -311,17 +362,24 @@ python verificar_conexion.py     # requiere los 4 servicios de DB levantados
 
 **Módulos del sistema en ejecución con cobertura directa:**
 
-| Módulo | Archivo de pruebas | Pruebas |
+| Módulo | Archivo(s) de pruebas | Pruebas |
 |---|---|---|
-| `shared/auth.py` — emisión y validación de JWT | `test_jwt.py` | 11 |
-| `services/ms1_auth` — routers, schemas, dependencias, hashing | `test_auth_api.py`, `test_autorizacion.py` | 14 |
-| `services/ms2_taller` — vehículos | `test_vehiculos_api.py` | 49 |
-| `services/ms2_taller` — órdenes y asignación de mecánico | `test_ordenes_api.py`, `test_asignacion_ordenes_api.py` | 52 |
+| `shared/auth.py` — emisión y validación de JWT | `test_jwt.py` (11), `test_integridad_token_jwt.py` (12) | 23 |
+| `services/ms1_auth` — registro, login, `/auth/me`, roles, seguridad, canales web/móvil | `test_auth_api.py` (8), `test_autorizacion.py` (6), `test_usuarios_roles.py` (43), `test_historial_roles.py` (6), `test_login_intentos_fallidos.py` (2), `test_autenticacion_canales.py` (10), `test_normalizacion_401_403.py` (14), `test_seguridad_autenticacion.py` (12) | 101 |
+| `services/ms2_taller` — vehículos | `test_vehiculos_api.py` | 58 |
+| `services/ms2_taller` — órdenes y asignación de mecánico | `test_ordenes_api.py` (142), `test_asignacion_ordenes_api.py` (24) | 166 |
 | `services/ms2_taller` — validadores de dominio | `test_validadores_orden.py` | 22 |
-| `gateway` — rutas, errores, OpenAPI, CORS | `test_gateway_*.py` | 66 |
-| Integración MS1 → Gateway → MS2 | `test_integracion_jwt_gateway_ms2.py` | 2 |
-| `services/ms3_presupuestos` | `test_ms3_*.py` | 25 |
-| `services/ms4_evidencias` | `test_ms4_*.py` | 44 |
+| `gateway` — rutas, formato de errores, OpenAPI, CORS, evidencias, health | `test_gateway_rutas.py` (43), `test_gateway_errores_proxy.py` (28), `test_gateway_openapi.py` (42), `test_gateway_openapi_ejemplos.py` (20), `test_gateway_openapi_evidencias.py` (4), `test_gateway_formato.py` (15), `test_gateway_rechazos_evidencias.py` (25), `test_gateway_evidencias.py` (14), `test_gateway_health_servicios.py` (10), `test_gateway_estructura.py` (6) | 207 |
+| Integración MS1 → Gateway → MS2 y prefijos | `test_integracion_jwt_gateway_ms2.py` (5), `test_integracion_prefijos.py` (21) | 26 |
+| `services/ms3_presupuestos` | `test_ms3_aislamiento.py` (20), `test_ms3_integracion_ms2.py` (17), `test_ms3_presupuestos_contratos.py` (15), `test_ms3_persistencia_base.py` (15), `test_ms3_estructura.py` (12), `test_ms2_integracion_ms3.py` (12) | 91 |
+| `services/ms3_presupuestos` — decisiones de presupuesto | `test_decisiones_presupuesto_integracion.py` (28), `test_decisiones_presupuesto_postgresql.py` (45, se omiten sin PostgreSQL), `test_migraciones_decisiones.py` (2) | 75 |
+| `services/ms4_evidencias` | `test_ms4_validacion_contenido.py` (43), `test_ms4_limites_archivos.py` (49), `test_ms4_asociacion_ordenes.py` (38), `test_ms4_autorizacion_evidencias.py` (24), `test_ms4_huerfanos.py` (23, 1 se omite sin MinIO), `test_ms4_logs.py` (23), `test_ms4_api_evidencias.py` (20), `test_ms4_convencion_metadatos.py` (19), `test_ms4_recepcion.py` (18), `test_ms4_modelo_evidencia.py` (17), `test_ms4_url_firmada.py` (17), `test_ms4_ciclo_archivos.py` (12, 6 se omiten sin MinIO), `test_ms4_errores_carga.py` (12), `test_ms4_estructura.py` (6), `test_ms4_config.py` (2), `test_ms4_minio_integracion.py` (2, se omiten sin MinIO), `test_ms4_recepcion_minio.py` (1, se omite sin MinIO) | 326 |
+| Seguridad transversal — acceso indebido entre roles y recursos ajenos del mismo rol | `test_acceso_indebido_roles.py` (10, 4 `xfail` estricto), `test_acceso_recursos_ajenos_mismo_rol.py` (8) | 18 |
+| **Total** | **54 archivos** | **1113** |
+
+**Total de la suite: 1113 pruebas** → 1054 pasan, 55 se omiten (10 de MinIO y 45
+de PostgreSQL descartable) y 4 son `xfail` estricto (huecos de seguridad
+registrados en la sección «Casos pendientes»).
 
 **Cobertura transversal de seguridad**, presente en varios archivos:
 
@@ -442,12 +500,13 @@ test('Cliente cannot access another clients order', async () => {
 ### Suite vigente — resultado verificado
 
 ```
-304 passed, 2 skipped, 1 warning in 51.55s
+1054 passed, 55 skipped, 4 xfailed, 51 warnings in 295.78s (0:04:55)
 ```
 
-Reproducir con `cd backend && python -m pytest tests -q`. Las 2 omitidas son las
-de MinIO y solo se omiten si el servicio no está levantado; ver la sección
-«Cómo ejecutar».
+Reproducir con `cd backend && python -m pytest tests -q`. De las 1113 pruebas,
+55 se omiten por depender de servicios externos (10 de MinIO y 45 de PostgreSQL
+descartable) y 4 son `xfail` estricto por huecos de seguridad abiertos; el
+detalle está en la sección «Casos pendientes».
 
 ### Suite histórica (Jest) — resultado real
 
@@ -504,6 +563,62 @@ Time:        1.234s
 
 ---
 
+## ⏳ CASOS PENDIENTES
+
+De las 1113 pruebas de la suite vigente, **1054 pasan**. Las restantes **59 no
+son fallos**: 55 se omiten por depender de un servicio externo no levantado y 4
+están marcadas `xfail` estricto porque registran un hueco de seguridad abierto.
+Este documento las deja todas identificadas; ninguna se esconde ni se
+«bendice».
+
+### 1. Omitidas por servicio externo (55)
+
+Se habilitan levantando el servicio correspondiente y volviendo a correr la
+suite. Con todos los servicios levantadas no debería quedar ninguna omitida.
+
+| Grupo | Pruebas | Servicio requerido | Cómo habilitarla |
+|---|---|---|---|
+| `test_ms4_ciclo_archivos.py` | 6 | MinIO | `docker compose up -d minio minio_init` |
+| `test_ms4_minio_integracion.py` | 2 | MinIO | ídem |
+| `test_ms4_recepcion_minio.py` | 1 | MinIO | ídem |
+| `test_ms4_huerfanos.py` | 1 | MinIO | ídem (reutiliza el fixture `cliente_minio` de `test_ms4_recepcion_minio.py`) |
+| `test_decisiones_presupuesto_postgresql.py` | 45 | Dos PostgreSQL locales descartables | Ver el propio archivo (casos SCRUM-397/438) |
+| **Total** | **55** | **MinIO (10) + PostgreSQL (45)** | |
+
+### 2. `xfail` estrictos por hueco de seguridad abierto (4)
+
+Son en `test_acceso_indebido_roles.py`. Marcan un comportamiento **no deseado y
+conocido**: hoy la API lo permite y la prueba lo documenta como brecha. Son
+**estrictos** (`strict=True`): si alguien corrige la brecha, la prueba empieza a
+fallar y obliga a retirar la marca, así nadie la deja pasar por alto.
+
+| Prueba | Brecha que registra |
+|---|---|
+| `test_mecanico_no_asignado_no_crea_presupuesto_de_orden_ajena` | Un mecánico crea presupuesto sobre una orden que no tiene asignada (§4.4 de la matriz) |
+| `test_mecanico_no_crea_presupuesto_de_orden_inexistente` | Variante del §4.4 usando una orden inexistente |
+| `test_administrador_no_asigna_a_un_usuario_inexistente` | `mecanico_id` de la orden sin validar contra MS1 (§4.3 de la matriz) |
+| `test_administrador_no_asigna_a_un_usuario_sin_rol_mecanico` | Variante del §4.3: el id existe pero no tiene rol mecánico |
+
+Referencia completa de huecos y decisiones pendientes:
+[`docs/matriz-autorizacion-roles.md`](backend/docs/matriz-autorizacion-roles.md).
+
+### 3. No automatizado en esta suite
+
+- **Frontend (vitest):** se corre aparte (`cd frontend && npm test`), 175 pruebas
+  en 37 archivos. No la sustituye `pytest`.
+- **Humo sobre HTTP real:** `scripts/prueba_comunicacion_smoke.py`, 33
+  comprobaciones, requiere la Gateway y MS1 levantadas. No corre dentro de
+  `pytest`.
+
+### 4. Suite histórica (Jest) no ejecutable
+
+`__tests__/`, `jest.config.js` y `package.json` de la raíz no cargan ninguna
+suite y `backend/src/` está incompleto (`models/User` ausente). Queda **pendiente
+de decisión del equipo** retirarla; ver la sección «Conclusión». No se ha tocado
+ningún archivo de esa suite en este registro.
+
+---
+
 ## 🛠️ CONFIGURACIÓN
 
 ### Suite vigente
@@ -541,14 +656,14 @@ Los tres caminos que fallan —`src/**/*.js`, `main: "src/index.js"` en
 ✅ **Refactoring seguro:** Puede cambiar código sin miedo  
 ✅ **Documentación viva:** Las pruebas documentan el comportamiento  
 ✅ **Catch bugs:** Previene regressions  
-✅ **Quality:** 304 casos de uso cubiertos, incluidos los de seguridad
+✅ **Quality:** 1113 pruebas de uso cubiertas, incluidas las de seguridad
 
 ---
 
 ## 🎯 CONCLUSIÓN
 
 **Pruebas completas y verificadas sobre el sistema en ejecución:**
-- 304 pruebas, 2 omitidas por dependencia externa (MinIO), 0 fallos
+- 1113 pruebas: 1054 pasan, 55 se omiten por servicios externos (10 MinIO y 45 PostgreSQL descartable), 4 son `xfail` estricto por huecos de seguridad abiertos, 0 fallos
 - Autenticación verificada
 - Autorización verificada, con `401` y `403` diferenciados
 - Propiedad de recursos y acceso cruzado verificados, con `404` indistinguible

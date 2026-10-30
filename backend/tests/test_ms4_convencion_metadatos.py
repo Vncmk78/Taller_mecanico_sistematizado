@@ -29,6 +29,7 @@ from services.ms4_evidencias.services.evidencias import (
     generar_clave_objeto,
     recibir_evidencia,
 )
+from archivos_muestra import JPEG_VALIDO, jpeg_con
 from test_ms4_recepcion import BUCKET, FakeS3, sesion
 
 _UUID_EJEMPLO = "9f2c1d7a4b6e4a1c8f3d0b5e6a7c9d2e"
@@ -43,7 +44,7 @@ def _recibir(
     sesion,
     s3: FakeS3,
     *,
-    archivo: bytes = b"datos-de-foto",
+    archivo: bytes = JPEG_VALIDO,
     content_type: str = "image/jpeg",
     autor: int = 7,
     request_id: str | None = "req-1",
@@ -116,7 +117,7 @@ def test_generar_clave_objeto_usa_el_evidencia_id_explicito() -> None:
 def test_el_objeto_lleva_metadatos_y_jamas_el_nombre_original(
     sesion, s3: FakeS3
 ) -> None:
-    evidencia = _recibir(sesion, s3, archivo=b"contenido-x", autor=9)
+    evidencia = _recibir(sesion, s3, archivo=jpeg_con(b"contenido-x"), autor=9)
 
     guardado = s3.objetos[evidencia.clave_objeto]
     meta = guardado["metadata"]

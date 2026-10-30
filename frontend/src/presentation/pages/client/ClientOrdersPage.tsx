@@ -66,7 +66,7 @@ export function ClientOrdersPage() {
         <div className="p-10 animate-fade-in">
             <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
                 <div>
-                    <h2 className="text-3xl font-bold mb-1">Mis Órdenes</h2>
+                    <h1 className="text-3xl font-bold mb-1">Mis Órdenes</h1>
                     <p className="text-text-muted">Consulte el estado de los servicios de sus vehículos</p>
                 </div>
             </div>

@@ -80,10 +80,21 @@ Leyenda: ✅ permitido · ⚠️ permitido con condición · ❌ prohibido (`403
 | `POST /api/auth/register` | público | público | público |
 | `POST /api/auth/login` | público | público | público |
 | `GET /api/auth/me` | ✅ el propio | ✅ el propio | ✅ el propio |
-| Ver datos de **otros** usuarios | — | — | — |
-| Asignar roles | — | — | — |
+| `GET /api/auth/usuarios` (listar cuentas) | ❌ | ❌ | ✅ |
+| `GET /api/auth/usuarios/{usuario_id}` (detalle de cualquier cuenta) | ❌ | ❌ | ✅ |
+| `POST /api/auth/usuarios/{usuario_id}/roles` (asignar un rol) | ❌ | ❌ | ✅ |
+| `DELETE /api/auth/usuarios/{usuario_id}/roles/{rol}` (retirar un rol) | ❌ | ❌ | ✅ |
 
-No existe ningún endpoint de administración de usuarios.
+Los cuatro endpoints de gestión de usuarios exigen el rol `administrador`
+(`Depends(requerir_roles(NombreRol.ADMINISTRADOR))`): sin token responden `401`
+y con un rol distinto, `403`. El listado y el detalle incluyen también las
+cuentas sin roles (`roles: []`). Cada asignación o retirada queda registrada en
+`historial_rol` con el administrador responsable y la fecha y hora.
+
+Una cuenta sin roles puede ser consultada, pero no iniciar sesión: `POST
+/api/auth/login` responde `403` y `/api/auth/me` devuelve `roles: []`, en lugar
+del `500` que daba hasta la corrección del hallazgo §8.3 de
+`estudio-rbac-multiples-roles.md`.
 
 ### 4.2 Vehículos (MS2)
 
@@ -116,8 +127,13 @@ ruta no existe.
 | `GET /api/ordenes` | ⚠️ de sus vehículos | ⚠️ asignadas | ✅ todas |
 | `GET /api/ordenes/{id}` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
 | `PUT /api/ordenes/{id}/mecanico` | ❌ | ❌ | ✅ |
-| `GET /api/ordenes/{id}/historial` | — | — | — |
-| Cambio general de estado | — | — | — |
+| `GET /api/ordenes/{id}/historial` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
+| `PATCH /api/ordenes/{id}/estado` | ❌ 403 | ⚠️ solo asignadas | ✅ cualquiera |
+| `POST /api/ordenes/{id}/entrega` | ❌ 403 | ❌ 403 | ✅ |
+| `POST /api/ordenes/{id}/cancelacion` | ⚠️ solicita solo el propietario | ❌ 403 | ❌ 403 |
+| `GET /api/ordenes/cancelaciones/pendientes` | ❌ 403 | ❌ 403 | ✅ |
+| `POST /api/ordenes/{id}/cancelacion/confirmacion` | ❌ 403 | ❌ 403 | ✅ |
+| `POST /api/ordenes/{id}/decisiones-presupuesto` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
 
 Detalles que condicionan la matriz:
 
@@ -134,6 +150,25 @@ Detalles que condicionan la matriz:
   `Esperando diagnóstico` y quedan registrados `HistorialAsignacion` e
   `HistorialEstado` en la misma transacción. `Entregado` y `Cancelado` rechazan
   asignaciones con `409`.
+- `mecanico_id` es hoy una **referencia lógica** a MS1: **no** se valida en el
+  servidor que exista, esté activo ni tenga el rol `mecanico`, ni se aplica un
+  máximo de órdenes activas.
+- **Cambio general de estado** (`PATCH /api/ordenes/{id}/estado`): solo el
+  Administrador, o el Mecánico asignado a esa orden, con `403` en otro caso. Los
+  pares `1 → 2`, `3 → 4/5` y `6 → 7` están reservados a sus operaciones
+  específicas y responden `409`; pasar a `Cancelado` exige motivo no vacío.
+- **Entrega física** (`POST /api/ordenes/{id}/entrega`): exclusiva del
+  Administrador. Cierra `6 → 7`, registra `entregado_en` y `entregado_por_id` con
+  la identidad del JWT y el historial. El PATCH `6 → 7` responde `409`.
+- **Solicitud de cancelación** (`POST /api/ordenes/{id}/cancelacion`): el Cliente
+  propietario puede solicitarla mientras la orden esté en `1`, `2` o `3`. Se
+  guarda su motivo y fecha sin cambiar el estado; MS2 verifica que MS3 no tenga
+  una aprobación inicial. Una orden inexistente o ajena responde `404`.
+- **Revisión y confirmación**: el Administrador consulta
+  `GET /api/ordenes/cancelaciones/pendientes` y confirma por
+  `POST /api/ordenes/{id}/cancelacion/confirmacion`. MS2 vuelve a verificar la
+  aprobación inicial y solo entonces actualiza a `Cancelado` e historial en una
+  transacción. `PATCH` no permite saltarse el flujo.
 - `mecanico_id` es una **referencia lógica** a MS1. MS2 valida localmente el
   máximo configurable de órdenes activas, pero aún no comprueba por contrato
   que el usuario de destino exista, esté activo o tenga el rol `mecanico`.
@@ -149,7 +184,12 @@ Detalles que condicionan la matriz:
 | Reemplazar ítems de una versión en borrador (`PUT .../versiones/{n}/items`) | ❌ 403 | ✅ | ✅ |
 | Enviar la versión al cliente (`POST .../versiones/{n}/envio`) | ❌ 403 | ❌ 403 | ✅ |
 | Aprobar o rechazar (`POST .../versiones/{n}/decision`) | ✅ solo dueño | ❌ 403 | ❌ 403 |
-| Repuestos, proveedores, inventario | — | — | — |
+| Listar / ver proveedores y repuestos (`GET /proveedores`, `/repuestos`, con `bajo_umbral`) | ❌ 403 | ✅ | ✅ |
+| Crear, modificar o eliminar proveedores y repuestos (`POST`/`PATCH`/`DELETE`) | ❌ 403 | ❌ 403 | ✅ |
+| Consultar movimientos, stock, alertas, umbral e historial (`GET /inventario/...`) | ❌ 403 | ✅ | ✅ |
+| Compromiso, consumo y liberación de una orden (`POST /inventario/movimientos`) | ❌ 403 | ✅ | ✅ |
+| Ingreso y ajuste de stock (`POST /inventario/movimientos`) | ❌ 403 | ❌ 403 | ✅ |
+| Cambiar el umbral general (`PUT /inventario/umbral-general`) | ❌ 403 | ❌ 403 | ✅ |
 
 - Guards en `services/ms3_presupuestos/routers/presupuestos.py` (`requerir_roles`).
 - **Propiedad del cliente:** MS3 no conoce al dueño del vehículo (§8). Llama a
@@ -160,7 +200,8 @@ Detalles que condicionan la matriz:
 - Pendiente: limitar al mecánico a las órdenes que tiene asignadas (dato de MS2).
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).
-- Repuestos, proveedores e inventario siguen sin routers.
+- El cliente no ve el catálogo: ve el repuesto y su proveedor dentro de su presupuesto (§4.3).
+- Pendiente: limitar al mecánico a mover stock solo de las órdenes que tiene asignadas (dato de MS2).
 
 ### 4.5 Evidencias multimedia (MS4)
 

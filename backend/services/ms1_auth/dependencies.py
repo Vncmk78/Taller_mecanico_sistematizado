@@ -21,6 +21,7 @@ from shared.auth import (
     TokenInvalidoError,
     validar_token_acceso,
 )
+from shared.errores_auth import error_no_autenticado, error_sin_permiso
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -31,7 +32,7 @@ def obtener_principal_actual(
     """Extrae y valida el JWT sin consultar la base de datos de MS1."""
 
     if credenciales is None:
-        raise _error_no_autenticado("No se proporcionó un token de acceso")
+        raise error_no_autenticado()
     try:
         return validar_token_acceso(
             credenciales.credentials,
@@ -39,7 +40,7 @@ def obtener_principal_actual(
             algoritmo=settings.JWT_ALGORITHM,
         )
     except TokenInvalidoError as exc:
-        raise _error_no_autenticado("Token inválido o expirado") from exc
+        raise error_no_autenticado() from exc
 
 
 def obtener_usuario_actual(
@@ -56,7 +57,7 @@ def obtener_usuario_actual(
             detail="No fue posible consultar el usuario",
         ) from exc
     if usuario is None:
-        raise _error_no_autenticado("Usuario no válido")
+        raise error_no_autenticado()
     return usuario
 
 
@@ -73,18 +74,7 @@ def requerir_roles(
         principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     ) -> PrincipalAutenticado:
         if principal.roles.isdisjoint(permitidos):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permiso para realizar esta operación",
-            )
+            raise error_sin_permiso()
         return principal
 
     return dependencia
-
-
-def _error_no_autenticado(detalle: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=detalle,
-        headers={"WWW-Authenticate": "Bearer"},
-    )

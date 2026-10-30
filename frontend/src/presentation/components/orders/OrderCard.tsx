@@ -18,7 +18,7 @@ export function OrderCard({ order, detailPath, patente, vehicleLabel, mechanicNa
             <div className="p-5 flex-grow flex flex-col">
                 <div className="flex justify-between items-center gap-3 mb-3">
                     <h3 className="text-lg font-semibold flex items-center gap-2">
-                        <ClipboardList className="w-5 h-5 text-text-muted shrink-0" />
+                        <ClipboardList className="w-5 h-5 text-text-muted shrink-0" aria-hidden />
                         <span className="truncate">Orden n° {order.id}</span>
                     </h3>
                     <OrderStatusBadge estadoCodigo={order.estadoCodigo} />
@@ -40,7 +40,7 @@ export function OrderCard({ order, detailPath, patente, vehicleLabel, mechanicNa
 
                 {mechanicName && (
                     <div className="flex items-center gap-2 text-sm bg-bg-secondary rounded-lg px-3 py-2 mb-4">
-                        <User className="w-4 h-4 text-text-muted" />
+                        <User className="w-4 h-4 text-text-muted" aria-hidden />
                         <span className="truncate">Mecánico: {mechanicName}</span>
                     </div>
                 )}
@@ -49,7 +49,7 @@ export function OrderCard({ order, detailPath, patente, vehicleLabel, mechanicNa
                     to={detailPath}
                     className="mt-auto flex items-center justify-center gap-2 bg-surface border border-border-custom text-primary-blue py-2.5 rounded-lg text-sm hover:bg-bg-secondary transition-colors no-underline"
                 >
-                    <FileText className="w-4 h-4" />
+                    <FileText className="w-4 h-4" aria-hidden />
                     Ver detalle
                 </Link>
             </div>

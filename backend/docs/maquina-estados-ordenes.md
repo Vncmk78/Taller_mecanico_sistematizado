@@ -242,8 +242,8 @@ siguiente acción normal; no sustituye la autorización concreta de cada evento.
 | 4 | Esperando repuestos | Existe un presupuesto aprobado, pero faltan repuestos necesarios para continuar el trabajo autorizado. | Administrador confirma la disponibilidad en MS3 |
 | 5 | En reparación | Existe un presupuesto aprobado y están disponibles los repuestos necesarios para ejecutar el alcance autorizado. | Mecánico |
 | 6 | Listo | El mecánico terminó el trabajo autorizado y el vehículo está disponible para retiro. | Administrador para registrar la entrega |
-| 7 | Entregado | El administrador registró la entrega física tras finalizar el servicio. Es el término normal y es terminal. | Administrador |
-| 8 | Cancelado | El proceso terminó antes de la primera aprobación por rechazo confirmado o por solicitud de cancelación confirmada según el flujo. Es terminal. | Cliente origina la decisión o solicitud; Administrador confirma solo la solicitud independiente |
+| 7 | Entregado | El administrador registró la entrega física tras finalizar el servicio. Es el término normal y es terminal. | Administrador mediante `POST /ordenes/{id}/entrega` |
+| 8 | Cancelado | El proceso terminó antes de la primera aprobación por rechazo confirmado, o el Administrador confirmó la solicitud del Cliente. Es terminal. | Cliente propietario solicita; Administrador confirma. El rechazo inicial sigue siendo decisión del Cliente. |
 
 No existe reapertura de `Entregado` o `Cancelado`. Una nueva atención después de
 cancelar inicia otra orden en `Recibido` y conserva la anterior como antecedente.
@@ -261,13 +261,13 @@ Bloquear un par no implementa ni simula ese flujo.
 | Sin orden → 1 | Confirmar ingreso físico, vehículo, cupo diario e ingreso válidos. | Administrador | `POST /api/ordenes`, `crear_orden()` | Orden en `Recibido` e historial inicial en la misma transacción; el ingreso nuevo y su validación se confirman juntos. | Implementada; el cupo se serializa por jornada, y las pruebas cubren rechazo, reutilización y auditoría. |
 | 1 → 2 | Primera asignación válida; la reasignación posterior conserva estado. | Administrador | `PUT /api/ordenes/{id}/mecanico`, `asignar_mecanico()` | Responsable e historiales de asignación, estado y validación de capacidad; `PATCH` responde `409`. | Implementada para la primera asignación y la capacidad configurable; rol remoto del mecánico sigue pendiente. |
 | 2 → 3 | Enviar versión 1 como primer presupuesto; última versión en borrador, con ítems y precios. | Administrador | MS3 `POST /presupuestos/{id}/versiones/{numero}/envio`; coordinación MS2 `POST /ordenes/{id}/envios-presupuesto`; reintento MS3 `POST /presupuestos/{id}/envio-inicial/aplicacion`. | MS3 conserva el envío; MS2 verifica el hecho y guarda estado e historial con actor; reintentar no duplica historial. | Implementada y cubierta por `test_envio_inicial_coordina_estado_historial_y_actor_administrador`, `test_fallo_de_ms2_deja_envio_guardado_y_reintento_idempotente`. Migración 0007 aún requiere PostgreSQL real. |
-| 3 → 4 | Primera aprobación y disponibilidad insuficiente evaluada al decidir. | Cliente propietario; MS3 evalúa y MS2 deriva | MS3 `POST /presupuestos/{id}/versiones/{n}/decision`; aplicación MS2 `POST /ordenes/{id}/decisiones-presupuesto`; retry MS3 `POST /presupuestos/decisiones/{id}/aplicacion`. | `Esperando repuestos`, una decisión y un historial asociados; la evaluación es una instantánea, no reserva. | Implementada; rama incluida en `test_decision_coordina_estado_historial_actor_y_motivo` y pruebas de retry. |
-| 3 → 5 | Primera aprobación y disponibilidad suficiente evaluada al decidir. | Cliente propietario; MS3 evalúa y MS2 deriva | Mismas operaciones de decisión 3 → 4. | `En reparación`, con decisión e historial asociados. | Implementada según instantánea; no reserva ni vuelve a verificar stock. Misma prueba parametrizada de decisión. |
+| 3 → 4 | Primera aprobación y disponibilidad insuficiente evaluada al decidir. | Cliente propietario; MS3 evalúa y MS2 deriva | MS3 `POST /presupuestos/{id}/versiones/{n}/decision`; aplicación MS2 `POST /ordenes/{id}/decisiones-presupuesto`; retry MS3 `POST /presupuestos/decisiones/{id}/aplicacion`. | `Esperando repuestos`, una decisión y un historial asociados; la evaluación queda como instantánea y no se reserva nada (todo o nada). MS3 permite reintentar la reserva con `POST /inventario/ordenes/{id}/reserva`. | Implementada; rama incluida en `test_decision_coordina_estado_historial_actor_y_motivo` y pruebas de retry. |
+| 3 → 5 | Primera aprobación y disponibilidad suficiente evaluada al decidir. | Cliente propietario; MS3 evalúa y MS2 deriva | Mismas operaciones de decisión 3 → 4. | `En reparación`, con decisión e historial asociados. | Implementada; al aprobar, MS3 reserva (compromisos) lo que falta usar en la misma transacción de la decisión. Misma prueba parametrizada de decisión. |
 | 3 → 8 | Rechazo inicial con motivo, sin aprobación previa. | Cliente propietario | MS3 `POST /presupuestos/{id}/versiones/{n}/decision`; aplicación MS2 `POST /ordenes/{id}/decisiones-presupuesto`; reintento por `POST /presupuestos/decisiones/{id}/aplicacion`. | `Cancelado`, decisión/motivo e historial preservados; retry idempotente. | Implementada por operación específica; `test_decision_coordina_estado_historial_actor_y_motivo`, `test_repetir_decision_aplicacion_y_retry_no_duplica_historial`. El `PATCH` directo devuelve `409`. |
 | 4 → 5 | Stock libre suficiente para los repuestos de la versión aprobada; unidades reservadas por otras órdenes descontadas. | Administrador confirma; MS3 reserva y MS2 deriva | MS3 `POST /api/inventario/ordenes/{id}/disponibilidad`; MS2 `POST /ordenes/{id}/disponibilidad-repuestos`; MS2 verifica la reserva con MS3. | MS3 confirma sus compromisos; MS2 confirma `En reparación` e historial con actor/operación. Son transacciones locales separadas; el reintento no duplica movimientos ni historial. | Implementada con pruebas de stock libre, entero, autenticación, transición e idempotencia. El `PATCH` sigue bloqueado. |
 | 5 → 6 | Trabajo autorizado terminado; el endpoint actual no verifica la evidencia de término. | Solo Mecánico asignado | `PATCH /api/ordenes/{id}/estado` | Actualiza a `Listo` e historial; otros actores reciben `403`; rechazo no escribe. | Parcial: autorización y persistencia implementadas, verificación de término pendiente. `test_patch_estado_mecanico_asignado_actualiza_y_registra_historial`, `test_solo_mecanico_asignado_puede_finalizar_trabajo`. |
 | 6 → 7 | El Administrador confirma la entrega física. | Administrador | `POST /api/ordenes/{orden_id}/entrega` (`registrar_entrega_fisica()`); `PATCH` sigue bloqueado. | Actualiza a `Entregado`, guarda responsable y fecha/hora, y registra historial en la misma transacción; repetir devuelve el registro original. | Implementada; `test_admin_registra_entrega_desde_listo_con_historial_atomico`, `test_entrega_requiere_administrador_y_no_modifica_la_orden_si_no_autoriza`, `test_entrega_solo_desde_listo_y_rechazo_no_escribe_historial`, `test_repetir_entrega_devuelve_registro_original_sin_duplicar_historial`. |
-| 1/2/3 → 8 | Solicitud del Cliente, confirmación administrativa, motivo y comprobación de ausencia de aprobación previa. | Cliente solicita; Administrador confirma | No hay operación de cancelación independiente; `PATCH` bloqueado. | No cambiar estado ni historial mediante el endpoint genérico. | Bloqueada deliberadamente; `test_cancelacion_generica_se_bloquea_aunque_tenga_motivo`. No confundir con rechazo inicial 3 → 8. |
+| 1/2/3 → 8 | Solicitud del Cliente, confirmación administrativa, motivo y comprobación de ausencia de aprobación previa al solicitar y al confirmar. | Cliente propietario solicita; Administrador confirma | `POST /api/ordenes/{id}/cancelacion`; `GET /api/ordenes/cancelaciones/pendientes`; `POST /api/ordenes/{id}/cancelacion/confirmacion`. | La solicitud pendiente no cambia el estado. La confirmación registra Cancelado e historial con el administrador actor en una transacción local. | Implementada y probada en `test_cancelacion_requiere_solicitud_y_confirmacion_administrativa` y `test_cancelacion_vuelve_a_verificar_que_no_haya_aprobacion`. El `PATCH` genérico sigue bloqueado. |
 | 7/8 → cualquier estado | Ninguno: ambos son terminales. | Ninguno | Validador de MS2; no existe operación de reapertura. | Rechazo sin modificar la orden ni su historial. | Implementado por catálogo/validador; `test_patch_estado_terminal_rechaza_cualquier_cambio` y `test_terminal_no_se_reabre_mediante_evento`. |
 
 Para los rechazos por `PATCH`, el contrato de MS2 distingue `403` (actor no
@@ -317,9 +317,9 @@ flowchart LR
     S5 -->|Trabajo terminado · 🟡 Autorización implementada; evidencia pendiente| S6["6 · Listo"]
     S6 -->|Entrega física · ⛔ Bloqueada hasta registrar entrega| S7["7 · Entregado · terminal"]
     S3 -->|Rechazo inicial confirmado · ✅ Implementada y verificada| S8["8 · Cancelado · terminal"]
-    S1 -->|Cancelación independiente · ⛔ Bloqueada| S8
-    S2 -->|Cancelación independiente · ⛔ Bloqueada| S8
-    S3 -->|Cancelación independiente · ⛔ Bloqueada| S8
+    S1 -->|Solicitud Cliente + confirmación Admin · ✅ Implementada| S8
+    S2 -->|Solicitud Cliente + confirmación Admin · ✅ Implementada| S8
+    S3 -->|Solicitud Cliente + confirmación Admin · ✅ Implementada| S8
 
     classDef terminal fill:#e8edf2,stroke:#526477,color:#192c42,stroke-width:2px;
     class S7,S8 terminal;
@@ -386,8 +386,10 @@ puede significar que MS2 ya confirmó; el reintento idempotente resuelve esa dud
 Se informa el estado HTTP y detalle de MS2 cuando se recibió su respuesta.
 No hay reintento automático ni recuperación en segundo plano.
 
-La disponibilidad es una instantánea, no una reserva de inventario: no se
-recalcula al reintentar y no garantiza que otro trabajo no consuma el stock.
+La disponibilidad guardada en la decisión es una instantánea: no se recalcula
+al reintentar la aplicación en MS2. Desde SCRUM-487, cuando alcanza, MS3 además
+reserva esas unidades para la orden (compromisos) en la misma transacción de la
+aprobación, así otro trabajo no puede consumirlas.
 Las aprobaciones históricas sin instantánea responden `409`; no se reconstruye
 su stock pasado ni se enlazan artificialmente historiales anteriores.
 La orden debe estar en `Esperando aprobación de presupuesto`, estado establecido
@@ -422,13 +424,13 @@ no es el Mecánico asignado al finalizar devuelve `403`.
 | 5 → 6 | Finalización; Mecánico asignado | Trabajo autorizado terminado | `PATCH /ordenes/{id}/estado` | Permitido solo al Mecánico asignado (`403` para otros); la evidencia de finalización sigue pendiente |
 | 6 → 7 | Entrega física; Administrador | Entrega confirmada y sus datos de auditoría | `POST /ordenes/{id}/entrega` | Fecha, responsable, estado e historial atómicos; reintento idempotente; PATCH rechazado con `409` |
 | 3 → 8 | Rechazo inicial; Cliente propietario | Rechazo confirmado y motivo, sin aprobación previa | Decisión MS3 y aplicación verificada SCRUM-438 | PATCH rechazado con `409`; usar decisión verificada |
-| 1/2/3 → 8 | Solicitud del Cliente confirmada por Administrador | Solicitud real, confirmación, ausencia de primera aprobación y motivo | Falta operación específica | PATCH rechazado con `409`; requiere flujo futuro de cancelación independiente |
+| 1/2/3 → 8 | Solicitud del Cliente confirmada por Administrador | Propiedad, solicitud, motivo y ausencia de aprobación inicial en MS3 | `POST /ordenes/{id}/cancelacion` y `POST /ordenes/{id}/cancelacion/confirmacion` | Solicitar conserva estado; confirmar cancela y registra historial/outbox. PATCH rechazado. |
 | 7/8 → cualquier estado | Ninguno | Son terminales | Validación existente | Rechazado |
 
 El `PATCH` genérico no sustituye estas operaciones: rechaza `1 → 2`, `2 → 3` y
 `3 → 4/5/8`; también bloquea `4 → 5`, `6 → 7` y los destinos genéricos
 `Cancelado`. Disponibilidad y entrega usan sus operaciones específicas;
-la cancelación independiente aún requiere integrar su flujo en esta rama.
+la cancelación independiente usa solicitud del propietario y confirmación administrativa.
 El portal mecánico ofrece `5 → 6`, y MS2 exige que el actor tenga rol Mecánico y
 sea el responsable asignado. Esa transición todavía no acredita por sí sola que
 el alcance autorizado esté terminado.
@@ -524,35 +526,34 @@ cancelado no lo convierte en `Entregado`. La operación se prueba en
 `test_entrega_solo_desde_listo_y_rechazo_no_escribe_historial` y
 `test_repetir_entrega_devuelve_registro_original_sin_duplicar_historial`.
 
-#### Cancelación independiente y par compartido (1/2/3 → 8)
+#### Cancelación independiente (1/2/3 → 8)
 
-El PATCH genérico rechaza todos los destinos `Cancelado` con `409`, incluso si
-incluyen un motivo. El contrato sigue rechazando con `422` una solicitud sin
-motivo; un motivo no reemplaza la solicitud del Cliente ni la confirmación del
-Administrador. La cancelación independiente continúa pendiente de una operación
-que compruebe esos hechos.
+El Cliente propietario solicita mediante `POST /ordenes/{id}/cancelacion`. MS2
+comprueba su propiedad, restringe la solicitud a los estados 1, 2 y 3, exige un
+motivo y consulta a MS3 para descartar una aprobación inicial ya persistida. La
+solicitud guarda cliente, estado, motivo y fecha, pero no cambia la orden ni su
+historial. Repetir la misma petición devuelve la solicitud pendiente; una
+solicitud distinta para la misma orden responde `409`.
 
-Antes de SCRUM-436, el PATCH permitía esa carrera entre una aprobación persistida
-en MS3 y una cancelación directa en MS2. El bloqueo genérico elimina esa vía; el
-flujo independiente deberá comprobar la decisión persistida antes de habilitarse.
+El Administrador revisa `GET /ordenes/cancelaciones/pendientes` y confirma con
+`POST /ordenes/{id}/cancelacion/confirmacion`. MS2 vuelve a comprobar en MS3 que
+no exista aprobación inicial y valida que la orden siga en 1, 2 o 3. En una
+transacción local cambia a `Cancelado`, conserva el motivo, registra al Cliente
+solicitante y al Administrador confirmante, y agrega el historial con el actor
+administrativo. Si MS3 no está disponible, responde `503` sin cancelar; una
+aprobación registrada responde `409` y deja la solicitud pendiente.
 
-El rechazo inicial verificado por SCRUM-438 conserva su operación específica.
-Como rechazo y cancelación independiente comparten `3 → 8`, el PATCH genérico
-bloquea el par completo; el endpoint de decisiones mantiene operativo el rechazo
-inicial comprobado, sin habilitar la cancelación independiente.
-
-Se necesita un flujo de solicitud y confirmación, límites de propiedad/rol y un
-contrato para comprobar en MS3 que no existe aprobación previa al confirmar.
-Estado e historial deben persistirse atómicamente y los reintentos conservar una
-atribución trazable. SCRUM-522 cubre pruebas de cancelación antes de aprobación;
-la operación y el contrato faltantes requieren trabajo adicional. No se agrega un
-campo cliente que aparente una aprobación o confirmación confiable.
+El rechazo inicial de un presupuesto continúa siendo un flujo distinto: el
+Cliente confirma el rechazo y MS3 aplica la decisión verificada mediante
+SCRUM-438. El `PATCH` genérico sigue rechazando toda transición a `Cancelado`,
+para impedir que Administrador o Mecánico omitan la solicitud y su confirmación.
 
 Los vínculos anteriores relacionan tareas y brechas técnicas; los estados del
 backlog se consultan en Jira y no son evidencia de implementación por sí solos.
 SCRUM-523 / SCRUM-707 cubre pruebas de finalización y entrega; SCRUM-522 /
-SCRUM-706 conserva el pendiente de integrar y verificar la cancelación desde
-`origin/Develop`. SCRUM-400 y SCRUM-440 quedan fuera de esta revisión.
+SCRUM-706 integra y verifica cancelación, reintentos, autorización y rollback
+tanto con bases aisladas como con PostgreSQL local. SCRUM-400 y SCRUM-440 quedan
+fuera de esta revisión.
 
 ## 7. Relación con INT-33
 

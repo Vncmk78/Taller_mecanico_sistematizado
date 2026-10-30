@@ -284,7 +284,7 @@ delega ese juicio al microservicio, que es quien tiene el secreto.
 | Correo de usuario en la salida del seed | ✅ Corregido | `seed_usuarios_prueba.py` enmascara con `_ocultar_correo()` (§7.8) |
 | `.env` real versionado | ✅ Ausente | Solo se versionan `.env.example` con placeholders |
 | Contraseña del DSN en errores de conexión | ✅ Enmascarada | Comprobado: SQLAlchemy no incluye la contraseña en `str(error)` |
-| `WWW-Authenticate` en el 401 de la Gateway | ⚠️ Se pierde | El proxy solo reenvía `content-type` (§7.7) |
+| `WWW-Authenticate` en el 401 de la Gateway | ✅ Se conserva | El proxy reenvía las cabeceras de respuesta no hop-by-hop (§7.7) |
 
 ---
 
@@ -292,8 +292,10 @@ delega ese juicio al microservicio, que es quien tiene el secreto.
 
 La revisión de logs (tarea «Revisar que los logs no expongan contraseñas, tokens
 ni datos sensibles») encontró **dos filtraciones reales**, que sí se corrigieron
-porque son defectos y no refactors. Las secciones 7.5 a 7.8 son observaciones
-que **no se tocaron**: son refactors o decisiones de mantenimiento.
+porque son defectos y no refactors. Las secciones 7.5, 7.6 y 7.8 son
+observaciones que **no se tocaron**: son refactors o decisiones de mantenimiento.
+La 7.7 también se corrigió más tarde (la Gateway ahora reenvía las cabeceras de
+respuesta del microservicio).
 
 ### 7.1 `obtener_principal_actual` está copiado en los cuatro microservicios
 
@@ -310,15 +312,16 @@ el secreto del servicio, y dejar en cada `*/dependencies.py` solo lo específico
 que hoy pasan, y su valor no compensa el riesgo en esta entrega. Queda como
 tarea de mantenimiento.
 
-### 7.2 `requerir_roles` sin argumentos se comporta distinto en MS1 y MS3
+### 7.2 CORREGIDO: `requerir_roles` sin argumentos se comportaba distinto en MS1 y MS3
 
-MS1 lanza `ValueError("Debe indicarse al menos un rol permitido")` si se invoca
-sin roles; MS3 construye un `frozenset()` vacío y deniega todo con `403`. Ninguna
-de las dos rutas es alcanzable desde los routers actuales, porque ambos pasan
-siempre al menos un rol.
+MS1 lanzaba `ValueError("Debe indicarse al menos un rol permitido")` si se
+invocaba sin roles; MS3 construía un `frozenset()` vacío y denegaba todo con
+`403`. Ninguna de las dos rutas es alcanzable desde los routers actuales, porque
+ambos pasan siempre al menos un rol.
 
-*Recomendación:* igualar MS3 a MS1, que falla ruidosamente en desarrollo en
-lugar de denegar en silencio.
+*Corrección aplicada:* MS3 valida ahora lo mismo que MS1 al construir el guard,
+que falla ruidosamente en desarrollo en lugar de denegar en silencio. Cubierto
+por `test_ms3_estructura.py`.
 
 ### 7.3 `shared/auth.py` no exporta explícitamente su API pública
 
@@ -390,11 +393,11 @@ que queda documentado. Consecuencias prácticas:
 - Aun así, quien depure en desarrollo debe tratar la consola como un medio con
   datos sensibles: no pegar capturas de la consola en tickets sin censurar.
 
-### 7.7 Observación: la Gateway no reenvía `WWW-Authenticate`
+### 7.7 CORREGIDO: la Gateway no reenviaba `WWW-Authenticate`
 
-El proxy devuelve el cuerpo y el estado del microservicio, pero solo conserva la
-cabecera `content-type` de la respuesta. Como MS1 responde los `401` con
-`WWW-Authenticate: Bearer`, esa cabecera **se pierde** al pasar por la Gateway:
+El proxy devolvía el cuerpo y el estado del microservicio, pero solo conservaba
+la cabecera `content-type` de la respuesta. Como MS1 responde los `401` con
+`WWW-Authenticate: Bearer`, esa cabecera **se perdía** al pasar por la Gateway:
 
 ```
 MS1 directo   : /auth/me  ->  401, WWW-Authenticate: Bearer
@@ -403,12 +406,12 @@ Por la Gateway: /api/auth/me -> 401, sin WWW-Authenticate
 
 RFC 9110 pide que un `401` incluya `WWW-Authenticate`, para que el cliente sepa
 qué esquema usar. Al cliente no le rompe nada (los navegadores con `fetch` ya
-saben que el token va en `Authorization`), pero es una desviación del estándar.
+saben que el token va en `Authorization`), pero era una desviación del estándar.
 
-*Recomendación:* en `gateway/routers/proxy.py`, reenviar también las cabeceras
-de respuesta que no sean `hop-by-hop`. No se hizo en esta entrega porque cambia
-el comportamiento del proxy y hay 19 pruebas de `test_gateway_rutas.py`
-apoyándose en su contrato actual.
+*Corrección aplicada:* `gateway/routers/proxy.py` ahora reenvía al cliente las
+cabeceras de respuesta del microservicio **salvo las hop-by-hop** (y
+`content-encoding`, que httpx ya aplicó al decodificar el cuerpo). Así el `401`
+conserva `WWW-Authenticate: Bearer` también a través de la Gateway.
 
 ### 7.8 CORREGIDO: el seed imprimía los correos de los usuarios
 

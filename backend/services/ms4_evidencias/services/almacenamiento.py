@@ -85,21 +85,31 @@ def verificar_bucket(cliente: object, bucket: str) -> bool:
     return True
 
 
-def calcular_sha256_y_tamano(archivo) -> tuple[str, int]:
+class TamanoMaximoExcedido(ValueError):
+    """El archivo superó el máximo de bytes indicado al leerlo."""
+
+
+def calcular_sha256_y_tamano(archivo, maximo: int | None = None) -> tuple[str, int]:
     """SHA-256 y tamaño del archivo leyéndolo en bloques de 1 MiB.
 
-    Al terminar deja el archivo al inicio (`seek(0)`) para que la subida
-    posterior lea el contenido completo.
+    Si se indica `maximo` (bytes), la lectura se corta en cuanto el archivo lo
+    supera y se lanza `TamanoMaximoExcedido`: no se sigue leyendo ni hasheando
+    el resto (checklist 1.3). Al terminar, con o sin error, deja el archivo al
+    inicio (`seek(0)`) para que la subida posterior lea el contenido completo.
     """
     digest = hashlib.sha256()
     tamano = 0
-    while True:
-        bloque = archivo.read(TAMANO_BLOQUE)
-        if not bloque:
-            break
-        digest.update(bloque)
-        tamano += len(bloque)
-    archivo.seek(0)
+    try:
+        while True:
+            bloque = archivo.read(TAMANO_BLOQUE)
+            if not bloque:
+                break
+            tamano += len(bloque)
+            if maximo is not None and tamano > maximo:
+                raise TamanoMaximoExcedido(maximo)
+            digest.update(bloque)
+    finally:
+        archivo.seek(0)
     return digest.hexdigest(), tamano
 
 

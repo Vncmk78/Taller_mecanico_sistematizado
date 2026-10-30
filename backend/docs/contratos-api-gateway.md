@@ -102,7 +102,7 @@ OpenAPI publica en cada caso el esquema que corresponde.
 | Prefijo | Ejemplos |
 |---|---|
 | `error_*` | Los ocho errores de la Gateway: `error_ruta_no_encontrada` (404), `error_metodo_no_permitido` (405), `error_cuerpo_demasiado_grande` (413), `error_interno_gateway` (500), `error_microservicio` (respuesta no JSON), `error_microservicio_no_disponible` (502), `error_gateway_saturada` (503) y `error_tiempo_agotado` (504) |
-| `detalle_*` | Los errores que responden MS1, MS2 y MS4: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados, los dos `422` de validación y los de evidencias (orden o evidencia no encontrada, tipo de archivo no permitido, archivo vacío, almacenamiento u órdenes no disponibles) |
+| `detalle_*` | Los errores que responden MS1, MS2 y MS4: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados, los dos `422` de validación y los de evidencias (orden o evidencia no encontrada, tipo de archivo no permitido o contenido distinto al declarado (415), foto demasiado grande (413), archivo vacío o dañado, orden cerrada (409), presupuesto de otra orden, almacenamiento u órdenes no disponibles) |
 
 Los mensajes de los errores de la Gateway se importan de `gateway/errores.py`, así
 que el ejemplo no puede divergir del texto que la Gateway responde realmente. Los
@@ -300,6 +300,8 @@ base PostgreSQL de MS2:
 | Estado → Orden | `EstadoOrden 1:N OrdenTrabajo`; FK `orden_trabajo.estado_codigo` |
 | Orden → HistorialEstado | `OrdenTrabajo 1:N HistorialEstado`; FK `historial_estado.orden_id` |
 | Orden → HistorialAsignacion | `OrdenTrabajo 1:N HistorialAsignacion`; FK `historial_asignacion.orden_id` |
+| Orden → BitacoraOrden | `OrdenTrabajo 1:N BitacoraOrden`; FK `bitacora_orden.orden_id` |
+| BitacoraOrden → BitacoraRepuesto | `BitacoraOrden 1:N BitacoraRepuesto`; FK `bitacora_repuesto.bitacora_id` |
 | Estado → HistorialEstado | `estado_anterior` opcional y `estado_nuevo` obligatorio apuntan al catálogo local `estado_orden` |
 
 Un ingreso abierto puede asociarse a más de una orden cuando una nueva atención
@@ -320,7 +322,9 @@ tienen ni deben tener FK física entre bases de microservicios:
 | `historial_asignacion.mecanico_anterior_id` / `mecanico_nuevo_id` | Responsables anterior y nuevo |
 | `historial_asignacion.administrador_id` | Administrador que asignó o reasignó |
 | `historial_estado.actor_usuario_id` | Usuario que originó el cambio cuando `origen=usuario` |
-| `diagnostico_autor_id`, `entregado_por_id`, `devuelto_por_id` | Referencias previstas por el modelo para etapas posteriores; no tienen endpoints de Semana 3 |
+| `bitacora_orden.autor_usuario_id` | Mecánico que registró la entrada de la bitácora |
+| `entregado_por_id` | Usuario que registró la entrega física; lo fija `POST /api/ordenes/{id}/entrega` |
+| `diagnostico_autor_id`, `devuelto_por_id` | Referencias previstas por el modelo para etapas posteriores; todavía no tienen endpoints |
 
 La validación remota de que el `mecanico_id` existe, está activo y tiene rol
 Mecánico todavía no dispone de un contrato implementado entre MS2 y MS1. El
@@ -393,7 +397,7 @@ Inicia sesión y entrega el token de acceso.
 | Auth | No requiere |
 | Body | `{"email": string, "password": string}` |
 | Respuesta OK | `200` con `TokenRespuesta` |
-| Errores | `401` credenciales inválidas · `404/502/500` de la Gateway |
+| Errores | `401` credenciales inválidas · `403` la cuenta no tiene roles asignados · `404/502/500` de la Gateway |
 
 ```json
 // Request
@@ -404,6 +408,12 @@ Inicia sesión y entrega el token de acceso.
             "roles": ["cliente"], "is_active": true } }
 ```
 
+Una cuenta a la que un administrador le retiró todos los roles responde `403`
+con `{"detail": "El usuario no posee roles"}`: las credenciales son correctas,
+pero el contrato del token exige un claim `roles` no vacío, así que no hay
+token que emitir. No es un error del servidor (`500`) ni una credencial
+inválida (`401`).
+
 ### GET `/api/auth/me`
 
 Devuelve el usuario identificado por el token.
@@ -412,7 +422,7 @@ Devuelve el usuario identificado por el token.
 |---|---|
 | Auth | `Authorization: Bearer <token>` |
 | Body | — |
-| Respuesta OK | `200` con `UsuarioRespuesta` |
+| Respuesta OK | `200` con `UsuarioRespuesta`, con `roles: []` si la cuenta ya no tiene roles |
 | Errores | `401` JWT ausente o inválido · `404/502/500` de la Gateway |
 
 ```json
@@ -420,6 +430,94 @@ Devuelve el usuario identificado por el token.
 { "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
   "roles": ["cliente"], "is_active": true }
 ```
+
+### Gestión de usuarios (solo Administrador)
+
+Los cuatro endpoints siguientes son la administración de usuarios de MS1. Todos
+exigen `Authorization: Bearer <token>` con rol Administrador: sin token
+responden `401` y con un token de Cliente o Mecánico, `403`. El listado y el
+detalle incluyen también las cuentas sin roles (`roles: []`).
+
+#### GET `/api/auth/usuarios`
+
+Lista todas las cuentas de MS1, activas y desactivadas, ordenadas por `id`
+ascendente.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Bearer` con rol Administrador |
+| Body | — |
+| Respuesta OK | `200` con `UsuarioRespuesta[]` |
+| Errores | `401` JWT ausente o inválido · `403` rol insuficiente · `404/502/500` de la Gateway |
+
+```json
+// Response 200
+[ { "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
+    "roles": ["cliente"], "is_active": true },
+  { "id": 9, "email": "leo@correo.cl", "full_name": "Leo Díaz",
+    "roles": [], "is_active": false } ]
+```
+
+#### GET `/api/auth/usuarios/{usuario_id}`
+
+Devuelve una cuenta concreta, activa o no.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Bearer` con rol Administrador |
+| Body | — |
+| Respuesta OK | `200` con `UsuarioRespuesta` |
+| Errores | `401` · `403` · `404` la cuenta no existe · `404/502/500` de la Gateway |
+
+```json
+// Response 200
+{ "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
+  "roles": ["cliente"], "is_active": true }
+```
+
+#### POST `/api/auth/usuarios/{usuario_id}/roles`
+
+Asigna un rol restringido (`cliente`, `mecanico` o `administrador`) a una cuenta
+existente. Es idempotente: repetir un rol ya asignado no lo duplica ni devuelve
+error.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Bearer` con rol Administrador |
+| Body | `{"rol": "administrador"}`, con `rol` entre los tres valores de `NombreRol` |
+| Respuesta OK | `200` con `UsuarioRespuesta` ya actualizado |
+| Errores | `401` · `403` · `404` la cuenta no existe · `422` rol desconocido · `404/502/500` de la Gateway |
+
+```json
+// Request
+{ "rol": "administrador" }
+// Response 200
+{ "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
+  "roles": ["administrador", "cliente"], "is_active": true }
+```
+
+#### DELETE `/api/auth/usuarios/{usuario_id}/roles/{rol}`
+
+Retira un rol de una cuenta existente. Es idempotente: retirar un rol que la
+cuenta no tiene no cambia nada ni devuelve error. Se permite retirar el último
+rol; la cuenta queda con `roles: []`.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Bearer` con rol Administrador |
+| Body | — |
+| Respuesta OK | `200` con `UsuarioRespuesta` ya actualizado |
+| Errores | `401` · `403` · `404` la cuenta no existe · `422` rol de la ruta desconocido · `404/502/500` de la Gateway |
+
+```json
+// Response 200 (se retiró "cliente")
+{ "id": 7, "email": "ana@correo.cl", "full_name": "Ana Pérez",
+  "roles": [], "is_active": true }
+```
+
+Cada asignación y retirada queda registrada en `historial_rol` con el
+administrador responsable y la fecha y hora; el alta inicial de `cliente` en el
+registro se registra con responsable nulo (sistema).
 
 ### El JWT: claims, validación y quién las aplica
 
@@ -781,9 +879,9 @@ registro original sin cambiar la fecha ni duplicar el historial.
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` con rol Administrador |
-| Body | — |
-| Respuesta OK | `200` con `orden_id`, `estado_codigo=7`, `entregado_en`, `entregado_por_id` e `historial_id` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` estado distinto de `Listo` · `500` persistencia o auditoría inconsistente |
+| Body | Opcional: `{ "observacion": "Entregado al cliente" }`; rechaza texto vacío |
+| Respuesta OK | `200` con los campos de `OrdenRespuesta`, `entregado_en`, `entregado_por_id` e `historial_id` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` estado distinto de `Listo` · `422` observación vacía · `500` persistencia o auditoría inconsistente |
 
 Una repetición válida devuelve la misma respuesta de entrega. El `PATCH`
 genérico sigue rechazando `Listo → Entregado`; tampoco permite registrar como
@@ -867,32 +965,65 @@ necesariamente el mecánico asignado. No se consultan nombres en MS1.
 ]
 ```
 
-### Envío inicial del presupuesto y aplicación en MS2 (SCRUM-435)
+### GET `/api/ordenes/{orden_id}/bitacora`
 
-El envío inicial mueve la orden de `Esperando diagnóstico` a
-`Esperando aprobación de presupuesto`. Solo el Administrador puede enviar una
-versión; el endpoint requiere que sea la última versión en borrador y que tenga
-ítems con precio.
+Devuelve la bitácora de trabajo del mecánico: las observaciones y acciones
+registradas para la orden, cada una con su autor y, en las acciones, los
+repuestos utilizados. A diferencia del historial, una entrada **no** exige un
+cambio de estado (RF-11).
 
-| Método y ruta | Servicio y contrato |
+Reutiliza la visibilidad del detalle: Administrador ve todas las órdenes,
+Cliente las de sus vehículos y Mecánico las actualmente asignadas; una orden
+ajena y una inexistente responden el mismo `404`. Ordena por `creado_en ASC` y,
+si coinciden las fechas, por `bitacora_id ASC`. Una orden visible sin entradas
+devuelve `[]`.
+
+Cada entrada contiene `bitacora_id`, `orden_id`, `autor_usuario_id` (referencia
+lógica a MS1), `tipo` (`observacion` o `accion`), `descripcion`, `creado_en` y
+`repuestos` (lista, `[]` en observaciones). Cada repuesto trae `nombre` y
+`cantidad`; son texto libre: MS2 **no** referencia el catálogo de MS3 (§8).
+
+| Atributo | Descripción |
 |---|---|
-| `POST /api/presupuestos/{presupuesto_id}/versiones/{numero}/envio` | MS3 congela el envío inicial y coordina con MS2. En éxito responde `200` con el resultado del envío y `aplicacion_en_orden`; una modificación posterior retorna `aplicacion_en_orden: null`. Errores relevantes: `401`, `403`, `404`, `409`, `422`, `503`. |
-| `POST /ordenes/{orden_id}/envios-presupuesto` (interno MS2) | Operación invocada por MS3 con el JWT original y `{"presupuesto_id": int positivo}`. MS2 valida rol y estado, consulta a MS3 el hecho de envío, y deriva el evento; no admite destino ni actor enviados por el cliente. |
-| `GET /presupuestos/{presupuesto_id}/envio-inicial` (interno MS3) | Verificación invocada por MS2; solo Administrador. Confirma que la versión inicial se envió y corresponde a la orden. |
-| `POST /presupuestos/{presupuesto_id}/envio-inicial/aplicacion` (MS3) | Reintenta la aplicación del envío ya persistido; no vuelve a enviar la versión. Responde `200` si MS2 confirma la aplicación y `503` si aún no se confirma. |
+| Auth | `Authorization: Bearer <token>` |
+| Body | — |
+| Respuesta OK | `200` con lista de `BitacoraRespuesta` |
+| Errores | `401` JWT ausente/inválido · `404` orden inexistente o no visible · `422` identificador inválido · `500` consulta · `502` MS2 no disponible |
 
-MS3 guarda primero el envío. Si MS2 no responde o falla, MS3 devuelve `503`
-indicando que el envío quedó guardado y ofrece la ruta de reintento. MS2 asocia
-el `presupuesto_id` al historial de forma única y bloquea la orden durante la
-aplicación, por lo que repetir la misma solicitud devuelve el historial existente
-sin duplicar el cambio. Las bases no comparten transacción. `test_envio_inicial_coordina_estado_historial_y_actor_administrador` y
-`test_fallo_de_ms2_deja_envio_guardado_y_reintento_idempotente` verifican el
-camino feliz, errores de comunicación y reintentos.
+```json
+// Response 200
+[
+  { "bitacora_id": 77, "orden_id": 31, "autor_usuario_id": 50, "tipo": "accion",
+    "descripcion": "Se reemplazaron las pastillas delanteras",
+    "creado_en": "2026-09-28T12:15:00-03:00",
+    "repuestos": [ { "nombre": "Pastillas de freno", "cantidad": 2 } ] }
+]
+```
 
-La migración `0007_ms2` que agrega la referencia única sigue pendiente de
-validación sobre PostgreSQL real; 26 pruebas asociadas a SCRUM-435 están omitidas.
-La última ejecución completa informó 733 aprobadas y 197 omitidas: las omitidas
-no se consideran aprobadas.
+### POST `/api/ordenes/{orden_id}/bitacora`
+
+Registra una entrada de la bitácora del mecánico responsable. `tipo` es
+`observacion` (nota libre) o `accion` (trabajo realizado). Solo una acción puede
+declarar `repuestos`; enviarlos con `tipo=observacion` responde `422`. El
+`autor_usuario_id` y `creado_en` los fija el servidor desde el JWT.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Mecánico asignado |
+| Body | `{"tipo": "observacion"\|"accion", "descripcion": string no vacío, "repuestos"?: [{"nombre": string 1..120, "cantidad": int > 0}]}` (máx. 50 repuestos) |
+| Respuesta OK | `201` con `BitacoraRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Mecánico o no asignado · `404` orden inexistente · `422` body inválido (repuestos en una observación, cantidad ≤ 0, etc.) · `500` persistencia · `502` MS2 no disponible |
+
+```json
+// Request
+{ "tipo": "accion", "descripcion": "Se reemplazaron las pastillas delanteras",
+  "repuestos": [ { "nombre": "Pastillas de freno", "cantidad": 2 } ] }
+// Response 201
+{ "bitacora_id": 77, "orden_id": 31, "autor_usuario_id": 50, "tipo": "accion",
+  "descripcion": "Se reemplazaron las pastillas delanteras",
+  "creado_en": "2026-09-28T12:15:00-03:00",
+  "repuestos": [ { "nombre": "Pastillas de freno", "cantidad": 2 } ] }
+```
 
 ### Coordinación de decisiones de presupuesto (SCRUM-438)
 
@@ -979,6 +1110,57 @@ valida en el servicio de MS2 y no cambia las precondiciones de cada transición.
   "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T11:00:00-03:00" }
 ```
 
+### POST `/api/ordenes/{orden_id}/cancelacion`
+
+El Cliente propietario solicita la cancelación antes de la primera aprobación.
+MS2 valida propiedad y estado `Recibido`, `Esperando diagnóstico` o `Esperando
+aprobación de presupuesto`, consulta MS3 para descartar una aprobación inicial
+persistida y crea una solicitud pendiente. El estado e historial de la orden no
+cambian en esta operación. Repetir el mismo motivo devuelve la solicitud
+existente (`200`); un motivo distinto para la misma orden responde `409`.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Cliente propietario |
+| Body | `{"motivo": string no vacío}` |
+| Respuesta OK | `201` con `SolicitudCancelacionRespuesta`; `200` si ya existía la misma solicitud |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `404` orden inexistente o ajena · `409` estado no cancelable, solicitud distinta ya registrada o aprobación inicial existente · `422` motivo vacío · `500` persistencia · `503` MS3 no disponible |
+
+La respuesta contiene `solicitud_id`, `orden_id`, `cliente_usuario_id`,
+`estado_al_solicitar`, `motivo`, `estado` (`pendiente`), `solicitada_en`,
+`administrador_id` y `confirmada_en`.
+
+### GET `/api/ordenes/cancelaciones/pendientes`
+
+Solo Administrador. Devuelve las solicitudes pendientes ordenadas por fecha para
+su revisión. No modifica la orden.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador |
+| Respuesta OK | `200` con lista de `SolicitudCancelacionRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador |
+
+### POST `/api/ordenes/{orden_id}/cancelacion/confirmacion`
+
+Solo Administrador. Requiere una solicitud pendiente, que la orden continúe en
+uno de los estados cancelables y que MS3 todavía no registre una aprobación
+inicial. La comprobación se repite al confirmar para cubrir aprobaciones
+registradas mientras la solicitud esperaba revisión. Estado, solicitante,
+Administrador confirmante y el historial se guardan en una transacción local.
+Repetir una confirmación ya aplicada devuelve la orden sin duplicar historial.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador |
+| Body | Sin body |
+| Respuesta OK | `200` con `OrdenRespuesta` en estado `Cancelado` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` sin solicitud pendiente, orden ya avanzada o aprobación inicial registrada · `500` persistencia · `503` MS3 no disponible |
+
+El rechazo de un presupuesto inicial sigue su propio endpoint de decisión: el
+Cliente confirma el rechazo y la integración MS3–MS2 lo aplica sin usar este
+flujo administrativo.
+
 ## Evidencias multimedia (MS4)
 
 Fotos y videos asociados a una orden de trabajo (diagnóstico, presupuesto,
@@ -1030,15 +1212,47 @@ Sube una foto o video de una orden. Es `multipart/form-data`, **no** JSON.
 | Atributo | Descripción |
 |---|---|
 | Auth | `Authorization: Bearer <token>` con rol Mecánico (orden asignada) o Administrador |
-| Body (multipart) | `archivo` (binario, `image/*` o `video/*`) · `orden_id` (int > 0) · `contexto` (`diagnostico` \| `presupuesto` \| `reparacion` \| `resultado_final`) · `presupuesto_id`? (solo con `presupuesto`) · `visible_cliente`? (`true`/`false`) |
+| Body (multipart) | `archivo` (binario: `image/jpeg`, `image/png`, `image/webp`, `video/mp4` o `video/quicktime`; foto ≤ 10 MiB) · `orden_id` (int > 0) · `contexto` (`diagnostico` \| `presupuesto` \| `reparacion` \| `resultado_final`) · `presupuesto_id`? (solo con `presupuesto`) · `visible_cliente`? (`true`/`false`) |
 | Cabeceras opcionales | `X-Request-ID` (queda guardado con la evidencia para rastrearla) |
 | Respuesta OK | `201` con `EvidenciaRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` rol Cliente (se rechaza antes de procesar el archivo) · `404` `"Orden no encontrada"` (inexistente o no visible) · `413` body > 12 MiB (Gateway) · `422` `"Tipo de archivo no permitido"`, `"El archivo no puede estar vacío"` o formulario inválido · `503` `"El almacenamiento de evidencias no está disponible"` o `"El servicio de órdenes no está disponible"` |
+| Errores | `400` `"No se pudo leer el archivo enviado"` · `401` JWT ausente/inválido · `403` rol Cliente (se rechaza antes de procesar el archivo) · `404` `"Orden no encontrada"` (inexistente o no visible) · `409` `"La orden está entregada o cancelada y no admite nuevas evidencias"` · `413` body > 12 MiB (Gateway) o `"La foto supera el tamaño máximo permitido (10 MB)"` (MS4) · `415` `"Tipo de archivo no permitido. Formatos aceptados: JPG, PNG, WEBP, MP4 y MOV"` o `"El contenido del archivo no corresponde al formato declarado"` · `422` `"El archivo no puede estar vacío"`, `"El archivo está dañado o incompleto"`, `"El presupuesto indicado no existe"`, `"El presupuesto indicado no pertenece a la orden"` o formulario inválido · `503` `"El almacenamiento de evidencias no está disponible"`, `"El servicio de órdenes no está disponible"` , `"El servicio de presupuestos no está disponible"` o `"No se pudo guardar la evidencia, intenta nuevamente"` (falla de la base; el archivo se borra) · `500` `"Error interno del servicio de evidencias"` (error no previsto, sin detalles) |
 
 El servidor decide el nombre y la extensión del objeto a partir del
 `Content-Type` de la parte `archivo`; el nombre original solo se guarda para
 mostrarlo, sin rutas. Si la base falla después de subir, el archivo se borra
 (no quedan archivos huérfanos).
+
+Lista blanca y tamaños (Semana 6, checklist 1.1 y 1.3): MS4 solo acepta JPG,
+PNG, WEBP, MP4 y MOV; cualquier otro formato (SVG, HTML, PDF, ZIP, GIF, HEIC,
+ejecutables) responde `415`. Las fotos pesan hasta `MS4_MAX_BYTES_FOTO`
+(10 MiB) y los videos hasta `MS4_MAX_BYTES_VIDEO` (100 MiB); al superar el
+límite MS4 corta la lectura y responde `413`. Por la Gateway nunca pasa más de
+12 MiB.
+
+Validación por contenido (checklist 1.2 y 1.6): MS4 lee la firma del archivo
+(*magic bytes*) y exige que coincida con el `Content-Type` declarado; un HTML
+renombrado a `.jpg` o un PNG enviado como `image/jpeg` responde `415`. MP4 y
+MOV se aceptan indistintamente (misma estructura) y se guarda el tipo real
+detectado, que es el que se usa al firmar la descarga. Un archivo con la firma
+correcta pero incompleto (JPEG sin marcador de fin, PNG sin `IEND`, WEBP o
+video truncado, video sin caja `moov`) responde `422`.
+
+Asociación con la orden: además de existir y ser visible (MS2), la orden no
+puede estar `Entregado` ni `Cancelado` (`409`). Con `contexto=presupuesto`, MS4
+consulta a MS3 (`GET /presupuestos/{presupuesto_id}` con el mismo JWT) y exige
+que el presupuesto sea de la misma `orden_id` (`422` si no existe o es de otra
+orden; `503` si MS3 no responde). Todas estas validaciones ocurren antes de
+subir el archivo o crear filas.
+
+Tratamiento de errores en la carga (Semana 6): ninguna falla deja archivos ni
+filas a medias ni filtra datos internos. Si la base falla después de subir el
+archivo, MS4 hace rollback, borra el objeto y responde `503` (se puede
+reintentar); si el archivo recibido no se puede leer responde `400`; y
+cualquier error no previsto responde `500` con un mensaje genérico, sin el
+traceback, el bucket, la clave del objeto ni el endpoint del almacenamiento.
+Orden en que se evalúan los rechazos: `401` → `403` → orden (`404`/`409`/`503`)
+→ formulario y presupuesto (`422`/`503`) → archivo (`415`/`413`/`422`/`400`) →
+almacenamiento (`503`) → base (`503`).
 
 ```bash
 curl -X POST "$GATEWAY/api/evidencias" \

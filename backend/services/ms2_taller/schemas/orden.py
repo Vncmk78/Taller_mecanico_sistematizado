@@ -80,7 +80,7 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime
 
 
-class EntregaOrdenRespuesta(BaseModel):
+class EntregaOrdenRespuesta(OrdenRespuesta):
     """Confirmación auditable de una entrega física de vehículo."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -112,6 +112,43 @@ class HistorialOrdenesVehiculoRespuesta(BaseModel):
     total: int
     limit: int
     offset: int
+class EntregaSolicitud(BaseModel):
+    """Datos controlables al registrar la entrega física de una orden."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    observacion: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Comentario opcional de la entrega.",
+    )
+
+
+class CancelacionClienteSolicitud(BaseModel):
+    """Motivo obligatorio con el que el cliente solicita cancelar su orden."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    motivo: str = Field(
+        min_length=1,
+        description="Motivo de la cancelación; no puede estar vacío.",
+    )
+
+
+class SolicitudCancelacionRespuesta(BaseModel):
+    """Solicitud con actor y tiempos para revisión administrativa."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    solicitud_id: int
+    orden_id: int
+    cliente_usuario_id: int
+    estado_al_solicitar: int
+    motivo: str
+    estado: Literal["pendiente", "confirmada"]
+    solicitada_en: datetime
+    administrador_id: int | None
+    confirmada_en: datetime | None
 
 
 class CambioEstadoSolicitud(BaseModel):

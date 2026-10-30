@@ -14,6 +14,7 @@ PostgreSQL en services/ms2_taller/tests y en la validación desde base vacía.
 """
 from __future__ import annotations
 
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from alembic.config import Config
@@ -83,16 +84,17 @@ def test_modelos_del_mer_registrados_en_la_metadata() -> None:
     esperadas = {
         "proveedor", "repuesto", "movimiento_inventario", "parametro_inventario",
         "historial_umbral", "presupuesto", "version_presupuesto",
-        "item_presupuesto", "decision_presupuesto",
+        "item_presupuesto", "decision_presupuesto", "historial_proveedor_repuesto",
     }
     assert esperadas <= set(Base.metadata.tables)
 
 
 def test_alembic_tiene_una_sola_cadena_lineal() -> None:
     script = ScriptDirectory.from_config(Config(RUTA_ALEMBIC))
-    assert script.get_heads() == ["0004_ms3"]
+    assert script.get_heads() == ["0008_ms3"]
     cadena = [rev.revision for rev in script.walk_revisions("base", "heads")]
-    assert list(reversed(cadena)) == ["0001_ms3", "0002_ms3", "0003_ms3", "0004_ms3"]
+    assert list(reversed(cadena)) == ["0001_ms3", "0002_ms3", "0003_ms3", "0004_ms3", "0005_ms3", "0006_ms3",
+                                    "0007_ms3", "0008_ms3"]
 
 
 # --------------------------------------------------------------------------- #
@@ -155,3 +157,27 @@ def test_guard_rol_permitido_responde_200_con_la_identidad() -> None:
     )
     assert respuesta.status_code == 200
     assert respuesta.json() == {"usuario_id": 42}
+
+
+def test_guard_sin_roles_indicados_falla_en_la_construccion() -> None:
+    """Igual que MS1: un guard sin roles es error de programación, no un 403 en silencio."""
+
+    with pytest.raises(ValueError, match="al menos un rol permitido"):
+        requerir_roles()
+
+
+# --------------------------------------------------------------------------- #
+# 4) Documentación publicada detrás de un prefijo (/ms3 en Vercel)            #
+# --------------------------------------------------------------------------- #
+
+def test_swagger_y_redoc_cargan_su_propia_especificacion_con_url_relativa() -> None:
+    """En Vercel el MS3 vive en /ms3: "/openapi.json" absoluto cargaba la de la Gateway."""
+    with TestClient(app) as cliente:
+        for ruta in ("/docs", "/redoc"):
+            html = cliente.get(ruta).text
+            assert "'openapi.json'" in html or '"openapi.json"' in html, ruta
+            assert "'/openapi.json'" not in html and '"/openapi.json"' not in html, ruta
+        especificacion = cliente.get("/openapi.json")
+    assert especificacion.status_code == 200
+    servidores = [s["url"] for s in especificacion.json()["servers"]]
+    assert servidores == [".", "/api"]

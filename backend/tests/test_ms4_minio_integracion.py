@@ -28,6 +28,8 @@ from botocore.exceptions import (
 from services.ms4_evidencias.config import Settings
 from services.ms4_evidencias.services.almacenamiento import generar_url_descarga
 
+from archivos_muestra import jpeg_con
+
 TAMANO_PRUEBA = 256 * 1024
 
 _ERRORES_MINIO_APAGADO = (
@@ -116,7 +118,7 @@ def test_guardado_y_recuperacion_con_usuario_ms4(cliente_minio):
 
 def test_descarga_prefirmada_fuerza_tipo_y_disposicion(cliente_minio):
     cfg, cliente = cliente_minio
-    datos = b"evidencia-de-prueba-jpeg"
+    datos = jpeg_con(b"evidencia-de-prueba-jpeg")
     clave = f"pruebas/{uuid.uuid4().hex}.jpg"
     checksum = hashlib.sha256(datos).hexdigest()
 

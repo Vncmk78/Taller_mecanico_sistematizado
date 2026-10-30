@@ -8,6 +8,15 @@ export interface User {
   is_active: boolean;
 }
 
+/** Usuario tal como lo lista la API administrativa (puede tener varios roles). */
+export interface UsuarioListado {
+  id: string;
+  email: string;
+  full_name: string;
+  roles: UserRole[];
+  is_active: boolean;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;

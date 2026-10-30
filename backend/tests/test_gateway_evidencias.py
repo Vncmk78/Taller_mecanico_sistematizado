@@ -49,6 +49,7 @@ from services.ms4_evidencias.models.evidencia import (
 from services.ms4_evidencias.services.almacenamiento import crear_cliente_s3_publico
 from shared.auth import NombreRol
 
+from archivos_muestra import jpeg
 from test_integracion_prefijos import (
     _FUNCIONES_SQLITE,
     _clave_montaje,
@@ -332,7 +333,7 @@ def _subir_por_gateway(
         "/api/evidencias",
         headers=cabeceras,
         data={"orden_id": str(ORDEN), "contexto": "diagnostico"},
-        files={"archivo": ("foto.jpg", b"datos-de-foto", "image/jpeg")},
+        files={"archivo": ("foto.jpg", jpeg(), "image/jpeg")},
     )
 
 

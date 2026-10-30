@@ -22,6 +22,7 @@ from services.ms3_presupuestos.schemas.presupuesto import (
 from shared.auth import NombreRol, crear_token_acceso
 
 RUTAS = {
+    ("get", "/presupuestos/ordenes/{orden_id}/primera-aprobacion"),
     ("post", "/presupuestos"),
     ("get", "/presupuestos"),
     ("get", "/presupuestos/{presupuesto_id}"),

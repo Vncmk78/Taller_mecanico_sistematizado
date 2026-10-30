@@ -17,7 +17,7 @@ export function VehicleInfoPanel({ vehicle, ownerLabel }: VehicleInfoPanelProps)
     <div className="card">
         <div className="flex justify-between items-center gap-2 flex-wrap mb-6 pb-4 border-b border-border-custom">
         <h3 className="text-xl font-semibold flex items-center gap-2 min-w-0">
-            <Car className="w-5 h-5 text-text-muted shrink-0" />
+            <Car className="w-5 h-5 text-text-muted shrink-0" aria-hidden />
             <span className="truncate">{vehicle.brand} {vehicle.model}</span>
         </h3>
         <span className="bg-bg-secondary text-text-main font-mono font-bold px-3 py-1.5 rounded tracking-wide shrink-0">
@@ -38,7 +38,7 @@ export function VehicleInfoPanel({ vehicle, ownerLabel }: VehicleInfoPanelProps)
         <div className="border-t border-border-custom pt-4">
             <span className="text-text-muted text-sm block mb-2">Propietario</span>
             <div className="flex items-center gap-2 text-sm">
-            <User className="w-4 h-4 text-text-muted" /> {ownerLabel}
+            <User className="w-4 h-4 text-text-muted" aria-hidden /> {ownerLabel}
             </div>
         </div>
         )}

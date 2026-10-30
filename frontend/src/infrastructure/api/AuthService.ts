@@ -1,4 +1,10 @@
-import type { AuthResponse, LoginRequest, User, UserRole } from '@/domain/entities/User';
+import type {
+  AuthResponse,
+  LoginRequest,
+  User,
+  UserRole,
+  UsuarioListado,
+} from '@/domain/entities/User';
 import type { AuthPort } from '@/domain/ports/AuthPort';
 import apiClient from '../config/apiClient';
 
@@ -40,6 +46,17 @@ class AuthService implements AuthPort {
   async getProfile(): Promise<User> {
     const { data } = await apiClient.get<ApiUser>('/auth/me');
     return toDomainUser(data);
+  }
+
+  async listarUsuarios(): Promise<UsuarioListado[]> {
+    const { data } = await apiClient.get<ApiUser[]>('/auth/usuarios');
+    return data.map((u) => ({
+      id: String(u.id),
+      email: u.email,
+      full_name: u.full_name,
+      roles: (u.roles ?? []) as UserRole[],
+      is_active: u.is_active,
+    }));
   }
 }
 

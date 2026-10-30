@@ -8,7 +8,7 @@ import sqlalchemy as sa
 
 
 revision = "0008_ms2"
-down_revision = "0007_ms2"
+down_revision = ("0007_ms2", "0007_envio_ms2")
 branch_labels = None
 depends_on = None
 

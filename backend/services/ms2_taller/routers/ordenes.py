@@ -16,22 +16,35 @@ from services.ms2_taller.integracion_ms3 import (
     VerificadorDisponibilidadRepuestos,
     obtener_verificador_decisiones, obtener_verificador_envios_presupuesto,
     obtener_verificador_disponibilidad_repuestos,
+    VerificadorAprobacionInicial, obtener_verificador_aprobacion_inicial,
 )
 from services.ms2_taller.models.historial_estado import HistorialEstado
+from services.ms2_taller.models.bitacora_orden import BitacoraOrden
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
+from services.ms2_taller.schemas.bitacora import BitacoraCrear, BitacoraRespuesta
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
     CapacidadMecanicoActualizar,
     CapacidadMecanicoRespuesta,
     CupoDiarioIngresosActualizar,
     CupoDiarioIngresosRespuesta,
+    SolicitudCancelacionRespuesta,
     CambioEstadoSolicitud,
     EntregaOrdenRespuesta,
     DisponibilidadRepuestosRespuesta,
     HistorialOrdenesVehiculoRespuesta,
+    CancelacionClienteSolicitud,
+    EntregaSolicitud,
     HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
+)
+from services.ms2_taller.services.bitacora import (
+    BitacoraEntradaInvalidaError,
+    BitacoraNoAutorizadaError,
+    BitacoraRepuestoInvalidoError,
+    listar_bitacora_orden,
+    registrar_entrada_bitacora,
 )
 from services.ms2_taller.services.ordenes import (
     EntregaOrdenInconsistenteError,
@@ -48,12 +61,15 @@ from services.ms2_taller.services.ordenes import (
     aplicar_disponibilidad_repuestos,
     aplicar_envio_inicial_presupuesto,
     cambiar_estado_orden,
+    confirmar_cancelacion_orden,
     crear_orden,
     listar_ordenes,
     listar_historial_ordenes_vehiculo,
     obtener_historial_orden,
     obtener_orden_visible,
     registrar_entrega_fisica,
+    listar_solicitudes_cancelacion_pendientes,
+    solicitar_cancelacion_orden,
 )
 from services.ms2_taller.services.capacidad_mecanicos import (
     CapacidadMecanicoExcedidaError,
@@ -70,6 +86,7 @@ from services.ms2_taller.services.cupo_ingresos import (
     obtener_cupo_diario_ingresos,
 )
 from shared.auth import NombreRol, PrincipalAutenticado
+from shared.errores_auth import error_sin_permiso
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
     AplicacionDisponibilidadRepuestosRespuesta,
@@ -397,10 +414,7 @@ def registrar_orden(
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> OrdenTrabajo:
     if NombreRol.ADMINISTRADOR not in principal.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
-        )
+        raise error_sin_permiso()
 
     try:
         return crear_orden(db, body.vehiculo_id, principal.usuario_id)
@@ -574,6 +588,106 @@ def consultar_historial_orden(
         ) from exc
 
 
+@router_ordenes.get(
+    "/{orden_id}/bitacora",
+    response_model=list[BitacoraRespuesta],
+    summary="Consultar la bitácora de trabajo de una orden",
+    description=(
+        "Devuelve todos los registros por fecha/hora e identificador ascendente, "
+        "con el autor, el tipo (observación o acción), el texto y los repuestos "
+        "utilizados. Aplica la misma visibilidad del detalle: Administrador ve "
+        "todas; Cliente sus vehículos; Mecánico sus órdenes asignadas; multirol "
+        "combina los alcances. Una orden inexistente o ajena responde 404; una "
+        "visible sin registros devuelve []."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la consulta"
+        },
+    },
+)
+def consultar_bitacora_orden(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> list[BitacoraOrden]:
+    try:
+        return listar_bitacora_orden(db, principal, orden_id)
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar la bitácora de la orden",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/bitacora",
+    response_model=BitacoraRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar una observación o acción en la bitácora",
+    description=(
+        "Registra lo que el mecánico observa o ejecuta sobre una orden sin "
+        "cambiar su estado. Una observación es una nota libre; una acción puede "
+        "declarar los repuestos utilizados (texto libre y cantidad). Solo el "
+        "mecánico asignado o un administrador pueden registrarla. No acepta "
+        "estado, actor ni fecha en el cuerpo."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {
+            "description": "Se requiere ser el mecánico asignado o Administrador"
+        },
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada o ajena"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Tipo, descripción o repuestos inválidos"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+    },
+)
+def registrar_bitacora_orden(
+    orden_id: int,
+    body: BitacoraCrear,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> BitacoraOrden:
+    try:
+        return registrar_entrada_bitacora(
+            db,
+            orden_id=orden_id,
+            principal=principal,
+            tipo=body.tipo,
+            descripcion=body.descripcion,
+            repuestos=[repuesto.model_dump() for repuesto in body.repuestos],
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except BitacoraNoAutorizadaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
+    except (BitacoraEntradaInvalidaError, BitacoraRepuestoInvalidoError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la entrada de la bitácora",
+        ) from exc
+
+
 @router_ordenes.patch(
     "/{orden_id}/estado",
     response_model=OrdenRespuesta,
@@ -670,6 +784,7 @@ def cambiar_estado(
 )
 def confirmar_entrega_orden(
     orden_id: int,
+    body: EntregaSolicitud | None = None,
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> EntregaOrdenRespuesta:
@@ -683,10 +798,10 @@ def confirmar_entrega_orden(
             db,
             orden_id=orden_id,
             administrador_id=principal.usuario_id,
+            observacion=body.observacion if body is not None else None,
         )
         return EntregaOrdenRespuesta(
-            orden_id=orden.orden_id,
-            estado_codigo=orden.estado_codigo,
+            **OrdenRespuesta.model_validate(orden).model_dump(),
             entregado_en=orden.entregado_en,
             entregado_por_id=orden.entregado_por_id,
             historial_id=historial.historial_id,
@@ -740,10 +855,7 @@ def actualizar_mecanico_responsable(
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> OrdenTrabajo:
     if NombreRol.ADMINISTRADOR not in principal.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
-        )
+        raise error_sin_permiso()
     if (
         NombreRol.MECANICO in principal.roles
         and body.mecanico_id == principal.usuario_id
@@ -786,3 +898,148 @@ def actualizar_mecanico_responsable(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible asignar el mecánico",
         ) from exc
+
+
+
+
+@router_ordenes.post(
+    "/{orden_id}/cancelacion",
+    response_model=SolicitudCancelacionRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    summary="Solicitar la cancelación administrativa de una orden",
+    description=(
+        "Solo el Cliente propietario. Registra motivo, actor y fecha sin cambiar "
+        "el estado; el Administrador debe revisar y confirmar por la operación "
+        "específica. MS3 se consulta para rechazar órdenes con aprobación inicial."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Cliente"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada o ajena"},
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden avanzó, ya tiene solicitud o existe aprobación inicial"
+        },
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Motivo de cancelación vacío"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible completar la persistencia"
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "No fue posible verificar la aprobación inicial en MS3"
+        },
+    },
+)
+def solicitar_cancelacion(
+    orden_id: int,
+    body: CancelacionClienteSolicitud,
+    response: Response,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorAprobacionInicial = Depends(obtener_verificador_aprobacion_inicial),
+) -> SolicitudCancelacionRespuesta:
+    try:
+        solicitud, creada = solicitar_cancelacion_orden(
+            db,
+            orden_id=orden_id,
+            principal=principal,
+            token=token,
+            motivo=body.motivo,
+            verificador=verificador,
+        )
+        response.status_code = status.HTTP_201_CREATED if creada else status.HTTP_200_OK
+        return SolicitudCancelacionRespuesta.model_validate(solicitud)
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except OrdenObservacionInvalidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la solicitud de cancelación",
+        ) from exc
+    except ServicioPresupuestosNoDisponibleError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No fue posible verificar la aprobación inicial en MS3",
+        ) from exc
+    except DecisionNoVisibleError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Orden no encontrada") from exc
+
+
+@router_ordenes.get(
+    "/cancelaciones/pendientes",
+    response_model=list[SolicitudCancelacionRespuesta],
+    summary="Listar solicitudes de cancelación pendientes de revisión",
+    responses={401: {"description": "JWT ausente o inválido"},
+               403: {"description": "Se requiere rol Administrador"}},
+)
+def listar_cancelaciones_pendientes(
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> list[SolicitudCancelacionRespuesta]:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(status_code=403, detail="Se requiere rol Administrador")
+    return [SolicitudCancelacionRespuesta.model_validate(solicitud)
+            for solicitud in listar_solicitudes_cancelacion_pendientes(db)]
+
+
+@router_ordenes.post(
+    "/{orden_id}/cancelacion/confirmacion",
+    response_model=OrdenRespuesta,
+    summary="Confirmar administrativamente una solicitud de cancelación",
+    description=(
+        "Solo Administrador. Comprueba que la solicitud esté pendiente, que la "
+        "orden siga en estado cancelable y vuelve a consultar a MS3 antes de "
+        "registrar Cancelado e historial en una sola transacción."
+    ),
+    responses={401: {"description": "JWT ausente o inválido"},
+               403: {"description": "Se requiere rol Administrador"},
+               404: {"description": "Orden no encontrada"},
+               409: {"description": "Solicitud no pendiente o aprobación inicial existente"},
+               500: {"description": "No fue posible confirmar la cancelación"},
+               503: {"description": "No fue posible verificar MS3"}},
+)
+def confirmar_cancelacion(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorAprobacionInicial = Depends(obtener_verificador_aprobacion_inicial),
+) -> OrdenTrabajo:
+    try:
+        return confirmar_cancelacion_orden(
+            db, orden_id=orden_id, principal=principal, token=token,
+            verificador=verificador,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(status_code=404, detail="Orden no encontrada") from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DecisionNoVisibleError as exc:
+        raise HTTPException(status_code=404, detail="Orden no encontrada") from exc
+    except ServicioPresupuestosNoDisponibleError as exc:
+        raise HTTPException(status_code=503, detail="No fue posible verificar MS3") from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(status_code=500,
+                            detail="No fue posible confirmar la cancelación") from exc

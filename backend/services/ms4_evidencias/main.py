@@ -7,13 +7,18 @@ routers/).
 """
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from services.ms4_evidencias.config import settings
 from services.ms4_evidencias.db import get_db
 from services.ms4_evidencias.routers import ROUTERS
+from services.ms4_evidencias.services.registro import (
+    MiddlewareRegistro,
+    configurar_logs,
+)
 from services.ms4_evidencias.services.almacenamiento import (
     crear_cliente_s3,
     verificar_bucket,
@@ -36,6 +41,28 @@ app = FastAPI(
 
 for router in ROUTERS:
     app.include_router(router)
+
+# Log de cada solicitud con request_id, estado y duración, sin cabeceras, body
+# ni query string (checklist 5.5; services/registro.py).
+configurar_logs(settings.LOG_LEVEL)
+app.add_middleware(MiddlewareRegistro)
+
+MENSAJE_ERROR_INTERNO = "Error interno del servicio de evidencias"
+
+
+@app.exception_handler(Exception)
+async def error_no_controlado(request: Request, exc: Exception) -> JSONResponse:
+    """Cualquier excepción no prevista responde 500 con un mensaje genérico.
+
+    El body nunca lleva el mensaje de la excepción, el traceback, el bucket, la
+    clave del objeto ni el endpoint del almacenamiento (checklist 5.5). Las
+    HTTPException y los 422 de validación de FastAPI tienen sus propios
+    manejadores y no pasan por aquí.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": MENSAJE_ERROR_INTERNO},
+    )
 
 
 @app.get("/health", tags=["health"])

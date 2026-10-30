@@ -63,10 +63,11 @@ def nuevo_proveedor(
     *,
     contacto: str = "pruebas@taller.cl",
     repuestos: Iterable[tuple[str, int, int | None]] = REPUESTOS_POR_DEFECTO,
+    tipo_distribuidor: str = "generico",
 ) -> Proveedor:
     """Proveedor con repuestos llamados '<nombre> <sufijo>' (en orden)."""
     nombre = nombre or _unico("Proveedor")
-    proveedor = Proveedor(nombre=nombre, contacto=contacto)
+    proveedor = Proveedor(nombre=nombre, contacto=contacto, tipo_distribuidor=tipo_distribuidor)
     proveedor.repuestos += [
         Repuesto(nombre=f"{nombre} {sufijo}", stock=stock, umbral_particular=umbral)
         for sufijo, stock, umbral in repuestos
@@ -102,7 +103,8 @@ def cargar_catalogo(db: Session) -> dict[str, Repuesto]:
     sufijo = f"#{next(_secuencia)}"
     repuestos: dict[str, Repuesto] = {}
     for prov in datos.CATALOGO:
-        proveedor = Proveedor(nombre=f"{prov.nombre} {sufijo}", contacto=prov.contacto)
+        proveedor = Proveedor(nombre=f"{prov.nombre} {sufijo}", contacto=prov.contacto,
+                              tipo_distribuidor=prov.tipo_distribuidor)
         for r in prov.repuestos:
             repuesto = Repuesto(nombre=f"{r.nombre} {sufijo}", stock=r.stock,
                                 umbral_particular=r.umbral_particular)

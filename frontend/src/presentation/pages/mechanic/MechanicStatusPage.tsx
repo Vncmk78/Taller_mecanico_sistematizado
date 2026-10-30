@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ClipboardList } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
-import { AVANCES_MECANICO, ESTADOS_ORDEN, ordenStatusLabel } from '@/domain/entities/Order';
+import { ESTADOS_ORDEN, ordenStatusLabel } from '@/domain/entities/Order';
+import { destinosAvanceMecanico } from '@/domain/entities/OrderActions';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
@@ -43,9 +44,10 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const updateOrder = useOrderStore((s) => s.updateOrder);
+    const isOffline = useOrderStore((s) => s.isOffline);
     const { showToast } = useToast();
 
-    const avances = AVANCES_MECANICO[order.estadoCodigo] ?? [];
+    const avances = destinosAvanceMecanico(order.estadoCodigo);
 
     const confirmarAvance = async () => {
         if (!destino) return;
@@ -99,9 +101,12 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
                     <label className="flex flex-col gap-1 text-sm flex-1 min-w-40">
                         <span className="text-text-muted">Siguiente estado</span>
                         <select
+                            id={`orden-${order.id}-destino`}
+                            name="destino"
                             value={destino}
                             onChange={(e) => setDestino(e.target.value)}
                             aria-label={`Siguiente estado de la orden ${order.id}`}
+                            aria-required="true"
                             className="w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
                         >
                             <option value="">Seleccionar...</option>
@@ -115,6 +120,8 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
                     <label className="flex flex-col gap-1 text-sm flex-1">
                         <span className="text-text-muted">Observación (opcional)</span>
                         <input
+                            id={`orden-${order.id}-observacion`}
+                            name="observacion"
                             type="text"
                             value={observacion}
                             onChange={(e) => setObservacion(e.target.value)}
@@ -125,7 +132,7 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
                     </label>
                     <Button
                         variant="primary"
-                        disabled={!destino}
+                        disabled={!destino || isOffline}
                         onClick={() => setConfirming(true)}
                         className="shrink-0"
                     >
@@ -134,6 +141,13 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
                         </span>
                     </Button>
                 </div>
+
+                {isOffline && (
+                    <Alert tone="warning" className="mt-4">
+                        Sin conexión: para actualizar el estado necesita estar conectado. Restablezca la
+                        conexión e inténtelo nuevamente.
+                    </Alert>
+                )}
 
                 {error && <Alert tone="error" className="mt-4">{error}</Alert>}
 
@@ -232,16 +246,17 @@ export function MechanicStatusPage() {
         ].join(' ')
     );
 
-    // Una orden es accionable cuando AVANCES_MECANICO define algún avance para su
-    // estado; el resto depende del cliente o del administrador y se lista aparte
-    // para no mostrar un selector sin opciones. La partición se hace sobre la
-    // página actual, así la paginación sigue siendo la de useOrderListFilters.
+    // Una orden es accionable cuando el catálogo centralizado define algún
+    // avance para su estado (destinosAvanceMecanico); el resto depende del
+    // cliente o del administrador y se lista aparte para no mostrar un selector
+    // sin opciones. La partición se hace sobre la página actual, así la
+    // paginación sigue siendo la de useOrderListFilters.
     const actionable = useMemo(
-        () => pagedOrders.filter((o) => (AVANCES_MECANICO[o.estadoCodigo]?.length ?? 0) > 0),
+        () => pagedOrders.filter((o) => destinosAvanceMecanico(o.estadoCodigo).length > 0),
         [pagedOrders]
     );
     const closed = useMemo(
-        () => pagedOrders.filter((o) => (AVANCES_MECANICO[o.estadoCodigo]?.length ?? 0) === 0),
+        () => pagedOrders.filter((o) => destinosAvanceMecanico(o.estadoCodigo).length === 0),
         [pagedOrders]
     );
 

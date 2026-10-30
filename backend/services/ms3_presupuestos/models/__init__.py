@@ -11,7 +11,11 @@ Referencia: lámina 04-mer-erd, recuadro "BD MS3".
 from __future__ import annotations
 
 from services.ms3_presupuestos.db import Base
-from services.ms3_presupuestos.models.proveedor import Proveedor, Repuesto
+from services.ms3_presupuestos.models.proveedor import (
+    HistorialProveedorRepuesto,
+    Proveedor,
+    Repuesto,
+)
 from services.ms3_presupuestos.models.inventario import (
     MovimientoInventario,
     ParametroInventario,
@@ -28,6 +32,7 @@ __all__ = [
     "Base",
     "Proveedor",
     "Repuesto",
+    "HistorialProveedorRepuesto",
     "MovimientoInventario",
     "ParametroInventario",
     "HistorialUmbral",

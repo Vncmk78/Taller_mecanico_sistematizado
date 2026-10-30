@@ -57,6 +57,8 @@ from services.ms4_evidencias.services.almacenamiento import (
 from services.ms4_evidencias.services.evidencias import es_clave_valida
 from shared.auth import NombreRol, crear_token_acceso
 
+from archivos_muestra import jpeg_con, mp4, png
+
 SECRETO = "clave-secreta-exclusiva-para-pruebas-de-ms4-123456"
 MECANICO = 21
 ADMIN = 1
@@ -206,7 +208,7 @@ def api_memoria(
 def test_ciclo_subir_listar_detallar_y_recuperar_el_mismo_archivo(
     api_memoria: TestClient, memoria: AlmacenamientoEnMemoria, sesion: Session
 ) -> None:
-    datos = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 40
+    datos = jpeg_con(bytes(range(256)) * 40)
     token = _token(MECANICO, NombreRol.MECANICO)
 
     subida = _subir(api_memoria, token, 7, datos, nombre="frontal.jpg")
@@ -245,9 +247,9 @@ def test_varias_evidencias_de_una_orden_se_recuperan_sin_cruzarse(
 ) -> None:
     token = _token(MECANICO, NombreRol.MECANICO)
     archivos = {
-        "antes.jpg": (b"foto-antes" * 50, "image/jpeg"),
-        "despues.png": (b"\x89PNG-despues" * 50, "image/png"),
-        "prueba.mp4": (b"\x00\x00\x00\x18ftypmp4" * 50, "video/mp4"),
+        "antes.jpg": (jpeg_con(b"foto-antes" * 50), "image/jpeg"),
+        "despues.png": (png(1500), "image/png"),
+        "prueba.mp4": (mp4(1200), "video/mp4"),
     }
     ids: dict[str, str] = {}
     for nombre, (datos, tipo) in archivos.items():
@@ -277,7 +279,7 @@ def test_nombre_con_tildes_se_conserva_en_consulta_y_descarga(
     api_memoria: TestClient,
 ) -> None:
     token = _token(MECANICO, NombreRol.MECANICO)
-    subida = _subir(api_memoria, token, 9, b"datos" * 20, nombre="daño frontal.jpg")
+    subida = _subir(api_memoria, token, 9, jpeg_con(b"datos" * 20), nombre="daño frontal.jpg")
     assert subida.status_code == 201
     assert subida.json()["nombre_original"] == "daño frontal.jpg"
 
@@ -293,7 +295,7 @@ def test_request_id_de_la_subida_queda_trazable_en_la_base(
     api_memoria: TestClient, sesion: Session
 ) -> None:
     token = _token(MECANICO, NombreRol.MECANICO)
-    subida = _subir(api_memoria, token, 11, b"x" * 64, request_id="req-ciclo-0001")
+    subida = _subir(api_memoria, token, 11, jpeg_con(b"x" * 64), request_id="req-ciclo-0001")
     assert subida.status_code == 201
     fila = sesion.get(Evidencia, uuid.UUID(subida.json()["evidencia_id"]))
     assert fila.request_id == "req-ciclo-0001"
@@ -304,7 +306,7 @@ def test_evidencia_eliminada_no_se_recupera_salvo_administrador(
     api_memoria: TestClient, sesion: Session
 ) -> None:
     token_mecanico = _token(MECANICO, NombreRol.MECANICO)
-    subida = _subir(api_memoria, token_mecanico, 12, b"borrable" * 10)
+    subida = _subir(api_memoria, token_mecanico, 12, jpeg_con(b"borrable" * 10))
     evidencia_id = subida.json()["evidencia_id"]
 
     fila = sesion.get(Evidencia, uuid.UUID(evidencia_id))
@@ -323,8 +325,8 @@ def test_cliente_recupera_solo_lo_visible_para_el(
     api_memoria: TestClient, memoria: AlmacenamientoEnMemoria
 ) -> None:
     token_mecanico = _token(MECANICO, NombreRol.MECANICO)
-    visible = _subir(api_memoria, token_mecanico, 13, b"entrega" * 10, contexto="resultado_final")
-    interna = _subir(api_memoria, token_mecanico, 13, b"interno" * 10, contexto="diagnostico")
+    visible = _subir(api_memoria, token_mecanico, 13, jpeg_con(b"entrega" * 10), contexto="resultado_final")
+    interna = _subir(api_memoria, token_mecanico, 13, jpeg_con(b"interno" * 10), contexto="diagnostico")
     assert visible.status_code == interna.status_code == 201
 
     token_cliente = _token(CLIENTE, NombreRol.CLIENTE)
@@ -335,7 +337,7 @@ def test_cliente_recupera_solo_lo_visible_para_el(
         f"/evidencias/{visible.json()['evidencia_id']}/descarga", headers=_auth(token_cliente)
     )
     assert ok.status_code == 200
-    assert memoria.objetos[_clave_desde_url(ok.json()["url"], BUCKET_MEMORIA)]["data"] == b"entrega" * 10
+    assert memoria.objetos[_clave_desde_url(ok.json()["url"], BUCKET_MEMORIA)]["data"] == jpeg_con(b"entrega" * 10)
 
     oculta = api_memoria.get(
         f"/evidencias/{interna.json()['evidencia_id']}/descarga", headers=_auth(token_cliente)
@@ -388,7 +390,7 @@ def test_minio_ciclo_completo_recupera_bytes_identicos(
     api_minio: TestClient, minio, sesion: Session
 ) -> None:
     cfg, cliente, orden_id = minio
-    datos = bytes(random.getrandbits(8) for _ in range(300 * 1024))
+    datos = jpeg_con(bytes(random.getrandbits(8) for _ in range(300 * 1024)))
     token = _token(MECANICO, NombreRol.MECANICO)
 
     subida = _subir(api_minio, token, orden_id, datos, nombre="motor daño.jpg")
@@ -419,7 +421,7 @@ def test_minio_objeto_guarda_metadatos_sin_datos_personales(
     api_minio: TestClient, minio
 ) -> None:
     cfg, cliente, orden_id = minio
-    datos = b"metadatos" * 100
+    datos = jpeg_con(b"metadatos" * 100)
     subida = _subir(
         api_minio, _token(MECANICO, NombreRol.MECANICO), orden_id, datos, nombre="cliente juan.jpg"
     )
@@ -446,7 +448,7 @@ def test_minio_archivo_sobre_8_mib_usa_multipart_y_se_recupera_integro(
     _, _, orden_id = minio
     # 9 MiB > umbral multipart de 8 MiB (decisión 3 del estudio de almacenamiento).
     bloque = bytes(random.getrandbits(8) for _ in range(64 * 1024))
-    datos = bloque * (9 * 16)
+    datos = jpeg_con(bloque * (9 * 16))
     token = _token(MECANICO, NombreRol.MECANICO)
 
     subida = _subir(api_minio, token, orden_id, datos, nombre="grande.jpg")
@@ -493,7 +495,7 @@ def test_minio_url_vencida_o_alterada_no_permite_recuperar(minio) -> None:
 
 def test_minio_acceso_anonimo_al_objeto_es_rechazado(api_minio: TestClient, minio) -> None:
     cfg, cliente, orden_id = minio
-    subida = _subir(api_minio, _token(MECANICO, NombreRol.MECANICO), orden_id, b"privado" * 10)
+    subida = _subir(api_minio, _token(MECANICO, NombreRol.MECANICO), orden_id, jpeg_con(b"privado" * 10))
     assert subida.status_code == 201
     [clave] = _objetos_de_orden(cfg, cliente, orden_id)
 
@@ -512,7 +514,11 @@ def test_minio_falla_de_base_no_deja_archivo_huerfano(
         raise RuntimeError("base caída durante el commit")
 
     monkeypatch.setattr(sesion, "commit", commit_que_falla)
-    respuesta = _subir(api_minio, _token(MECANICO, NombreRol.MECANICO), orden_id, b"huerfano" * 50)
+    respuesta = _subir(api_minio, _token(MECANICO, NombreRol.MECANICO), orden_id, jpeg_con(b"huerfano" * 50))
 
-    assert respuesta.status_code == 500
+    # Semana 6 (tratamiento de errores): falla de la base → 503 controlado.
+    assert respuesta.status_code == 503
+    assert respuesta.json() == {
+        "detail": "No se pudo guardar la evidencia, intenta nuevamente"
+    }
     assert _objetos_de_orden(cfg, cliente, orden_id) == []

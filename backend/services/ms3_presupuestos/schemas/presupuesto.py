@@ -190,5 +190,8 @@ class ResultadoOperacion(BaseModel):
     presupuesto: PresupuestoDetalle
     efecto_en_orden: EfectoOrden | None
     repuestos_faltantes: list[RepuestoFaltante] = []
+    # Al aprobar con stock suficiente: unidades reservadas para la orden
+    # (repuesto_id → unidades que quedan comprometidas para ella).
+    repuestos_reservados: dict[int, int] = {}
     decision_id: int | None = None
     aplicacion_en_orden: AplicacionDecisionRespuesta | AplicacionEnvioPresupuestoRespuesta | None = None

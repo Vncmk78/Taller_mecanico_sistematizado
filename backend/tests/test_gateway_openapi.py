@@ -43,9 +43,18 @@ from services.ms2_taller.schemas.orden import (
     CupoDiarioIngresosActualizar as Ms2CupoDiarioIngresosActualizar,
     CupoDiarioIngresosRespuesta as Ms2CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
+    CancelacionClienteSolicitud as Ms2CancelacionClienteSolicitud,
+    SolicitudCancelacionRespuesta as Ms2SolicitudCancelacionRespuesta,
+    EntregaSolicitud as Ms2EntregaSolicitud,
     HistorialEstadoRespuesta as Ms2HistorialEstadoRespuesta,
     OrdenCrear as Ms2OrdenCrear,
     OrdenRespuesta as Ms2OrdenRespuesta,
+)
+from services.ms2_taller.schemas.bitacora import (
+    BitacoraCrear as Ms2BitacoraCrear,
+    BitacoraRespuesta as Ms2BitacoraRespuesta,
+    RepuestoBitacoraEntrada as Ms2RepuestoBitacoraEntrada,
+    RepuestoBitacoraRespuesta as Ms2RepuestoBitacoraRespuesta,
 )
 from services.ms4_evidencias.schemas.evidencia import (
     DatosRecepcion as Ms4DatosRecepcion,
@@ -80,7 +89,13 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
     ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
+    ("/api/ordenes/{orden_id}/bitacora", "get"),
+    ("/api/ordenes/{orden_id}/bitacora", "post"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
+    ("/api/ordenes/{orden_id}/entrega", "post"),
+    ("/api/ordenes/{orden_id}/cancelacion", "post"),
+    ("/api/ordenes/cancelaciones/pendientes", "get"),
+    ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
     ("/api/evidencias", "post"),
     ("/api/evidencias", "get"),
     ("/api/evidencias/{evidencia_id}", "get"),
@@ -105,7 +120,12 @@ _PROTEGIDOS = {
     "/api/ordenes/configuracion/capacidad/ingresos-diarios",
     "/api/ordenes/{orden_id}/historial",
     "/api/ordenes/vehiculo/{vehiculo_id}/historial",
+    "/api/ordenes/{orden_id}/bitacora",
     "/api/ordenes/{orden_id}/estado",
+    "/api/ordenes/{orden_id}/entrega",
+    "/api/ordenes/{orden_id}/cancelacion",
+    "/api/ordenes/cancelaciones/pendientes",
+    "/api/ordenes/{orden_id}/cancelacion/confirmacion",
     "/api/evidencias",
     "/api/evidencias/{evidencia_id}",
     "/api/evidencias/{evidencia_id}/descarga",
@@ -191,7 +211,12 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
+        ("/api/ordenes/{orden_id}/bitacora", "get"),
+        ("/api/ordenes/{orden_id}/bitacora", "post"),
         ("/api/ordenes/{orden_id}/estado", "patch"),
+        ("/api/ordenes/{orden_id}/entrega", "post"),
+        ("/api/ordenes/{orden_id}/cancelacion", "post"),
+        ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
         ("/api/evidencias", "post"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
@@ -258,6 +283,9 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
             "put",
         ): "CupoDiarioIngresosActualizar",
         ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
+        ("/api/ordenes/{orden_id}/entrega", "post"): "EntregaSolicitud",
+        ("/api/ordenes/{orden_id}/cancelacion", "post"): "CancelacionClienteSolicitud",
+        ("/api/ordenes/{orden_id}/bitacora", "post"): "BitacoraCrear",
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"): "DecisionOrdenSolicitud",
     }
     for (ruta, metodo), ref in con_cuerpo.items():
@@ -278,6 +306,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
         ("/api/ordenes/{orden_id}/historial", "get"),
         ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
+        ("/api/ordenes/{orden_id}/bitacora", "get"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
         ("/api/evidencias/{evidencia_id}/descarga", "get"),
@@ -341,8 +370,30 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
             Ms2CambioEstadoSolicitud,
         ),
         (
+            contratos_ordenes.EntregaSolicitud,
+            Ms2EntregaSolicitud,
+        ),
+        (
+            contratos_ordenes.CancelacionClienteSolicitud,
+            Ms2CancelacionClienteSolicitud,
+        ),
+        (
+            contratos_ordenes.SolicitudCancelacionRespuesta,
+            Ms2SolicitudCancelacionRespuesta,
+        ),
+        (
             contratos_ordenes.HistorialEstadoRespuesta,
             Ms2HistorialEstadoRespuesta,
+        ),
+        (contratos_ordenes.BitacoraCrear, Ms2BitacoraCrear),
+        (contratos_ordenes.BitacoraRespuesta, Ms2BitacoraRespuesta),
+        (
+            contratos_ordenes.RepuestoBitacoraEntrada,
+            Ms2RepuestoBitacoraEntrada,
+        ),
+        (
+            contratos_ordenes.RepuestoBitacoraRespuesta,
+            Ms2RepuestoBitacoraRespuesta,
         ),
         (contratos_evidencias.EvidenciaRespuesta, Ms4EvidenciaLeida),
         (contratos_evidencias.UrlDescargaRespuesta, Ms4UrlDescarga),
@@ -390,9 +441,12 @@ def test_contrato_evidencias_documenta_formulario_y_seguridad(esquema: dict) -> 
 
     paths = esquema["paths"]
     subir = paths["/api/evidencias"]["post"]["responses"]
-    assert subir["413"]["content"]["application/json"]["schema"]["$ref"] == (
-        "#/components/schemas/ErrorRespuesta"
-    )
+    # 413 puede venir de la Gateway (body > 12 MiB) o de MS4 (foto > 10 MiB).
+    assert subir["413"]["content"]["application/json"]["schema"]["oneOf"] == [
+        {"$ref": "#/components/schemas/ErrorRespuesta"},
+        {"$ref": "#/components/schemas/ErrorDetalle"},
+    ]
+    assert "415" in subir
     listado = paths["/api/evidencias"]["get"]
     [query] = [p for p in listado["parameters"] if p["in"] == "query"]
     assert query["name"] == "orden_id" and query["required"] is True
@@ -417,7 +471,14 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "AsignacionMecanicoActualizar",
         "OrdenRespuesta",
         "CambioEstadoSolicitud",
+        "EntregaSolicitud",
+        "CancelacionClienteSolicitud",
+        "SolicitudCancelacionRespuesta",
         "HistorialEstadoRespuesta",
+        "BitacoraCrear",
+        "BitacoraRespuesta",
+        "RepuestoBitacoraEntrada",
+        "RepuestoBitacoraRespuesta",
         "EvidenciaSubida",
         "EvidenciaRespuesta",
         "UrlDescargaRespuesta",

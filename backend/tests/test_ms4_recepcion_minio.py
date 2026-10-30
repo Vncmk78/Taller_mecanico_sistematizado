@@ -32,6 +32,8 @@ from services.ms4_evidencias.schemas.evidencia import DatosRecepcion
 from services.ms4_evidencias.services.almacenamiento import crear_cliente_s3
 from services.ms4_evidencias.services.evidencias import recibir_evidencia
 
+from archivos_muestra import jpeg_con
+
 TAMANO_PRUEBA = 256 * 1024
 
 _ERRORES_MINIO_APAGADO = (
@@ -76,7 +78,7 @@ def sesion() -> Generator[Session, None, None]:
 def test_recepcion_subida_y_sha256_con_minio_real(cliente_minio, sesion) -> None:
     cfg, cliente = cliente_minio
     datos = DatosRecepcion(orden_id=1, contexto=ContextoEvidencia.DIAGNOSTICO)
-    contenido = (bytes(range(256)) * (TAMANO_PRUEBA // 256))[:TAMANO_PRUEBA]
+    contenido = jpeg_con((bytes(range(256)) * (TAMANO_PRUEBA // 256))[:TAMANO_PRUEBA])
 
     evidencia = recibir_evidencia(
         sesion,

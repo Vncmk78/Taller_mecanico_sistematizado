@@ -21,6 +21,7 @@ from services.ms3_presupuestos.integracion_ms2 import (
     OrdenNoVisible,
     ServicioOrdenesNoDisponible,
     obtener_verificador_ordenes,
+    obtener_coordinador_envios_presupuesto,
     obtener_coordinador_ordenes,
 )
 from services.ms3_presupuestos.main import app
@@ -33,7 +34,10 @@ from services.ms3_presupuestos.models import (
 from services.ms3_presupuestos.services import presupuestos as casos
 from services.ms3_presupuestos.tests import fabricas
 from shared.auth import NombreRol, crear_token_acceso
-from shared.contratos_decisiones import AplicacionDecisionRespuesta
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta,
+    AplicacionEnvioPresupuestoRespuesta,
+)
 
 
 def _cabecera(rol: NombreRol, usuario_id: int) -> dict[str, str]:
@@ -81,9 +85,18 @@ def api(db: Session, ms2: VerificadorFalso) -> Iterator[TestClient]:
             return AplicacionDecisionRespuesta(decision_id=decision_id, orden_id=orden_id,
                                                estado_aplicado=destino, historial_id=1)
 
+    class CoordinadorEnviosFalso:
+        """MS2 aplica el envío inicial (Esperando aprobación de presupuesto = 3)."""
+
+        def aplicar(self, orden_id: int, presupuesto_id: int, token: str
+                    ) -> AplicacionEnvioPresupuestoRespuesta:
+            return AplicacionEnvioPresupuestoRespuesta(
+                presupuesto_id=presupuesto_id, orden_id=orden_id, estado_aplicado=3, historial_id=1)
+
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[obtener_verificador_ordenes] = lambda: ms2
     app.dependency_overrides[obtener_coordinador_ordenes] = CoordinadorFalso
+    app.dependency_overrides[obtener_coordinador_envios_presupuesto] = CoordinadorEnviosFalso
     try:
         with TestClient(app) as cliente:
             yield cliente
@@ -91,6 +104,7 @@ def api(db: Session, ms2: VerificadorFalso) -> Iterator[TestClient]:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(obtener_verificador_ordenes, None)
         app.dependency_overrides.pop(obtener_coordinador_ordenes, None)
+        app.dependency_overrides.pop(obtener_coordinador_envios_presupuesto, None)
 
 
 def _ruta(presupuesto: Presupuesto, numero: int = 1, accion: str = "") -> str:

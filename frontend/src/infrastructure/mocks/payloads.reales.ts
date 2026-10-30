@@ -89,6 +89,33 @@ export const historialEstadoDeCreacion = {
     observacion: null,
 };
 
+/** Ejemplo real de gateway/contratos/ordenes.py:214 (_EJEMPLO_REPUESTO_BITACORA). */
+export const repuestoBitacoraReal = {
+    nombre: 'Pastillas de freno',
+    cantidad: 2,
+};
+
+/** Ejemplo real de gateway/contratos/ordenes.py:225 (_EJEMPLO_BITACORA). */
+export const bitacoraEntradaReal = {
+    bitacora_id: 77,
+    orden_id: 31,
+    autor_usuario_id: 50,
+    tipo: 'accion' as const,
+    descripcion: 'Se reemplazaron las pastillas delanteras',
+    creado_en: '2026-09-28T12:15:00-03:00',
+    repuestos: [repuestoBitacoraReal],
+};
+
+/**
+ * Ejemplo real de gateway/contratos/ordenes.py:219 (_EJEMPLO_BITACORA_CREAR).
+ * Una acción sin repuestos no declara el campo; el backend lo completa en [].
+ */
+export const bitacoraCrearObservacion = {
+    tipo: 'observacion' as const,
+    descripcion: 'El cliente reporta ruido al frenar',
+    repuestos: [],
+};
+
 /** Ejemplo real de gateway/contratos/auth.py:37 (_EJEMPLO_TOKEN). */
 export const tokenRespuestaReal = {
     access_token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3In0.firma',

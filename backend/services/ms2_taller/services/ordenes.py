@@ -38,6 +38,7 @@ from services.ms2_taller.integracion_ms3 import (
     EnvioPresupuestoNoVisibleError,
     EnvioPresupuestoNoAplicableError,
     ServicioPresupuestosNoDisponibleError,
+    VerificadorAprobacionInicial,
     VerificadorDecisiones,
     VerificadorDisponibilidadRepuestos,
     VerificadorEnviosPresupuesto,
@@ -53,6 +54,7 @@ from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
+from services.ms2_taller.models.solicitud_cancelacion import SolicitudCancelacion
 from services.ms2_taller.models.vehiculo import Vehiculo
 from services.ms2_taller.services.capacidad_mecanicos import (
     validar_capacidad_para_asignacion,
@@ -83,6 +85,7 @@ _OPERACIONES_ESPECIFICAS_POR_EVENTO = {
         "POST /ordenes/{orden_id}/decisiones-presupuesto",
     EventoOrden.PRIMERA_APROBACION_SIN_REPUESTOS:
         "POST /ordenes/{orden_id}/decisiones-presupuesto",
+    EventoOrden.ENTREGA_FISICA: "POST /ordenes/{orden_id}/entrega",
 }
 
 _EVENTOS_SIN_OPERACION_FUNCIONAL = {
@@ -131,6 +134,134 @@ class OrdenObservacionInvalidaError(Exception):
 
 class EntregaOrdenInconsistenteError(Exception):
     """La orden entregada no conserva sus datos de auditoría esperados."""
+def listar_solicitudes_cancelacion_pendientes(db: Session) -> list[SolicitudCancelacion]:
+    return list(db.scalars(
+        select(SolicitudCancelacion)
+        .where(SolicitudCancelacion.estado == "pendiente")
+        .order_by(SolicitudCancelacion.solicitada_en, SolicitudCancelacion.solicitud_id)
+    ))
+
+
+def solicitar_cancelacion_orden(
+    db: Session, *, orden_id: int, principal: PrincipalAutenticado, token: str,
+    motivo: str, verificador: VerificadorAprobacionInicial,
+) -> tuple[SolicitudCancelacion, bool]:
+    """Registra la solicitud del propietario sin cambiar el estado de la orden."""
+    if NombreRol.CLIENTE not in principal.roles:
+        raise OrdenEstadoNoAutorizadoError("Se requiere rol Cliente")
+    motivo = motivo.strip()
+    if not motivo:
+        raise OrdenObservacionInvalidaError("El motivo de cancelación no puede estar vacío")
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        propietario = db.scalar(
+            select(Cliente.usuario_id)
+            .join(Vehiculo, Vehiculo.cliente_id == Cliente.cliente_id)
+            .where(Vehiculo.vehiculo_id == orden.vehiculo_id)
+        )
+        if propietario != principal.usuario_id:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        existente = db.scalar(select(SolicitudCancelacion).where(
+            SolicitudCancelacion.orden_id == orden_id,
+        ).with_for_update())
+        if existente is not None:
+            if (existente.cliente_usuario_id == principal.usuario_id
+                    and existente.motivo == motivo):
+                db.commit()
+                return existente, False
+            raise OrdenTransicionNoPermitidaError(
+                "La orden ya tiene una solicitud de cancelación"
+            )
+        if orden.estado_codigo not in (1, 2, 3):
+            raise OrdenTransicionNoPermitidaError(
+                "La cancelación solo se puede solicitar antes de la primera aprobación"
+            )
+        aprobacion = verificador.consultar(orden_id, token)
+        if aprobacion.aprobacion_registrada:
+            raise OrdenTransicionNoPermitidaError(
+                "No se puede cancelar: ya existe una aprobación inicial del presupuesto"
+            )
+        solicitud = SolicitudCancelacion(
+            orden_id=orden_id,
+            cliente_usuario_id=principal.usuario_id,
+            estado_al_solicitar=orden.estado_codigo,
+            motivo=motivo,
+        )
+        db.add(solicitud)
+        db.flush()
+        db.refresh(solicitud)
+        db.commit()
+        return solicitud, True
+    except (OrdenNoEncontradaError, OrdenEstadoNoAutorizadoError,
+            OrdenObservacionInvalidaError, OrdenTransicionNoPermitidaError,
+            DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible registrar la solicitud de cancelación") from exc
+
+
+def confirmar_cancelacion_orden(
+    db: Session, *, orden_id: int, principal: PrincipalAutenticado, token: str,
+    verificador: VerificadorAprobacionInicial,
+) -> OrdenTrabajo:
+    """El Administrador confirma la solicitud y vuelve a verificar MS3 antes de cancelar."""
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise OrdenEstadoNoAutorizadoError("Se requiere rol Administrador")
+    try:
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+        solicitud = db.scalar(select(SolicitudCancelacion).where(
+            SolicitudCancelacion.orden_id == orden_id,
+        ).with_for_update())
+        if solicitud is None:
+            raise OrdenTransicionNoPermitidaError(
+                "No existe una solicitud de cancelación pendiente"
+            )
+        if solicitud.estado == "confirmada" and orden.estado_codigo == CANCELADO:
+            db.commit()
+            return orden
+        if solicitud.estado != "pendiente" or orden.estado_codigo not in (1, 2, 3):
+            raise OrdenTransicionNoPermitidaError(
+                "La solicitud ya no se puede confirmar en el estado actual"
+            )
+        aprobacion = verificador.consultar(orden_id, token)
+        if aprobacion.aprobacion_registrada:
+            raise OrdenTransicionNoPermitidaError(
+                "No se puede confirmar: existe una aprobación inicial del presupuesto"
+            )
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.CANCELACION_SOLICITADA_CONFIRMADA,
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+        anterior = orden.estado_codigo
+        orden.estado_codigo = destino
+        solicitud.estado = "confirmada"
+        solicitud.administrador_id = principal.usuario_id
+        solicitud.confirmada_en = func.now()
+        registrar_historial_estado(
+            db, orden_id=orden_id, estado_anterior=anterior, estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id, origen="usuario",
+            observacion=solicitud.motivo,
+        )
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (OrdenNoEncontradaError, OrdenEstadoNoAutorizadoError,
+            OrdenTransicionNoPermitidaError, DecisionNoVisibleError,
+            ServicioPresupuestosNoDisponibleError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError("No fue posible confirmar la cancelación") from exc
 
 
 def registrar_historial_estado(
@@ -642,6 +773,7 @@ def registrar_entrega_fisica(
     *,
     orden_id: int,
     administrador_id: int,
+    observacion: str | None = None,
 ) -> tuple[OrdenTrabajo, HistorialEstado]:
     """Registra la entrega física y `Listo → Entregado` de forma atómica.
 
@@ -691,6 +823,7 @@ def registrar_entrega_fisica(
             estado_nuevo=estado_nuevo,
             actor_usuario_id=administrador_id,
             origen="usuario",
+            observacion=observacion,
         )
         db.flush()
         db.refresh(orden)
@@ -700,6 +833,7 @@ def registrar_entrega_fisica(
         OrdenNoEncontradaError,
         OrdenTransicionNoPermitidaError,
         EntregaOrdenInconsistenteError,
+        OrdenObservacionInvalidaError,
     ):
         db.rollback()
         raise

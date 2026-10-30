@@ -51,25 +51,27 @@ export function ClientVehiclesPage() {
     <div className="p-10 animate-fade-in">
         <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
         <div>
-            <h2 className="text-3xl font-bold mb-1">Mis Vehículos</h2>
+            <h1 className="text-3xl font-bold mb-1">Mis Vehículos</h1>
             <p className="text-text-muted">Consulte la ficha técnica y el historial de sus vehículos registrados</p>
         </div>
         <Link
             to="/client/vehiculos/nuevo"
             className="bg-primary-blue text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors shrink-0"
         >
-            <Plus className="w-4 h-4" /> Añadir vehículo
+            <Plus className="w-4 h-4" aria-hidden /> Añadir vehículo
         </Link>
         </div>
 
-        <div className="relative w-full sm:w-[320px] mb-6">
+        <div role="search" aria-label="Buscar vehículos" className="relative w-full sm:w-[320px] mb-6">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden />
         <input
-            type="text"
+            type="search"
+            name="buscar-vehiculos"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
             aria-label="Buscar por patente, marca o modelo"
+            autoComplete="off"
             className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
         />
         </div>

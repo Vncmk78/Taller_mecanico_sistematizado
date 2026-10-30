@@ -1,272 +1,279 @@
-﻿# CONEXIONES — Despliegue Vercel + Neon + Usuarios de prueba
+# CONEXIONES — Integración TallerConnect y preparación de Kubero
 
-Documento de conexión del SGTM desplegado en **Vercel** con base de datos
-**Neon** (PostgreSQL serverless) y los cuatro microservicios tras un API
-Gateway. Este documento es la fuente de verdad para el equipo: define los
-endpoints públicos, las variables de entorno, los usuarios de prueba y los
-pasos de despliegue.
+## 1. Estado y límites de esta guía
 
-## Base del despliegue en producción
+Panel de administración: https://kubero.inf.uct.cl. **No es la URL de la API**.
+La URL pública de la Gateway y la de la web aún deben asignarse y verificarse.
+No se declara que las bases de Kubero estén creadas, migradas o sembradas.
 
-```
-https://tallerconect.vercel.app
-```
+El plan de integración del 29-10-2026 se refiere a `main` (`b05663d`). La rama
+`MartinH` tiene otro historial de migraciones y otras funcionalidades. La versión
+objetivo elegida para el despliegue es `origin/main` (`b05663d`); no se integra
+el trabajo adicional de MartinH para esta publicación.
+**No aplicar las migraciones de MartinH sobre las bases del despliegue de main
+sin revisar esta diferencia.** Un ID de revisión igual tampoco garantiza que
+su contenido coincida entre ramas. Los scripts comparan con el checkout actual;
+no validan que todas las columnas e índices coincidan con los modelos.
 
----
+La revisión del panel del 30-10-2026 mostró un pipeline `mamaderasgames`, sin
+aplicaciones en producción. Se inspeccionó el formulario de aplicación sin
+crear ni guardar recursos. Permite imagen/tag, puerto, comando, variables,
+complementos y health checks. El catálogo ofrece
+PostgreSQL como complemento (se inspeccionaron sus campos sin guardarlo).
+Faltan las bases y sus DSN, el almacenamiento S3, el registro de imágenes y
+los dominios definitivos para TallerConnect.
 
-## 1. Arquitectura desplegada
+## 2. Arquitectura y contenedor backend
 
-```
-https://tallerconect.vercel.app/
-├── /            → Frontend Web (React + Vite)     [servicio Vercel: frontend]
-├── /api/*       → API Gateway (FastAPI)           [servicio Vercel: backend]
-│                  └── proxya a MS1..MS4 según el primer segmento:
-│                      /api/auth/*         → ms1 (auth)
-│                      /api/vehiculos/*    → ms2 (taller)
-│                      /api/ordenes/*      → ms2
-│                      /api/orden/*        → ms2
-│                      /api/clientes/*     → ms2
-│                      /api/mecanicos/*    → ms2
-│                      /api/presupuestos/* → ms3
-│                      /api/presupuesto/*  → ms3
-│                      /api/repuestos/*    → ms3
-│                      /api/proveedores/*  → ms3
-│                      /api/inventario/*   → ms3
-│                      /api/evidencias/*   → ms4
-│                      /api/evidencia/*    → ms4
-├── /ms1/docs     → Swagger de MS1 (acceso directo al servicio)
-├── /ms2/docs     → Swagger de MS2
-├── /ms3/docs     → Swagger de MS3
-├── /ms4/docs     → Swagger de MS4
-└── /docs         → Swagger de la Gateway
-```
+Se conservan la Gateway FastAPI y los cuatro microservicios independientes,
+cada uno con su propia base PostgreSQL. MS4 guarda los archivos en MinIO/S3.
+La web y la app móvil consumen exclusivamente `/api/*` de la Gateway.
 
-Definición de servicios en `vercel.json` (modelo Vercel Services). Los
-entrypoints usan **notación de módulo con puntos** (relativa al root del
-servicio), y cada MS limpia su prefijo con `rewrites` internos al servicio:
+El `Dockerfile` en la raíz empaqueta solo el backend. Crear cinco aplicaciones
+independientes con la misma imagen y diferente `SGTM_SERVICIO`; cada proceso
+escucha en `0.0.0.0:8000` por defecto (`PORT` configurable).
 
-| Servicio | Root | Entrypoint | URL pública |
+| Aplicación propuesta | SGTM_SERVICIO | Módulo | Health check |
 | --- | --- | --- | --- |
-| `frontend` | `frontend` | — (Vite) | `/` |
-| `backend` (Gateway) | `backend` | `gateway.main:app` | `/api/*`, `/docs` |
-| `ms-auth` | `backend` | `services.ms1_auth.main:app` | `/ms1/*` |
-| `ms-taller` | `backend` | `services.ms2_taller.main:app` | `/ms2/*` |
-| `ms-presupuestos` | `backend` | `services.ms3_presupuestos.main:app` | `/ms3/*` |
-| `ms-evidencias` | `backend` | `services.ms4_evidencias.main:app` | `/ms4/*` |
+| sgtm-gateway | gateway | gateway.main:app | /api/health |
+| sgtm-ms1 | ms1 | services.ms1_auth.main:app | /health |
+| sgtm-ms2 | ms2 | services.ms2_taller.main:app | /health |
+| sgtm-ms3 | ms3 | services.ms3_presupuestos.main:app | /health |
+| sgtm-ms4 | ms4 | services.ms4_evidencias.main:app | /health |
 
-La gateway enlaza los microservicios con **bindings de servicio**:
-`GATEWAY_MS1_URL` … `GATEWAY_MS4_URL` (los resuelve Vercel al desplegar, no se
-escriben a mano).
-
----
-
-## 2. Endpoints públicos
-
-### 2.1 Gateway (todo el mundo pasa por acá)
-
-Base: `https://tallerconect.vercel.app`
-
-| Método | Ruta | Descripción | Auth |
-| --- | --- | --- | --- |
-| `GET` | `/api/health` | Estado de la Gateway | — |
-| `POST` | `/api/auth/register` | Registro público (rol Cliente) | — |
-| `POST` | `/api/auth/login` | Login → JWT + usuario con roles | — |
-| `GET` | `/api/auth/me` | Usuario autenticado | Bearer |
-| `GET` | `/api/vehiculos` | Cliente lista los suyos; Administrador lista todos | Bearer |
-| `GET` | `/api/vehiculos/asignados` | Vehículos con órdenes asignadas al Mecánico | Bearer |
-| `GET` | `/api/vehiculos/{id}` | Detalle según rol (propios, todos o asignados) | Bearer |
-| `POST` | `/api/vehiculos` | Registra un vehículo (rol Cliente) | Bearer |
-| `PATCH` | `/api/vehiculos/{id}` | Actualiza un vehículo propio (rol Cliente) | Bearer |
-| `POST` | `/api/ordenes` | Crea una orden (rol Administrador) | Bearer |
-| `GET` | `/api/ordenes` | Lista órdenes visibles | Bearer |
-| `GET` | `/api/ordenes/{id}` | Detalle de una orden visible | Bearer |
-| `PUT` | `/api/ordenes/{id}/mecanico` | Asigna o reasigna el mecánico responsable | Bearer |
-| `GET` | `/api/ordenes/{id}/historial` | Historial de estados de una orden | Bearer |
-| `PATCH` | `/api/ordenes/{id}/estado` | Cambia el estado de una orden | Bearer |
-
-> Regla del gateway: llama siempre por **primer segmento**. Endpoints de
-> negocio que aún no existan en un MS devolverán `404 {"detail":"Not Found"}`
-> (los agregan los integrantes responsables de cada MS).
-
-> Respuestas de vehículo: `GET /api/vehiculos*` y `POST/PATCH /api/vehiculos`
-> incluyen `cliente_id` (perfil Cliente de MS2) junto a `vehiculo_id`, `patente`,
-> `marca`, `modelo`, `anio` y `kilometraje`. MS2 no resuelve datos de MS1, así
-> que el contrato entrega identificadores y no nombres: quien consuma la API
-> muestra `Cliente #<cliente_id>` en lugar de inventar un propietario. Lo mismo
-> aplica al mecánico de una orden, que solo trae `mecanico_actual_id`.
-
-### 2.2 Acceso directo a cada microservicio
-
-| URL | Descripción |
-| --- | --- |
-| `https://tallerconect.vercel.app/ms1/docs` | Swagger MS1 (auth) |
-| `https://tallerconect.vercel.app/ms1/health` | Health MS1 |
-| `https://tallerconect.vercel.app/ms2/docs` | Swagger MS2 (vehículos, órdenes) |
-| `https://tallerconect.vercel.app/ms2/health` | Health MS2 |
-| `https://tallerconect.vercel.app/ms2/health/db` | Health MS2 + conexión Neon |
-| `https://tallerconect.vercel.app/ms3/docs` | Swagger MS3 (presupuestos, repuestos) |
-| `https://tallerconect.vercel.app/ms3/health` | Health MS3 |
-| `https://tallerconect.vercel.app/ms3/health/db` | Health MS3 + conexión Neon |
-| `https://tallerconect.vercel.app/ms4/docs` | Swagger MS4 (evidencias) |
-| `https://tallerconect.vercel.app/ms4/health` | Health MS4 |
-| `https://tallerconect.vercel.app/docs` | Swagger de la Gateway |
-
-> Para la **app móvil** usar siempre `https://tallerconect.vercel.app/api/*`:
-> el consumo es idéntico al frontend web.
-
----
-
-## 3. Usuarios de prueba (web y móvil)
-
-Usuarios sembrados con `backend/scripts/seed_usuarios_prueba.py` (idempotente).
-Ya están creados en Neon.
-
-| Rol | Correo | Contraseña |
-| --- | --- | --- |
-| **Cliente** | `cliente@pruebas.cl` | `ClientePrueba123!` |
-| **Mecánico** | `mecanico@pruebas.cl` | `MecanicoPrueba123!` |
-| **Administrador** | `administrador@pruebas.cl` | `AdminPrueba123!` |
-
-- El usuario **Cliente** tiene perfil creado en MS2 (para usar `/api/vehiculos/mios`).
-- Los roles provienen de la migración `0002_roles_iniciales_ms1`
-  (`cliente`, `mecanico`, `administrador`).
-
-### Login de ejemplo (curl)
+Construcción local desde la raíz (requiere Docker activo):
 
 ```bash
-curl -X POST https://tallerconect.vercel.app/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"cliente@pruebas.cl","password":"ClientePrueba123!"}'
+docker build --platform linux/amd64 -t tallerconnect-backend:local .
 ```
 
-Respuesta: `access_token` (JWT) + datos del usuario con sus roles. Usar el
-token como `Authorization: Bearer <token>` en los endpoints protegidos.
+Los comandos deben ejecutarse sobre el código de main con estas herramientas
+de preparación incorporadas. Construir desde la raíz de MartinH produciría
+otra versión. Para la verificación se extrajo main con `git archive` en
+`backend/salidas-integracion/main-b05663d/` y se agregaron únicamente las
+herramientas de preparación; no se cambió de rama ni se realizó un merge.
 
----
+El tag local **no está disponible automáticamente en Kubero**. Publicar la
+imagen en un registro accesible al clúster, o utilizar un build autorizado del
+panel si está disponible. Usar el mismo tag inmutable para las cinco instancias.
+No incluir `.env` en la imagen, y no ejecutar migraciones al iniciar cada pod.
 
-## 4. Base de datos Neon
+Kubero admite despliegue desde imágenes o Git; las opciones efectivas dependen
+de su configuración: https://www.kubero.dev/docs/usermanual/deployment/.
+En el panel universitario inspeccionado, el formulario ofrecía imagen/tag.
 
-Cuatro bases independientes, una por microservicio (§8 aislamiento de datos):
+## 3. Variables y recursos por servicio
 
-| Servicio | Variable | Base Neon |
-| --- | --- | --- |
-| MS1 (auth) | `MS1_DATABASE_URL` | `taller_ms1` |
-| MS2 (taller) | `MS2_DATABASE_URL` | `taller_ms2` |
-| MS3 (presupuestos) | `MS3_DATABASE_URL` | `taller_ms3` |
-| MS4 (evidencias) | `MS4_DATABASE_URL` | `taller_ms4` |
+Configurar las variables en cada aplicación, con los nombres de
+`backend/.env.example`. Los `localhost` de la plantilla son solo para desarrollo:
+en Kubernetes apuntarían al propio pod, no a otro microservicio.
 
-Formato del DSN Neon (con SSL obligatorio):
+| Aplicación | Configuración necesaria |
+| --- | --- |
+| Gateway | GATEWAY_MS1_URL…GATEWAY_MS4_URL con URLs internas reales; GATEWAY_CORS_ORIGINS con el origen HTTPS de la web; GATEWAY_CORS_ORIGIN_REGEX vacío si no se autorizan previews Vercel |
+| MS1 | MS1_DATABASE_URL, MS1_JWT_SECRET_KEY; MS1_EVENT_SHARED_SECRET si se habilitan los eventos de MartinH |
+| MS2 | MS2_DATABASE_URL, MS2_JWT_SECRET_KEY, MS2_MS3_URL, MS2_TIMEZONE=America/Santiago; MS2_MS1_URL y secreto de eventos si corresponde a la versión desplegada |
+| MS3 | MS3_DATABASE_URL, MS3_JWT_SECRET_KEY, MS3_MS2_URL |
+| MS4 | MS4_DATABASE_URL, MS4_JWT_SECRET_KEY, MS4_MS2_URL y MS4_S3_* |
 
+Los cuatro `MSn_JWT_SECRET_KEY` deben contener la misma clave aleatoria de al
+menos 32 caracteres para HS256. El secreto de eventos MS1↔MS2 es independiente
+del JWT y debe coincidir en ambos servicios. No dar las claves JWT o DSN a la
+Gateway. No copiar el `.env` completo a cada aplicación.
+
+Bases separadas: `taller_ms1`, `taller_ms2`, `taller_ms3`, `taller_ms4`.
+Usar usuarios con acceso únicamente a su base y el modo TLS indicado por la UCT:
+
+```text
+postgresql+psycopg://USUARIO:PASSWORD@HOST:5432/taller_ms1
 ```
-postgresql+psycopg://USUARIO:PASSWORD@HOST/taller_ms1?sslmode=require
+
+Agregar `?sslmode=require` si el servidor ofrece TLS. Mantener bases y servicios
+internos restringidos al clúster; el punto público de negocio es la Gateway.
+MS4 necesita un bucket privado, credenciales limitadas a ese bucket y
+`MS4_S3_PUBLIC_ENDPOINT` con la URL HTTPS que abrirán web y móvil. Una URL
+firmada contra un nombre interno de Kubernetes no será utilizable desde fuera.
+
+Frontend React: `frontend/Dockerfile` construye con Node y sirve con Nginx.
+Desde `frontend/` de la misma versión de main:
+
+```bash
+docker build --platform linux/amd64 -t tallerconnect-frontend:local .
 ```
 
-### Migraciones contra Neon
+Crear otra aplicación, puerto `80`, health check `/healthz`, con
+`GATEWAY_UPSTREAM` igual al origen interno real de la Gateway, sin ruta ni barra
+final (por ejemplo `http://NOMBRE_INTERNO:8000`, reemplazando el nombre). El
+build fija `VITE_API_URL=/api`; Nginx reenvía `/api/*` conservando el prefijo,
+y devuelve `index.html` en rutas SPA. El frontend consume su mismo origen;
+la app móvil utiliza la URL pública de la Gateway. No incluir credenciales ni
+DSN en el build de React.
 
-Con `backend/.env` apuntando a Neon (los servicios leen `MSn_DATABASE_URL`):
+## 4. Migraciones de las cuatro bases
 
-```powershell
-cd backend
-.\scripts\migrar_neon.ps1
+Instalar `backend/requirements.txt` y configurar **explícitamente** los cuatro
+`MSn_DATABASE_URL` en `backend/.env` o en el entorno del proceso. No se usan
+DSN por defecto para verificar o migrar. Las variables del proceso prevalecen.
+
+Consulta de solo lectura, desde la raíz:
+
+```bash
+python backend/scripts/verificar_migraciones.py
 ```
 
-Aplica las migraciones de MS1, MS2 y MS3 (`alembic upgrade head`). MS4 todavía
-no tiene migraciones (no hay modelos). El seed DEBE ejecutarse después:
+Informa cada revisión actual y cada head del código. Devuelve `0` si todas
+coinciden, `1` si faltan migraciones y `2` ante una revisión desconocida, DSN
+ausente o fallo de conexión. No crea `alembic_version` si falta.
 
-```powershell
+Una vez revisadas la versión del código, las bases destino y la autorización
+de producción, ejecutar **una sola vez por despliegue**:
+
+```bash
+python backend/scripts/migrar.py
+```
+
+En PowerShell también está `backend/scripts/migrar.ps1`;
+`migrar_neon.ps1` se conserva solo como entrada de compatibilidad.
+
+El migrador consulta primero las cuatro bases y no inicia escrituras si alguna
+es incompatible o no se puede consultar. Luego ejecuta `alembic upgrade heads`
+en MS1, MS2, MS3 **y MS4**, muestra `alembic current` y compara nuevamente las
+cuatro bases. Falla si alguna no queda en los heads del checkout. Las bases son
+independientes: si falla MS3, MS1/MS2 pueden haber migrado; no hay una transacción
+global ni rollback automático. No se crean nuevas migraciones ni se usa `stamp`.
+
+## 5. Preparación de datos y capacidad
+
+Después de migrar, en un entorno de prueba autorizado se puede ejecutar desde
+`backend/`:
+
+```bash
 python scripts/seed_usuarios_prueba.py
 ```
 
-> Estado actual de la BD en producción: **migraciones MS1/MS2/MS3 aplicadas** y
-> **seed ejecutado** (clientes de prueba ya creados).
+El seed de **main** crea o actualiza **siete** cuentas: tres de un solo rol
+y cuatro combinaciones multirrol, más los perfiles Cliente correspondientes
+en MS2. El seed de MartinH es distinto y solo contiene tres cuentas. También
+restablece sus contraseñas; revisar el script antes de ejecutarlo sobre una
+base con datos. No se ejecuta automáticamente. Se ejecutó en las bases temporales locales
+de verificación; no se ha ejecutado en Kubero.
 
----
+Como Administrador, configurar valores aprobados por el taller mediante:
 
-## 5. Variables de entorno en Vercel
+- `PUT /api/ordenes/configuracion/capacidad/ingresos-diarios`, body
+  `{"max_ingresos_diarios": ENTERO_POSITIVO}`.
+- `PUT /api/ordenes/configuracion/capacidad/mecanicos`, body
+  `{"max_ordenes_activas": ENTERO_POSITIVO}`.
 
-En el proyecto de Vercel, configurar como Environment Variables (Production):
+No inventar esos límites. Sin configuración, crear un ingreso o asignar un
+mecánico puede responder `409`. Preparar una orden visible para cada cuenta de
+prueba en staging para comprobar detalle/historial sin insertar datos durante
+la prueba de consultas. No copiar ni borrar datos de Neon como paso automático.
 
-| Variable | Valor |
-| --- | --- |
-| `MS1_DATABASE_URL` | DSN Neon base `taller_ms1` con `?sslmode=require` |
-| `MS2_DATABASE_URL` | DSN Neon base `taller_ms2` con `?sslmode=require` |
-| `MS3_DATABASE_URL` | DSN Neon base `taller_ms3` con `?sslmode=require` |
-| `MS4_DATABASE_URL` | DSN Neon base `taller_ms4` con `?sslmode=require` |
-| `MS1_JWT_SECRET_KEY` | Clave aleatoria ≥ 32 caracteres (HS256, compartida con MS2) |
-| `MS2_JWT_SECRET_KEY` | La MISMA clave que `MS1_JWT_SECRET_KEY` |
-| `MS1_JWT_ALGORITHM` | `HS256` |
-| `MS2_JWT_ALGORITHM` | `HS256` |
-| `GATEWAY_CORS_ORIGINS` | `https://tallerconect.vercel.app` (lista CSV, opcional) |
+## 6. Verificación para la aplicación móvil
 
-> `GATEWAY_MS1_URL`…`GATEWAY_MS4_URL` **no se escriben a mano**: las crea Vercel
-> automáticamente con los bindings de servicio definidos en `vercel.json`.
-> El campo `CORS_ORIGINS` de la gateway tolera CSV y JSON (no revienta el
-> arranque si llega como `a.com,b.com`).
+Completar en el `.env` local las variables `GATEWAY_URL` y
+`APP_TEST_{CLIENTE,MECANICO,ADMINISTRADOR}_{EMAIL,PASSWORD}` con cuentas de
+prueba de un solo rol. No usar las credenciales del panel Kubero.
 
-Generar clave JWT:
-
-```powershell
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+```bash
+python backend/scripts/prueba_integracion_app.py
+python backend/scripts/prueba_integracion_app.py --salida backend/salidas-integracion/cubero-01
 ```
 
+El directorio de salida debe ser nuevo. La prueba no sigue redirecciones y
+exige HTTPS fuera de localhost. Hace únicamente GET y el POST de login;
+este último puede registrar auditoría o actualizar contadores de acceso.
+Comprueba health, OpenAPI, `401` sin token con desafío Bearer, login y `/me`
+por rol, permisos de listados de vehículos y órdenes, y detalle, historial,
+vehículo y evidencias de la primera orden visible para cada rol.
+
+Salida: `0` si pasa todo, `1` si falla alguna comprobación, `2` si hay grupos
+omitidos porque no existen órdenes visibles (o falta configuración de CLI).
+No presenta una base vacía como prueba completa. No prueba escrituras,
+propiedad entre cuentas distintas, concurrencia ni subidas/descargas S3.
+
+Con `--salida` guarda `openapi.json` del despliegue y `muestras.json` con
+respuestas observadas, estado de la prueba y omisiones. Las muestras omiten
+JWT, correo, nombre, patente y observaciones; los listados se limitan al primer
+elemento. Son respuestas anonimizadas, no datos ficticios ni evidencia de
+consultas omitidas. `backend/salidas-integracion/` está excluido de Git.
+Revisar esos archivos antes de compartirlos con el equipo móvil.
+
+### Verificación local de la preparación (30-10-2026)
+
+Se construyeron para `linux/amd64` las imágenes backend y frontend con código
+de main `b05663d` y las herramientas de preparación. La selección de pruebas
+`test_scripts_despliegue`, `test_gateway_openapi`, `test_gateway_openapi_ejemplos`,
+`test_auth_api`, `test_ordenes_api` y `test_vehiculos_api` pasó en esa copia:
+332 pruebas. También había pasado en MartinH: 283 pruebas. Hubo avisos de
+deprecación de Starlette/httpx/AnyIO y de `HTTP_422_UNPROCESSABLE_ENTITY`.
+
+El migrador elevó cuatro bases PostgreSQL locales vacías a los heads de main:
+MS1 `0004_intentos_login_ms1`, MS2 `0011_ms2`, MS3 `0008_ms3`, MS4 `0001_ms4`.
+Se sembraron las cuentas y se creó una orden ficticia asignada en ese entorno.
+La prueba HTTP por Gateway terminó con cero fallos y cero grupos omitidos para
+los tres roles. Se verificaron además `/healthz`, `/`, una ruta SPA y el proxy
+`/api/health` de Nginx con `200`, y `/api/ordenes` sin token con `401`.
+Se reprodujo además una base MS2 parcial en `0007_ms2` sin la columna
+`historial_estado.envio_presupuesto_id`: el verificador informó ATRASADA y el
+migrador la llevó a `0011_ms2`, tras lo cual la consulta de esa columna funcionó.
+MS1/MS3/MS4, ya en head, admitieron la reejecución sin cambios de versión.
+Estas comprobaciones son **locales**, no verificaciones de Kubero.
+
+La construcción del frontend informó siete vulnerabilidades de dependencias
+(dos moderadas y cinco altas) y un bundle JS mayor que 500 kB. La auditoría `npm audit --omit=dev --json` identificó dos vulnerabilidades
+altas de producción: `follow-redirects` y `zod`, con correcciones disponibles.
+No se aplicó
+`npm audit fix` ni se cambiaron dependencias del producto como parte de la
+preparación. Revisar estos avisos antes de publicar.
+
+## 7. Contrato y entrega a Víctor
+
+En todos los casos usar `Authorization: Bearer <token>`.
+`POST /api/auth/login` recibe `email` y `password`; la respuesta vigente incluye
+`access_token`, `token_type` y `user`. `GET /api/auth/me` devuelve el usuario.
+
+| Consulta | Cliente | Mecánico | Administrador |
+| --- | --- | --- | --- |
+| GET /api/ordenes | Sus órdenes | Asignadas | Todas |
+| GET /api/ordenes/{id} y /historial | Propias | Asignadas | Todas |
+| GET /api/vehiculos | Propios | 403 | Todos |
+| GET /api/vehiculos/asignados | 403 | Asignados | 403 |
+| GET /api/vehiculos/{id} | Propios | Con orden asignada | Todos |
+| POST /api/ordenes | 403 | 403 | 201 con precondiciones válidas |
+| PUT /api/ordenes/{id}/mecanico | 403 | 403 | 200 con precondiciones válidas |
+| POST /api/vehiculos | 201 con datos válidos | 403 | 403 |
+
+Tabla de permisos implementados en el código; no certifica su funcionamiento
+en Kubero hasta ejecutar las pruebas. Las cuentas multirrol combinan alcances;
+la prueba exige cuentas de un solo rol para que sus resultados sean inequívocos.
+Las órdenes fuera de alcance se ocultan con `404`. Sin token, las rutas
+protegidas responden `401` con `WWW-Authenticate: Bearer`. Los errores de
+autenticación/autorización normalizados usan `{"detail":"No autenticado"}`
+y `{"detail":"No tienes permiso para realizar esta operación"}`.
+`PATCH /api/ordenes/{id}/estado` está limitado a la finalización 5→6 por el
+mecánico asignado; otras transiciones utilizan sus endpoints específicos.
+
+Las respuestas de órdenes conservan identificadores como `vehiculo_id`,
+`estado_codigo` y `mecanico_actual_id`. Obtener el vehículo con
+`GET /api/vehiculos/{vehiculo_id}`. Los ocho estados son: 1 Recibido,
+2 Esperando diagnóstico, 3 Esperando aprobación de presupuesto,
+4 Esperando repuestos, 5 En reparación, 6 Listo, 7 Entregado, 8 Cancelado.
+No se agregaron objetos anidados ni nombres de usuarios. Confirmar con Víctor
+si necesita otro contrato antes de implementar una ampliación.
+
+La entrega final debe incluir la URL pública **verificada**, `/docs`,
+`openapi.json`, muestras revisadas, permisos por rol y cambios correspondientes
+a la versión realmente desplegada. No afirmar que los endpoints exclusivos de
+main están incluidos en MartinH sin integrar y comprobar esa versión.
+
 ---
 
-## 6. Pasos de despliegue (Vercel)
+# Historial anterior: Vercel/Neon
 
-1. Hacer merge de la rama de trabajo (`Gustavo`) a `Develop` y luego a `main`.
-2. En Vercel: **Add New → Project**, importar el repo desde la rama `main`.
-3. Vercel detecta el `vercel.json` con los servicios. No es necesario build
-   command manual (Vite y FastAPI se detectan por framework).
-4. Agregar las variables de entorno de la Sección 5.
-5. Deploy. Vercel crea los servicios `frontend`, `backend`, `ms-auth`,
-   `ms-taller`, `ms-presupuestos`, `ms-evidencias` y los bindings internos.
-6. Configurar Neon (Sección 4) y ejecutar migraciones + seed.
-7. Verificar:
-   - `GET https://tallerconect.vercel.app/api/health` → `{"status":"ok"}`
-   - `POST https://tallerconect.vercel.app/api/auth/login` con
-     `cliente@pruebas.cl` → token JWT.
-   - `https://tallerconect.vercel.app/ms1/docs` carga Swagger MS1.
-   - Abrir `https://tallerconect.vercel.app/` → Login del frontend funciona
-     (usa `/api` relativo).
-
-### Despliegue local (desarrollo)
-
-```powershell
-# Backend (usa un .env local con DSNs locales)
-cd backend
-uvicorn gateway.main:app --reload --port 8000
-# Microservicios por separado (para desarrollo)
-uvicorn services.ms1_auth.main:app --reload --port 8001
-uvicorn services.ms2_taller.main:app --reload --port 8002
-uvicorn services.ms3_presupuestos.main:app --reload --port 8003
-uvicorn services.ms4_evidencias.main:app --reload --port 8004
-
-# Frontend (el proxy de Vite reenvía /api → localhost:8000)
-cd frontend
-npm run dev
-```
-
----
-
-## 7. Notas técnicas
-
-- **CORS**: la Gateway expone `Access-Control-Allow-Origin`. En Vercel el
-  frontend y la API comparten origen, pero la app móvil o previews
-  `*.vercel.app` quedan cubiertos por `allow_origin_regex`.
-- **Paths relativos**: el frontend usa `baseURL '/api'`; en producción se
-  resuelve contra el mismo dominio. `VITE_API_URL` queda disponible para
-  sobreescribir (ej. `https://tallerconect.vercel.app/api`).
-- **JWT**: HS256 compartido entre MS1 (genera) y MS2 (valida). Nunca subir los
-  secrets al repositorio.
-- **Entrypoints**: usar notación de módulo con puntos (`gateway.main:app`,
-  `services.ms1_auth.main:app`) relativa al root del servicio, y `rewrites`
-  internos del servicio para limpiar los prefijos `/msN`. No usar `routes` +
-  `transforms` para esto en FastAPI (deja el path original).
-- Archivos relacionados: `vercel.json` (servicios), `backend/.env.example`
-  (plantilla de variables), `backend/scripts/migrar_neon.ps1`,
-  `backend/scripts/seed_usuarios_prueba.py`.
-
----
+Las secciones siguientes se conservan como registro de verificaciones anteriores.
+Sus URLs, resultados y cifras no describen un despliegue actual en Kubero.
 
 ## 8. Última verificación de producción (2026-09-24)
 

@@ -1,0 +1,16 @@
+.git
+**/.env
+**/.env.*
+**/.venv
+**/venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/tests
+**/dist
+**/*.log
+**/.DS_Store
+.agents
+.opencode
+Sprint 0 - Entregables
+backend/salidas-integracion

@@ -3,13 +3,14 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los endpoints reales que enruta la Gateway hacia MS1 (Autenticación), MS2
-(Vehículos y Órdenes) y MS4 (Evidencias), con sus esquemas
-(`gateway/contratos`), la seguridad `bearerAuth` y el formato común de errores
-de la Gateway (`gateway.esquemas`).
+los endpoints reales que enruta la Gateway hacia los cuatro microservicios:
+MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 (Presupuestos,
+Repuestos, Proveedores e Inventario, en `gateway/openapi_ms3.py`) y MS4
+(Evidencias), con sus esquemas (`gateway/contratos`), la seguridad `bearerAuth`
+y el formato común de errores de la Gateway (`gateway.esquemas`).
 
-Incluye el contrato mínimo de decisiones MS3–MS2; los contratos generales de
-presupuestos e integración con facturación conservan su alcance previo.
+`tests/test_gateway_openapi.py` compara este documento con el OpenAPI real de
+los cuatro servicios: un endpoint nuevo sin documentar hace fallar la prueba.
 """
 from __future__ import annotations
 
@@ -27,13 +28,22 @@ from shared.openapi_ordenes import agregar_ejemplos_ordenes
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta, DecisionAplicacionPendiente,
     DecisionOrdenSolicitud, DecisionPresupuestoVerificada,
+    EnvioPresupuestoSolicitud,
 )
 
 _TITULO = "SGTM — API Gateway"
 _VERSION = "0.1.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
-Documenta los endpoints reales que la Gateway enruta hacia MS1 (Autenticación y \
-Usuarios), MS2 (Vehículos y Órdenes) y MS4 (Evidencias multimedia).
+Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
+microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
+(Presupuestos, Repuestos, Proveedores e Inventario) y MS4 (Evidencias multimedia).
+
+| Prefijo | Microservicio |
+|---|---|
+| `/api/auth` | MS1 — Autenticación y Usuarios |
+| `/api/vehiculos`, `/api/ordenes` | MS2 — Vehículos y Órdenes de Trabajo |
+| `/api/presupuestos`, `/api/repuestos`, `/api/proveedores`, `/api/inventario` | MS3 — Presupuestos e Inventario |
+| `/api/evidencias` | MS4 — Evidencia Multimedia |
 
 ## URL base
 
@@ -88,6 +98,13 @@ _TAGS = [
         "description": "Registro, login y usuario actual (MS1).",
     },
     {
+        "name": "Usuarios",
+        "description": (
+            "Consulta de cuentas y asignación o retiro de roles restringidos "
+            "(MS1, solo Administrador)."
+        ),
+    },
+    {
         "name": "Vehículos",
         "description": (
             "Registro, consulta por rol y actualización de vehículos (MS2)."
@@ -110,7 +127,29 @@ _TAGS = [
     },
     {
         "name": "Presupuestos",
-        "description": "Consulta y reintento de la decisión inicial de presupuesto (MS3).",
+        "description": (
+            "Presupuesto único por orden con versiones inmutables una vez "
+            "enviadas, ítems, envío al cliente, decisión y coordinación con "
+            "MS2 (MS3)."
+        ),
+    },
+    {
+        "name": "Repuestos",
+        "description": (
+            "Catálogo de repuestos, umbral particular y trazabilidad "
+            "repuesto–proveedor (MS3)."
+        ),
+    },
+    {
+        "name": "Proveedores",
+        "description": "Proveedores (distribuidores) de repuestos y su trazabilidad (MS3).",
+    },
+    {
+        "name": "Inventario",
+        "description": (
+            "Movimientos de stock idempotentes, disponibilidad, reservas, "
+            "consumos y alertas de stock bajo (MS3)."
+        ),
     },
     {
         "name": "Gateway",
@@ -123,6 +162,7 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("LoginSolicitud", contratos_auth.LoginSolicitud),
     ("UsuarioRespuesta", contratos_auth.UsuarioRespuesta),
     ("TokenRespuesta", contratos_auth.TokenRespuesta),
+    ("RolAsignarSolicitud", contratos_auth.RolAsignarSolicitud),
     ("VehiculoCrear", contratos_vehiculos.VehiculoCrear),
     ("VehiculoActualizar", contratos_vehiculos.VehiculoActualizar),
     ("VehiculoRespuesta", contratos_vehiculos.VehiculoRespuesta),
@@ -164,6 +204,7 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("DecisionPresupuestoVerificada", DecisionPresupuestoVerificada),
     ("AplicacionDecisionRespuesta", AplicacionDecisionRespuesta),
     ("DecisionAplicacionPendiente", DecisionAplicacionPendiente),
+    ("EnvioPresupuestoSolicitud", EnvioPresupuestoSolicitud),
 ]
 
 _PARAMETRO_X_REQUEST_ID: dict[str, object] = {
@@ -1108,7 +1149,193 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
         },
     }
     caminos.update(_caminos_decisiones(error_404_recurso))
+    caminos.update(_caminos_usuarios())
+    caminos["/api/ordenes/{orden_id}/envios-presupuesto"] = {
+        "post": _operacion_envio_presupuesto(error_404_recurso)
+    }
     return caminos
+
+
+_PARAMETRO_USUARIO_ID: dict[str, object] = {
+    "name": "usuario_id",
+    "in": "path",
+    "required": True,
+    "description": "Identificador del usuario (MS1).",
+    "schema": {"type": "integer", "example": 7},
+}
+
+_PARAMETRO_ROL: dict[str, object] = {
+    "name": "rol",
+    "in": "path",
+    "required": True,
+    "description": "Rol a retirar.",
+    "schema": {
+        "type": "string",
+        "enum": ["cliente", "mecanico", "administrador"],
+        "example": "mecanico",
+    },
+}
+
+_EJEMPLO_USUARIO_MECANICO: dict[str, object] = {
+    "id": 7,
+    "email": "ana@correo.cl",
+    "full_name": "Ana Pérez",
+    "roles": ["cliente", "mecanico"],
+    "is_active": True,
+}
+
+_ERROR_404_USUARIO: dict[str, object] = {
+    "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")],
+}
+
+
+def _operacion_usuarios(*, ejemplo: object, **kwargs: object) -> dict[str, object]:
+    """Operación de administración de usuarios (MS1) con su ejemplo de éxito."""
+    operacion = _operacion(tag="Usuarios", requiere_auth=True, **kwargs)  # type: ignore[arg-type]
+    operacion["responses"]["200"]["content"]["application/json"]["examples"] = {
+        "ejemplo": {"value": ejemplo}
+    }
+    return operacion
+
+
+def _caminos_usuarios() -> dict[str, dict[str, object]]:
+    """Administración de usuarios y roles de MS1 (solo Administrador)."""
+    errores_admin = {
+        "401": "JWT ausente o inválido",
+        "403": "Se requiere rol Administrador",
+    }
+    asignar = _operacion_usuarios(
+        resumen="Asignar un rol restringido a un usuario",
+        descripcion=(
+            "Solo Administrador. Asigna un rol a una cuenta existente; un rol "
+            "desconocido responde 422. La asignación queda registrada con el "
+            "administrador que la hizo."
+        ),
+        operation_id="asignar_rol_usuario",
+        cuerpo="RolAsignarSolicitud",
+        parametros_extra=[_PARAMETRO_USUARIO_ID],
+        respuestas_ok={
+            "200": _respuesta("Usuario con el rol asignado.", _ref("UsuarioRespuesta"))
+        },
+        errores_ms={**errores_admin, "422": "Rol desconocido o body inválido"},
+        descripcion_404="El usuario no existe.",
+        esquema_404=_ERROR_404_USUARIO,
+        ejemplo=_EJEMPLO_USUARIO_MECANICO,
+    )
+    asignar["requestBody"]["content"]["application/json"]["examples"] = {
+        "mecanico": {"value": {"rol": "mecanico"}}
+    }
+    return {
+        "/api/auth/usuarios": {
+            "get": _operacion_usuarios(
+                resumen="Listar todos los usuarios",
+                descripcion=(
+                    "Solo Administrador. Una cuenta sin roles se lista con `roles: []`."
+                ),
+                operation_id="listar_usuarios",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Usuarios registrados.",
+                        {"type": "array", "items": _ref("UsuarioRespuesta")},
+                    )
+                },
+                errores_ms=errores_admin,
+                ejemplo=[_EJEMPLO_USUARIO_MECANICO],
+            )
+        },
+        "/api/auth/usuarios/{usuario_id}": {
+            "get": _operacion_usuarios(
+                resumen="Consultar un usuario por su identificador",
+                descripcion="Solo Administrador.",
+                operation_id="consultar_usuario",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_USUARIO_ID],
+                respuestas_ok={
+                    "200": _respuesta("Usuario encontrado.", _ref("UsuarioRespuesta"))
+                },
+                errores_ms={**errores_admin, "422": "Identificador inválido"},
+                descripcion_404="El usuario no existe.",
+                esquema_404=_ERROR_404_USUARIO,
+                ejemplo=_EJEMPLO_USUARIO_MECANICO,
+            )
+        },
+        "/api/auth/usuarios/{usuario_id}/roles": {"post": asignar},
+        "/api/auth/usuarios/{usuario_id}/roles/{rol}": {
+            "delete": _operacion_usuarios(
+                resumen="Retirar un rol restringido a un usuario",
+                descripcion=(
+                    "Solo Administrador. Si era el último rol, la cuenta queda con "
+                    "`roles: []` y la respuesta no falla."
+                ),
+                operation_id="retirar_rol_usuario",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_USUARIO_ID, _PARAMETRO_ROL],
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Usuario sin el rol retirado.", _ref("UsuarioRespuesta")
+                    )
+                },
+                errores_ms={
+                    **errores_admin,
+                    "422": "Rol desconocido o identificador inválido",
+                },
+                descripcion_404="El usuario no existe.",
+                esquema_404=_ERROR_404_USUARIO,
+                ejemplo={**_EJEMPLO_USUARIO_MECANICO, "roles": ["cliente"]},
+            )
+        },
+    }
+
+
+def _operacion_envio_presupuesto(error_404: dict[str, object]) -> dict[str, object]:
+    """Coordinación MS3 -> MS2 del primer envío de presupuesto (orden 2 -> 3)."""
+    operacion = _operacion(
+        tag="Órdenes",
+        resumen="Aplicar el envío inicial de presupuesto verificado en MS3",
+        descripcion=(
+            "Solo Administrador; lo invoca MS3 al enviar la primera versión. Recibe "
+            "solo `presupuesto_id`, verifica el envío en MS3 con el JWT original y "
+            "deriva la transición 2 -> 3; no acepta actor ni estado destino. Es "
+            "idempotente: repetir la referencia devuelve la aplicación registrada."
+        ),
+        operation_id="aplicar_envio_presupuesto",
+        cuerpo="EnvioPresupuestoSolicitud",
+        respuestas_ok={
+            "200": _respuesta(
+                "Transición aplicada (o ya aplicada).",
+                _ref("AplicacionEnvioPresupuestoRespuesta"),
+            )
+        },
+        errores_ms={
+            "401": "JWT ausente o inválido",
+            "403": "Se requiere rol Administrador",
+            "409": "Estado incompatible con el envío inicial",
+            "422": "Datos inválidos",
+        },
+        requiere_auth=True,
+        con_orden_id=True,
+        descripcion_404="Orden o envío inicial no encontrado.",
+        esquema_404=error_404,
+    )
+    operacion["requestBody"]["content"]["application/json"]["examples"] = {
+        "referencia": {"value": {"presupuesto_id": 7}}
+    }
+    operacion["responses"]["200"]["content"]["application/json"]["examples"] = {
+        "ejemplo": {
+            "value": {
+                "presupuesto_id": 7,
+                "orden_id": 31,
+                "estado_aplicado": 3,
+                "historial_id": 40,
+            }
+        }
+    }
+    operacion["responses"]["503"] = _respuesta(
+        "No fue posible verificar el envío en MS3; o pool de la Gateway agotado.",
+        {"oneOf": [_ref("ErrorDetalle"), _ref("ErrorRespuesta")]},
+    )
+    return operacion
 
 
 def _caminos_decisiones(error_404: dict[str, object]) -> dict[str, dict[str, object]]:
@@ -1202,9 +1429,13 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 22 endpoints de negocio, la seguridad `bearerAuth` y los
-    esquemas de `gateway/contratos` y `gateway/esquemas`.
+    agrega los endpoints de negocio de los cuatro microservicios, la
+    seguridad `bearerAuth` y los esquemas de `gateway/contratos` y
+    `gateway/esquemas`.
     """
+    # Import diferido: `openapi_ms3` reutiliza los ayudantes de este módulo.
+    from gateway.openapi_ms3 import caminos_ms3, esquemas_ms3
+
     if getattr(app, "openapi_schema", None) is not None:
         return app.openapi_schema
 
@@ -1219,6 +1450,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         **esquema["paths"],
         **_caminos_documentados(),
         **_caminos_evidencias(),
+        **caminos_ms3(),
     }
 
     componentes = esquema.setdefault("components", {})
@@ -1233,6 +1465,10 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         **componentes.get("schemas", {}),
         **_esquemas_documentados(),
     }
+    for nombre, definicion in esquemas_ms3().items():
+        existente = componentes["schemas"].setdefault(nombre, definicion)
+        if existente.get("properties") != definicion.get("properties"):
+            raise ValueError(f"Esquema '{nombre}' de MS3 choca con otro contrato")
 
     agregar_ejemplos_ordenes(esquema, prefijo="/api")
     agregar_ejemplos_gateway(esquema)

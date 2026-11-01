@@ -23,8 +23,9 @@ gateway/
 ├── errores.py       Formato común de errores + middleware del 500 (dentro de CORS)
 ├── middleware.py    Cabecera X-Request-ID en cada petición
 ├── openapi.py       Reescribe el Swagger con los contratos reales de MS1, MS2 y MS4
+├── openapi_ms3.py   Documentación de MS3 (presupuestos, repuestos, proveedores, inventario)
 ├── openapi_ejemplos.py Ejemplos reales, respuestas comunes y X-Request-ID
-├── contratos/       Copias de los contratos HTTP de MS1, MS2 y MS4 (para documentar)
+├── contratos/       Copias de los contratos HTTP de MS1..MS4 (para documentar)
 └── routers/
     ├── health.py    GET /  y  GET /api/health (endpoints propios de la Gateway)
     └── proxy.py     Reenvío de /api/* hacia los microservicios
@@ -32,8 +33,11 @@ gateway/
 
 ## Documentación
 
-El Swagger de la Gateway publica los contratos reales que enruta (Auth,
-Vehículos, Órdenes y Evidencias), con sus esquemas, ejemplos y el botón Authorize:
+El Swagger de la Gateway publica los contratos reales que enruta de los cuatro
+microservicios (Autenticación, Usuarios, Vehículos, Órdenes, Presupuestos,
+Repuestos, Proveedores, Inventario y Evidencias), con sus esquemas, ejemplos y el
+botón Authorize. Desde la Semana 7 cubre las 71 operaciones de negocio y una
+prueba lo compara con el OpenAPI real de MS1..MS4:
 
 - `GET /docs` — Swagger UI.
 - `GET /openapi.json` — esquema OpenAPI completo.
@@ -51,8 +55,8 @@ esquema.
 
 Los contratos viven en `gateway/contratos/` (la Gateway no importa código de
 los microservicios). `tests/test_gateway_openapi.py` compara esas copias con
-los esquemas reales de MS1 y MS2: si alguien cambia un campo, el test falla y
-avisa que la documentación quedó desactualizada.
+los esquemas reales de MS1, MS2, MS3 y MS4: si alguien cambia un campo, el test
+falla y avisa que la documentación quedó desactualizada.
 
 ## Cómo se enruta
 

@@ -754,6 +754,71 @@ _EJEMPLO_SERVICIOS_DEGRADADO: dict[str, Any] = {
 }
 
 
+_EJEMPLO_DIAGNOSTICO_OK: dict[str, Any] = {
+    "summary": "MS4 con proceso, base y almacenamiento en orden",
+    "value": {
+        "servicio": "ms4_evidencias",
+        "descripcion": "Evidencia Multimedia",
+        "estado": "ok",
+        "comprobaciones": {
+            "proceso": {"estado": "ok", "latencia_ms": 2},
+            "base": {"estado": "ok", "latencia_ms": 6},
+            "almacenamiento": {"estado": "ok", "latencia_ms": 11},
+        },
+        "prefijos": ["/api/evidencia", "/api/evidencias"],
+        "timeouts": {"conexion": 3.0, "lectura": 60.0, "escritura": 60.0, "health": 2.0},
+        "comprobado_en": "2026-10-31T23:40:00+00:00",
+    },
+}
+
+_EJEMPLO_DIAGNOSTICO_DEGRADADO: dict[str, Any] = {
+    "summary": "503: MS3 levanta pero su base no responde",
+    "value": {
+        "servicio": "ms3_presupuestos",
+        "descripcion": "Presupuestos, Repuestos, Proveedores e Inventario",
+        "estado": "degradado",
+        "comprobaciones": {
+            "proceso": {"estado": "ok", "latencia_ms": 3},
+            "base": {"estado": "error", "latencia_ms": 15, "codigo_http": 500},
+        },
+        "prefijos": [
+            "/api/inventario",
+            "/api/presupuesto",
+            "/api/presupuestos",
+            "/api/proveedores",
+            "/api/repuestos",
+        ],
+        "timeouts": {"conexion": 3.0, "lectura": 15.0, "escritura": 15.0, "health": 2.0},
+        "comprobado_en": "2026-10-31T23:40:00+00:00",
+    },
+}
+
+_EJEMPLO_DIAGNOSTICO_CAIDO: dict[str, Any] = {
+    "summary": "503: MS2 no responde ni al health check del proceso",
+    "value": {
+        "servicio": "ms2_taller",
+        "descripcion": "Vehículos y Órdenes de Trabajo",
+        "estado": "caido",
+        "comprobaciones": {
+            "proceso": {"estado": "caido"},
+            "base": {"estado": "caido"},
+        },
+        "prefijos": [
+            "/api/clientes",
+            "/api/mecanicos",
+            "/api/orden",
+            "/api/ordenes",
+            "/api/vehiculo",
+            "/api/vehiculos",
+        ],
+        "timeouts": {"conexion": 3.0, "lectura": 15.0, "escritura": 15.0, "health": 2.0},
+        "comprobado_en": "2026-10-31T23:40:00+00:00",
+    },
+}
+
+_SERVICIOS_DIAGNOSTICO = ["ms1_auth", "ms2_taller", "ms3_presupuestos", "ms4_evidencias"]
+
+
 def _componentes(esquema: dict[str, Any]) -> dict[str, Any]:
     return esquema.setdefault("components", {})
 
@@ -899,6 +964,45 @@ def _documentar_health(esquema: dict[str, Any]) -> None:
     )
 
 
+def _documentar_diagnostico(esquema: dict[str, Any]) -> None:
+    """Ejemplos y parámetro de `GET /api/health/servicios/{servicio}`."""
+    diagnostico = esquema.get("paths", {}).get("/api/health/servicios/{servicio}", {}).get("get")
+    if not isinstance(diagnostico, dict):
+        return
+    for parametro in diagnostico.get("parameters", []):
+        if parametro.get("name") == "servicio":
+            parametro["description"] = "Nombre público del microservicio."
+            parametro["schema"] = {
+                "type": "string",
+                "enum": list(_SERVICIOS_DIAGNOSTICO),
+                "example": "ms3_presupuestos",
+            }
+    respuestas = diagnostico.setdefault("responses", {})
+    for codigo, ejemplos in (
+        ("200", {"diagnostico_ok": _EJEMPLO_DIAGNOSTICO_OK}),
+        (
+            "503",
+            {
+                "diagnostico_degradado": _EJEMPLO_DIAGNOSTICO_DEGRADADO,
+                "diagnostico_caido": _EJEMPLO_DIAGNOSTICO_CAIDO,
+            },
+        ),
+    ):
+        respuesta = respuestas.setdefault(codigo, {"description": ""})
+        media = respuesta.setdefault("content", {}).setdefault(_JSON, {})
+        media.setdefault("schema", {"type": "object"})
+        _agregar_cabecera(respuesta, {"Cache-Control": _CABECERA_CACHE_CONTROL})
+        _agregar_ejemplos(media, ejemplos)
+    no_encontrado = respuestas.get("404")
+    if isinstance(no_encontrado, dict):
+        no_encontrado["content"] = {
+            _JSON: {
+                "schema": {"$ref": "#/components/schemas/ErrorRespuesta"},
+                "examples": {"servicio_desconocido": _ref_ejemplo("error_ruta_no_encontrada")},
+            }
+        }
+
+
 def _documentar_x_request_id(esquema: dict[str, Any]) -> None:
     """Declara la cabecera `X-Request-ID` en todas las respuestas de `/api`."""
     for ruta, item in esquema.get("paths", {}).items():
@@ -925,4 +1029,5 @@ def agregar_ejemplos_gateway(esquema: dict[str, Any]) -> None:
     _aplicar_ejemplos_operaciones(esquema)
     _aplicar_ejemplos_errores_comunes(esquema)
     _documentar_health(esquema)
+    _documentar_diagnostico(esquema)
     _documentar_x_request_id(esquema)

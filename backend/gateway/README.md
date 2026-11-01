@@ -204,6 +204,7 @@ uvicorn gateway.main:app --reload --port 8000
 - `GET http://localhost:8000/` — descripción y prefijos `/api/*` que enruta.
 - `GET http://localhost:8000/api/health` — `{"status": "ok", "servicio": "gateway"}`.
 - `GET http://localhost:8000/api/health/servicios` — estado de los 4 microservicios.
+- `GET http://localhost:8000/api/health/servicios/ms3_presupuestos` — diagnóstico de uno.
 - `http://localhost:8000/docs` — Swagger de la Gateway.
 
 ## Health checks
@@ -234,6 +235,14 @@ Responde `200` con `"status": "ok"` si los cuatro están `ok`, y `503` con
 `codigo_http`), `tiempo_agotado` (superó el timeout) y `caido` (sin conexión).
 Toda respuesta trae `Cache-Control: no-store` y `X-Request-ID`; el body no
 expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
+
+- `GET /api/health/servicios/{servicio}` (Semana 7) — diagnóstico de un solo
+  servicio: comprueba por separado `proceso` (`/health`), `base`
+  (`/health/db`) y, en MS4, `almacenamiento` (`/health/storage`), con la
+  latencia de cada una, el timeout que la Gateway aplica al servicio y sus
+  prefijos. `estado` es `ok` (200), `degradado` (el proceso vive pero falla una
+  dependencia, 503) o `caido` (ni el proceso responde, 503). Las comprobaciones
+  posibles están en el catálogo de `rutas.py` (`comprobaciones`).
 
 ## Variables de entorno
 

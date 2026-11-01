@@ -41,6 +41,12 @@ class Microservicio:
     alias: tuple[str, ...] = ()
     # Atributo de `settings` con el timeout propio del servicio (puede ser None).
     variable_timeout: str = ""
+    # Comprobaciones de diagnóstico: (nombre, camino interno del health check).
+    # Todos los servicios exponen `/health` (proceso) y `/health/db` (base).
+    comprobaciones: tuple[tuple[str, str], ...] = (
+        ("proceso", "/health"),
+        ("base", "/health/db"),
+    )
 
     @property
     def todos_los_prefijos(self) -> tuple[str, ...]:
@@ -78,6 +84,12 @@ MICROSERVICIOS: tuple[Microservicio, ...] = (
         prefijos=("evidencias",),
         alias=("evidencia",),
         variable_timeout="MS4_TIMEOUT_SECONDS",
+        # MS4 además depende del almacenamiento de objetos (MinIO/S3).
+        comprobaciones=(
+            ("proceso", "/health"),
+            ("base", "/health/db"),
+            ("almacenamiento", "/health/storage"),
+        ),
     ),
 )
 

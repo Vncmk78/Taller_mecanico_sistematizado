@@ -208,6 +208,45 @@ Estados por servicio:
 - `tiempo_agotado` — superó el timeout de 2 s.
 - `caido` — sin conexión (servicio apagado o no arrancado).
 
+### GET `/api/health/servicios/{servicio}` (diagnóstico, Semana 7)
+
+Diagnóstico de **un** microservicio (`ms1_auth`, `ms2_taller`,
+`ms3_presupuestos` o `ms4_evidencias`). Comprueba en paralelo y por separado:
+
+| Comprobación | Camino interno | Servicios |
+|---|---|---|
+| `proceso` | `/health` | Los cuatro |
+| `base` | `/health/db` | Los cuatro |
+| `almacenamiento` | `/health/storage` (MinIO/S3) | Solo `ms4_evidencias` |
+
+```json
+{
+  "servicio": "ms3_presupuestos",
+  "descripcion": "Presupuestos, Repuestos, Proveedores e Inventario",
+  "estado": "degradado",
+  "comprobaciones": {
+    "proceso": { "estado": "ok", "latencia_ms": 3 },
+    "base": { "estado": "error", "latencia_ms": 15, "codigo_http": 500 }
+  },
+  "prefijos": ["/api/inventario", "/api/presupuesto", "/api/presupuestos", "/api/proveedores", "/api/repuestos"],
+  "timeouts": { "conexion": 3.0, "lectura": 15.0, "escritura": 15.0, "health": 2.0 },
+  "comprobado_en": "2026-10-31T23:40:00+00:00"
+}
+```
+
+- Estado de cada comprobación: `ok`, `error` (respondió con otro código; trae
+  `codigo_http`), `tiempo_agotado` o `caido`.
+- `estado` general: `ok` (todo responde, `200`), `degradado` (el proceso vive
+  pero falla la base o el almacenamiento, `503`) o `caido` (ni el proceso
+  responde, `503`).
+- `timeouts` son los que la Gateway aplica a ese servicio (incluye
+  `GATEWAY_MS<n>_TIMEOUT_SECONDS` si está definido).
+- Un nombre desconocido responde `404 RUTA_NO_ENCONTRADA` sin consultar a nadie.
+- `Cache-Control: no-store`; no expone URLs internas (el detalle queda en el log).
+
+Uso típico ante un `502`/`504`: consultar el diagnóstico del servicio que
+aparece en el log de la Gateway para saber si cayó el proceso o una dependencia.
+
 ## Rutas de Presupuestos y Evidencias
 
 La Gateway decide el destino por el **primer segmento** de la ruta y reenvía

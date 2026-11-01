@@ -7,32 +7,42 @@ bajo `/api/*` se reenvía a un microservicio.
 microservicios. `/api/health/servicios` consulta el `/health/db` de los cuatro
 microservicios en paralelo con el cliente HTTPX compartido y devuelve el estado
 de cada uno (decisión 8 de `docs/estudio-httpx-proxy.md`).
+
+`/api/health/servicios/{servicio}` (Semana 7, decisión R5 de
+`docs/estudio-resiliencia-timeouts-retries.md`) es el diagnóstico de UN
+servicio: comprueba por separado el proceso (`/health`), la base (`/health/db`)
+y, en MS4, el almacenamiento (`/health/storage`), con la latencia de cada uno,
+el timeout que la Gateway le aplica y sus prefijos públicos. Así se distingue
+"el servicio no levanta" de "levanta pero su base o su almacenamiento fallan".
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
+from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from gateway.cliente_http import obtener_cliente
+from gateway.cliente_http import obtener_cliente, timeout_para
 from gateway.config import settings
-from gateway.rutas import RUTAS
+from gateway.errores import RUTA_NO_ENCONTRADA, respuesta_error
+from gateway.rutas import (
+    MICROSERVICIOS,
+    MICROSERVICIOS_POR_NOMBRE,
+    Microservicio,
+    prefijos_publicos,
+)
 
 logger = logging.getLogger("gateway")
 
 router = APIRouter()
 
-# Nombre público de cada microservicio -> URL base (se leen de la configuración).
-SERVICIOS: dict[str, str] = {
-    "ms1_auth": settings.MS1_URL,
-    "ms2_taller": settings.MS2_URL,
-    "ms3_presupuestos": settings.MS3_URL,
-    "ms4_evidencias": settings.MS4_URL,
-}
+# Nombre público de cada microservicio -> URL base. Sale del catálogo de
+# `gateway.rutas`, el mismo que usa el proxy: no hay dos listas que mantener.
+SERVICIOS: dict[str, str] = {servicio.nombre: servicio.url for servicio in MICROSERVICIOS}
 
 
 @router.get("/", tags=["info"])
@@ -42,8 +52,8 @@ async def indice() -> dict[str, object]:
         "servicio": "SGTM — API Gateway",
         "estado": "operativo",
         "microservicios": {
-            nombre: _prefijos_publicos(base)
-            for nombre, base in SERVICIOS.items()
+            servicio.nombre: prefijos_publicos(servicio)
+            for servicio in MICROSERVICIOS
         },
         "ejemplos": [
             "/api/health",
@@ -51,6 +61,11 @@ async def indice() -> dict[str, object]:
             "/api/auth/login",
             "/api/auth/me",
             "/api/vehiculos",
+            "/api/ordenes",
+            "/api/presupuestos",
+            "/api/repuestos",
+            "/api/inventario/alertas",
+            "/api/evidencias?orden_id=31",
         ],
     }
 
@@ -84,13 +99,112 @@ async def health_servicios() -> JSONResponse:
     )
 
 
-def _prefijos_publicos(base: str) -> list[str]:
-    """Prefijos `/api/*` que la tabla de rutas enruta hacia `base`, ordenados."""
-    return sorted(
-        f"/api/{prefijo}"
-        for prefijo, destino in RUTAS.items()
-        if destino == base
+@router.get(
+    "/api/health/servicios/{servicio}",
+    tags=["health"],
+    responses={
+        200: {"description": "Todas las comprobaciones del servicio respondieron OK."},
+        404: {"description": "Servicio desconocido (RUTA_NO_ENCONTRADA)."},
+        503: {"description": "Alguna comprobación falló: `estado` es `degradado` o `caido`."},
+    },
+)
+async def diagnostico_servicio(servicio: str, request: Request) -> JSONResponse:
+    """Diagnóstico de un microservicio: proceso, base y (MS4) almacenamiento.
+
+    `servicio` es el nombre público: `ms1_auth`, `ms2_taller`,
+    `ms3_presupuestos` o `ms4_evidencias`. Las comprobaciones corren en
+    paralelo, cada una con `GATEWAY_HEALTH_TIMEOUT_SECONDS`. El body nunca
+    expone URLs internas: el detalle de cada fallo queda en el log.
+    """
+    destino = MICROSERVICIOS_POR_NOMBRE.get(servicio.lower())
+    if destino is None:
+        return respuesta_error(
+            request,
+            estado=404,
+            codigo=RUTA_NO_ENCONTRADA,
+            detalle="Servicio desconocido. Use ms1_auth, ms2_taller, ms3_presupuestos o ms4_evidencias.",
+        )
+
+    resultados = await asyncio.gather(
+        *(
+            _sondear(destino.nombre, destino.url, camino)
+            for _, camino in destino.comprobaciones
+        )
     )
+    comprobaciones = {
+        nombre: resultado
+        for (nombre, _), resultado in zip(destino.comprobaciones, resultados)
+    }
+    estado = _estado_general(comprobaciones)
+    return JSONResponse(
+        content={
+            "servicio": destino.nombre,
+            "descripcion": destino.descripcion,
+            "estado": estado,
+            "comprobaciones": comprobaciones,
+            "prefijos": prefijos_publicos(destino),
+            "timeouts": _timeouts_publicos(destino),
+            "comprobado_en": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        },
+        status_code=200 if estado == "ok" else 503,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _estado_general(comprobaciones: dict[str, dict[str, object]]) -> str:
+    """`ok` si todo responde; `caido` si ni el proceso responde; si no, `degradado`."""
+    if all(c["estado"] == "ok" for c in comprobaciones.values()):
+        return "ok"
+    if comprobaciones.get("proceso", {}).get("estado") in {"caido", "tiempo_agotado"}:
+        return "caido"
+    return "degradado"
+
+
+def _timeouts_publicos(servicio: Microservicio) -> dict[str, float]:
+    """Timeouts que la Gateway aplica al servicio (segundos), para diagnóstico."""
+    timeout = timeout_para(servicio.prefijos[0])
+    return {
+        "conexion": timeout.connect,
+        "lectura": timeout.read,
+        "escritura": timeout.write,
+        "health": settings.HEALTH_TIMEOUT_SECONDS,
+    }
+
+
+async def _sondear(nombre: str, base: str, camino: str) -> dict[str, object]:
+    """Consulta `{base}{camino}` y devuelve `{estado, latencia_ms, codigo_http?}`.
+
+    Estados: `ok` (200), `error` (respondió con otro código; incluye
+    `codigo_http`), `tiempo_agotado` y `caido` (sin conexión). Nunca lanza.
+    """
+    inicio = time.perf_counter()
+    try:
+        respuesta = await obtener_cliente().get(
+            f"{base.rstrip('/')}{camino}",
+            timeout=httpx.Timeout(settings.HEALTH_TIMEOUT_SECONDS),
+        )
+    except httpx.TimeoutException as exc:
+        logger.warning(
+            "Diagnóstico: %s %s superó el timeout (%s)", nombre, camino, type(exc).__name__
+        )
+        return {"estado": "tiempo_agotado"}
+    except httpx.RequestError as exc:
+        logger.warning(
+            "Diagnóstico: %s %s no respondió (%s)", nombre, camino, type(exc).__name__
+        )
+        return {"estado": "caido"}
+    except Exception:
+        logger.exception("Diagnóstico: error inesperado al consultar %s %s", nombre, camino)
+        return {"estado": "caido"}
+
+    latencia_ms = int(round((time.perf_counter() - inicio) * 1000))
+    if respuesta.status_code == 200:
+        return {"estado": "ok", "latencia_ms": latencia_ms}
+    return {
+        "estado": "error",
+        "latencia_ms": latencia_ms,
+        "codigo_http": respuesta.status_code,
+    }
 
 
 async def _consultar(nombre: str, base: str) -> dict[str, object]:

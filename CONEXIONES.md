@@ -194,6 +194,10 @@ python scripts/seed_usuarios_prueba.py
 
 ## 5. Variables de entorno en Vercel
 
+> Referencia completa de todas las variables (Gateway, MS1..MS4, MinIO y
+> frontend) y de las direcciones internas entre servicios:
+> [`backend/docs/variables-entorno-y-direcciones.md`](backend/docs/variables-entorno-y-direcciones.md).
+
 En el proyecto de Vercel, configurar como Environment Variables (Production):
 
 | Variable | Valor |

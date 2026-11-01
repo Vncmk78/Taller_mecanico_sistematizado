@@ -30,6 +30,8 @@ from gateway.errores import (
     mapear_error_httpx,
     respuesta_error,
 )
+from gateway.rutas import nombre_servicio
+from gateway.rutas import primer_segmento as _primer_segmento
 from gateway.rutas import resolver_microservicio
 
 logger = logging.getLogger("gateway")
@@ -136,7 +138,7 @@ async def proxy(ruta: str, request: Request) -> Response:
     (riesgo 4.3): la Gateway carga el multipart en memoria hasta el límite; los
     videos no entran por acá, usan el flujo C (POST prefirmado, Semana 6+).
     """
-    primer_segmento = ruta.split("/", 1)[0].lower()
+    primer_segmento = _primer_segmento(ruta)
     base = resolver_microservicio(ruta)
     if base is None:
         return respuesta_error(
@@ -203,20 +205,23 @@ async def proxy(ruta: str, request: Request) -> Response:
             detalle=MENSAJE_CONTENT_LENGTH_INVALIDA,
         )
 
+    timeout = timeout_para(primer_segmento)
     try:
         respuesta = await obtener_cliente().request(
             method=request.method,
             url=destino,
             headers=cabeceras,
             content=cuerpo,
-            timeout=timeout_para(primer_segmento),
+            timeout=timeout,
         )
     except httpx.RequestError as exc:
-        # Solo se loguea el nombre de la excepción y el request_id: nunca la
-        # URL interna ni el texto del error.
+        # Servicio (nombre público), excepción, timeout aplicado y request_id:
+        # nunca la URL interna ni el texto del error (decisión R4).
         logger.warning(
-            "Fallo de red hacia el microservicio: %s (request_id=%s)",
+            "Fallo de red hacia el microservicio %s: %s (timeout_lectura=%ss, request_id=%s)",
+            nombre_servicio(primer_segmento) or "-",
             type(exc).__name__,
+            timeout.read,
             request_id,
         )
         estado, codigo, detalle = mapear_error_httpx(exc)

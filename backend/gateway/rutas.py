@@ -39,6 +39,8 @@ class Microservicio:
     prefijos: tuple[str, ...]
     # Prefijos heredados que se reenvían igual al servicio.
     alias: tuple[str, ...] = ()
+    # Atributo de `settings` con el timeout propio del servicio (puede ser None).
+    variable_timeout: str = ""
 
     @property
     def todos_los_prefijos(self) -> tuple[str, ...]:
@@ -51,6 +53,7 @@ MICROSERVICIOS: tuple[Microservicio, ...] = (
         descripcion="Autenticación y Usuarios",
         url=settings.MS1_URL,
         prefijos=("auth",),
+        variable_timeout="MS1_TIMEOUT_SECONDS",
     ),
     Microservicio(
         nombre="ms2_taller",
@@ -58,6 +61,7 @@ MICROSERVICIOS: tuple[Microservicio, ...] = (
         url=settings.MS2_URL,
         prefijos=("vehiculos", "ordenes"),
         alias=("vehiculo", "orden", "clientes", "mecanicos"),
+        variable_timeout="MS2_TIMEOUT_SECONDS",
     ),
     Microservicio(
         nombre="ms3_presupuestos",
@@ -65,6 +69,7 @@ MICROSERVICIOS: tuple[Microservicio, ...] = (
         url=settings.MS3_URL,
         prefijos=("presupuestos", "repuestos", "proveedores", "inventario"),
         alias=("presupuesto",),
+        variable_timeout="MS3_TIMEOUT_SECONDS",
     ),
     Microservicio(
         nombre="ms4_evidencias",
@@ -72,6 +77,7 @@ MICROSERVICIOS: tuple[Microservicio, ...] = (
         url=settings.MS4_URL,
         prefijos=("evidencias",),
         alias=("evidencia",),
+        variable_timeout="MS4_TIMEOUT_SECONDS",
     ),
 )
 
@@ -128,6 +134,12 @@ def resolver_microservicio(ruta: str) -> str | None:
     pendiente (Semana 9: rutas o respuestas incompatibles).
     """
     return RUTAS.get(primer_segmento(ruta))
+
+
+def servicio_de(ruta: str) -> Microservicio | None:
+    """Microservicio que atiende `ruta` (o un prefijo suelto), o `None`."""
+    nombre = nombre_servicio(ruta)
+    return MICROSERVICIOS_POR_NOMBRE[nombre] if nombre else None
 
 
 def nombre_servicio(ruta: str) -> str | None:

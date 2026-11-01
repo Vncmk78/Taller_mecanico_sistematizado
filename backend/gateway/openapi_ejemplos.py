@@ -646,7 +646,7 @@ _CABECERA_WWW_AUTHENTICATE: dict[str, Any] = {
 _CABECERA_RETRY_AFTER: dict[str, Any] = {
     "description": "Segundos que el cliente puede esperar antes de reintentar.",
     "schema": {"type": "integer"},
-    "example": 1,
+    "example": 5,
 }
 
 _CABECERA_CACHE_CONTROL: dict[str, Any] = {
@@ -704,6 +704,7 @@ _RESPUESTAS_REUTILIZABLES: dict[str, dict[str, Any]] = {
                 "error_microservicio_no_disponible"
             )
         },
+        cabeceras={"Retry-After": _CABECERA_RETRY_AFTER},
     ),
     "GatewaySaturada": _respuesta_comun(
         descripcion="503: el pool de conexiones de la Gateway está agotado.",
@@ -715,6 +716,7 @@ _RESPUESTAS_REUTILIZABLES: dict[str, dict[str, Any]] = {
         descripcion="504: el microservicio tardó demasiado en responder.",
         esquema={"$ref": "#/components/schemas/ErrorRespuesta"},
         ejemplos={"tiempo_agotado": _ref_ejemplo("error_tiempo_agotado")},
+        cabeceras={"Retry-After": _CABECERA_RETRY_AFTER},
     ),
 }
 

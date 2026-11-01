@@ -129,7 +129,11 @@ Contrato único de solicitudes, respuestas y errores de la Gateway.
 El reenvío usa un único cliente HTTPX compartido (`gateway/cliente_http.py`),
 creado de forma perezosa y cerrado en el lifespan de la app, con timeouts por
 fase (conectar 3 s, leer/escribir 15 s, pool 5 s). El prefijo `evidencias` usa
-read/write de 60 s porque sube archivos. Los fallos de red se mapean según la
+read/write de 60 s porque sube archivos. Desde la Semana 7 cada servicio puede
+tener su propio read/write (`GATEWAY_MS<n>_TIMEOUT_SECONDS`, ver
+`docs/estudio-resiliencia-timeouts-retries.md`); el log de cada fallo de red
+nombra el servicio (`ms3_presupuestos`), la excepción y el timeout aplicado,
+nunca la URL interna. Los fallos de red se mapean según la
 decisión 2 del estudio: `ConnectError`/`ConnectTimeout` → 502,
 `Read/WriteTimeout` → 504 y `PoolTimeout` → 503.
 
@@ -176,6 +180,12 @@ este cuerpo:
 
 Los detalles de la Gateway están en español ("Ruta no encontrada",
 "Método no permitido", etc.) para que el frontend los muestre tal cual.
+
+Cabeceras estándar de los errores de la Gateway (Semana 7): `X-Request-ID`,
+`Cache-Control: no-store` y, en `502`, `503` y `504`, `Retry-After` con los
+segundos sugeridos antes de reintentar (`GATEWAY_RETRY_AFTER_SECONDS`). Web y
+móvil solo reintentan automáticamente un `GET` (máximo 2 veces, respetando
+`Retry-After`); nunca una escritura.
 
 El 500 se genera en `ManejoErroresMiddleware`, montado **por dentro de CORS**
 (orden: `RequestId -> CORS -> ManejoErrores`): así la respuesta de error sale
@@ -238,6 +248,8 @@ expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 | `GATEWAY_TIMEOUT_WRITE_SECONDS` | `15.0` | Espera al enviar el body (si no, 504) |
 | `GATEWAY_TIMEOUT_POOL_SECONDS` | `5.0` | Espera por una conexión libre del pool (si no, 503) |
 | `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` | `60.0` | read/write ampliados para el prefijo `evidencias` |
+| `GATEWAY_MS1_TIMEOUT_SECONDS` … `GATEWAY_MS4_TIMEOUT_SECONDS` | (vacío) | read/write propios de cada servicio; tienen prioridad sobre los generales y sobre el de archivos (recomendado 10 / 15 / 15 / 60) |
+| `GATEWAY_RETRY_AFTER_SECONDS` | `5` | Valor de `Retry-After` en los `502`, `503` y `504` de la Gateway |
 | `GATEWAY_MAX_BODY_BYTES` | `1048576` | Límite de body (bytes) para los prefijos JSON (1 MiB); superarlo responde `413` |
 | `GATEWAY_MAX_BODY_ARCHIVOS_BYTES` | `12582912` | Límite de body (bytes) para `evidencias` (12 MiB: foto de 10 MB + margen del multipart) |
 | `GATEWAY_HEALTH_TIMEOUT_SECONDS` | `2.0` | Timeout por servicio en `GET /api/health/servicios` |

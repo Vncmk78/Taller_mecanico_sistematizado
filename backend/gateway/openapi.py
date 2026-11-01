@@ -84,6 +84,12 @@ de validación, `detail` es una lista de errores de Pydantic.
 Las respuestas `401`, `500`, `502`, `503` y `504` también están publicadas como \
 respuestas reutilizables en `components.responses`.
 
+Los errores de la Gateway llevan `Cache-Control: no-store`, y los `502`, `503` y \
+`504` además `Retry-After` (segundos). Web y móvil solo deben reintentar \
+automáticamente un `GET`, como máximo 2 veces, respetando esa espera; nunca un \
+`POST`, `PUT` o `PATCH` (las escrituras de MS3 tienen su propia ruta de \
+reintento idempotente).
+
 ## X-Request-ID
 
 Se puede enviar `X-Request-ID` (letras, números y guiones) para rastrear una \
@@ -318,10 +324,18 @@ def _operacion(
         # verifica que esas respuestas distingan el esquema propio del de cada
         # microservicio. Los 503 y 504 sí son idénticos en todas las operaciones y
         # se referencian desde `components.responses`.
-        "502": _respuesta(
-            "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
-            _ref("ErrorRespuesta"),
-        ),
+        "502": {
+            **_respuesta(
+                "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+                _ref("ErrorRespuesta"),
+            ),
+            "headers": {
+                "Retry-After": {
+                    "description": "Segundos sugeridos antes de reintentar un GET.",
+                    "schema": {"type": "integer", "example": 5},
+                }
+            },
+        },
         "500": _respuesta(
             (
                 "Error interno. Puede provenir del microservicio con "

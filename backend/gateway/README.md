@@ -246,6 +246,9 @@ expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 
 ## Variables de entorno
 
+Referencia completa (incluye MS1..MS4, MinIO, frontend y quién llama a quién):
+[`docs/variables-entorno-y-direcciones.md`](../docs/variables-entorno-y-direcciones.md).
+
 | Variable | Por defecto | Uso |
 |---|---|---|
 | `GATEWAY_MS1_URL` | `http://localhost:8001` | MS1 Autenticación y Usuarios |

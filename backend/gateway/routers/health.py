@@ -20,19 +20,15 @@ from fastapi.responses import JSONResponse
 
 from gateway.cliente_http import obtener_cliente
 from gateway.config import settings
-from gateway.rutas import RUTAS
+from gateway.rutas import MICROSERVICIOS, prefijos_publicos
 
 logger = logging.getLogger("gateway")
 
 router = APIRouter()
 
-# Nombre público de cada microservicio -> URL base (se leen de la configuración).
-SERVICIOS: dict[str, str] = {
-    "ms1_auth": settings.MS1_URL,
-    "ms2_taller": settings.MS2_URL,
-    "ms3_presupuestos": settings.MS3_URL,
-    "ms4_evidencias": settings.MS4_URL,
-}
+# Nombre público de cada microservicio -> URL base. Sale del catálogo de
+# `gateway.rutas`, el mismo que usa el proxy: no hay dos listas que mantener.
+SERVICIOS: dict[str, str] = {servicio.nombre: servicio.url for servicio in MICROSERVICIOS}
 
 
 @router.get("/", tags=["info"])
@@ -42,8 +38,8 @@ async def indice() -> dict[str, object]:
         "servicio": "SGTM — API Gateway",
         "estado": "operativo",
         "microservicios": {
-            nombre: _prefijos_publicos(base)
-            for nombre, base in SERVICIOS.items()
+            servicio.nombre: prefijos_publicos(servicio)
+            for servicio in MICROSERVICIOS
         },
         "ejemplos": [
             "/api/health",
@@ -51,6 +47,11 @@ async def indice() -> dict[str, object]:
             "/api/auth/login",
             "/api/auth/me",
             "/api/vehiculos",
+            "/api/ordenes",
+            "/api/presupuestos",
+            "/api/repuestos",
+            "/api/inventario/alertas",
+            "/api/evidencias?orden_id=31",
         ],
     }
 
@@ -81,15 +82,6 @@ async def health_servicios() -> JSONResponse:
         },
         status_code=200 if todos_ok else 503,
         headers={"Cache-Control": "no-store"},
-    )
-
-
-def _prefijos_publicos(base: str) -> list[str]:
-    """Prefijos `/api/*` que la tabla de rutas enruta hacia `base`, ordenados."""
-    return sorted(
-        f"/api/{prefijo}"
-        for prefijo, destino in RUTAS.items()
-        if destino == base
     )
 
 

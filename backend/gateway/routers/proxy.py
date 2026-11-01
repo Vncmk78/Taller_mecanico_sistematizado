@@ -30,6 +30,7 @@ from gateway.errores import (
     mapear_error_httpx,
     respuesta_error,
 )
+from gateway.rutas import primer_segmento as _primer_segmento
 from gateway.rutas import resolver_microservicio
 
 logger = logging.getLogger("gateway")
@@ -136,7 +137,7 @@ async def proxy(ruta: str, request: Request) -> Response:
     (riesgo 4.3): la Gateway carga el multipart en memoria hasta el límite; los
     videos no entran por acá, usan el flujo C (POST prefirmado, Semana 6+).
     """
-    primer_segmento = ruta.split("/", 1)[0].lower()
+    primer_segmento = _primer_segmento(ruta)
     base = resolver_microservicio(ruta)
     if base is None:
         return respuesta_error(

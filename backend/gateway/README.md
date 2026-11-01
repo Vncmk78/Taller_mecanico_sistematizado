@@ -18,7 +18,7 @@ Web / Móvil ──► API Gateway (:8000) ──► MS1 Auth           (:8001)
 gateway/
 ├── main.py          Crea la app, configura CORS, middleware y handlers
 ├── config.py        Variables de entorno (prefijo GATEWAY_)
-├── rutas.py         Tabla de enrutamiento: prefijo -> microservicio
+├── rutas.py         Catálogo de los 4 microservicios y tabla prefijo -> microservicio
 ├── esquemas.py      Modelos Pydantic del formato común (errores)
 ├── errores.py       Formato común de errores + middleware del 500 (dentro de CORS)
 ├── middleware.py    Cabecera X-Request-ID en cada petición
@@ -77,6 +77,29 @@ Gateway verifica el reenvío hacia ambos microservicios
 prefijos (`presupuestos`, `repuestos`, `proveedores`, `inventario`) y MS4 todo
 bajo `evidencias`, nunca bajo `/ordenes/...` (ver
 [`docs/contratos-api-gateway.md`](../docs/contratos-api-gateway.md)).
+
+### Catálogo de microservicios (Semana 7)
+
+`rutas.py` define el catálogo `MICROSERVICIOS`: por cada servicio, su nombre
+público (`ms1_auth`, `ms2_taller`, `ms3_presupuestos`, `ms4_evidencias`), su
+URL interna, los **prefijos que publica** y los **alias** heredados. Es la
+única fuente del direccionamiento: de ahí salen la tabla `RUTAS` del proxy, la
+lista de servicios de `/api/health/servicios` y el índice `/`. Si un prefijo
+quedara asignado a dos servicios, la Gateway no arranca.
+
+| Servicio | Prefijos publicados | Alias heredados |
+|---|---|---|
+| `ms1_auth` | `auth` | — |
+| `ms2_taller` | `vehiculos`, `ordenes` | `vehiculo`, `orden`, `clientes`, `mecanicos` |
+| `ms3_presupuestos` | `presupuestos`, `repuestos`, `proveedores`, `inventario` | `presupuesto` |
+| `ms4_evidencias` | `evidencias` | `evidencia` |
+
+Los alias se reenvían al mismo servicio; como el servicio no publica rutas bajo
+ellos, la respuesta es el `404` del propio microservicio (no
+`RUTA_NO_ENCONTRADA`). `tests/test_gateway_direccionamiento.py` lee el OpenAPI
+de los cuatro apps reales y comprueba que **cada endpoint** publicado resuelve
+al servicio correcto, que los prefijos del catálogo coinciden exactamente con
+los publicados y que el proxy reenvía método, ruta y query a la URL interna.
 
 ## Formato común
 
@@ -220,5 +243,5 @@ expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 ## Pruebas
 
 ```bash
-pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py tests/test_gateway_formato.py tests/test_gateway_openapi.py tests/test_gateway_evidencias.py -v
+pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py tests/test_gateway_direccionamiento.py tests/test_gateway_formato.py tests/test_gateway_openapi.py tests/test_gateway_evidencias.py -v
 ```

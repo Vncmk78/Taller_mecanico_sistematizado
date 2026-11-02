@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { Order } from '@/domain/entities/Order';
+import { parseNumberOrDefault, parseStringOrDefault, serializeNumber, serializeString, useUrlState } from '@/presentation/hooks/useUrlState';
 
 export type OrderEstadoFilter = number | 'all';
 
@@ -26,6 +27,13 @@ interface UseOrderListFiltersResult {
     rangeEnd: number;
 }
 
+interface UseOrderListFiltersOptions {
+    /** Sincroniza search, estado, page y pageSize con la URL (query params). */
+    syncWithUrl?: boolean;
+    /** Clave base para los query params. Útil si hay varios listados en la misma ruta. */
+    urlKeyPrefix?: string;
+}
+
 /**
  * Filtros y paginación del listado de órdenes, del lado cliente (la caché de
  * useOrderStore ya tiene todos los datos; MS2 no expone paginación server-side
@@ -34,22 +42,117 @@ interface UseOrderListFiltersResult {
  */
 export function useOrderListFilters(
     orders: Order[],
-    searchableFields: (order: Order) => string
+    searchableFields: (order: Order) => string,
+    options: UseOrderListFiltersOptions = {}
 ): UseOrderListFiltersResult {
-    const [search, setSearch] = useState('');
-    const [estadoCodigo, setEstadoCodigo] = useState<OrderEstadoFilter>('all');
-    const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+    const { syncWithUrl = false, urlKeyPrefix = '' } = options;
+
+    const searchKey = `${urlKeyPrefix}q`;
+    const estadoKey = `${urlKeyPrefix}estado`;
+    const pageKey = `${urlKeyPrefix}page`;
+    const pageSizeKey = `${urlKeyPrefix}pageSize`;
+
+    const [searchState, setSearchState] = useState('');
+    const [estadoState, setEstadoState] = useState<OrderEstadoFilter>('all');
+    const [pageState, setPageState] = useState(1);
+    const [pageSizeState, setPageSizeState] = useState(DEFAULT_PAGE_SIZE);
+
+    const [searchUrl, setSearchUrl] = useUrlState(searchKey, {
+        defaultValue: '',
+        parse: parseStringOrDefault(''),
+        serialize: serializeString,
+        replace: true,
+    });
+    const [estadoUrl, setEstadoUrl] = useUrlState<OrderEstadoFilter>(estadoKey, {
+        defaultValue: 'all',
+        parse: (raw) => {
+            if (raw === null || raw === '' || raw === 'all') return 'all';
+            const parsed = Number(raw);
+            if (Number.isNaN(parsed)) return 'all';
+            return parsed;
+        },
+        serialize: (value) => {
+            if (value === 'all') return null;
+            return String(value);
+        },
+        replace: true,
+    });
+    const [pageUrl, setPageUrl] = useUrlState(pageKey, {
+        defaultValue: 1,
+        parse: parseNumberOrDefault(1),
+        serialize: serializeNumber,
+        replace: true,
+    });
+    const [pageSizeUrl, setPageSizeUrl] = useUrlState(pageSizeKey, {
+        defaultValue: DEFAULT_PAGE_SIZE,
+        parse: (raw) => {
+            const parsed = parseNumberOrDefault(DEFAULT_PAGE_SIZE)(raw);
+            if ((ORDER_PAGE_SIZES as readonly number[]).includes(parsed)) return parsed;
+            return DEFAULT_PAGE_SIZE;
+        },
+        serialize: (value) => {
+            if (value === DEFAULT_PAGE_SIZE) return null;
+            if ((ORDER_PAGE_SIZES as readonly number[]).includes(value)) return String(value);
+            return null;
+        },
+        replace: true,
+    });
+
+    const search = syncWithUrl ? searchUrl : searchState;
+    const estadoCodigo = syncWithUrl ? estadoUrl : estadoState;
+    const page = syncWithUrl ? pageUrl : pageState;
+    const pageSize = syncWithUrl ? pageSizeUrl : pageSizeState;
 
     // Cambiar un filtro reinicia la paginación desde la primera página.
-    const changeSearch = (value: string) => {
-        setSearch(value);
-        setPage(1);
-    };
-    const changeEstado = (value: OrderEstadoFilter) => {
-        setEstadoCodigo(value);
-        setPage(1);
-    };
+    const changeSearch = useCallback(
+        (value: string) => {
+            if (syncWithUrl) {
+                setSearchUrl(value);
+                setPageUrl(1);
+            } else {
+                setSearchState(value);
+                setPageState(1);
+            }
+        },
+        [syncWithUrl, setSearchUrl, setPageUrl]
+    );
+    const changeEstado = useCallback(
+        (value: OrderEstadoFilter) => {
+            if (syncWithUrl) {
+                setEstadoUrl(value);
+                setPageUrl(1);
+            } else {
+                setEstadoState(value);
+                setPageState(1);
+            }
+        },
+        [syncWithUrl, setEstadoUrl, setPageUrl]
+    );
+
+    const setPageSafe = useCallback(
+        (nextPage: number) => {
+            if (syncWithUrl) {
+                setPageUrl(nextPage);
+            } else {
+                setPageState(nextPage);
+            }
+        },
+        [syncWithUrl, setPageUrl]
+    );
+    const setPageSizeSafe = useCallback(
+        (nextSize: number) => {
+            if (syncWithUrl) {
+                const size = (ORDER_PAGE_SIZES as readonly number[]).includes(nextSize) ? nextSize : DEFAULT_PAGE_SIZE;
+                setPageSizeUrl(size);
+                setPageUrl(1);
+            } else {
+                const size = (ORDER_PAGE_SIZES as readonly number[]).includes(nextSize) ? nextSize : DEFAULT_PAGE_SIZE;
+                setPageSizeState(size);
+                setPageState(1);
+            }
+        },
+        [syncWithUrl, setPageSizeUrl, setPageUrl]
+    );
 
     const filteredOrders = useMemo(() => {
         const term = search.trim().toLowerCase();
@@ -75,9 +178,9 @@ export function useOrderListFilters(
         estadoCodigo,
         setEstadoCodigo: changeEstado,
         page: safePage,
-        setPage,
+        setPage: setPageSafe,
         pageSize,
-        setPageSize,
+        setPageSize: setPageSizeSafe,
         filteredOrders,
         pagedOrders,
         total,

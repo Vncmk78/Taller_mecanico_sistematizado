@@ -299,6 +299,29 @@ reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
 | `GET /presupuestos/decisiones/{decision_id}` | **Cliente responsable**: hecho persistido que MS2 verifica antes de aplicar la decisión |
 | `POST /presupuestos/decisiones/{decision_id}/aplicacion` | **Cliente responsable**: reintenta la misma decisión, sin crear otra |
 
+**Conexión con la orden** (SCRUM-525): toda escritura (crear, nueva versión,
+editar borrador, enviar, decidir) verifica la orden en MS2 con el JWT de quien
+llama y lee su `estado_codigo`:
+
+| Situación | Respuesta |
+|---|---|
+| La orden no existe o no es visible para quien llama (el mecánico solo ve las asignadas) | `404` |
+| MS2 no responde | `503` |
+| Orden **Entregada** (7) o **Cancelada** (8) | `409`; además se liberan las unidades que la orden aún tenía reservadas (una sola vez) |
+| **Primera** decisión con la orden fuera de "Esperando aprobación de presupuesto" (3) | `409`, sin guardar la decisión |
+| Decisión de una **modificación** con la orden en curso (4, 5…) | Se registra; la orden no cambia |
+| MS2 no informa el estado | MS3 no aplica reglas por estado; MS2 valida al aplicar |
+
+**Versión aprobada bloqueada** (SCRUM-528, migración `0009_ms3`): la versión
+aprobada no se edita ni se borra (API `409` y triggers de la base). Para
+cambiar lo aprobado se usa `POST /presupuestos/{id}/modificacion`: crea
+**obligatoriamente** la versión siguiente (`es_modificacion: true`) como copia
+editable de la aprobada (o con los `items` enviados). La aprobada sigue
+`vigente: true` hasta que el cliente apruebe la modificación. La base exige
+que toda versión creada después de una aprobación sea una modificación y que
+no haya dos borradores abiertos. Si el cliente rechaza una modificación, la
+siguiente parte de lo aprobado, no de lo rechazado.
+
 Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
 la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
 nueva versión es una modificación (`es_modificacion`) y, mientras no se apruebe,
@@ -450,6 +473,23 @@ entregan el orden de cada listado y el saldo reservado leyendo solo el índice;
 el saldo de varios repuestos sale en una consulta. Revisión y mediciones en
 [`docs/revision-indices-inventario.md`](docs/revision-indices-inventario.md);
 `tests/test_indices_inventario.py` lo verifica con `EXPLAIN`.
+
+**Integración presupuesto aprobado → stock** (`tests/test_integracion_presupuesto_stock.py`,
+SCRUM-529): flujo HTTP real MS3 ↔ MS2 con bases separadas (SQLite siempre y
+PostgreSQL si están `SCRUM397438_MS2_TEST_URL`/`SCRUM397438_MS3_TEST_URL`):
+aprobar con stock deja la orden en reparación y reserva las unidades; sin stock
+la deja esperando repuestos sin reservar; al llegar stock la reserva se
+completa; usar los repuestos descuenta lo reservado; rechazar cancela sin tocar
+el stock; una modificación aprobada ajusta la reserva; y reintentar la
+aplicación en MS2 no reserva dos veces.
+
+**Pruebas de presupuestos, inventario, stock y proveedores**
+(`services/ms3_presupuestos/tests/test_flujo_presupuesto_inventario_proveedores.py`, SCRUM-526):
+el recorrido completo del taller (proveedor → repuesto → presupuesto → envío →
+aprobación con reserva → consumo → alerta de stock bajo → reposición →
+trazabilidad), aprobar sin stock y reponer, dos órdenes compitiendo por el mismo
+repuesto, repuestos/proveedores en uso que no se pueden borrar, cambio de
+proveedor sin perder lo entregado, y permisos del cliente.
 
 **Pruebas de límites de stock** (`tests/test_stock_insuficiente_exacto_multiple.py`):
 para cada forma de usar stock (consumo, compromiso, ajuste, aprobación, validación

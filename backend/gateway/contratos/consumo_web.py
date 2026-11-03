@@ -210,10 +210,20 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
         "OrderService.registrarEntrega", "post", "/api/ordenes/{orden_id}/entrega", "200",
         ORDEN, cuerpo={"observacion": "~string"},
     ),
-    # Lee la respuesta como OrdenRespuesta (OrderService.ts:cancelarComoCliente).
+    # No lee la respuesta (es una solicitud pendiente, no una orden): después
+    # vuelve a pedir la orden con getOrderById. Corregido en SCRUM-706 (D-01).
     ConsumoWeb(
         "OrderService.cancelarComoCliente", "post", "/api/ordenes/{orden_id}/cancelacion",
-        "201", ORDEN, cuerpo={"motivo": "string"},
+        "201", {}, cuerpo={"motivo": "string"},
+    ),
+    ConsumoWeb(
+        "OrderService.confirmarCancelacion", "post",
+        "/api/ordenes/{orden_id}/cancelacion/confirmacion", "200", ORDEN,
+    ),
+    ConsumoWeb(
+        "OrderService.getVehicleOrderHistory", "get",
+        "/api/ordenes/vehiculo/{vehiculo_id}/historial", "200",
+        {"items": [ORDEN], "total": "integer", "limit": "integer", "offset": "integer"},
     ),
     # ── EvidenciaService ────────────────────────────────────────────────
     ConsumoWeb("EvidenciaService.getByOrder", "get", "/api/evidencias", "200", [EVIDENCIA]),

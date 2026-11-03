@@ -22,13 +22,24 @@ interface ApiAuthResponse {
   user: ApiUser;
 }
 
+const ROLES_VALIDOS: readonly UserRole[] = ['cliente', 'mecanico', 'administrador'];
+
+function esRolValido(rol: string): rol is UserRole {
+  return (ROLES_VALIDOS as readonly string[]).includes(rol);
+}
+
+// `roles` es una lista y los roles se acumulan: se conservan todos para que las
+// guardas (getUserRoles / hasAnyRole) den acceso a cada portal de la cuenta. El
+// primero sigue definiendo el portal de ingreso (diferencia D-03).
 function toDomainUser(apiUser: ApiUser): User {
-  const role = (apiUser.roles?.[0] ?? 'cliente') as UserRole;
+  const roles = (apiUser.roles ?? []).filter(esRolValido);
+  const role = roles[0] ?? 'cliente';
   return {
     id: String(apiUser.id),
     email: apiUser.email,
     full_name: apiUser.full_name,
     role,
+    roles: roles.length > 0 ? roles : [role],
     is_active: apiUser.is_active,
   };
 }

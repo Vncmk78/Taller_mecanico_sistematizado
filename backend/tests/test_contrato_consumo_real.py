@@ -57,22 +57,8 @@ _JSON = "application/json"
 
 # Diferencias abiertas del consumo web: clave de ConsumoWeb -> ID del documento.
 _DIFERENCIAS_WEB: dict[str, str] = {
-    "OrderService.cancelarComoCliente POST /api/ordenes/{orden_id}/cancelacion": (
-        "D-01: el frontend lee la solicitud de cancelación como si fuera una orden"
-    ),
-    "AuthService.login POST /api/auth/login": (
-        "D-02: token_type siempre viene, pero el contrato no lo marca obligatorio"
-    ),
-    "OrderService.getOrderBitacora GET /api/ordenes/{orden_id}/bitacora": (
-        "D-02: repuestos siempre viene, pero el contrato no lo marca obligatorio"
-    ),
-    "OrderService.registrarBitacora POST /api/ordenes/{orden_id}/bitacora": (
-        "D-02: repuestos siempre viene, pero el contrato no lo marca obligatorio"
-    ),
-    "PresupuestoService.decidir POST "
-    "/api/presupuestos/{presupuesto_id}/versiones/{numero}/decision": (
-        "D-02: decision_id y aplicacion_en_orden siempre vienen, pero no son obligatorios"
-    ),
+    # Vacío: D-01 se corrigió en el frontend (SCRUM-706) y D-02 en el contrato
+    # 2.0.1. Una diferencia nueva se registra aquí con un ID nuevo (D-04, …).
 }
 
 # Diferencias abiertas de las respuestas vivas: (MÉTODO ruta estado) -> ID.
@@ -351,12 +337,6 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
                      "repuestos": [{"nombre": "Pastillas", "cantidad": 1}]})
         llamar("GET", "/api/ordenes/{orden_id}/bitacora", f"{base}/bitacora", cliente)
 
-        motivo = {"motivo": "El cliente no continuará"}
-        llamar("POST", "/api/ordenes/{orden_id}/cancelacion", f"{base}/cancelacion",
-               cliente, json=motivo)
-        llamar("POST", "/api/ordenes/{orden_id}/cancelacion", f"{base}/cancelacion",
-               cliente, json=motivo)
-
         orden = sesion_ms2.get(OrdenTrabajo, orden_id)
         orden.estado_codigo = EN_REPARACION
         sesion_ms2.commit()
@@ -366,6 +346,21 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
                json={"estado_destino": 6})
         llamar("POST", "/api/ordenes/{orden_id}/entrega", f"{base}/entrega", administrador,
                json={})
+
+        # Segunda orden del mismo vehículo: solicitud y confirmación de cancelación.
+        segunda = llamar("POST", "/api/ordenes", "/api/ordenes", administrador,
+                         json={"vehiculo_id": vehiculo_id}).json()["orden_id"]
+        base = f"/api/ordenes/{segunda}"
+        motivo = {"motivo": "El cliente no continuará"}
+        llamar("POST", "/api/ordenes/{orden_id}/cancelacion", f"{base}/cancelacion",
+               cliente, json=motivo)
+        llamar("POST", "/api/ordenes/{orden_id}/cancelacion", f"{base}/cancelacion",
+               cliente, json=motivo)
+        llamar("POST", "/api/ordenes/{orden_id}/cancelacion/confirmacion",
+               f"{base}/cancelacion/confirmacion", administrador)
+        llamar("GET", "/api/ordenes/vehiculo/{vehiculo_id}/historial",
+               f"/api/ordenes/vehiculo/{vehiculo_id}/historial", cliente,
+               params={"limit": 10, "offset": 0})
         return registro
     finally:
         app_ms2.dependency_overrides.pop(obtener_verificador_aprobacion_inicial, None)
@@ -443,12 +438,13 @@ def test_el_recorrido_cubre_exitos_y_errores_del_consumo(respuestas_reales) -> N
         ("post", "/api/ordenes/{orden_id}/cancelacion", 201),
         ("post", "/api/ordenes/{orden_id}/cancelacion", 200),
         ("patch", "/api/ordenes/{orden_id}/estado", 403),
+        ("post", "/api/ordenes/{orden_id}/cancelacion/confirmacion", 200),
     ]:
         assert esperado in estados, esperado
 
 
 def test_d01_la_cancelacion_real_no_trae_los_campos_de_orden(respuestas_reales) -> None:
-    """Evidencia viva de D-01: la respuesta es una solicitud, no una orden."""
+    """D-01: la respuesta es una solicitud, no una orden (el frontend ya no la lee)."""
     (cuerpo,) = [
         c for m, r, e, c in respuestas_reales
         if (m, r, e) == ("post", "/api/ordenes/{orden_id}/cancelacion", 201)
@@ -456,4 +452,3 @@ def test_d01_la_cancelacion_real_no_trae_los_campos_de_orden(respuestas_reales) 
     assert cuerpo["estado"] == "pendiente"
     assert "solicitud_id" in cuerpo
     assert "estado_codigo" not in cuerpo and "vehiculo_id" not in cuerpo
-

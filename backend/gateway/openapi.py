@@ -33,7 +33,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "2.0.0"
+_VERSION = "2.0.1"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -1679,6 +1679,32 @@ def _esquemas_documentados() -> dict[str, dict[str, object]]:
     return esquemas
 
 
+def _exigir_campos_siempre_serializados(
+    esquemas: dict[str, dict[str, object]], modelos: list[type[BaseModel]]
+) -> None:
+    """Marca obligatorios los campos con valor por defecto de las respuestas.
+
+    Los esquemas se generan en modo validación, donde un campo con valor por
+    defecto es opcional. En una respuesta, en cambio, FastAPI serializa siempre
+    todos los campos: el cliente los recibe siempre. Los modelos de respuesta
+    que lo declaran con `json_schema_serialization_defaults_required=True` (igual
+    que su original en el microservicio) publican esos campos como obligatorios.
+    Diferencia D-02 de `docs/diferencias-contrato-consumo-real.md`.
+    """
+    for modelo in modelos:
+        if not modelo.model_config.get("json_schema_serialization_defaults_required"):
+            continue
+        definicion = esquemas.get(modelo.__name__)
+        if definicion is None:
+            raise ValueError(f"El modelo '{modelo.__name__}' no está en components.schemas")
+        obligatorios = list(definicion.get("required", []))
+        for nombre, campo in modelo.model_fields.items():
+            clave = campo.alias or nombre
+            if clave not in obligatorios:
+                obligatorios.append(clave)
+        definicion["required"] = obligatorios
+
+
 def _documentar_bloqueo_login(esquema: dict[str, object]) -> None:
     """El `429` de login trae `Retry-After` con los segundos de bloqueo (MS1)."""
     respuesta = esquema["paths"]["/api/auth/login"]["post"]["responses"]["429"]
@@ -1699,7 +1725,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     `gateway/esquemas`.
     """
     # Import diferido: `openapi_ms3` reutiliza los ayudantes de este módulo.
-    from gateway.openapi_ms3 import caminos_ms3, esquemas_ms3
+    from gateway.openapi_ms3 import CONTRATOS_MS3, caminos_ms3, esquemas_ms3
 
     if getattr(app, "openapi_schema", None) is not None:
         return app.openapi_schema
@@ -1734,6 +1760,9 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         if existente.get("properties") != definicion.get("properties"):
             raise ValueError(f"Esquema '{nombre}' de MS3 choca con otro contrato")
 
+    _exigir_campos_siempre_serializados(
+        componentes["schemas"], [modelo for _, modelo in _CONTRATOS] + list(CONTRATOS_MS3)
+    )
     _documentar_bloqueo_login(esquema)
     agregar_ejemplos_ordenes(esquema, prefijo="/api")
     agregar_ejemplos_gateway(esquema)

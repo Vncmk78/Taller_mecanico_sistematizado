@@ -187,6 +187,10 @@ class ResultadoOperacion(BaseModel):
     conserva su significado previo para envío/rechazo de modificaciones.
     """
 
+    # Todo campo con valor por defecto se serializa siempre: el esquema de
+    # salida lo marca obligatorio (contrato 2.0.1, diferencia D-02).
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     presupuesto: PresupuestoDetalle
     efecto_en_orden: EfectoOrden | None
     repuestos_faltantes: list[RepuestoFaltante] = []

@@ -45,7 +45,8 @@ describe('AuthService: adapta la respuesta de MS1 al dominio', () => {
     const auth = await authService.login({ email: 'cliente@pruebas.cl', password: 'ClientePrueba123!' });
 
     expect(auth.user.role).toBe('cliente');
-    expect(auth.user).not.toHaveProperty('roles');
+    // `roles` se conserva completo para las guardas multirol (D-03).
+    expect(auth.user.roles).toEqual(['cliente']);
   });
 
   it('mapea roles[] de /auth/me a role singular', async () => {
@@ -55,7 +56,7 @@ describe('AuthService: adapta la respuesta de MS1 al dominio', () => {
 
     expect(user.role).toBe('mecanico');
     expect(user.id).toBe('2');
-    expect(user).not.toHaveProperty('roles');
+    expect(user.roles).toEqual(['mecanico']);
   });
 });
 
@@ -89,6 +90,7 @@ describe('AuthService: mapeo contra el payload real de MS1', () => {
       email: 'mecanico@correo.cl',
       full_name: 'Martín Herrera',
       role: 'mecanico',
+      roles: ['mecanico'],
       is_active: true,
     });
   });
@@ -102,6 +104,25 @@ describe('AuthService: mapeo contra el payload real de MS1', () => {
     // dominio tiene un único `role`, y hoy gana el primero: queda fijado aquí
     // para que la decisión sea explícita y no un accidente del mapeo.
     expect(user.role).toBe('mecanico');
+  });
+
+  it('conserva todos los roles para que las guardas den acceso a cada portal (D-03)', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: usuarioConDosRoles });
+
+    const user = await authService.getProfile();
+
+    expect(user.roles).toEqual(['mecanico', 'administrador']);
+  });
+
+  it('descarta roles desconocidos que no forman parte del contrato', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { ...usuarioRespuestaReal, roles: ['supervisor', 'cliente'] },
+    });
+
+    const user = await authService.getProfile();
+
+    expect(user.role).toBe('cliente');
+    expect(user.roles).toEqual(['cliente']);
   });
 
   it('respeta is_active en false en lugar de asumir que el usuario está activo', async () => {

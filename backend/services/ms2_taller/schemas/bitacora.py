@@ -59,7 +59,11 @@ class RepuestoBitacoraRespuesta(BaseModel):
 class BitacoraRespuesta(BaseModel):
     """Representación de una entrada de la bitácora expuesta por la API de MS2."""
 
-    model_config = ConfigDict(from_attributes=True)
+    # Todo campo con valor por defecto se serializa siempre: el esquema de
+    # salida lo marca obligatorio (contrato 2.0.1, diferencia D-02).
+    model_config = ConfigDict(
+        from_attributes=True, json_schema_serialization_defaults_required=True
+    )
 
     bitacora_id: int
     orden_id: int

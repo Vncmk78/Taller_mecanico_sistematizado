@@ -32,7 +32,7 @@ fuera de este catálogo.
 | Acceso | `GET /api/auth/me` | ✅ | ✅ |
 | Vehículos | `GET /api/vehiculos` | ✅ | 403 |
 | Vehículos | `POST /api/vehiculos` | ✅ | 403 |
-| Vehículos | `GET /api/vehiculos/{vehiculo_id}` | ✅ | 403 |
+| Vehículos | `GET /api/vehiculos/{vehiculo_id}` | ✅ | ✅ ³ |
 | Vehículos | `PATCH /api/vehiculos/{vehiculo_id}` | ✅ | 403 |
 | Vehículos | `GET /api/vehiculos/asignados` | 403 | ✅ |
 | Órdenes | `GET /api/ordenes` | ✅ | ✅ |
@@ -57,6 +57,7 @@ fuera de este catálogo.
 esquema porque Mecánico y Administrador pueden listar sin él.
 ² Solo para reintentar cuando la decisión responde `503` con
 `decision_registrada=true` (nunca se decide dos veces).
+³ Solo los vehículos de sus órdenes asignadas; cualquier otro responde `404`.
 
 ## 3. Qué se validó
 
@@ -76,28 +77,33 @@ levantar servicios):
 
 ### Resultado
 
-| | Cantidad |
-|---|---:|
-| Comprobaciones | 175 (25 × 7) |
-| Cumplen | 168 |
-| Brechas (`xfail` estricto) | 7, agrupadas en 4 hallazgos |
+| | Validación inicial | Versión estable 1.0.0 |
+|---|---:|---:|
+| Comprobaciones | 175 (25 × 7) | 175 (25 × 7) |
+| Cumplen | 168 | **175** |
+| Brechas abiertas | 7 (4 hallazgos) | **0** |
 
-Lo que **sí** quedó confirmado para las 25 operaciones: todas están publicadas,
-con la seguridad correcta, con esquema de éxito, y sus parámetros, cuerpos y
-campos de respuesta coinciden 1:1 con el microservicio que las atiende.
+Las 25 operaciones están publicadas, con la seguridad correcta, con esquema y
+ejemplo de éxito, con los estados que la app debe manejar, y sus parámetros,
+cuerpos y campos de respuesta coinciden 1:1 con el microservicio que las
+atiende.
 
-## 4. Brechas detectadas
+## 4. Brechas detectadas (todas corregidas en 1.0.0)
 
-| ID | Operación | Brecha | Impacto en la app móvil |
-|---|---|---|---|
-| B-01 | `POST /api/auth/login` | MS1 responde `403` (cuenta sin roles), `422` (body inválido) y `429` (bloqueo temporal con `Retry-After`), pero la Gateway no los publica | La app no sabe que debe mostrar «cuenta bloqueada, reintenta en N s» ni distinguir una cuenta sin roles de credenciales malas |
-| B-02 | `GET /api/vehiculos/{vehiculo_id}` | No publica `403` (rol sin Cliente) ni `422` (id inválido). El `403` tampoco lo declara MS2 | La app del mecánico no tiene documentado el `403` que recibirá si llama la ruta |
-| B-03 | `GET` y `POST /api/ordenes/{orden_id}/bitacora` | El OpenAPI no trae ejemplo de éxito (sí existe en `contratos-api-gateway.md`) | Sin ejemplo en Swagger la app no puede generar mocks de la bitácora |
-| B-04 | `POST /api/ordenes/{orden_id}/cancelacion` | Sin ejemplos de `201` (solicitud creada) ni `200` (solicitud repetida) | Igual que B-03 |
+| ID | Operación | Brecha | Impacto en la app móvil | Estado |
+|---|---|---|---|---|
+| B-01 | `POST /api/auth/login` | MS1 responde `403` (cuenta sin roles), `422` (body inválido) y `429` (bloqueo temporal con `Retry-After`), pero la Gateway no los publicaba | La app no sabía que debe mostrar «cuenta bloqueada, reintenta en N s» ni distinguir una cuenta sin roles de credenciales malas | Corregida en 1.0.0 |
+| B-02 | `GET /api/vehiculos/{vehiculo_id}` | No publicaba `422` (identificador inválido) que MS2 sí declara | Sin el `422` la app no distingue un id mal formado de un vehículo inexistente | Corregida en 1.0.0 |
+| B-03 | `GET` y `POST /api/ordenes/{orden_id}/bitacora` | El OpenAPI no traía ejemplo de éxito (sí existía en `contratos-api-gateway.md`) | Sin ejemplo en Swagger la app no podía generar mocks de la bitácora | Corregida en 1.0.0 |
+| B-04 | `POST /api/ordenes/{orden_id}/cancelacion` | Sin ejemplos de `201` (solicitud creada) ni `200` (solicitud repetida) | Igual que B-03 | Corregida en 1.0.0 |
 
-Las brechas quedan registradas en `_BRECHAS` del test. Se corrigen en la tarea
-«Publicar una versión estable del contrato OpenAPI para integración»; al
-corregirlas, la prueba pasa a XPASS y obliga a retirar la marca.
+Corrección al catálogo inicial: B-02 incluía un supuesto `403` para el
+Mecánico. Revisando MS2, el endpoint no rechaza por rol: el Mecánico ve los
+vehículos de sus órdenes asignadas y el resto responde `404`. El catálogo se
+corrigió y el ejemplo de `403` que tenía el OpenAPI se retiró.
+
+`_BRECHAS` del test queda vacío. Una brecha nueva se registra ahí como `xfail`
+estricto con un ID nuevo (B-05, …).
 
 ## 5. Observaciones (no son brechas del contrato publicado)
 
@@ -129,4 +135,4 @@ cd backend
 python -m pytest tests/test_contratos_integracion_iv.py -v
 ```
 
-Resultado esperado hoy: `172 passed, 7 xfailed`.
+Resultado esperado hoy: `179 passed`.

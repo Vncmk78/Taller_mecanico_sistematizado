@@ -16,9 +16,9 @@ pueda consumirla sin adivinar nada:
 * `campos_microservicio`: parámetros, campos y obligatoriedad del body y de la
   respuesta 2xx coinciden con el OpenAPI real del microservicio.
 
-Las brechas detectadas al validar (Semana 8) quedan marcadas como `xfail`
-estricto con su identificador de `docs/contratos-integracion-iv.md`: si alguien
-las corrige, la prueba pasa a XPASS y obliga a retirar la marca.
+Las brechas detectadas en la validación de Semana 8 (B-01 a B-04) se
+corrigieron en la versión estable 1.0.0. Una brecha nueva se registra en
+`_BRECHAS` como `xfail` estricto con su ID de `docs/contratos-integracion-iv.md`.
 """
 from __future__ import annotations
 
@@ -58,29 +58,10 @@ _COMPROBACIONES = (
     "campos_microservicio",
 )
 
-# Brechas registradas en docs/contratos-integracion-iv.md §4.
+# Brechas abiertas registradas en docs/contratos-integracion-iv.md §4.
 _BRECHAS: dict[tuple[str, str], str] = {
-    ("POST /api/auth/login", "estados"): (
-        "B-01: login no publica 403 (cuenta sin roles), 422 ni 429 (bloqueo)"
-    ),
-    ("POST /api/auth/login", "estados_microservicio"): (
-        "B-01: MS1 declara 403, 422 y 429 en login y la Gateway no"
-    ),
-    ("GET /api/vehiculos/{vehiculo_id}", "estados"): (
-        "B-02: no publica 403 (mecánico) ni 422 (identificador inválido)"
-    ),
-    ("GET /api/vehiculos/{vehiculo_id}", "estados_microservicio"): (
-        "B-02: MS2 declara 422 y la Gateway no"
-    ),
-    ("GET /api/ordenes/{orden_id}/bitacora", "ejemplo_exito"): (
-        "B-03: la bitácora no publica ejemplo de éxito en el OpenAPI"
-    ),
-    ("POST /api/ordenes/{orden_id}/bitacora", "ejemplo_exito"): (
-        "B-03: la bitácora no publica ejemplo de éxito en el OpenAPI"
-    ),
-    ("POST /api/ordenes/{orden_id}/cancelacion", "ejemplo_exito"): (
-        "B-04: la solicitud de cancelación no publica ejemplos 200/201"
-    ),
+    # Vacío desde la versión estable 1.0.0: B-01, B-02, B-03 y B-04 quedaron
+    # corregidas. Una brecha nueva se registra aquí con su ID del documento.
 }
 
 

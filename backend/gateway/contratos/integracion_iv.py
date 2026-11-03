@@ -66,9 +66,9 @@ OPERACIONES_INTEGRACION_IV: tuple[OperacionMovil, ...] = (
         "post", "/api/vehiculos", "Vehículos", (CLIENTE,),
         roles_rechazados=(MECANICO,), estados_requeridos=("409",),
     ),
+    # Cliente: el propio. Mecánico: solo los de sus órdenes asignadas (si no, 404).
     OperacionMovil(
-        "get", "/api/vehiculos/{vehiculo_id}", "Vehículos", (CLIENTE,),
-        roles_rechazados=(MECANICO,),
+        "get", "/api/vehiculos/{vehiculo_id}", "Vehículos", (CLIENTE, MECANICO),
     ),
     OperacionMovil(
         "patch", "/api/vehiculos/{vehiculo_id}", "Vehículos", (CLIENTE,),

@@ -47,6 +47,7 @@ CONTRATOS_MS3: tuple[type[BaseModel], ...] = (
     contratos_presupuestos.PresupuestoCrear,
     contratos_presupuestos.ItemsVersion,
     contratos_presupuestos.NuevaVersion,
+    contratos_presupuestos.Modificacion,
     contratos_presupuestos.DecisionEntrada,
     contratos_presupuestos.PresupuestoDetalle,
     contratos_presupuestos.PaginaPresupuestos,
@@ -353,13 +354,31 @@ _OPERACIONES: tuple[_Op, ...] = (
          "422": "Ítems inválidos o repuesto inexistente"},
         parametros=[_P_PRESUPUESTO], cuerpo="NuevaVersion", ejemplo_cuerpo={"copiar_de": 1},
         cuerpo_opcional=True, descripcion_404="Presupuesto inexistente o ajeno."),
+    _Op("/api/presupuestos/{presupuesto_id}/modificacion", "post", "Presupuestos",
+        "crear_modificacion_presupuesto",
+        "Modificar el presupuesto aprobado (crea obligatoriamente una nueva versión)",
+        "Mecánico o Administrador. La versión aprobada queda bloqueada y sigue vigente hasta "
+        "que el cliente apruebe la modificación. Sin body (o sin `items`) la nueva versión es "
+        "una copia editable de la aprobada (`es_modificacion: true`); se ajusta con "
+        "`PUT .../items` y se envía como siempre.",
+        "201", _ref("PresupuestoDetalle"),
+        {**_DETALLE_ENVIADO, "cantidad_versiones": 2, "ultima_version": 2,
+         "estado_ultima_version": "borrador",
+         "versiones": [_VERSION_ENVIADA, {**_VERSION_BORRADOR, "numero": 2}]},
+        {"401": "JWT ausente o inválido", "403": "Se requiere rol Mecánico o Administrador",
+         "409": "No hay versión aprobada, ya hay un borrador abierto o la orden está "
+                "entregada/cancelada",
+         "422": "Ítems inválidos o repuesto inexistente"},
+        parametros=[_P_PRESUPUESTO], cuerpo="Modificacion", ejemplo_cuerpo={},
+        cuerpo_opcional=True, descripcion_404="Presupuesto inexistente o ajeno."),
     _Op("/api/presupuestos/{presupuesto_id}/versiones/{numero}/items", "put", "Presupuestos",
         "reemplazar_items_version", "Reemplazar los ítems de una versión en borrador",
         "Mecánico o Administrador. Reemplaza la lista completa de ítems; una versión "
         "enviada queda congelada (409).",
         "200", _ref("VersionDetalle"), _VERSION_BORRADOR,
         {"401": "JWT ausente o inválido", "403": "Se requiere rol Mecánico o Administrador",
-         "409": "La versión ya fue enviada (congelada)",
+         "409": "La versión ya fue enviada (congelada) o está aprobada y bloqueada "
+                "(modificarla = POST .../modificacion)",
          "422": "Ítems inválidos o repuesto inexistente"},
         parametros=[_P_PRESUPUESTO, _P_NUMERO], cuerpo="ItemsVersion",
         ejemplo_cuerpo={"items": _ITEMS_ENTRADA},

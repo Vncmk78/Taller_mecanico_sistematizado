@@ -53,13 +53,17 @@ CLIENTE = _cabecera(NombreRol.CLIENTE, datos.CLIENTE_ID)
 
 
 class _OrdenesDelCliente:
+    """Hace de MS2: el personal ve todas las órdenes; el cliente, solo `propias`."""
+
     def __init__(self) -> None:
         self.propias: set[int] = set()
 
-    def verificar_acceso(self, orden_id: int, token: str) -> None:
-        from services.ms3_presupuestos.integracion_ms2 import OrdenNoVisible
-        if orden_id not in self.propias:
+    def verificar_acceso(self, orden_id: int, token: str):
+        from services.ms3_presupuestos.integracion_ms2 import OrdenNoVisible, OrdenVisible
+        personal = token in (ADMIN["Authorization"][7:], MECANICO["Authorization"][7:])
+        if not personal and orden_id not in self.propias:
             raise OrdenNoVisible(orden_id)
+        return OrdenVisible(orden_id)
 
     verificar_propiedad = verificar_acceso
 

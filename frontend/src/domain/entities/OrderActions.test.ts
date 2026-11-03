@@ -87,7 +87,7 @@ describe('OrderActions: catálogo centralizado de acciones por estado y rol', ()
 
             expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'cancelar']);
             expect(acciones[0].destinos).toEqual([]);
-            expect(acciones[1]).toMatchObject({ destinos: [8], requiereMotivo: true });
+            expect(acciones[1]).toMatchObject({ destinos: [8], requiereMotivo: false });
         });
 
         it.each([2, 3])('en estado %i ofrece solo cancelar', (estado) => {
@@ -113,14 +113,14 @@ describe('OrderActions: catálogo centralizado de acciones por estado y rol', ()
             const acciones = accionesDisponibles(orden(3), CLIENTE);
 
             expect(acciones.map((a) => a.id)).toEqual(['decidir_presupuesto', 'cancelar']);
-            expect(acciones[1]).toMatchObject({ destinos: [8], requiereMotivo: true });
+            expect(acciones[1]).toMatchObject({ destinos: [], requiereMotivo: true });
         });
 
         it.each([1, 2])('en estado %i ofrece solo cancelar', (estado) => {
             const acciones = accionesDisponibles(orden(estado), CLIENTE);
 
             expect(acciones.map((a) => a.id)).toEqual(['cancelar']);
-            expect(acciones[0].etiqueta).toBe('Cancelar solicitud');
+            expect(acciones[0].etiqueta).toBe('Solicitar cancelación');
         });
 
         it.each([4, 5, 6, 7, 8])('no ofrece acciones en estado %i', (estado) => {

@@ -150,9 +150,10 @@ Detalles que condicionan la matriz:
   `Esperando diagnóstico` y quedan registrados `HistorialAsignacion` e
   `HistorialEstado` en la misma transacción. `Entregado` y `Cancelado` rechazan
   asignaciones con `409`.
-- `mecanico_id` es hoy una **referencia lógica** a MS1: **no** se valida en el
-  servidor que exista, esté activo ni tenga el rol `mecanico`, ni se aplica un
-  máximo de órdenes activas.
+- `mecanico_id` es una **referencia lógica** a MS1. MS2 consulta su API con el
+  JWT del Administrador y exige usuario existente, activo y con rol `mecanico`
+  (`422` en otro caso; `503` si no se puede validar), antes de guardar cambios.
+  También aplica el máximo configurable de órdenes activas.
 - **Cambio general de estado** (`PATCH /api/ordenes/{id}/estado`): solo el
   Administrador, o el Mecánico asignado a esa orden, con `403` en otro caso. Los
   pares `1 → 2`, `3 → 4/5` y `6 → 7` están reservados a sus operaciones
@@ -169,15 +170,15 @@ Detalles que condicionan la matriz:
   `POST /api/ordenes/{id}/cancelacion/confirmacion`. MS2 vuelve a verificar la
   aprobación inicial y solo entonces actualiza a `Cancelado` e historial en una
   transacción. `PATCH` no permite saltarse el flujo.
-- `mecanico_id` es una **referencia lógica** a MS1. MS2 valida localmente el
-  máximo configurable de órdenes activas, pero aún no comprueba por contrato
-  que el usuario de destino exista, esté activo o tenga el rol `mecanico`.
+- MS2 valida la referencia por `GET /auth/usuarios/{id}` de MS1, sin consultar
+  su base. La comprobación remota y la transacción local no son atómicas entre
+  servicios; una caída o respuesta incompatible impide guardar la asignación.
 
 ### 4.4 Presupuestos, repuestos, proveedores e inventario (MS3)
 
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
-| Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ | ✅ |
+| Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ solo asignada | ✅ orden existente |
 | Listar / buscar por orden (`GET /presupuestos?orden_id=`) | ✅ solo su orden y con `orden_id` | ✅ | ✅ |
 | Detalle y versión (`GET /presupuestos/{id}`, `/versiones/{n}`) | ✅ solo sus órdenes, sin borradores | ✅ | ✅ |
 | Crear la versión siguiente (`POST /presupuestos/{id}/versiones`) | ❌ 403 | ✅ | ✅ |
@@ -197,7 +198,12 @@ Detalles que condicionan la matriz:
   muestra, MS3 responde `404` (sin revelar si el presupuesto existe); si MS2 no
   responde, `503`. Implementación: `services/ms3_presupuestos/integracion_ms2.py`.
 - El cliente no ve versiones en borrador: para él no existen (`404`).
-- Pendiente: limitar al mecánico a las órdenes que tiene asignadas (dato de MS2).
+- Al crear un presupuesto, MS3 valida en MS2 existencia y asignación con el JWT
+  original. Un Cliente+Mecánico propietario sigue necesitando la asignación;
+  solo Administrador está exento. Rechaza con `404` si la orden no corresponde,
+  o `503` si MS2 no permite validarla, sin escrituras.
+- Esta comprobación se aplica a la creación del presupuesto. Los otros endpoints
+  de personal de MS3 conservan los alcances descritos en la tabla.
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).
 - El cliente no ve el catálogo: ve el repuesto y su proveedor dentro de su presupuesto (§4.3).

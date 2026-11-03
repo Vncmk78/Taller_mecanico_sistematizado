@@ -58,7 +58,7 @@ MICROSERVICIOS: tuple[Microservicio, ...] = (
         nombre="ms1_auth",
         descripcion="Autenticación y Usuarios",
         url=settings.MS1_URL,
-        prefijos=("auth",),
+        prefijos=("auth", "notificaciones"),
         variable_timeout="MS1_TIMEOUT_SECONDS",
     ),
     Microservicio(

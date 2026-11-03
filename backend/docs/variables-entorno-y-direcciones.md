@@ -73,12 +73,22 @@ interna del servicio al desplegar. Las rutas `/ms1..ms4/*` exponen cada
 servicio directo (Swagger y health checks) y se reescriben a `/` dentro del
 servicio.
 
-> **Pendiente detectado (Semana 7):** `ms-taller` no declara un binding para
-> `MS2_MS3_URL`. Si esa variable no está definida a mano en Vercel, MS2 usa el
-> valor por defecto (`http://localhost:8003`) y las verificaciones MS2 → MS3
-> (envío inicial, decisiones y primera aprobación de presupuesto) responden
-> `503`. Solución propuesta: agregar en `vercel.json`, servicio `ms-taller`,
-> `"bindings": [{ "type": "service", "service": "ms-presupuestos", "format": "url", "env": "MS2_MS3_URL" }]`.
+**Corrección de despliegue (3 de noviembre de 2026):** el binding propuesto
+MS2 → MS3 creaba un ciclo con MS3 → MS2 y Vercel rechazó el despliegue después
+del build. Se mantiene el binding MS3 → MS2. MS2 resuelve MS3 por HTTPS como
+`https://<VERCEL_URL>/ms3`, con las variables de sistema habilitadas y sin
+`MS2_MS3_URL` explícita. No se utiliza el alias de producción para un preview.
+Las URLs explícitas siguen teniendo prioridad en todos los entornos.
+
+El JWT del usuario se conserva. Si Deployment Protection protege ese dominio,
+se requiere Protection Bypass for Automation: MS2 añade el secreto de plataforma
+como `x-vercel-protection-bypass` únicamente al MS3 del mismo despliegue. No se
+expone al frontend ni se elimina ningún control JWT. Si Vercel rechaza la llamada,
+MS2 responde `503` sin aceptar hechos ni guardar el cambio de orden. En local y
+Kubero siguen funcionando las direcciones configuradas en `MS2_MS3_URL`.
+
+Referencias: [variables de sistema](https://vercel.com/docs/environment-variables/system-environment-variables)
+y [autorización de automatización](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation).
 
 ---
 

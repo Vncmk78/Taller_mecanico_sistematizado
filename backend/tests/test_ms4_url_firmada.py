@@ -147,11 +147,13 @@ def test_disposition_vacio_o_puntos_devuelve_archivo() -> None:
     assert 'filename="archivo"' in content_disposition_attachment("")
 
 
-def test_config_endpoint_publico_por_defecto_es_none() -> None:
+def test_config_endpoint_publico_por_defecto_es_none(monkeypatch) -> None:
+    monkeypatch.delenv("MS4_S3_PUBLIC_ENDPOINT", raising=False)
     assert _crear_settings().S3_PUBLIC_ENDPOINT is None
 
 
-def test_config_ttl_por_defecto_es_300() -> None:
+def test_config_ttl_por_defecto_es_300(monkeypatch) -> None:
+    monkeypatch.delenv("MS4_URL_DESCARGA_TTL_SECONDS", raising=False)
     assert _crear_settings().URL_DESCARGA_TTL_SECONDS == 300
 
 

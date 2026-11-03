@@ -104,6 +104,8 @@ def _exigir_orden_del_cliente(
     summary="Crear el presupuesto de una orden (versión 1 en borrador)",
     responses={
         **_ERRORES_COMUNES,
+        **_503,
+        404: {"description": "Orden inexistente o no asignada al mecánico"},
         status.HTTP_409_CONFLICT: {"description": "La orden ya tiene presupuesto"},
         422: {"description": "Ítems inválidos o repuesto inexistente"},
     },
@@ -112,7 +114,13 @@ def crear(
     body: PresupuestoCrear,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> PresupuestoDetalle:
+    try:
+        verificador.verificar_creacion_presupuesto(body.orden_id, token, principal)
+    except OrdenNoVisible as exc:
+        raise RecursoNoEncontrado(f"Orden {body.orden_id} no existe") from exc
     presupuesto = casos.crear_presupuesto(
         uow, orden_id=body.orden_id, items=body.items, creado_por_id=principal.usuario_id
     )

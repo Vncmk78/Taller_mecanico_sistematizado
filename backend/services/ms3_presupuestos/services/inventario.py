@@ -99,13 +99,6 @@ def estado_stock(uow: UnidadDeTrabajo, repuesto: Repuesto, general: int | None =
     )
 
 
-def disponible_para_orden(uow: UnidadDeTrabajo, repuesto: Repuesto, orden_id: int | None) -> int:
-    """Stock que puede usar una orden: lo libre + lo que ella misma tiene reservado."""
-    compromisos = uow.movimientos.comprometido_por_orden(repuesto.repuesto_id)
-    de_otras = sum(c for o, c in compromisos.items() if o != orden_id)
-    return repuesto.stock - de_otras
-
-
 def alertas(uow: UnidadDeTrabajo) -> tuple[int | None, list[AlertaRepuesto]]:
     general = umbral_general(uow)
     bajo = uow.repuestos.buscar(

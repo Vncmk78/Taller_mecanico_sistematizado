@@ -14,6 +14,7 @@ from pydantic import SecretStr
 
 from gateway.contratos import auth as contratos_auth
 from gateway.contratos import evidencias as contratos_evidencias
+from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.main import app
@@ -26,6 +27,9 @@ from services.ms1_auth.schemas.auth import (
     RegistroClienteSolicitud as Ms1RegistroClienteSolicitud,
     TokenRespuesta as Ms1TokenRespuesta,
     UsuarioRespuesta as Ms1UsuarioRespuesta,
+)
+from services.ms1_auth.schemas.notificacion import (
+    NotificacionRespuesta as Ms1NotificacionRespuesta,
 )
 from services.ms2_taller.config import settings as ms2_settings
 from services.ms2_taller.db import get_db as get_db_ms2
@@ -61,6 +65,10 @@ from services.ms4_evidencias.schemas.evidencia import (
     EvidenciaLeida as Ms4EvidenciaLeida,
     UrlDescarga as Ms4UrlDescarga,
 )
+from services.ms3_presupuestos.schemas.inventario import (
+    RepuestoReservado as Ms3RepuestoReservado,
+    DisponibilidadRepuestosRespuesta as Ms3DisponibilidadRepuestosRespuesta,
+)
 from shared.auth import NombreRol, crear_token_acceso
 from shared.openapi_ordenes import ESTADOS_DOCUMENTADOS
 
@@ -87,6 +95,8 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/auth/register", "post"),
     ("/api/auth/login", "post"),
     ("/api/auth/me", "get"),
+    ("/api/notificaciones", "get"),
+    ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
     ("/api/vehiculos", "post"),
     ("/api/vehiculos", "get"),
     ("/api/vehiculos/asignados", "get"),
@@ -101,6 +111,7 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
     ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
+    ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/bitacora", "get"),
     ("/api/ordenes/{orden_id}/bitacora", "post"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
@@ -166,6 +177,8 @@ _ENDPOINTS_ESPERADOS |= _ENDPOINTS_SEMANA_7
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
 _PROTEGIDOS = {
     "/api/auth/me",
+    "/api/notificaciones",
+    "/api/inventario/ordenes/{orden_id}/disponibilidad",
     "/api/vehiculos",
     "/api/vehiculos/asignados",
     "/api/vehiculos/{vehiculo_id}",
@@ -175,6 +188,7 @@ _PROTEGIDOS = {
     "/api/ordenes/configuracion/capacidad/mecanicos",
     "/api/ordenes/configuracion/capacidad/ingresos-diarios",
     "/api/ordenes/{orden_id}/historial",
+    "/api/ordenes/vehiculo/{vehiculo_id}/historial",
     "/api/ordenes/{orden_id}/bitacora",
     "/api/ordenes/{orden_id}/estado",
     "/api/ordenes/{orden_id}/entrega",
@@ -215,7 +229,7 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
 
 def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["info"]["title"] == "SGTM — API Gateway"
-    assert esquema["info"]["version"] == "0.1.0"
+    assert esquema["info"]["version"] == "2.0.1"
     assert esquema["openapi"].startswith("3.")
 
 
@@ -233,6 +247,8 @@ def _operaciones_reales_via_gateway() -> set[tuple[str, str]]:
     reales: set[tuple[str, str]] = set()
     for servicio in (ms1_app, ms2_app, ms3_app, ms4_app):
         for ruta, item in servicio.openapi()["paths"].items():
+            if ruta.startswith("/interno/"):
+                continue  # Contrato MS2→MS1 autenticado por servicio, fuera de Gateway.
             if ruta.startswith("/health") or ruta in {"/docs", "/redoc", "/openapi.json"}:
                 continue
             for metodo in ("get", "post", "put", "patch", "delete"):
@@ -317,6 +333,7 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}", "get"),
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "post"),
         ("/api/ordenes/{orden_id}/estado", "patch"),
@@ -328,6 +345,7 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/evidencias/{evidencia_id}", "get"),
         ("/api/evidencias/{evidencia_id}/descarga", "get"),
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"),
+        ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/presupuestos/decisiones/{decision_id}", "get"),
         ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
     } | (_ENDPOINTS_SEMANA_7 - {("/api/auth/usuarios", "get")})
@@ -412,6 +430,8 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         assert esquema_cuerpo["$ref"] == f"#/components/schemas/{ref}"
     for (ruta, metodo) in (
         ("/api/auth/me", "get"),
+        ("/api/notificaciones", "get"),
+        ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos/asignados", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
@@ -420,6 +440,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
         ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "get"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
@@ -448,6 +469,12 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (contratos_auth.LoginSolicitud, Ms1LoginSolicitud),
         (contratos_auth.UsuarioRespuesta, Ms1UsuarioRespuesta),
         (contratos_auth.TokenRespuesta, Ms1TokenRespuesta),
+        (contratos_auth.NotificacionRespuesta, Ms1NotificacionRespuesta),
+        (contratos_inventario.RepuestoReservado, Ms3RepuestoReservado),
+        (
+            contratos_inventario.DisponibilidadRepuestosRespuesta,
+            Ms3DisponibilidadRepuestosRespuesta,
+        ),
         (contratos_vehiculos.VehiculoCrear, Ms2VehiculoCrear),
         (contratos_vehiculos.VehiculoActualizar, Ms2VehiculoActualizar),
         (contratos_vehiculos.VehiculoRespuesta, Ms2VehiculoRespuesta),
@@ -571,6 +598,9 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "LoginSolicitud",
         "UsuarioRespuesta",
         "TokenRespuesta",
+        "NotificacionRespuesta",
+        "RepuestoReservado",
+        "DisponibilidadRepuestosRespuesta",
         "VehiculoCrear",
         "VehiculoActualizar",
         "VehiculoRespuesta",
@@ -690,6 +720,12 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
             "content"
         ]["application/json"]["schema"]["items"]["$ref"]
         == "#/components/schemas/HistorialEstadoRespuesta"
+    )
+    assert (
+        paths["/api/ordenes/vehiculo/{vehiculo_id}/historial"]["get"]["responses"][
+            "200"
+        ]["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/HistorialOrdenesVehiculoRespuesta"
     )
 
 

@@ -22,6 +22,20 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+
+@pytest.fixture
+def ordenes_verificadas_para_persistencia():
+    """Aísla MS2 en suites ORM; los permisos HTTP se prueban con las APIs reales."""
+    from types import SimpleNamespace
+    from services.ms3_presupuestos.main import app
+    from services.ms3_presupuestos.integracion_ms2 import obtener_verificador_ordenes
+
+    app.dependency_overrides[obtener_verificador_ordenes] = lambda: SimpleNamespace(
+        verificar_creacion_presupuesto=lambda _orden, _token, _principal: None,
+    )
+    yield
+    app.dependency_overrides.pop(obtener_verificador_ordenes, None)
+
 URL_POR_DEFECTO = "postgresql+psycopg://taller:taller@localhost:5435/taller_ms3"
 RUTA_ALEMBIC = "services/ms3_presupuestos/alembic.ini"
 

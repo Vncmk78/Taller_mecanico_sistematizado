@@ -21,7 +21,7 @@ class LoginSolicitud(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1)
 
 
 class RolAsignarSolicitud(BaseModel):
@@ -45,6 +45,10 @@ class UsuarioRespuesta(BaseModel):
 
 
 class TokenRespuesta(BaseModel):
+    # Todo campo con valor por defecto se serializa siempre: el esquema de
+    # salida lo marca obligatorio (contrato 2.0.1, diferencia D-02).
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     access_token: str
     token_type: str = "bearer"
     user: UsuarioRespuesta

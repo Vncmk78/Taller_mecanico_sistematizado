@@ -100,6 +100,6 @@ describe('ClientOrderDetailPage: detalle desde el portal del cliente', () => {
         renderPage();
 
         expect(await screen.findByRole('link', { name: 'Gestionar presupuesto' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Cancelar solicitud' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Solicitar cancelación' })).toBeInTheDocument();
     });
 });

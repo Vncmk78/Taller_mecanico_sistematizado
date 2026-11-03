@@ -12,6 +12,10 @@ import { AdminOrdersPage } from '@/presentation/pages/admin/AdminOrdersPage';
 import { AdminOrderDetailPage } from '@/presentation/pages/admin/AdminOrderDetailPage';
 import { AdminClientsPage } from '@/presentation/pages/admin/AdminClientsPage';
 import { AdminInventoryPage } from '@/presentation/pages/admin/AdminInventoryPage';
+import { AdminInventoryAlertsPage } from '@/presentation/pages/admin/AdminInventoryAlertsPage';
+import { AdminInventoryMovementsPage } from '@/presentation/pages/admin/AdminInventoryMovementsPage';
+import { AdminStockDetailPage } from '@/presentation/pages/admin/AdminStockDetailPage';
+import { AdminThresholdPage } from '@/presentation/pages/admin/AdminThresholdPage';
 import { AdminDistributorsPage } from '@/presentation/pages/admin/AdminDistributorsPage';
 import { ClientDashboardPage } from '@/presentation/pages/client/ClientDashboardPage';
 import { ClientVehiclesPage } from '@/presentation/pages/client/ClientVehiclesPage';
@@ -66,6 +70,10 @@ export function AppRoutes() {
         <Route path="vehiculos" element={<AdminVehiclesPage />} />
         <Route path="vehiculos/:id" element={<AdminVehicleDetailPage />} />
         <Route path="inventario" element={<AdminInventoryPage />} />
+        <Route path="inventario/alertas" element={<AdminInventoryAlertsPage />} />
+        <Route path="inventario/movimientos" element={<AdminInventoryMovementsPage />} />
+        <Route path="inventario/stock/:repuestoId" element={<AdminStockDetailPage />} />
+        <Route path="inventario/umbral" element={<AdminThresholdPage />} />
         <Route path="distribuidores" element={<AdminDistributorsPage />} />
       </Route>
 

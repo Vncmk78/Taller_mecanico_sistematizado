@@ -34,7 +34,7 @@ async def _lifespan(_: FastAPI):
     await cerrar_cliente()
 
 
-app = FastAPI(title="SGTM — API Gateway", version="0.1.0", lifespan=_lifespan)
+app = FastAPI(title="SGTM — API Gateway", version="2.0.1", lifespan=_lifespan)
 
 # El Swagger por defecto solo mostraría /api/{ruta}; se reescribe para
 # documentar los contratos reales de MS1 y MS2 (ver gateway/openapi.py).

@@ -36,10 +36,13 @@ hilo principal y no requiere `revokeObjectURL`.
 
 Doble validación, espejo de los límites del Gateway/MS4:
 
-- **Tipo:** `accept="image/*,video/*"` en el input más
-  `esContentTypeEvidenciaPermitido()` (solo `image/*` y `video/*`).
-- **Tamaño:** `TAMANO_MAXIMO_EVIDENCIA_BYTES = 12 MiB`, idéntico al límite del
-  Gateway para `POST /api/evidencias` (multipart).
+- **Tipo:** el selector y `validarArchivoEvidencia()` aceptan JPG/JPEG, PNG,
+  WEBP, MP4 y MOV, según la lista blanca de MS4. Se comprueban extensión y MIME;
+  el servidor sigue verificando la firma y estructura real del archivo.
+- **Tamaño:** fotos hasta 10 MiB. En videos la validación local rechaza archivos
+  mayores de 12 MiB. La Gateway limita a 12 MiB la petición multipart completa,
+  incluidos campos y cabeceras, por lo que un video muy próximo a ese techo
+  todavía puede recibir `413`; ese error se muestra en el formulario.
 
 La validación es *fail-fast* en cliente, pero la autoridad sigue siendo el
 backend (el cliente no decide el resultado final, solo evita viajes inútiles).
@@ -78,7 +81,7 @@ backend (el cliente no decide el resultado final, solo evita viajes inútiles).
 | --- | --- | --- |
 | Acceso directo al bucket | Almacenamiento privado + URL prefirmada efímera, pedida bajo demanda | `Evidencia.ts`, `EvidenceCard.tsx` |
 | URL filtrada | Expiración corta (`expiraEn`); nunca persistida | `UrlDescarga` |
-| Archivo inválido/pesado | Validación de `contentType` y 12 MiB en cliente (backend manda) | `EvidenceUploadForm.tsx` |
+| Archivo inválido/pesado | Lista blanca, fotos de hasta 10 MiB y techo local de 12 MiB para videos (backend manda) | `EvidenceUploadForm.tsx`, `evidenceValidation.ts` |
 | XSS vía nombre de archivo | Solo renderizado de texto (escaping de React) | `EvidenceCard`, `EvidencePreviewDialog` |
 | HTML/JS embebido en medios | Sólo `<img>`/`<video>` nativos, sin `dangerouslySetInnerHTML` | componentes de evidencia |
 | Tabnabbing al abrir original | `noopener,noreferrer` en `window.open` | `EvidencePreviewDialog.tsx` |

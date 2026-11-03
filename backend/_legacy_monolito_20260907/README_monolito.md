@@ -1,5 +1,10 @@
 # Backend — Sistema de Gestión de Taller (Grupo 10)
 
+> Registro del backend inicial con una sola base. La implementación vigente
+> utiliza los cuatro microservicios de [`services/`](../services/) y la
+> [`API Gateway`](../gateway/README.md). Los comandos y migraciones que siguen
+> describen el sistema anterior y se conservan como historial.
+
 Base de persistencia del proyecto (Semana 1). Stack según *Herramientas a
 utilizar*: **FastAPI + SQLAlchemy 2 + Alembic + PostgreSQL**.
 

@@ -156,7 +156,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                     actualizada =
                         actor.rol === 'cliente'
                             ? await orderService.cancelarComoCliente(order.id, motivo)
-                            : await orderService.cambiarEstado(order.id, 8, motivo);
+                            : await orderService.confirmarCancelacion(order.id);
                     break;
                 default:
                     return;
@@ -164,7 +164,9 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
 
             updateOrder(actualizada);
             showToast(
-                `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`,
+                pending.id === 'cancelar' && actor.rol === 'cliente'
+                    ? `Solicitud de cancelación de la orden n° ${order.id} enviada. Pendiente de confirmación administrativa.`
+                    : `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`,
                 'success'
             );
             setPending(null);
@@ -314,7 +316,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                     )}
                                 </label>
                             ) : (
-                                accion.id !== 'asignar_mecanico' && (
+                                accion.id !== 'asignar_mecanico' && accion.id !== 'cancelar' && (
                                     <label className="flex flex-col gap-1 text-sm">
                                         <span className="text-text-muted">Observación (opcional)</span>
                                         <input
@@ -364,9 +366,11 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
             <ConfirmDialog
                 open={pending !== null}
                 tone={pending?.id === 'cancelar' ? 'danger' : 'primary'}
-                title={tituloDialogo(pending)}
-                description={descripcionDialogo(pending, order, { destino, motivo, mecanicos, mecanicoId })}
-                confirmLabel={etiquetaConfirmar(pending)}
+                title={tituloDialogo(pending, actor.rol === 'cliente')}
+                description={descripcionDialogo(pending, order, {
+                    destino, motivo, mecanicos, mecanicoId, solicitudCliente: actor.rol === 'cliente',
+                })}
+                confirmLabel={etiquetaConfirmar(pending, actor.rol === 'cliente')}
                 isLoading={submitting}
                 onConfirm={ejecutar}
                 onCancel={() => setPending(null)}
@@ -380,29 +384,30 @@ interface DescripcionContexto {
     motivo: string;
     mecanicos: UsuarioListado[];
     mecanicoId: string;
+    solicitudCliente: boolean;
 }
 
-function tituloDialogo(accion: AccionOrden | null): string {
+function tituloDialogo(accion: AccionOrden | null, solicitudCliente: boolean): string {
     switch (accion?.id) {
         case 'asignar_mecanico':
             return '¿Confirmar la asignación?';
         case 'registrar_entrega':
             return '¿Registrar la entrega del vehículo?';
         case 'cancelar':
-            return '¿Confirmar la cancelación?';
+            return solicitudCliente ? '¿Solicitar la cancelación?' : '¿Confirmar la cancelación?';
         default:
             return '¿Confirmar el avance de estado?';
     }
 }
 
-function etiquetaConfirmar(accion: AccionOrden | null): string {
+function etiquetaConfirmar(accion: AccionOrden | null, solicitudCliente: boolean): string {
     switch (accion?.id) {
         case 'asignar_mecanico':
             return 'Asignar mecánico';
         case 'registrar_entrega':
             return 'Registrar entrega';
         case 'cancelar':
-            return 'Cancelar orden';
+            return solicitudCliente ? 'Solicitar cancelación' : 'Confirmar cancelación';
         default:
             return 'Avanzar estado';
     }
@@ -423,7 +428,9 @@ function descripcionDialogo(
         case 'registrar_entrega':
             return `La orden n° ${order.id} pasará a Entregado. Confirme que el vehículo fue entregado al cliente.`;
         case 'cancelar':
-            return `La orden n° ${order.id} pasará a Cancelado.${ctx.motivo ? `\nMotivo: ${ctx.motivo}` : ''}`;
+            return ctx.solicitudCliente
+                ? `Se solicitará cancelar la orden n° ${order.id}. Su estado no cambiará hasta que un administrador confirme.${ctx.motivo ? `\nMotivo: ${ctx.motivo}` : ''}`
+                : `Se confirmará la solicitud pendiente de la orden n° ${order.id}. MS2 comprobará que no exista una aprobación del presupuesto antes de cancelarla.`;
         default:
             return `La orden n° ${order.id} pasará de ${ordenStatusLabel(order.estadoCodigo)} a ${
                 ctx.destino ? ordenStatusLabel(Number(ctx.destino)) : ''

@@ -1,5 +1,11 @@
 # MS3 · Microservicio de Presupuestos, Repuestos y Proveedores
 
+> Implementación histórica, fuera de los puntos de entrada de `vercel.json`.
+> El MS3 vigente está en [`backend/services/ms3_presupuestos`](../backend/services/ms3_presupuestos).
+> Este directorio conserva migraciones propias y copias anteriores de otros
+> módulos; se mantiene pendiente de revisión de esos historiales, no como
+> alternativa para ejecutar el sistema actual.
+
 Microservicio Python/FastAPI del sistema **Taller Mecánico Sistematizado**
 (ver `Sprint 0 - Entregables/01-arquitectura.png`). Gestiona presupuestos por
 orden, sus repuestos, los proveedores y los parámetros de inventario.

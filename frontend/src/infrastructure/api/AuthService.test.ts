@@ -45,7 +45,8 @@ describe('AuthService: adapta la respuesta de MS1 al dominio', () => {
     const auth = await authService.login({ email: 'cliente@pruebas.cl', password: 'ClientePrueba123!' });
 
     expect(auth.user.role).toBe('cliente');
-    expect(auth.user).not.toHaveProperty('roles');
+    // `roles` se conserva completo para las guardas multirol (D-03).
+    expect(auth.user.roles).toEqual(['cliente']);
   });
 
   it('mapea roles[] de /auth/me a role singular', async () => {
@@ -55,7 +56,7 @@ describe('AuthService: adapta la respuesta de MS1 al dominio', () => {
 
     expect(user.role).toBe('mecanico');
     expect(user.id).toBe('2');
-    expect(user).not.toHaveProperty('roles');
+    expect(user.roles).toEqual(['mecanico']);
   });
 });
 
@@ -89,6 +90,7 @@ describe('AuthService: mapeo contra el payload real de MS1', () => {
       email: 'mecanico@correo.cl',
       full_name: 'Martín Herrera',
       role: 'mecanico',
+      roles: ['mecanico'],
       is_active: true,
     });
   });
@@ -104,11 +106,96 @@ describe('AuthService: mapeo contra el payload real de MS1', () => {
     expect(user.role).toBe('mecanico');
   });
 
+  it('conserva todos los roles para que las guardas den acceso a cada portal (D-03)', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: usuarioConDosRoles });
+
+    const user = await authService.getProfile();
+
+    expect(user.roles).toEqual(['mecanico', 'administrador']);
+  });
+
+  it('descarta roles desconocidos que no forman parte del contrato', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { ...usuarioRespuestaReal, roles: ['supervisor', 'cliente'] },
+    });
+
+    const user = await authService.getProfile();
+
+    expect(user.role).toBe('cliente');
+    expect(user.roles).toEqual(['cliente']);
+  });
+
   it('respeta is_active en false en lugar de asumir que el usuario está activo', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: { ...usuarioRespuestaReal, is_active: false } });
 
     const user = await authService.getProfile();
 
     expect(user.is_active).toBe(false);
+  });
+});
+
+describe('AuthService: listado administrativo de usuarios', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('consulta GET /auth/usuarios y conserva todos los roles de cada cuenta', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: [usuarioRespuestaReal, usuarioConDosRoles],
+    });
+
+    const usuarios = await authService.listarUsuarios();
+
+    expect(apiClient.get).toHaveBeenCalledWith('/auth/usuarios');
+    expect(usuarios).toEqual([
+      {
+        id: '42',
+        email: 'mecanico@correo.cl',
+        full_name: 'Martín Herrera',
+        roles: ['mecanico'],
+        is_active: true,
+      },
+      {
+        id: '42',
+        email: 'mecanico@correo.cl',
+        full_name: 'Martín Herrera',
+        roles: ['mecanico', 'administrador'],
+        is_active: true,
+      },
+    ]);
+  });
+
+  it('normaliza roles ausentes a una lista vacía en lugar de romper el filtrado', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: [{ id: 9, email: 'sinrol@correo.cl', full_name: 'Sin Rol', is_active: true }],
+    });
+
+    const [usuario] = await authService.listarUsuarios();
+
+    expect(usuario.roles).toEqual([]);
+  });
+
+  it('traduce el payload literal publicado por la Gateway', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: [
+        {
+          id: 7,
+          email: 'ana@correo.cl',
+          full_name: 'Ana P\u00e9rez',
+          roles: ['cliente'],
+          is_active: true,
+        },
+      ],
+    });
+
+    const [usuario] = await authService.listarUsuarios();
+
+    expect(usuario).toEqual({
+      id: '7',
+      email: 'ana@correo.cl',
+      full_name: 'Ana P\u00e9rez',
+      roles: ['cliente'],
+      is_active: true,
+    });
   });
 });

@@ -18,6 +18,7 @@ import { BudgetItemRow } from '@/presentation/components/budgets/BudgetItemRow';
 import { BudgetStatusBadge } from '@/presentation/components/budgets/BudgetStatusBadge';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
+import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import type { ResultadoDisponibilidad } from '@/domain/entities/Inventario';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
@@ -36,8 +37,55 @@ export function MechanicOrderDetailPage() {
     const vehicles = useVehicleStore((s) => s.vehicles);
     const [evidenciasAbiertas, setEvidenciasAbiertas] = useState(true);
     const [disponibilidad, setDisponibilidad] = useState<ResultadoDisponibilidad | null>(null);
+    const [stockActionError, setStockActionError] = useState<string | null>(null);
+    const [stockActionSuccess, setStockActionSuccess] = useState<string | null>(null);
+    const [stockSubmitting, setStockSubmitting] = useState(false);
     const [evidenciasRefresh, setEvidenciasRefresh] = useState(0);
     const puedeSubir = user?.role === 'mecanico' || user?.role === 'administrador';
+
+    const handleReservar = async () => {
+        if (!order?.id) return;
+        setStockSubmitting(true);
+        setStockActionError(null);
+        setStockActionSuccess(null);
+        try {
+            const result = await inventarioService.reservar(Number(order.id));
+            setStockActionSuccess(result.reservado ? 'Stock reservado correctamente.' : 'No se pudo reservar todo el stock.');
+            if (!result.reservado && result.faltantes.length) {
+                setStockActionError(
+                    `Faltan: ${result.faltantes.map((f) => `${f.nombre} (${f.faltan})`).join(', ')}`
+                );
+            }
+            const disp = await inventarioService.getDisponibilidadOrden(Number(order.id));
+            setDisponibilidad(disp);
+        } catch (err) {
+            const faltantes = (err as { response?: { data?: { faltantes?: Array<{ nombre: string; faltan: number }> } } })?.response?.data?.faltantes;
+            if (faltantes?.length) {
+                setStockActionError(`Stock insuficiente: ${faltantes.map((f) => `${f.nombre} (${f.faltan})`).join(', ')}`);
+            } else {
+                setStockActionError(getApiErrorMessage(err, 'No se pudo reservar el stock.'));
+            }
+        } finally {
+            setStockSubmitting(false);
+        }
+    };
+
+    const handleLiberar = async () => {
+        if (!order?.id) return;
+        setStockSubmitting(true);
+        setStockActionError(null);
+        setStockActionSuccess(null);
+        try {
+            await inventarioService.liberar(Number(order.id), crypto.randomUUID());
+            setStockActionSuccess('Reserva liberada correctamente.');
+            const disp = await inventarioService.getDisponibilidadOrden(Number(order.id));
+            setDisponibilidad(disp);
+        } catch (err) {
+            setStockActionError(getApiErrorMessage(err, 'No se pudo liberar la reserva.'));
+        } finally {
+            setStockSubmitting(false);
+        }
+    };
 
     useEffect(() => {
         if (!order?.id) return;
@@ -135,7 +183,7 @@ export function MechanicOrderDetailPage() {
                     <p className="text-sm text-text-muted mb-4">
                         {disponibilidad.disponible ? 'Stock suficiente para la orden.' : 'Faltan repuestos para completar la orden.'}
                     </p>
-                    <ul className="space-y-2">
+                    <ul className="space-y-2 mb-4">
                         {disponibilidad.repuestos.map((r) => (
                             <li key={r.repuestoId} className="flex justify-between text-sm">
                                 <span>{r.nombre}</span>
@@ -145,6 +193,26 @@ export function MechanicOrderDetailPage() {
                             </li>
                         ))}
                     </ul>
+                    {stockActionError && <p className="text-status-red text-sm mb-3">{stockActionError}</p>}
+                    {stockActionSuccess && <p className="text-status-green text-sm mb-3">{stockActionSuccess}</p>}
+                    <div className="flex gap-3">
+                        <button
+                            type="button"
+                            onClick={handleReservar}
+                            disabled={stockSubmitting}
+                            className="px-4 py-2 rounded-lg bg-primary-blue text-white text-sm font-medium disabled:opacity-50"
+                        >
+                            {stockSubmitting ? 'Procesando...' : 'Reservar stock'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleLiberar}
+                            disabled={stockSubmitting}
+                            className="px-4 py-2 rounded-lg border border-border-custom text-sm font-medium disabled:opacity-50"
+                        >
+                            Liberar reserva
+                        </button>
+                    </div>
                 </section>
             )}
 

@@ -46,7 +46,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           tabIndex={-1}
           className="min-h-screen flex flex-col items-center justify-center px-5 animate-fade-in focus:outline-none"
         >
-          <GlassCard className="w-full max-w-[480px] p-[40px_36px] text-center">
+          <GlassCard className="w-full max-w-[480px] p-6 sm:p-[40px_36px] text-center">
             <AlertTriangle className="w-14 h-14 mx-auto mb-5 text-status-red" />
             <h1 className="text-2xl font-bold tracking-tight text-text-main">
               Algo salió mal

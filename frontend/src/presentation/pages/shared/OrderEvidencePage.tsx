@@ -20,7 +20,7 @@ export function OrderEvidencePage({ backTo, backLabel, canUpload = false }: Orde
     const { id } = useParams<{ id: string }>();
 
     return (
-        <div className="animate-fade-in p-10">
+        <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
             <Link
                 to={backTo}
                 className="mb-6 inline-flex items-center gap-2 text-text-muted no-underline hover:text-primary-blue"

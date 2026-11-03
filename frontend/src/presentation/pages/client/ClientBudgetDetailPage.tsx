@@ -125,13 +125,13 @@ export function ClientBudgetDetailPage() {
     };
 
     if (loading) {
-        return <LoadingState message="Cargando presupuesto..." className="p-10" />;
+        return <LoadingState message="Cargando presupuesto..." className="p-4 sm:p-6 lg:p-10" />;
     }
 
     if (failed) {
         return (
             <ErrorState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 title="No se pudo cargar el presupuesto"
                 message={error}
                 requestId={requestId}
@@ -151,7 +151,7 @@ export function ClientBudgetDetailPage() {
     if (!presupuesto || notFound) {
         return (
             <EmptyState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 icon={ClipboardX}
                 title="Presupuesto no encontrado."
                 description="Es posible que esta orden todavía no tenga una cotización enviada por el taller."

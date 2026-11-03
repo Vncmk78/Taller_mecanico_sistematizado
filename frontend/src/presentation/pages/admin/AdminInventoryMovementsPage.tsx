@@ -100,7 +100,7 @@ export function AdminInventoryMovementsPage() {
     const isServerError = status === 'error' && !isOffline;
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
             <div className="mb-6 flex justify-between items-center gap-4 flex-wrap">
                 <div>
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Movimientos de inventario</h2>
@@ -148,7 +148,7 @@ export function AdminInventoryMovementsPage() {
 
             {isOffline && <OfflineBanner message={error} onRetry={handleRetry} requestId={requestId} className="mb-6" />}
             {isServerError && movimientos.length > 0 && (
-                <div className="card p-6 mb-6 flex items-center justify-between gap-4">
+                <div className="card p-6 mb-6 flex flex-wrap items-center justify-between gap-4">
                     <p className="text-status-red text-sm">{error}</p>
                     <RetryButton tone="error" onClick={handleRetry} />
                 </div>

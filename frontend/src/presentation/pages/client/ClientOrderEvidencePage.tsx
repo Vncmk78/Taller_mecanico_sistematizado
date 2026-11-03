@@ -34,13 +34,13 @@ export function ClientOrderEvidencePage() {
     const cambiarContexto = (nuevo: ContextoFiltro) => setFiltro({ orden: id, contexto: nuevo });
 
     if (loading) {
-        return <LoadingState message="Cargando evidencia multimedia..." className="p-10" />;
+        return <LoadingState message="Cargando evidencia multimedia..." className="p-4 sm:p-6 lg:p-10" />;
     }
 
     if (failed) {
         return (
             <ErrorState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 title="No se pudo cargar la evidencia"
                 message={error}
                 requestId={requestId}
@@ -60,7 +60,7 @@ export function ClientOrderEvidencePage() {
     if (notFound) {
         return (
             <EmptyState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 icon={ImageOff}
                 title="Servicio no encontrado."
                 description="Es posible que este servicio no exista o no pertenezca a su cuenta."

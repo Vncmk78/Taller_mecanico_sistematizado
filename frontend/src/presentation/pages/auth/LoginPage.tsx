@@ -57,8 +57,8 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col animate-fade-in">
-      <nav className="flex justify-between items-center px-12 py-5 border-b border-border-custom bg-surface sticky top-0 z-50">
-        <Link to="/" className="flex items-center gap-2.5 text-2xl font-bold no-underline text-text-main">
+      <nav className="flex justify-between items-center gap-3 px-4 sm:px-8 lg:px-12 py-4 lg:py-5 border-b border-border-custom bg-surface sticky top-0 z-50">
+        <Link to="/" className="flex items-center gap-2.5 text-xl sm:text-2xl font-bold no-underline text-text-main">
           <span aria-hidden className="relative inline-block w-[35px] h-[35px] text-text-muted">
             <Settings className="absolute left-0 top-0 w-6 h-6" />
             <Wrench className="absolute left-3 top-3 w-4 h-4 text-primary-orange -rotate-15" />
@@ -67,7 +67,7 @@ export function LoginPage() {
         </Link>
         <Link
           to="/"
-          className="bg-primary-blue text-white px-6 py-3 rounded-lg font-bold text-base transition-all duration-300 shadow-[0_4px_15px_rgba(21,40,63,0.25)] hover:bg-primary-blue-hover hover:-translate-y-0.5 no-underline flex items-center gap-2"
+          className="bg-primary-blue text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold text-sm sm:text-base transition-all duration-300 shadow-[0_4px_15px_rgba(21,40,63,0.25)] hover:bg-primary-blue-hover hover:-translate-y-0.5 no-underline flex items-center gap-2 whitespace-nowrap"
         >
           Volver al Inicio
         </Link>
@@ -78,7 +78,7 @@ export function LoginPage() {
         tabIndex={-1}
         className="flex flex-col items-center justify-center flex-grow px-5 py-8 focus:outline-none"
       >
-        <GlassCard className="w-full max-w-[480px] p-[50px_40px] text-center">
+        <GlassCard className="w-full max-w-[480px] p-6 sm:p-[50px_40px] text-center">
           <div className="flex flex-col items-center mb-8">
             <span aria-hidden className="relative inline-block w-20 h-20 mb-4 text-text-muted">
               <Settings className="absolute left-0 top-0 w-20 h-20" />

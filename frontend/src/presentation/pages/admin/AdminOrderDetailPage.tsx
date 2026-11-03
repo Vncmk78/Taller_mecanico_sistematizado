@@ -98,7 +98,7 @@ export function AdminOrderDetailPage() {
     };
 
     if (loading) {
-        return <LoadingState message="Cargando detalle de la orden..." className="p-10" />;
+        return <LoadingState message="Cargando detalle de la orden..." className="p-4 sm:p-6 lg:p-10" />;
     }
 
     // El fetch falló y no hay copia local: se muestra un error reintentable en
@@ -106,7 +106,7 @@ export function AdminOrderDetailPage() {
     if (failed) {
         return (
             <ErrorState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 title="No se pudo cargar el detalle de la orden"
                 message={error}
                 requestId={requestId}
@@ -123,7 +123,7 @@ export function AdminOrderDetailPage() {
     if (!order || notFound) {
         return (
             <EmptyState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 icon={ClipboardX}
                 title="Orden no encontrada."
                 description="Verifique el número de orden o que la orden siga disponible."
@@ -140,7 +140,7 @@ export function AdminOrderDetailPage() {
     }
 
     return (
-        <div className="animate-fade-in p-10">
+        <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
             <Link
                 to="/admin/ordenes"
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
@@ -187,7 +187,7 @@ export function AdminOrderDetailPage() {
                     </p>
                     <ul className="space-y-2 mb-4">
                         {disponibilidad.repuestos.map((r) => (
-                            <li key={r.repuestoId} className="flex justify-between text-sm">
+                            <li key={r.repuestoId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
                                 <span>{r.nombre}</span>
                                 <span className={r.alcanza ? 'text-status-green' : 'text-status-red'}>
                                     {r.disponible}/{r.requerido} {r.alcanza ? 'OK' : `faltan ${r.faltan}`}

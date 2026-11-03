@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardX, Images } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
@@ -14,6 +14,8 @@ import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { useOrderDetail } from '@/presentation/hooks/useOrderDetail';
 import { orderService } from '@/infrastructure/api/OrderService';
+import { inventarioService } from '@/infrastructure/api/InventarioService';
+import type { ResultadoDisponibilidad } from '@/domain/entities/Inventario';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
@@ -29,8 +31,25 @@ export function MechanicOrderDetailPage() {
     const user = useAuthStore((s) => s.user);
     const vehicles = useVehicleStore((s) => s.vehicles);
     const [evidenciasAbiertas, setEvidenciasAbiertas] = useState(true);
+    const [disponibilidad, setDisponibilidad] = useState<ResultadoDisponibilidad | null>(null);
     const [evidenciasRefresh, setEvidenciasRefresh] = useState(0);
     const puedeSubir = user?.role === 'mecanico' || user?.role === 'administrador';
+
+    useEffect(() => {
+        if (!order?.id) return;
+        let active = true;
+        inventarioService
+            .getDisponibilidadOrden(Number(order.id))
+            .then((result) => {
+                if (active) setDisponibilidad(result);
+            })
+            .catch(() => {
+                if (active) setDisponibilidad(null);
+            });
+        return () => {
+            active = false;
+        };
+    }, [order?.id]);
 
     if (loading) {
         return <LoadingState message="Cargando detalle de la orden..." className="p-10" />;
@@ -96,6 +115,34 @@ export function MechanicOrderDetailPage() {
             />
 
             <OrderStatusAndHistory order={order} />
+
+            <div className="mt-6">
+                <Link
+                    to={`/mechanic/ordenes/${order.id}/presupuesto`}
+                    className="text-primary-blue text-sm font-medium no-underline hover:underline"
+                >
+                    Gestionar presupuesto de la orden
+                </Link>
+            </div>
+
+            {disponibilidad && (
+                <section className="card p-6 mt-6" aria-labelledby="disponibilidad-title">
+                    <h3 id="disponibilidad-title" className="text-xl font-semibold mb-4">Disponibilidad de repuestos</h3>
+                    <p className="text-sm text-text-muted mb-4">
+                        {disponibilidad.disponible ? 'Stock suficiente para la orden.' : 'Faltan repuestos para completar la orden.'}
+                    </p>
+                    <ul className="space-y-2">
+                        {disponibilidad.repuestos.map((r) => (
+                            <li key={r.repuestoId} className="flex justify-between text-sm">
+                                <span>{r.nombre}</span>
+                                <span className={r.alcanza ? 'text-status-green' : 'text-status-red'}>
+                                    {r.disponible}/{r.requerido} {r.alcanza ? 'OK' : `faltan ${r.faltan}`}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
 
             <OrderBitacoraSection order={order} canWrite={user?.role === 'mecanico'} />
 

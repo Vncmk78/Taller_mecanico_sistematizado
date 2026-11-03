@@ -6,7 +6,7 @@ Definir una dirección técnica para comunicar cambios relevantes del dominio de
 órdenes a las notificaciones transversales sin trasladar reglas de MS2 a MS1 ni
 crear dependencias entre sus bases de datos.
 
-## Hallazgos y restricciones
+## Situación inicial del estudio y restricciones
 
 - La sistematización final §1.2 y §4.5 asigna el módulo, el almacenamiento de
   avisos y los resultados de entrega por canal a MS1. Los demás dominios piden
@@ -18,11 +18,11 @@ crear dependencias entre sus bases de datos.
   registro/recepción móvil corresponde a Integración IV.
 - La arquitectura define cuatro microservicios y bases independientes. No se
   deben crear claves foráneas entre MS2 y MS1 ni compartir sus tablas.
-- Hoy MS1 solo publica autenticación y usuarios; aún no tiene modelos, rutas,
+- Al iniciar el estudio, MS1 solo publicaba autenticación y usuarios; no tenía modelos, rutas,
   migraciones ni contratos de notificaciones.
-- `EventoOrden` en MS2 es una clave interna para validar transiciones. No es un
-  evento publicado ni persistido independientemente. No hay bus, broker, outbox
-  ni consumidores; la comunicación actual entre servicios usa HTTP síncrono.
+- `EventoOrden` en MS2 era una clave interna para validar transiciones, sin
+  publicación ni persistencia independiente. No había outbox ni consumidores;
+  ese punto de partida motivó la implementación descrita más abajo.
 
 ## Decisión de implementación
 
@@ -47,23 +47,22 @@ con tope de 300 segundos y sin descartar automáticamente eventos pendientes.
 MS1 utiliza `evento_id` como clave única para que un reintento no duplique el
 aviso lógico.
 
-## Borrador conceptual del evento
+## Payload implementado del evento
 
 El contrato entre microservicios debería transmitir solo los datos necesarios
 para identificar el hecho, resolver la notificación y correlacionarla. Como
-borrador sujeto a aprobación:
+ejemplo ficticio del contrato implementado:
 
 ```json
 {
-  "evento_id": "UUID estable generado por MS2",
+  "evento_id": "4e2bd1f6-9a2c-4d2a-b5cf-0f639f134bd8",
   "tipo": "orden.estado_cambiado",
-  "ocurrido_en": "fecha-hora ISO 8601 con zona",
+  "ocurrido_en": "2026-10-23T10:00:00-03:00",
   "orden_id": 123,
   "vehiculo_id": 456,
   "cliente_usuario_id": 7,
-  "estado_anterior": "En reparación",
-  "estado_nuevo": "Listo",
-  "request_id": "id de correlación opcional"
+  "estado_anterior": 5,
+  "estado_nuevo": 6
 }
 ```
 
@@ -91,7 +90,9 @@ deben ser idénticos, aleatorios, de al menos 32 caracteres y estar fuera de Git
 La bandeja está disponible en `GET /api/notificaciones`; solo devuelve avisos
 del usuario autenticado.
 
-El payload implementado es el borrador mostrado arriba. MS2 lo encola para los
+El payload implementado es el ejemplo mostrado arriba. Los estados son códigos
+enteros del catálogo oficial; `ocurrido_en` exige zona horaria y el esquema no
+acepta campos adicionales. MS2 lo encola para los
 cambios efectivos de estado que pasan por `registrar_historial_estado`, dentro
 de la misma transacción que el historial. MS1 genera un mensaje genérico para el
 Cliente afectado; no acepta texto libre ni destinatarios arbitrarios.

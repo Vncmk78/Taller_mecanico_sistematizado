@@ -483,6 +483,14 @@ completa; usar los repuestos descuenta lo reservado; rechazar cancela sin tocar
 el stock; una modificación aprobada ajusta la reserva; y reintentar la
 aplicación en MS2 no reserva dos veces.
 
+**Pruebas de presupuestos, inventario, stock y proveedores**
+(`services/ms3_presupuestos/tests/test_flujo_presupuesto_inventario_proveedores.py`, SCRUM-526):
+el recorrido completo del taller (proveedor → repuesto → presupuesto → envío →
+aprobación con reserva → consumo → alerta de stock bajo → reposición →
+trazabilidad), aprobar sin stock y reponer, dos órdenes compitiendo por el mismo
+repuesto, repuestos/proveedores en uso que no se pueden borrar, cambio de
+proveedor sin perder lo entregado, y permisos del cliente.
+
 **Pruebas de límites de stock** (`tests/test_stock_insuficiente_exacto_multiple.py`):
 para cada forma de usar stock (consumo, compromiso, ajuste, aprobación, validación
 y descuento de varios repuestos), el stock exacto se acepta y deja 0, y una

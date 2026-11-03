@@ -80,4 +80,33 @@ describe('ProveedorService: contrato HTTP de MS3 (proveedores)', () => {
 
         expect(apiClient.get).toHaveBeenCalledWith('/proveedores', { params: {} });
     });
+
+    it('traduce el payload literal publicado por la Gateway', async () => {
+        vi.mocked(apiClient.get).mockResolvedValue({
+            data: {
+                total: 1,
+                desde: 0,
+                limite: 50,
+                proveedores: [
+                    {
+                        proveedor_id: 3,
+                        nombre: 'Repuestos del Sur',
+                        contacto: 'ventas@repuestosdelsur.cl',
+                        tipo_distribuidor: 'oficial',
+                        cantidad_repuestos: 1,
+                    },
+                ],
+            },
+        });
+
+        const pagina = await proveedorService.getProveedores();
+
+        expect(pagina.proveedores[0]).toEqual({
+            proveedorId: 3,
+            nombre: 'Repuestos del Sur',
+            contacto: 'ventas@repuestosdelsur.cl',
+            tipoDistribuidor: 'oficial',
+            cantidadRepuestos: 1,
+        });
+    });
 });

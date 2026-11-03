@@ -42,10 +42,13 @@ export function AdminOrdersPage() {
         pageCount,
         rangeStart,
         rangeEnd,
-    } = useOrderListFilters(orders, (o) =>
-        [o.id, orderPatente(o, vehicles) ?? '', orderVehicleLabel(o, vehicles), ordenStatusLabel(o.estadoCodigo)].join(
-            ' '
-        )
+    } = useOrderListFilters(
+        orders,
+        (o) =>
+            [o.id, orderPatente(o, vehicles) ?? '', orderVehicleLabel(o, vehicles), ordenStatusLabel(o.estadoCodigo)].join(
+                ' '
+            ),
+        { syncWithUrl: true }
     );
 
     // El store solo marca isOffline ante fallos de transporte: un error HTTP del

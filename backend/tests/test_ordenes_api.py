@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 
@@ -113,7 +114,10 @@ def db_ordenes() -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def api_ordenes(db_ordenes: Session) -> Generator[TestClient, None, None]:
+def api_ordenes(db_ordenes: Session, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
+    # Alembic fileConfig deshabilita loggers existentes durante otras pruebas.
+    # Restaurar solo este logger durante el caso, igual que la fixture de MS4.
+    monkeypatch.setattr(logging.getLogger("services.ms2_taller.routers.ordenes"), "disabled", False)
     class VerificadorPrueba:
         aprobacion_registrada = False
         error = False

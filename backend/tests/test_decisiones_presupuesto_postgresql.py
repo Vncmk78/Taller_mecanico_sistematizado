@@ -337,9 +337,10 @@ def test_cancelacion_exige_motivo_en_postgresql(flujo_pg, body):
         headers=_headers(99, rol=NombreRol.ADMINISTRADOR),
     )
     valida = body.get("observacion") == "Motivo válido"
-    assert respuesta.status_code == (200 if valida else 422)
+    # Un motivo válido no sustituye la solicitud del Cliente y su confirmación.
+    assert respuesta.status_code == (409 if valida else 422)
     estado, historial = _estado_y_historial(flujo_pg)
-    assert estado == (8 if valida else 3) and len(historial) == int(valida)
+    assert estado == 3 and historial == []
 
 
 def test_decision_de_otra_orden_y_usuario_no_se_aplica(flujo_pg):

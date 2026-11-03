@@ -21,7 +21,7 @@ class LoginSolicitud(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1)
 
 
 class RolAsignarSolicitud(BaseModel):

@@ -22,6 +22,35 @@ class EnvioPresupuestoSolicitud(BaseModel):
     presupuesto_id: int = Field(gt=0)
 
 
+class DisponibilidadRepuestosSolicitud(BaseModel):
+    """Clave estable de la reserva confirmada en MS3."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    clave_operacion: str = Field(min_length=1, max_length=100)
+
+
+class DisponibilidadRepuestosVerificada(BaseModel):
+    """Hecho de MS3: la reserva de repuestos quedó persistida para la orden."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    clave_operacion: str = Field(min_length=1, max_length=100)
+    orden_id: int = Field(gt=0)
+    reserva_confirmada: Literal[True]
+
+
+class AplicacionDisponibilidadRepuestosRespuesta(BaseModel):
+    """Transición a reparación aplicada en MS2, también ante reintentos."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    clave_operacion: str = Field(min_length=1, max_length=100)
+    orden_id: int = Field(gt=0)
+    estado_aplicado: int = Field(ge=1, le=8)
+    historial_id: int = Field(gt=0)
+
+
 class EnvioPresupuestoVerificado(BaseModel):
     """Hecho persistido por MS3: hay un presupuesto inicial enviado."""
 

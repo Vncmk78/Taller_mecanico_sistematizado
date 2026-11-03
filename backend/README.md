@@ -64,6 +64,61 @@ tablas de los cuatro dominios terminen mezcladas en una misma migración.
 
 ## Puesta en marcha
 
+### Imágenes para Kubero u otro entorno de contenedores
+
+Desde la raíz del repositorio:
+
+```bash
+docker build -t sgtm-backend:revision .
+docker build -t sgtm-frontend:revision frontend
+```
+
+La imagen backend se ejecuta en cinco instancias independientes, con
+`SGTM_SERVICIO=gateway`, `ms1`, `ms2`, `ms3` o `ms4`. `PORT` configura el puerto
+interno (8000 por defecto). El frontend sirve la SPA y reenvía `/api/*` a la
+Gateway; requiere `GATEWAY_UPSTREAM` con su origen HTTP interno, sin ruta ni
+barra final. No usar la URL del panel de administración de Kubero como URL API.
+
+Configurar mediante el entorno de cada instancia:
+
+- Cada MS recibe su propio `MSn_DATABASE_URL` con `postgresql+psycopg://` y una
+  base independiente. Los cuatro `MSn_JWT_SECRET_KEY` deben coincidir con el
+  secreto emisor de MS1 y tener al menos 32 caracteres.
+- La Gateway recibe `GATEWAY_MS1_URL` a `GATEWAY_MS4_URL`, con los orígenes
+  internos de los servicios, y los orígenes web permitidos en su CORS.
+- Las comunicaciones entre dominios requieren `MS2_MS3_URL`, `MS3_MS2_URL`,
+  `MS4_MS2_URL` y `MS4_MS3_URL` con los orígenes correspondientes.
+- MS4 necesita sus valores `MS4_S3_*`, un bucket privado y credenciales con
+  permisos acotados. `MS4_S3_PUBLIC_ENDPOINT` debe ser accesible desde el
+  navegador para que funcionen las descargas firmadas.
+
+Las imágenes no incluyen `.env`, entornos virtuales, dependencias locales ni
+copias de revisión. El backend corre con un usuario sin privilegios. El arranque
+no ejecuta migraciones ni crea usuarios automáticamente.
+
+Desde `backend/`, con las conexiones del entorno configuradas:
+
+```bash
+python scripts/verificar_migraciones.py  # Solo lectura, incluye MS1 a MS4.
+python scripts/diagnosticar_ms2.py       # Solo lectura, revisa columnas de órdenes.
+```
+
+Si hacen falta migraciones, revisar primero el commit desplegado y ejecutar de
+forma controlada `python scripts/migrar.py` desde esa misma versión. El migrador
+aplica `heads` y vuelve a comprobar las cuatro bases; aborta ante revisiones
+desconocidas o si dos servicios apuntan a una misma base. No realiza downgrade,
+stamp, seeds ni creación de bases. Una falla puede dejar servicios anteriores
+ya migrados: las cuatro bases no comparten una transacción.
+
+`/health/db` solo comprueba conexión mediante `SELECT 1`; un `200` no confirma
+que las tablas y columnas estén al día. Antes de entregar una URL a web o móvil,
+verificar también login, listado, detalle, permisos y operaciones de órdenes.
+`scripts/prueba_integracion_app.py` automatiza consultas con cuentas de prueba
+configuradas en `APP_TEST_{CLIENTE,MECANICO,ADMINISTRADOR}_{EMAIL,PASSWORD}`.
+No prueba escrituras ni sustituye la integración dentro de la aplicación móvil.
+
+### Desarrollo local
+
 ```bash
 cd backend
 

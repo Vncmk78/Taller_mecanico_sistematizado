@@ -23,7 +23,8 @@ from services.ms2_taller.main import app as app_ms2
 from services.ms2_taller.models import (
     Base as BaseMS2, Cliente, ConfiguracionCapacidadMecanico,
     ConfiguracionCupoIngresos, EstadoOrden,
-    HistorialEstado, IngresoVehiculo, OrdenTrabajo, Vehiculo,
+    EventoOutbox, HistorialEstado, IngresoVehiculo, OrdenTrabajo,
+    SolicitudCancelacion, Vehiculo,
 )
 from services.ms2_taller.models.estado_orden import (
     CANCELADO, EN_REPARACION, ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS,
@@ -62,7 +63,7 @@ def _sesion_por_peticion(fabrica):
 
 
 @pytest.fixture
-def flujo(monkeypatch):
+def flujo(monkeypatch, mecanicos_validos):
     yield from preparar_flujo(
         monkeypatch, _base_aislada(BaseMS2), _base_aislada(BaseMS3),
     )
@@ -559,3 +560,129 @@ def test_aprobacion_historica_sin_snapshot_no_inventa_stock(flujo):
     assert consulta.status_code == 409
     assert _aplicar(flujo, decision_id).status_code == 409
     assert _estado_y_historial(flujo)[1] == []
+
+
+@pytest.mark.parametrize("estado_inicial", [1, 2, 3])
+def test_cancelacion_integrada_solicita_confirma_y_reintenta_sin_duplicados(
+    flujo, estado_inicial,
+):
+    with flujo.db2() as db:
+        db.get(OrdenTrabajo, flujo.orden_id).estado_codigo = estado_inicial
+        db.commit()
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    solicitud = flujo.ms2.post(ruta, json={"motivo": " No continuar "}, headers=_headers())
+    assert solicitud.status_code == 201, solicitud.text
+    assert _estado_y_historial(flujo) == (estado_inicial, [])
+    assert solicitud.json()["cliente_usuario_id"] == 42
+    assert solicitud.json()["motivo"] == "No continuar"
+
+    repetida = flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers())
+    assert repetida.status_code == 200
+    assert repetida.json() == solicitud.json()
+    admin = _headers(99, NombreRol.ADMINISTRADOR)
+    primera = flujo.ms2.post(f"{ruta}/confirmacion", headers=admin)
+    segunda = flujo.ms2.post(f"{ruta}/confirmacion", headers=admin)
+    assert primera.status_code == segunda.status_code == 200
+    assert segunda.json() == primera.json()
+    estado, historial = _estado_y_historial(flujo)
+    assert estado == CANCELADO
+    assert len(historial) == 1
+    assert (historial[0].estado_anterior, historial[0].estado_nuevo) == (estado_inicial, CANCELADO)
+    assert historial[0].actor_usuario_id == 99
+    assert historial[0].observacion == "No continuar"
+    with flujo.db2() as db:
+        registro = db.scalar(select(SolicitudCancelacion))
+        assert registro.cliente_usuario_id == 42
+        assert registro.administrador_id == 99
+        assert registro.estado == "confirmada" and registro.confirmada_en is not None
+        eventos = list(db.scalars(select(EventoOutbox)))
+        assert len(eventos) == 1
+        assert eventos[0].payload["estado_nuevo"] == CANCELADO
+        assert eventos[0].payload["cliente_usuario_id"] == 42
+    pendientes = flujo.ms2.get("/ordenes/cancelaciones/pendientes", headers=admin)
+    assert pendientes.status_code == 200 and pendientes.json() == []
+    assert any("/primera-aprobacion" in url for _, url, _ in flujo.llamadas)
+
+
+@pytest.mark.parametrize("solicitud_previa", [False, True])
+def test_cancelacion_rechaza_aprobacion_persistida_aunque_ms2_no_haya_avanzado(
+    flujo, solicitud_previa,
+):
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    if solicitud_previa:
+        solicitud = flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers())
+        assert solicitud.status_code == 201
+    flujo.fallo["modo"] = "antes"
+    aprobacion = _decidir(flujo)
+    assert aprobacion.status_code == 503
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+    # MS3 ya confirmó una aprobación; el estado rezagado de MS2 no habilita cancelar.
+    if solicitud_previa:
+        respuesta = flujo.ms2.post(
+            f"{ruta}/confirmacion", headers=_headers(99, NombreRol.ADMINISTRADOR),
+        )
+    else:
+        respuesta = flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers())
+    assert respuesta.status_code == 409, respuesta.text
+    assert "aprobación inicial" in respuesta.json()["detail"]
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+    with flujo.db2() as db:
+        registro = db.scalar(select(SolicitudCancelacion))
+        if solicitud_previa:
+            assert registro.estado == "pendiente" and registro.administrador_id is None
+        else:
+            assert registro is None
+        assert db.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+
+
+def test_cancelacion_sin_verificacion_ms3_conserva_solicitud_pendiente(flujo):
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    assert flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers()).status_code == 201
+    flujo.fallo["modo"] = "verificacion"
+    respuesta = flujo.ms2.post(
+        f"{ruta}/confirmacion", headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 503
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+    with flujo.db2() as db:
+        registro = db.scalar(select(SolicitudCancelacion))
+        assert registro.estado == "pendiente" and registro.confirmada_en is None
+        assert db.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+
+
+def test_cancelacion_fallo_tras_flush_revierte_confirmacion_estado_historial_y_evento(
+    flujo, monkeypatch,
+):
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    assert flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers()).status_code == 201
+    registrar = servicio_ordenes.registrar_historial_estado
+
+    def fallar_tras_escribir(db, **datos):
+        registrar(db, **datos)
+        db.flush()
+        raise SQLAlchemyError("Fallo simulado después de escribir todos los registros")
+
+    monkeypatch.setattr(servicio_ordenes, "registrar_historial_estado", fallar_tras_escribir)
+    admin = _headers(99, NombreRol.ADMINISTRADOR)
+    respuesta = flujo.ms2.post(f"{ruta}/confirmacion", headers=admin)
+    assert respuesta.status_code == 500
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+    with flujo.db2() as db:
+        registro = db.scalar(select(SolicitudCancelacion))
+        assert registro.estado == "pendiente"
+        assert registro.administrador_id is None and registro.confirmada_en is None
+        assert db.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+    monkeypatch.setattr(servicio_ordenes, "registrar_historial_estado", registrar)
+    assert flujo.ms2.post(f"{ruta}/confirmacion", headers=admin).status_code == 200
+
+
+@pytest.mark.parametrize("usuario,rol", [(42, NombreRol.CLIENTE), (50, NombreRol.MECANICO)])
+def test_cancelacion_cliente_y_mecanico_no_pueden_confirmar_ni_listar_pendientes(
+    flujo, usuario, rol,
+):
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    assert flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers()).status_code == 201
+    headers = _headers(usuario, rol)
+    assert flujo.ms2.post(f"{ruta}/confirmacion", headers=headers).status_code == 403
+    assert flujo.ms2.get("/ordenes/cancelaciones/pendientes", headers=headers).status_code == 403
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])

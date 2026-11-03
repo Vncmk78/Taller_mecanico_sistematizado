@@ -50,7 +50,8 @@ _URL_POR_SERVICIO = {
 
 # Rutas de infraestructura de cada servicio: no se publican bajo /api (la
 # Gateway las consulta directo en /api/health/servicios).
-_INFRAESTRUCTURA = re.compile(r"^/(health(/.*)?|docs|redoc|openapi\.json)$")
+# /interno se consume entre servicios con credencial propia, fuera de Gateway.
+_INFRAESTRUCTURA = re.compile(r"^/(health(/.*)?|interno(/.*)?|docs|redoc|openapi\.json)$")
 
 _METODOS = ("get", "post", "put", "patch", "delete")
 
@@ -73,6 +74,12 @@ def _ruta_concreta(ruta: str) -> str:
         lambda m: "cliente" if m.group(1) == "rol" else "7",
         ruta,
     )
+
+
+def test_eventos_internos_no_se_publican_en_gateway(gateway: TestClient) -> None:
+    assert resolver_microservicio("interno/eventos/ordenes/estado") is None
+    respuesta = gateway.post("/api/interno/eventos/ordenes/estado", json={})
+    assert respuesta.status_code == 404
 
 
 _TODAS = [

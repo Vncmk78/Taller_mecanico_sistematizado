@@ -10,6 +10,9 @@ remota del rol del destino continúa pendiente de contrato con MS1.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from uuid import uuid4
+
 from sqlalchemy import false, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -28,6 +31,8 @@ from services.ms2_taller.domain.transiciones_orden import (
 )
 from services.ms2_taller.models.cliente import Cliente
 from services.ms2_taller.integracion_ms3 import (
+    DisponibilidadRepuestosNoAplicableError,
+    DisponibilidadRepuestosNoVisibleError,
     DecisionNoAplicableError,
     DecisionNoVisibleError,
     EnvioPresupuestoNoVisibleError,
@@ -35,9 +40,16 @@ from services.ms2_taller.integracion_ms3 import (
     ServicioPresupuestosNoDisponibleError,
     VerificadorAprobacionInicial,
     VerificadorDecisiones,
+    VerificadorDisponibilidadRepuestos,
     VerificadorEnviosPresupuesto,
 )
-from services.ms2_taller.models.estado_orden import CANCELADO, RECIBIDO
+from services.ms2_taller.models.estado_orden import (
+    CANCELADO,
+    ENTREGADO,
+    LISTO,
+    RECIBIDO,
+)
+from services.ms2_taller.models.evento_outbox import EventoOutbox
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
@@ -56,6 +68,7 @@ from services.ms2_taller.services.cupo_ingresos import (
 )
 from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
+    AplicacionDisponibilidadRepuestosRespuesta,
     AplicacionDecisionRespuesta,
     AplicacionEnvioPresupuestoRespuesta,
 )
@@ -119,6 +132,8 @@ class OrdenObservacionInvalidaError(Exception):
     """La observación está vacía o falta el motivo de una cancelación."""
 
 
+class EntregaOrdenInconsistenteError(Exception):
+    """La orden entregada no conserva sus datos de auditoría esperados."""
 def listar_solicitudes_cancelacion_pendientes(db: Session) -> list[SolicitudCancelacion]:
     return list(db.scalars(
         select(SolicitudCancelacion)
@@ -260,6 +275,7 @@ def registrar_historial_estado(
     observacion: str | None = None,
     decision_presupuesto_id: int | None = None,
     envio_presupuesto_id: int | None = None,
+    disponibilidad_repuestos_clave_operacion: str | None = None,
 ) -> HistorialEstado:
     """Agrega el cambio de estado a la sesión sin confirmar la transacción.
 
@@ -290,8 +306,34 @@ def registrar_historial_estado(
         observacion=observacion,
         decision_presupuesto_id=decision_presupuesto_id,
         envio_presupuesto_id=envio_presupuesto_id,
+        disponibilidad_repuestos_clave_operacion=disponibilidad_repuestos_clave_operacion,
     )
     db.add(historial)
+    if estado_anterior != estado_nuevo:
+        fila = db.execute(
+            select(OrdenTrabajo.vehiculo_id, Cliente.usuario_id)
+            .join(Vehiculo, Vehiculo.vehiculo_id == OrdenTrabajo.vehiculo_id)
+            .join(Cliente, Cliente.cliente_id == Vehiculo.cliente_id)
+            .where(OrdenTrabajo.orden_id == orden_id)
+        ).one()
+        evento_id = uuid4()
+        ocurrido_en = datetime.now(timezone.utc)
+        db.add(
+            EventoOutbox(
+                evento_id=evento_id,
+                tipo="orden.estado_cambiado",
+                payload={
+                    "evento_id": str(evento_id),
+                    "tipo": "orden.estado_cambiado",
+                    "ocurrido_en": ocurrido_en.isoformat(),
+                    "orden_id": orden_id,
+                    "vehiculo_id": fila.vehiculo_id,
+                    "cliente_usuario_id": fila.usuario_id,
+                    "estado_anterior": estado_anterior,
+                    "estado_nuevo": estado_nuevo,
+                },
+            )
+        )
     return historial
 
 
@@ -515,6 +557,73 @@ def listar_ordenes(
         raise PersistenciaOrdenError("No fue posible consultar las órdenes") from exc
 
 
+def listar_historial_ordenes_vehiculo(
+    db: Session,
+    principal: PrincipalAutenticado,
+    vehiculo_id: int,
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[OrdenTrabajo], int]:
+    """Lista una página de órdenes del vehículo dentro del alcance del principal."""
+
+    try:
+        visible = select(Vehiculo.vehiculo_id).where(
+            Vehiculo.vehiculo_id == vehiculo_id
+        )
+        if NombreRol.ADMINISTRADOR not in principal.roles:
+            alcances_vehiculo = []
+            if NombreRol.CLIENTE in principal.roles:
+                alcances_vehiculo.append(
+                    Vehiculo.cliente.has(
+                        Cliente.usuario_id == principal.usuario_id
+                    )
+                )
+            if NombreRol.MECANICO in principal.roles:
+                orden_asignada = (
+                    select(OrdenTrabajo.orden_id)
+                    .where(
+                        OrdenTrabajo.vehiculo_id == Vehiculo.vehiculo_id,
+                        OrdenTrabajo.mecanico_actual_id == principal.usuario_id,
+                    )
+                    .exists()
+                )
+                alcances_vehiculo.append(orden_asignada)
+            visible = visible.where(
+                or_(*alcances_vehiculo) if alcances_vehiculo else false()
+            )
+
+        if db.scalar(visible) is None:
+            raise VehiculoNoEncontradoError("Vehículo no encontrado")
+
+        consulta = select(OrdenTrabajo).where(
+            OrdenTrabajo.vehiculo_id == vehiculo_id
+        )
+        filtro = _filtro_visibilidad(principal)
+        if filtro is not None:
+            consulta = consulta.where(filtro)
+
+        total = db.scalar(
+            select(func.count()).select_from(consulta.order_by(None).subquery())
+        ) or 0
+        pagina = (
+            consulta.order_by(
+                OrdenTrabajo.creado_en.desc(),
+                OrdenTrabajo.orden_id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(db.scalars(pagina).unique().all()), total
+    except VehiculoNoEncontradoError:
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible consultar el historial del vehículo"
+        ) from exc
+
+
 def obtener_orden_visible(
     db: Session,
     principal: PrincipalAutenticado,
@@ -659,66 +768,79 @@ def cambiar_estado_orden(
         ) from exc
 
 
-def registrar_entrega(
+def registrar_entrega_fisica(
     db: Session,
     *,
     orden_id: int,
-    principal: PrincipalAutenticado,
+    administrador_id: int,
     observacion: str | None = None,
-) -> OrdenTrabajo:
-    """Registra la entrega física de una orden lista (``6 -> 7``).
+) -> tuple[OrdenTrabajo, HistorialEstado]:
+    """Registra la entrega física y `Listo → Entregado` de forma atómica.
 
-    Solo el Administrador cierra el ciclo normal. La fecha de entrega la genera
-    la base de datos y el usuario que la registra queda auditado junto al
-    historial de estado dentro de la misma transacción.
+    La fila de la orden queda bloqueada hasta confirmar ambos cambios. Repetir
+    la operación después de una respuesta perdida devuelve la entrega y el
+    historial originales, sin reemplazar la fecha ni agregar otro historial.
     """
 
-    if NombreRol.ADMINISTRADOR not in principal.roles:
-        raise OrdenEstadoNoAutorizadoError(
-            "Se requiere rol Administrador para registrar la entrega"
-        )
     try:
         orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
         if orden is None:
             raise OrdenNoEncontradaError("Orden no encontrada")
 
-        try:
-            destino = resolver_transicion(
-                orden.estado_codigo, EventoOrden.ENTREGA_FISICA
+        if orden.estado_codigo == ENTREGADO:
+            historial = db.scalar(
+                select(HistorialEstado)
+                .where(
+                    HistorialEstado.orden_id == orden_id,
+                    HistorialEstado.estado_nuevo == ENTREGADO,
+                )
+                .order_by(HistorialEstado.historial_id)
+                .limit(1)
             )
-        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
-            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+            if historial is None or orden.entregado_en is None or orden.entregado_por_id is None:
+                raise EntregaOrdenInconsistenteError(
+                    "La orden entregada no conserva el registro de entrega completo"
+                )
+            db.commit()
+            return orden, historial
 
+        if orden.estado_codigo != LISTO:
+            raise OrdenTransicionNoPermitidaError(
+                "La entrega física solo se puede registrar desde Listo"
+            )
+
+        estado_nuevo = resolver_transicion(
+            orden.estado_codigo, EventoOrden.ENTREGA_FISICA
+        )
         estado_anterior = orden.estado_codigo
-        orden.estado_codigo = destino
-        # La base evalúa now() para respetar la restricción entregado_en>=creado_en.
+        orden.estado_codigo = estado_nuevo
         orden.entregado_en = func.now()
-        orden.entregado_por_id = principal.usuario_id
-        registrar_historial_estado(
+        orden.entregado_por_id = administrador_id
+        historial = registrar_historial_estado(
             db,
             orden_id=orden.orden_id,
             estado_anterior=estado_anterior,
-            estado_nuevo=destino,
-            actor_usuario_id=principal.usuario_id,
+            estado_nuevo=estado_nuevo,
+            actor_usuario_id=administrador_id,
             origen="usuario",
             observacion=observacion,
         )
         db.flush()
         db.refresh(orden)
         db.commit()
-        return orden
+        return orden, historial
     except (
         OrdenNoEncontradaError,
-        OrdenEstadoNoAutorizadoError,
-        OrdenObservacionInvalidaError,
         OrdenTransicionNoPermitidaError,
+        EntregaOrdenInconsistenteError,
+        OrdenObservacionInvalidaError,
     ):
         db.rollback()
         raise
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaOrdenError(
-            "No fue posible registrar la entrega de la orden"
+            "No fue posible registrar la entrega física"
         ) from exc
 
 
@@ -851,6 +973,82 @@ def aplicar_envio_inicial_presupuesto(
         raise PersistenciaOrdenError("No fue posible aplicar el envío del presupuesto") from exc
 
 
+def aplicar_disponibilidad_repuestos(
+    db: Session,
+    *,
+    orden_id: int,
+    clave_operacion: str,
+    principal: PrincipalAutenticado,
+    token: str,
+    verificador: VerificadorDisponibilidadRepuestos,
+) -> AplicacionDisponibilidadRepuestosRespuesta:
+    """Aplica 4 → 5 solo con reserva confirmada por MS3 y clave idempotente."""
+    try:
+        if NombreRol.ADMINISTRADOR not in principal.roles:
+            raise OrdenEstadoNoAutorizadoError("Se requiere rol Administrador")
+        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
+        if orden is None:
+            raise OrdenNoEncontradaError("Orden no encontrada")
+
+        historial = db.scalar(
+            select(HistorialEstado).where(
+                HistorialEstado.disponibilidad_repuestos_clave_operacion
+                == clave_operacion
+            )
+        )
+        if historial is not None:
+            if historial.orden_id != orden_id:
+                raise DisponibilidadRepuestosNoVisibleError(
+                    "Reserva de repuestos no encontrada"
+                )
+            respuesta = _aplicacion_de_disponibilidad(historial, clave_operacion)
+            db.commit()
+            return respuesta
+
+        hecho = verificador.consultar(orden_id, clave_operacion, token)
+        if hecho.orden_id != orden_id or hecho.clave_operacion != clave_operacion:
+            raise DisponibilidadRepuestosNoVisibleError(
+                "Reserva de repuestos no encontrada"
+            )
+        try:
+            destino = resolver_transicion(
+                orden.estado_codigo, EventoOrden.DISPONIBILIDAD_REPUESTOS,
+            )
+        except (EstadoOrdenDesconocidoError, TransicionOrdenNoPermitidaError) as exc:
+            raise OrdenTransicionNoPermitidaError(str(exc)) from exc
+
+        historial = registrar_historial_estado(
+            db,
+            orden_id=orden_id,
+            estado_anterior=orden.estado_codigo,
+            estado_nuevo=destino,
+            actor_usuario_id=principal.usuario_id,
+            origen="usuario",
+            observacion="Disponibilidad de repuestos confirmada por MS3",
+            disponibilidad_repuestos_clave_operacion=clave_operacion,
+        )
+        orden.estado_codigo = destino
+        db.flush()
+        respuesta = _aplicacion_de_disponibilidad(historial, clave_operacion)
+        db.commit()
+        return respuesta
+    except (
+        OrdenEstadoNoAutorizadoError,
+        OrdenNoEncontradaError,
+        OrdenTransicionNoPermitidaError,
+        DisponibilidadRepuestosNoVisibleError,
+        DisponibilidadRepuestosNoAplicableError,
+        ServicioPresupuestosNoDisponibleError,
+    ):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible aplicar la disponibilidad de repuestos"
+        ) from exc
+
+
 def _aplicacion_de_historial(historial: HistorialEstado) -> AplicacionDecisionRespuesta:
     return AplicacionDecisionRespuesta(
         decision_id=historial.decision_presupuesto_id, orden_id=historial.orden_id,
@@ -862,6 +1060,17 @@ def _aplicacion_de_envio(historial: HistorialEstado) -> AplicacionEnvioPresupues
     return AplicacionEnvioPresupuestoRespuesta(
         presupuesto_id=historial.envio_presupuesto_id, orden_id=historial.orden_id,
         estado_aplicado=historial.estado_nuevo, historial_id=historial.historial_id,
+    )
+
+
+def _aplicacion_de_disponibilidad(
+    historial: HistorialEstado, clave_operacion: str,
+) -> AplicacionDisponibilidadRepuestosRespuesta:
+    return AplicacionDisponibilidadRepuestosRespuesta(
+        clave_operacion=clave_operacion,
+        orden_id=historial.orden_id,
+        estado_aplicado=historial.estado_nuevo,
+        historial_id=historial.historial_id,
     )
 
 

@@ -57,7 +57,7 @@ def test_migracion_agrega_referencia_o_snapshot_sin_reescribir_historia(
 
 def test_migracion_cupo_diario_agrega_configuracion_y_auditoria():
     script = ScriptDirectory.from_config(Config("services/ms2_taller/alembic.ini"))
-    assert script.get_heads() == ["0011_ms2"]
+    assert script.get_heads() == ["0012_integracion_ms2"]
     assert script.get_revision("0009_ms2").down_revision == "0008_ms2"
     ruta = (
         Path(__file__).resolve().parents[1]

@@ -2,6 +2,7 @@ import type {
     CambioUmbral,
     PaginaAlertas,
     PaginaMovimientos,
+    ResultadoDisponibilidad,
     ResultadoMovimiento,
     StockDetalle,
     TipoMovimiento,
@@ -39,4 +40,5 @@ export interface InventarioPort {
     getUmbralGeneral(): Promise<UmbralGeneral>;
     cambiarUmbralGeneral(input: CambiarUmbralInput): Promise<UmbralGeneral>;
     getHistorialUmbral(repuestoId?: number | null, soloGeneral?: boolean, limite?: number): Promise<CambioUmbral[]>;
+    getDisponibilidadOrden(ordenId: number): Promise<ResultadoDisponibilidad>;
 }

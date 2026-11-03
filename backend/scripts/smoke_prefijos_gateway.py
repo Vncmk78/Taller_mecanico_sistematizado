@@ -50,6 +50,7 @@ OMITIDO = "OMITIDO"
 # Endpoint protegido representativo de cada prefijo publicado (GET, sin efectos).
 REPRESENTATIVOS: dict[str, str] = {
     "auth": "/auth/me",
+    "notificaciones": "/notificaciones",
     "vehiculos": "/vehiculos",
     "ordenes": "/ordenes",
     "presupuestos": "/presupuestos",

@@ -23,7 +23,7 @@ export function useUrlState<T>(key: string, options: UseUrlStateOptions<T>) {
   }, [searchParams, key, defaultValue, parse]);
 
   const setValue = useCallback(
-    (next: T | ((prev: T) => T)) => {
+    (next: T | ((prev: T) => T), relatedParams: Readonly<Record<string, string | null>> = {}) => {
       const resolved = typeof next === 'function' ? (next as (prev: T) => T)(value) : next;
       const nextParams = new URLSearchParams(searchParams);
 
@@ -43,6 +43,12 @@ export function useUrlState<T>(key: string, options: UseUrlStateOptions<T>) {
         }
       }
 
+      // Actualiza los parámetros relacionados en una sola navegación. Varias
+      // llamadas a useSearchParams en el mismo evento no acumulan sus cambios.
+      for (const [relatedKey, relatedValue] of Object.entries(relatedParams)) {
+        if (relatedValue === null || relatedValue === '') nextParams.delete(relatedKey);
+        else nextParams.set(relatedKey, relatedValue);
+      }
       setSearchParams(nextParams, { replace });
     },
     [searchParams, setSearchParams, key, value, serialize, defaultValue, replace]

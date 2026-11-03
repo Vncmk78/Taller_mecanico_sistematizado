@@ -16,16 +16,16 @@ export interface ResultadoValidacionEvidencia {
 
 const LIMITES_POR_TIPO: Record<'imagen' | 'video', LimitesEvidenciaPorTipo> = {
     imagen: {
-        maxBytes: 5 * 1024 * 1024,
-        label: '5 MB',
-        extensiones: ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.gif'],
-        mimePermitidos: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/gif'],
+        maxBytes: 10 * 1024 * 1024,
+        label: '10 MB',
+        extensiones: ['.jpg', '.jpeg', '.png', '.webp'],
+        mimePermitidos: ['image/jpeg', 'image/png', 'image/webp'],
     },
     video: {
         maxBytes: 12 * 1024 * 1024,
         label: '12 MB',
-        extensiones: ['.mp4', '.webm', '.mov', '.avi', '.mpeg', '.m4v'],
-        mimePermitidos: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/mpeg', 'video/x-m4v'],
+        extensiones: ['.mp4', '.mov'],
+        mimePermitidos: ['video/mp4', 'video/quicktime'],
     },
 };
 
@@ -91,6 +91,10 @@ export function validarArchivoEvidencia(file: File | null): ResultadoValidacionE
         return { valido: false, error: 'Extensión de archivo no permitida.' };
     }
 
+    if (!limites.mimePermitidos.includes(file.type.toLowerCase())) {
+        return { valido: false, error: 'Formato de archivo no permitido. Usa JPG, PNG, WEBP, MP4 o MOV.' };
+    }
+
     if (file.size > limites.maxBytes) {
         const tipoLabel = tipo === 'imagen' ? 'imágenes' : 'videos';
         return {
@@ -107,6 +111,3 @@ export function validarArchivoEvidencia(file: File | null): ResultadoValidacionE
         maxBytes: limites.maxBytes,
     };
 }
-
-export const MAX_BYTES_IMAGEN = LIMITES_POR_TIPO.imagen.maxBytes;
-export const MAX_BYTES_VIDEO = LIMITES_POR_TIPO.video.maxBytes;

@@ -55,8 +55,11 @@ y arquitectura hexagonal.
   Componente `ServiceCard` para cada servicio con acceso al detalle de la orden
   y la ficha del vehículo.
 - **Ficha técnica del vehículo** (`/client/vehiculos/:id`): el historial de
-  órdenes del vehículo ahora se consulta de las órdenes del cliente (con su
-  estado y fecha de actualización) y enlaza al detalle de cada orden.
+  órdenes se consulta al endpoint paginado por vehículo, muestra estado y fecha
+  de ingreso, y enlaza al detalle de cada orden.
+
+- **Fichas de vehículos de Administrador y Mecánico**: muestran el historial
+  paginado de órdenes autorizado para su rol y enlazan al detalle de cada orden.
 
 ### Tarea 6 — Implementar estados vacío, carga y error en las vistas del cliente
 - **Estado del Servicio** (`/client/servicios`): estados de carga
@@ -305,9 +308,10 @@ El mapa completo de rutas está documentado en
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |
 
-Nota: el login consume la **API Gateway** (`POST /auth/login`). Si ni la Gateway ni
-el `auth-service` están desplegados, se muestra el error de credenciales. Las vistas
-de vehículos usan datos mock mientras MS2 no esté disponible.
+Nota: el login consume la **API Gateway** (`POST /api/auth/login`), que enruta al
+MS1 vigente de `backend/services/ms1_auth/`. El directorio alternativo
+`auth-service/` fue retirado. Los mocks se conservan para las pruebas; el estado
+del ambiente publicado debe comprobarse por separado.
 
 ### Accesibilidad
 
@@ -317,7 +321,7 @@ hallazgos y correcciones aplicadas) está documentada en
 
 ## Cómo ejecutar el proyecto localmente
 
-Requisitos: **Node.js 18+**.
+Requisitos: **Node.js 24.x**, compatible con las versiones actuales de Vite y Vitest.
 
 ```bash
 cd frontend

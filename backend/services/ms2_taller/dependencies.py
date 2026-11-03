@@ -73,4 +73,3 @@ def resolver_cliente_actual(
             detail="El usuario autenticado no tiene un perfil Cliente en MS2",
         )
     return cliente
-

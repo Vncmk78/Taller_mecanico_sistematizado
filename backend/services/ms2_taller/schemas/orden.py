@@ -80,6 +80,38 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime
 
 
+class EntregaOrdenRespuesta(OrdenRespuesta):
+    """Confirmación auditable de una entrega física de vehículo."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    orden_id: int
+    estado_codigo: int
+    entregado_en: datetime
+    entregado_por_id: int
+    historial_id: int
+
+
+class DisponibilidadRepuestosRespuesta(BaseModel):
+    """Confirmación de la transición basada en reserva verificada por MS3."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    clave_operacion: str
+    orden_id: int
+    estado_aplicado: int
+    historial_id: int
+
+
+class HistorialOrdenesVehiculoRespuesta(BaseModel):
+    """Página del historial de órdenes visibles de un vehículo."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[OrdenRespuesta]
+    total: int
+    limit: int
+    offset: int
 class EntregaSolicitud(BaseModel):
     """Datos controlables al registrar la entrega física de una orden."""
 

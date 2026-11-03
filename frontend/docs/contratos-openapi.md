@@ -37,6 +37,7 @@ esquemas reales del microservicio.
 | `VehicleService.getVehicleById` | GET | `/api/vehiculos/{id}` | detalle vehículo (cliente, admin, mecánico) | Administrador (cualquiera), Cliente (propio), Mecánico (asignado) | OK (404 fuera de alcance) |
 | `VehicleService.createVehicle` | POST | `/api/vehiculos` | `/client/vehiculos/nuevo` | Cliente | OK |
 | `OrderService.getOrders` | GET | `/api/ordenes` | órdenes (admin, cliente, mecánico) | Filtra por rol | OK |
+| `OrderService.getVehicleOrderHistory` | GET | `/api/ordenes/vehiculo/{vehiculo_id}/historial?limit=20&offset=0` | historial de ficha de vehículo (admin, cliente, mecánico) | Filtra por vehículo y rol; página de hasta 20 elementos | OK |
 | `OrderService.getOrderById` | GET | `/api/ordenes/{id}` | detalle de orden | Alcance por rol | OK |
 | `OrderService.getOrderHistory` | GET | `/api/ordenes/{id}/historial` | historial en detalle de orden | Alcance por rol | OK |
 | `OrderService.getOrderBitacora` | GET | `/api/ordenes/{id}/bitacora` | bitácora en el detalle del mecánico | Alcance por rol | OK |
@@ -169,9 +170,10 @@ Reglas reflejadas en la interfaz:
 - **Progreso real**: el porcentaje sale de `onUploadProgress` de axios
   (`(cargado / total) * 100`), no de un temporizador; se muestra con barra
   accesible (`role="progressbar"`) mientras `uploadStatus === 'uploading'`.
-- **Validación local antes de enviar**: tipo permitido
-  (`esContentTypeEvidenciaPermitido`) y tamaño (`TAMANO_MAXIMO_EVIDENCIA_BYTES`,
-  12 MiB, alineado con el límite de cuerpo de la Gateway) con mensajes propios.
+- **Validación local antes de enviar**: `validarArchivoEvidencia` comprueba
+  JPG/JPEG, PNG, WEBP, MP4 y MOV por extensión y MIME; fotos de hasta 10 MiB y
+  videos no mayores de 12 MiB. La Gateway aplica 12 MiB a la petición multipart
+  completa, por lo que conserva la decisión final sobre el tamaño recibido.
 - **Un envío a la vez**: `subir` ignora una segunda llamada mientras está en
   `uploading`, y el botón se deshabilita, para no duplicar por doble clic.
 - **Éxito**: estado `success`, aviso `Evidencia subida correctamente.`, la

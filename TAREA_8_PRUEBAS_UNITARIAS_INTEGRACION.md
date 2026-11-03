@@ -1,34 +1,17 @@
 # 🧪 TAREA 8: Pruebas Unitarias y de Integración
 
-**Status:** ✅ COMPLETADA  
+**Carácter:** registro de pruebas y de resultados de una ejecución anterior
 **Framework:** pytest + FastAPI TestClient  
 **Coverage:** Autenticación, Autorización, JWT, Gateway, Propiedad de Recursos
 
 ---
 
-> ⚠️ **Corrección de estado — la versión anterior de este documento afirmaba un
-> resultado que no ocurría**
->
-> Decía «Framework: Jest + Supertest · Total: 50+ test cases · `npm test` → 50+
-> passed». Ejecutando `npm test` en la raíz **ninguna suite llega a cargar**: las
-> cinco fallan al resolver sus imports.
->
-> ```
-> Cannot find module '../../src/utils/jwt.util'   from '__tests__/unit/jwt.test.js'
-> Cannot find module '../../src/models/User'      from '__tests__/unit/user.test.js'
-> Cannot find module '../../src/index'            from '__tests__/integration/*.test.js'
-> ```
->
-> La causa es que los tests apuntan a `<raíz>/src/`, pero el código Node está en
-> `backend/src/`; y además `src/models/User.js` **no existe en el repositorio**,
-> aunque `backend/src/database/users.db.js:1` lo importa. Es decir, el monolito
-> Node está incompleto, no solo sus pruebas.
->
-> Ese monolito **no es el sistema en ejecución**: la arquitectura vigente son los
-> microservicios FastAPI de `backend/services/*` con la Gateway de
-> `backend/gateway/`. La cobertura que esta tarea pide **sí existe**, pero en
-> Python y con otra escala. A partir de aquí el documento describe la suite real;
-> al final se conserva el inventario de la suite Jest como registro histórico.
+> Los conteos y resultados de este documento corresponden a la ejecución
+> registrada originalmente; no acreditan el estado de una revisión posterior.
+> El backend Node y su suite Jest se retiraron del árbol activo por no estar
+> conectados con el sistema FastAPI. Sus fuentes anteriores permanecen en Git.
+> Las pruebas actuales se ejecutan desde `backend/` con pytest y desde
+> `frontend/` con Vitest.
 
 ---
 
@@ -140,165 +123,6 @@ omiten si no hay servicios externos: 10 de MinIO
 (`docker compose up -d minio minio_init`) y 45 de PostgreSQL descartable; ver
 la sección «Casos pendientes».
 
-### Suite histórica (Jest) — no ejecutable
-
-Se conserva el inventario original como registro. **No se ejecuta** y no debe
-usarse como evidencia de cobertura; ver el aviso de la cabecera.
-
-```
-backend/
-├── __tests__/
-│   ├── unit/
-│   │   ├── jwt.test.js              (9 tests)
-│   │   └── user.test.js             (10 tests)
-│   │
-│   └── integration/
-│       ├── auth.integration.test.js  (15 tests)
-│       ├── authorization.integration.test.js (11 tests)
-│       └── ownership.integration.test.js (13 tests)
-│
-├── jest.config.js                   (Configuración)
-└── package.json                     (Scripts de test)
-```
-
----
-
-## 🧪 PRUEBAS UNITARIAS
-
-### 1. JWT Utils (`__tests__/unit/jwt.test.js`)
-
-**9 tests:**
-
-```javascript
-✅ Generate token with correct payload
-✅ Verify valid token
-✅ Reject invalid token
-✅ Extract token from Authorization header
-✅ Reject header without Bearer prefix
-✅ Reject missing Authorization header
-✅ Decode token without verification
-✅ Token contains expiration claim
-```
-
-**Qué prueba:**
-- Generación correcta de JWT
-- Verificación de tokens válidos/inválidos
-- Extracción de headers Authorization
-- Claims correctos (id, email, role, exp)
-
----
-
-### 2. User Model (`__tests__/unit/user.test.js`)
-
-**10 tests:**
-
-```javascript
-✅ Validate correct email format
-✅ Reject invalid email format
-✅ Validate password with requirements
-✅ Reject password too short
-✅ Reject password without uppercase
-✅ Reject password without number
-✅ Hash password correctly
-✅ Compare passwords correctly
-✅ Reject wrong password
-✅ User toJSON does not include password
-```
-
-**Qué prueba:**
-- Validación de email (regex)
-- Validación de password (8+, mayús, número)
-- Bcryptjs hashing funciona
-- Comparación segura de contraseñas
-- No expone passwordHash en JSON
-
----
-
-## 🔗 PRUEBAS DE INTEGRACIÓN
-
-### 1. Authentication Endpoints (`auth.integration.test.js`)
-
-**15 tests:**
-
-```javascript
-✅ POST /api/auth/register - Register new user (201)
-✅ POST /api/auth/register - Reject invalid email (400)
-✅ POST /api/auth/register - Reject weak password (400)
-✅ POST /api/auth/register - Reject duplicate email (400)
-✅ POST /api/auth/login - Login successfully (200)
-✅ POST /api/auth/login - Reject wrong password (401)
-✅ POST /api/auth/login - Generic error for non-existent (401)
-✅ GET /api/auth/profile - Get with valid token (200)
-✅ GET /api/auth/profile - Reject missing token (401)
-✅ GET /api/auth/profile - Reject invalid token (401)
-✅ GET /api/auth/verify - Verify valid token (200)
-```
-
-**Qué prueba:**
-- Registro funciona correctamente
-- Validaciones se ejecutan
-- Login con credenciales correctas
-- Errores genéricos (no revela qué falla)
-- Acceso a rutas protegidas requiere token válido
-
----
-
-### 2. Authorization by Roles (`authorization.integration.test.js`)
-
-**11 tests:**
-
-```javascript
-✅ Admin can access /users (200)
-✅ Cliente cannot access /users (403)
-✅ Mecánico cannot access /users (403)
-
-✅ Admin can access /users/:role (200)
-✅ Cliente cannot access /users/:role (403)
-✅ Mecánico cannot access /users/:role (403)
-
-✅ Reject request without token (401)
-✅ Reject request with invalid token (401)
-
-✅ All roles can access /profile (200)
-```
-
-**Qué prueba:**
-- Roles tienen permisos correctos
-- Admin solo accede a /users
-- Cliente/Mecánico no pueden listar usuarios
-- Token requerido en rutas protegidas
-- Middleware de autorización funciona
-
----
-
-### 3. Resource Ownership (`ownership.integration.test.js`)
-
-**13 tests:**
-
-```javascript
-✅ Cliente can access their own order (200)
-✅ Cliente cannot access another's order (403)
-
-✅ Cliente sees only their orders
-✅ Admin can access any order (200)
-✅ Admin can see all orders (200)
-
-✅ Mecánico cannot access unassigned order (403)
-
-✅ Cliente cannot update other's order (403)
-✅ Mecánico cannot update unassigned (403)
-✅ Admin can update any order (200)
-```
-
-**Qué prueba:**
-- Verificación de propiedad funciona
-- Cliente solo ve sus órdenes
-- Admin accede a todo sin restricción
-- Prevención de acceso cruzado
-- PATCH solo por propietario o admin
-
----
-
 ## 🚀 CÓMO EJECUTAR LAS PRUEBAS
 
 ### Instalar dependencias
@@ -401,19 +225,6 @@ python -m pip install pytest-cov
 python -m pytest tests --cov=services --cov=gateway --cov=shared
 ```
 
-### Cobertura de la suite histórica (no vigente)
-
-Se lista solo como registro de lo que la suite Jest pretendía cubrir; varios de
-esos archivos no existen en el repositorio.
-
-- `jwt.util.js` · `models/User.js` — **no existen**
-- `middleware/auth.middleware.js`, `middleware/ownership.middleware.js`,
-  `controllers/auth.controller.js`, `controllers/orders.controller.js`,
-  `routes/auth.routes.js`, `routes/orders.routes.js` — existen en
-  `backend/src/`, pero el módulo `models/User` del que dependen no
-
----
-
 ## 🔍 EJEMPLOS DE PRUEBAS (suite vigente)
 
 ### Ejemplo 1: contrato de claims del JWT
@@ -436,65 +247,6 @@ def test_get_detalle_cliente_ajeno_recibe_404(...):
 
 ---
 
-## 🔍 EJEMPLOS DE PRUEBAS (suite histórica, Jest)
-
-### Ejemplo 1: JWT Generation
-```javascript
-test('Generate token with correct payload', () => {
-  const payload = { id: 'usr_123', email: 'test@test.cl', role: 'cliente' };
-  const token = JWTUtil.generateToken(payload);
-  
-  expect(token).toBeTruthy();
-  expect(token.split('.').length).toBe(3); // JWT = header.payload.signature
-});
-```
-
-### Ejemplo 2: Password Validation
-```javascript
-test('Reject password without uppercase', () => {
-  const noUppercase = 'password@123';
-  const result = User.validatePassword(noUppercase);
-  
-  expect(result.valid).toBe(false);
-  expect(result.message).toContain('mayúscula');
-});
-```
-
-### Ejemplo 3: Authorization
-```javascript
-test('Admin can access /users', async () => {
-  const res = await request(app)
-    .get('/api/auth/users')
-    .set('Authorization', `Bearer ${adminToken}`);
-
-  expect(res.statusCode).toBe(200);
-  expect(res.body.users).toBeDefined();
-});
-
-test('Cliente cannot access /users', async () => {
-  const res = await request(app)
-    .get('/api/auth/users')
-    .set('Authorization', `Bearer ${clienteToken}`);
-
-  expect(res.statusCode).toBe(403);
-  expect(res.body.error).toContain('Acceso denegado');
-});
-```
-
-### Ejemplo 4: Resource Ownership
-```javascript
-test('Cliente cannot access another clients order', async () => {
-  const res = await request(app)
-    .get(`/api/orders/${orden1Id}`)
-    .set('Authorization', `Bearer ${cliente2Token}`);
-
-  expect(res.statusCode).toBe(403);
-  expect(res.body.error).toContain('No tienes permiso');
-});
-```
-
----
-
 ## ✅ RESULTADOS ESPERADOS
 
 ### Suite vigente — resultado verificado
@@ -507,61 +259,6 @@ Reproducir con `cd backend && python -m pytest tests -q`. De las 1113 pruebas,
 55 se omiten por depender de servicios externos (10 de MinIO y 45 de PostgreSQL
 descartable) y 4 son `xfail` estricto por huecos de seguridad abiertos; el
 detalle está en la sección «Casos pendientes».
-
-### Suite histórica (Jest) — resultado real
-
-La salida que sigue **no** es la de este repositorio. `npm test` falla al
-cargar las cinco suites, por lo que estas líneas no deben usarse como evidencia
-de cobertura:
-
-```
-
-```
- PASS  __tests__/unit/jwt.test.js (150ms)
-  JWTUtil - JWT Generation and Verification
-    ✓ Generate token with correct payload (5ms)
-    ✓ Verify valid token (3ms)
-    ✓ Reject invalid token (2ms)
-    ✓ Extract token from Authorization header (2ms)
-    ✓ Reject header without Bearer prefix (2ms)
-    ✓ Reject missing Authorization header (2ms)
-    ✓ Decode token without verification (2ms)
-    ✓ Token contains expiration claim (2ms)
-    ✓ Token has correct structure (2ms)
-
- PASS  __tests__/unit/user.test.js (250ms)
-  User Model - Validation and Hashing
-    ✓ Validate correct email format (2ms)
-    ✓ Reject invalid email format (3ms)
-    ✓ Validate password with correct requirements (2ms)
-    ✓ Reject password too short (2ms)
-    ✓ Reject password without uppercase (2ms)
-    ✓ Reject password without number (2ms)
-    ✓ Hash password correctly (75ms)
-    ✓ Compare passwords correctly (85ms)
-    ✓ Reject wrong password (80ms)
-    ✓ User toJSON does not include password (2ms)
-
- PASS  __tests__/integration/auth.integration.test.js (450ms)
-  Authentication Endpoints Integration
-    ✓ POST /api/auth/register - Register new user (120ms)
-    ✓ POST /api/auth/register - Reject invalid email (30ms)
-    ✓ POST /api/auth/register - Reject weak password (30ms)
-    ✓ POST /api/auth/register - Reject duplicate email (100ms)
-    ✓ POST /api/auth/login - Login successfully (110ms)
-    ✓ POST /api/auth/login - Reject wrong password (80ms)
-    ✓ POST /api/auth/login - Generic error for non-existent user (80ms)
-    ✓ GET /api/auth/profile - Get user profile with valid token (100ms)
-    ✓ GET /api/auth/profile - Reject missing token (20ms)
-    ✓ GET /api/auth/profile - Reject invalid token (20ms)
-    ✓ GET /api/auth/verify - Verify valid token (100ms)
-
-Tests:       50+ passed, 0 failed
-Snapshots:   0 total
-Time:        1.234s
-```
-
----
 
 ## ⏳ CASOS PENDIENTES
 
@@ -610,15 +307,6 @@ Referencia completa de huecos y decisiones pendientes:
   comprobaciones, requiere la Gateway y MS1 levantadas. No corre dentro de
   `pytest`.
 
-### 4. Suite histórica (Jest) no ejecutable
-
-`__tests__/`, `jest.config.js` y `package.json` de la raíz no cargan ninguna
-suite y `backend/src/` está incompleto (`models/User` ausente). Queda **pendiente
-de decisión del equipo** retirarla; ver la sección «Conclusión». No se ha tocado
-ningún archivo de esa suite en este registro.
-
----
-
 ## 🛠️ CONFIGURACIÓN
 
 ### Suite vigente
@@ -626,29 +314,6 @@ ningún archivo de esa suite en este registro.
 No requiere archivo de configuración: `pytest` descubre `tests/` por convención
 y `tests/conftest.py` fija las variables de entorno de pruebas. Las dependencias
 de prueba se instalan con `requirements-dev.txt` (`pytest`, `httpx`, `respx`).
-
-### Suite histórica (jest.config.js) — no vigente
-
-```javascript
-module.exports = {
-  testEnvironment: 'node',
-  testMatch: ['**/__tests__/**/*.test.js'],
-  collectCoverageFrom: [
-    'src/**/*.js',      // ← ruta inexistente: el código Node está en backend/src/
-    '!src/index.js'
-  ],
-  coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'html'],
-  testTimeout: 10000,
-  verbose: true
-};
-```
-
-Los tres caminos que fallan —`src/**/*.js`, `main: "src/index.js"` en
-`package.json` y los `require('../../src/...')` de `__tests__/`— apuntan a
-`<raíz>/src/`, que no existe. Por eso la suite histórica no arranca.
-
----
 
 ## 📈 BENEFICIOS
 
@@ -671,12 +336,9 @@ Los tres caminos que fallan —`src/**/*.js`, `main: "src/index.js"` en
 - Gateway verificada: enrutamiento, reenvío de `Authorization`, errores, OpenAPI
 - Integración real JWT de MS1 → Gateway → MS2 verificada
 
-**Pendiente de decisión del equipo:** la suite Jest de la raíz
-(`__tests__/`, `jest.config.js`, `package.json`) no es ejecutable y su código
-(`backend/src/`) está incompleto por el `models/User` ausente. Recomiendo
-retirarla cuando el sistema FastAPI sea el único vigente, pero **no se ha
-tocado ningún archivo de esa suite** en este cambio: es una decisión del equipo,
-no una corrección silenciosa.
+El código Node y su suite Jest fueron retirados. Esta retirada no elimina
+pruebas de `backend/tests/` ni de `frontend/src/`, que verifican el sistema
+vigente. Los ejemplos de endpoints del monolito no son contratos disponibles.
 
 **TAREA 8: COMPLETADA** ✅
 

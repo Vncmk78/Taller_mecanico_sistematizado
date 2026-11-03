@@ -296,11 +296,15 @@ _OPERACIONES: tuple[_Op, ...] = (
         "Crear el presupuesto de una orden",
         "Mecánico o Administrador. Crea el presupuesto lógico de la orden con su "
         "versión 1 en borrador. El mecánico puede proponer ítems sin precio; el "
-        "administrador completa los importes antes de enviar.",
+        "administrador completa los importes antes de enviar. MS3 consulta MS2 con "
+        "el JWT original: exige orden existente y asignación al Mecánico, incluso "
+        "si además es Cliente propietario. Administrador no requiere asignación. "
+        "Orden inexistente o no asignada: 404; MS2 no verificable: 503, sin escrituras.",
         "201", _ref("PresupuestoDetalle"), _DETALLE_BORRADOR,
         {"401": "JWT ausente o inválido", "403": "Se requiere rol Mecánico o Administrador",
          "409": "La orden ya tiene presupuesto", "422": "Ítems inválidos o repuesto inexistente"},
-        cuerpo="PresupuestoCrear", ejemplo_cuerpo={"orden_id": 31, "items": _ITEMS_ENTRADA}),
+        cuerpo="PresupuestoCrear", ejemplo_cuerpo={"orden_id": 31, "items": _ITEMS_ENTRADA},
+        esquema_503="ErrorDetalle", descripcion_404="Orden inexistente o no asignada al Mecánico."),
     _Op("/api/presupuestos", "get", "Presupuestos", "listar_presupuestos",
         "Listar presupuestos o buscar el de una orden",
         "Más recientes primero. El Cliente debe indicar `orden_id` de una orden suya "

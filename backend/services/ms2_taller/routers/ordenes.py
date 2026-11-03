@@ -2,16 +2,29 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+import logging
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import obtener_principal_actual, obtener_token_bearer
+from services.ms2_taller.integracion_ms1 import (
+    MecanicoNoValidoError,
+    ServicioUsuariosNoDisponibleError,
+    VerificadorMecanicos,
+    obtener_verificador_mecanicos,
+)
 from services.ms2_taller.integracion_ms3 import (
     DecisionNoAplicableError, DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError,
     EnvioPresupuestoNoAplicableError, EnvioPresupuestoNoVisibleError,
+    DisponibilidadRepuestosNoAplicableError,
+    DisponibilidadRepuestosNoVisibleError,
     VerificadorDecisiones, VerificadorEnviosPresupuesto,
+    VerificadorDisponibilidadRepuestos,
     obtener_verificador_decisiones, obtener_verificador_envios_presupuesto,
+    obtener_verificador_disponibilidad_repuestos,
     VerificadorAprobacionInicial, obtener_verificador_aprobacion_inicial,
 )
 from services.ms2_taller.models.historial_estado import HistorialEstado
@@ -26,6 +39,9 @@ from services.ms2_taller.schemas.orden import (
     CupoDiarioIngresosRespuesta,
     SolicitudCancelacionRespuesta,
     CambioEstadoSolicitud,
+    EntregaOrdenRespuesta,
+    DisponibilidadRepuestosRespuesta,
+    HistorialOrdenesVehiculoRespuesta,
     CancelacionClienteSolicitud,
     EntregaSolicitud,
     HistorialEstadoRespuesta,
@@ -40,6 +56,7 @@ from services.ms2_taller.services.bitacora import (
     registrar_entrada_bitacora,
 )
 from services.ms2_taller.services.ordenes import (
+    EntregaOrdenInconsistenteError,
     OrdenEstadoInvalidoError,
     OrdenEstadoNoAutorizadoError,
     OrdenNoEncontradaError,
@@ -50,16 +67,18 @@ from services.ms2_taller.services.ordenes import (
     VehiculoNoEncontradoError,
     asignar_mecanico,
     aplicar_decision_presupuesto,
+    aplicar_disponibilidad_repuestos,
     aplicar_envio_inicial_presupuesto,
     cambiar_estado_orden,
     confirmar_cancelacion_orden,
     crear_orden,
     listar_ordenes,
+    listar_historial_ordenes_vehiculo,
     obtener_historial_orden,
     obtener_orden_visible,
+    registrar_entrega_fisica,
     listar_solicitudes_cancelacion_pendientes,
     solicitar_cancelacion_orden,
-    registrar_entrega,
 )
 from services.ms2_taller.services.capacidad_mecanicos import (
     CapacidadMecanicoExcedidaError,
@@ -79,12 +98,17 @@ from shared.auth import NombreRol, PrincipalAutenticado
 from shared.errores_auth import error_sin_permiso
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
+    AplicacionDisponibilidadRepuestosRespuesta,
     AplicacionEnvioPresupuestoRespuesta,
+    DisponibilidadRepuestosSolicitud,
     DecisionOrdenSolicitud,
     EnvioPresupuestoSolicitud,
 )
 
 router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
+logger = logging.getLogger(__name__)
+_REQUEST_ID_VALIDO = re.compile(r"[A-Za-z0-9-]{1,128}")
+_SQLSTATE_VALIDO = re.compile(r"[A-Z0-9]{5}")
 
 
 @router_ordenes.get(
@@ -321,6 +345,60 @@ def aplicar_decision(
 
 
 @router_ordenes.post(
+    "/{orden_id}/disponibilidad-repuestos",
+    response_model=AplicacionDisponibilidadRepuestosRespuesta,
+    include_in_schema=False,
+    summary="Iniciar reparación tras verificar una reserva de repuestos",
+    description=(
+        "Solo Administrador. MS2 valida la reserva persistida en MS3 antes de "
+        "derivar Esperando repuestos → En reparación. La clave de operación "
+        "hace idempotente el reintento y queda registrada en el historial."
+    ),
+    responses={
+        401: {"description": "JWT ausente o inválido"},
+        403: {"description": "Se requiere rol Administrador"},
+        404: {"description": "Orden o reserva de repuestos no encontrada"},
+        409: {"description": "Orden en estado incompatible o reserva no confirmada"},
+        422: {"description": "Clave de operación inválida"},
+        500: {"description": "Error de persistencia local"},
+        503: {"description": "No fue posible verificar la reserva en MS3"},
+    },
+)
+def aplicar_disponibilidad(
+    body: DisponibilidadRepuestosSolicitud,
+    orden_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorDisponibilidadRepuestos = Depends(
+        obtener_verificador_disponibilidad_repuestos
+    ),
+) -> AplicacionDisponibilidadRepuestosRespuesta:
+    try:
+        return aplicar_disponibilidad_repuestos(
+            db,
+            orden_id=orden_id,
+            clave_operacion=body.clave_operacion,
+            principal=principal,
+            token=token,
+            verificador=verificador,
+        )
+    except (OrdenNoEncontradaError, DisponibilidadRepuestosNoVisibleError) as exc:
+        raise HTTPException(404, "Orden o reserva de repuestos no encontrada") from exc
+    except OrdenEstadoNoAutorizadoError as exc:
+        raise HTTPException(403, str(exc)) from exc
+    except (
+        OrdenTransicionNoPermitidaError,
+        DisponibilidadRepuestosNoAplicableError,
+    ) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ServicioPresupuestosNoDisponibleError as exc:
+        raise HTTPException(503, "No fue posible verificar la reserva en MS3") from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(500, "No fue posible iniciar la reparación") from exc
+
+
+@router_ordenes.post(
     "",
     response_model=OrdenRespuesta,
     status_code=status.HTTP_201_CREATED,
@@ -386,15 +464,74 @@ def registrar_orden(
     },
 )
 def consultar_ordenes(
+    request: Request,
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> list[OrdenTrabajo]:
     try:
         return listar_ordenes(db, principal)
     except PersistenciaOrdenError as exc:
+        request_id = request.headers.get("x-request-id", "")
+        if not _REQUEST_ID_VALIDO.fullmatch(request_id):
+            request_id = "no-disponible"
+        causa = exc.__cause__
+        sqlstate = getattr(getattr(causa, "orig", None), "sqlstate", None)
+        if not isinstance(sqlstate, str) or not _SQLSTATE_VALIDO.fullmatch(sqlstate):
+            sqlstate = "no-disponible"
+        # No registrar la excepción completa: puede contener SQL, parámetros o DSN.
+        logger.error(
+            "ms2_consulta_ordenes_fallida request_id=%s tipo=%s sqlstate=%s",
+            request_id,
+            type(causa).__name__ if causa is not None else "no-disponible",
+            sqlstate,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible consultar las órdenes",
+        ) from exc
+
+
+@router_ordenes.get(
+    "/vehiculo/{vehiculo_id}/historial",
+    response_model=HistorialOrdenesVehiculoRespuesta,
+    summary="Consultar el historial paginado de órdenes de un vehículo",
+    description=(
+        "Ordena por fecha de creación descendente y desempata por ID. "
+        "Cliente ve un vehículo propio, Mecánico solo órdenes actualmente "
+        "asignadas a él y Administrador ve todas."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_404_NOT_FOUND: {"description": "Vehículo no encontrado"},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+            "description": "Identificador o parámetros de página inválidos"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible consultar el historial"
+        },
+    },
+)
+def consultar_historial_ordenes_vehiculo(
+    vehiculo_id: int = Path(gt=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> dict[str, object]:
+    try:
+        items, total = listar_historial_ordenes_vehiculo(
+            db, principal, vehiculo_id, limit=limit, offset=offset
+        )
+        return {"items": items, "total": total, "limit": limit, "offset": offset}
+    except VehiculoNoEncontradoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehículo no encontrado",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible consultar el historial del vehículo",
         ) from exc
 
 
@@ -650,11 +787,81 @@ def cambiar_estado(
         ) from exc
 
 
+@router_ordenes.post(
+    "/{orden_id}/entrega",
+    response_model=EntregaOrdenRespuesta,
+    summary="Registrar la entrega física de una orden",
+    description=(
+        "Solo un Administrador puede confirmar la entrega de una orden en "
+        "estado Listo. El responsable y la fecha/hora se obtienen del JWT y "
+        "del servidor. Repetir una entrega ya registrada devuelve el mismo "
+        "registro, sin duplicar el historial."
+    ),
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
+        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_409_CONFLICT: {
+            "description": "La orden debe estar en Listo para registrar su entrega"
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "No fue posible registrar la entrega física"
+        },
+    },
+)
+def confirmar_entrega_orden(
+    orden_id: int,
+    body: EntregaSolicitud | None = None,
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> EntregaOrdenRespuesta:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere rol Administrador",
+        )
+    try:
+        orden, historial = registrar_entrega_fisica(
+            db,
+            orden_id=orden_id,
+            administrador_id=principal.usuario_id,
+            observacion=body.observacion if body is not None else None,
+        )
+        return EntregaOrdenRespuesta(
+            **OrdenRespuesta.model_validate(orden).model_dump(),
+            entregado_en=orden.entregado_en,
+            entregado_por_id=orden.entregado_por_id,
+            historial_id=historial.historial_id,
+        )
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden no encontrada",
+        ) from exc
+    except OrdenTransicionNoPermitidaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except EntregaOrdenInconsistenteError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="La orden no conserva un registro de entrega completo",
+        ) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible registrar la entrega física",
+        ) from exc
+
+
 @router_ordenes.put(
     "/{orden_id}/mecanico",
     response_model=OrdenRespuesta,
     summary="Asignar o reasignar el mecánico responsable",
     responses={
+        422: {"description": "Destino inexistente, inactivo, sin rol Mecánico o datos inválidos"},
+        503: {"description": "MS1 no disponible para validar el destino; no se guarda el cambio"},
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
@@ -675,6 +882,8 @@ def actualizar_mecanico_responsable(
     body: AsignacionMecanicoActualizar,
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorMecanicos = Depends(obtener_verificador_mecanicos),
 ) -> OrdenTrabajo:
     if NombreRol.ADMINISTRADOR not in principal.roles:
         raise error_sin_permiso()
@@ -686,6 +895,19 @@ def actualizar_mecanico_responsable(
             status_code=status.HTTP_409_CONFLICT,
             detail="Un mecánico no puede autoasignarse una orden",
         )
+
+    try:
+        verificador.verificar(body.mecanico_id, token)
+    except MecanicoNoValidoError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="El usuario de destino debe existir, estar activo y tener rol Mecánico",
+        ) from exc
+    except ServicioUsuariosNoDisponibleError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible validar el mecánico con el servicio de usuarios",
+        ) from exc
 
     try:
         return asignar_mecanico(
@@ -722,68 +944,6 @@ def actualizar_mecanico_responsable(
         ) from exc
 
 
-@router_ordenes.post(
-    "/{orden_id}/entrega",
-    response_model=OrdenRespuesta,
-    summary="Registrar la entrega física de una orden lista",
-    description=(
-        "Cierra el ciclo normal (6 → 7): registra la fecha de entrega y el "
-        "usuario que la autorizó. Solo el Administrador puede invocarla. "
-        "Reemplaza al PATCH directo 6 → 7, que responde 409."
-    ),
-    responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
-        status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
-        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
-        status.HTTP_409_CONFLICT: {
-            "description": "La orden no está Lista o ya es terminal"
-        },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Observación de entrega vacía"
-        },
-        status.HTTP_500_INTERNAL_SERVER_ERROR: {
-            "description": "No fue posible completar la persistencia"
-        },
-    },
-)
-def registrar_entrega_orden(
-    orden_id: int,
-    body: EntregaSolicitud,
-    db: Session = Depends(get_db),
-    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
-) -> OrdenTrabajo:
-    try:
-        return registrar_entrega(
-            db,
-            orden_id=orden_id,
-            principal=principal,
-            observacion=body.observacion,
-        )
-    except OrdenNoEncontradaError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Orden no encontrada",
-        ) from exc
-    except OrdenEstadoNoAutorizadoError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
-        ) from exc
-    except OrdenObservacionInvalidaError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-    except OrdenTransicionNoPermitidaError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    except PersistenciaOrdenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible registrar la entrega",
-        ) from exc
 
 
 @router_ordenes.post(

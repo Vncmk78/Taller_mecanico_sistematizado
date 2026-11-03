@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+import logging
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
@@ -85,6 +88,9 @@ from shared.contratos_decisiones import (
 )
 
 router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
+logger = logging.getLogger(__name__)
+_REQUEST_ID_VALIDO = re.compile(r"[A-Za-z0-9-]{1,128}")
+_SQLSTATE_VALIDO = re.compile(r"[A-Z0-9]{5}")
 
 
 @router_ordenes.get(
@@ -386,12 +392,27 @@ def registrar_orden(
     },
 )
 def consultar_ordenes(
+    request: Request,
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> list[OrdenTrabajo]:
     try:
         return listar_ordenes(db, principal)
     except PersistenciaOrdenError as exc:
+        request_id = request.headers.get("x-request-id", "")
+        if not _REQUEST_ID_VALIDO.fullmatch(request_id):
+            request_id = "no-disponible"
+        causa = exc.__cause__
+        sqlstate = getattr(getattr(causa, "orig", None), "sqlstate", None)
+        if not isinstance(sqlstate, str) or not _SQLSTATE_VALIDO.fullmatch(sqlstate):
+            sqlstate = "no-disponible"
+        # No registrar la excepción completa: puede contener SQL, parámetros o DSN.
+        logger.error(
+            "ms2_consulta_ordenes_fallida request_id=%s tipo=%s sqlstate=%s",
+            request_id,
+            type(causa).__name__ if causa is not None else "no-disponible",
+            sqlstate,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible consultar las órdenes",

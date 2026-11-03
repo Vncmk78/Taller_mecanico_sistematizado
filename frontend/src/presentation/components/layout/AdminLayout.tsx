@@ -8,6 +8,9 @@ import {
   Truck,
   Search,
   Bell,
+  AlertTriangle,
+  ListOrdered,
+  Gauge,
 } from 'lucide-react';
 import { RoleLayout } from '@/presentation/components/layout/RoleLayout';
 import { useRoleAccess } from '@/presentation/hooks/useRoleAccess';
@@ -26,6 +29,9 @@ const sections = [
     items: [
       { to: '/admin/vehiculos', icon: <Car className="w-5 h-5" />, label: 'Vehículos', roles: ['administrador' as const] },
       { to: '/admin/inventario', icon: <Package className="w-5 h-5" />, label: 'Inventario', roles: ['administrador' as const] },
+      { to: '/admin/inventario/alertas', icon: <AlertTriangle className="w-5 h-5" />, label: 'Alertas de stock', roles: ['administrador' as const] },
+      { to: '/admin/inventario/movimientos', icon: <ListOrdered className="w-5 h-5" />, label: 'Movimientos', roles: ['administrador' as const] },
+      { to: '/admin/inventario/umbral', icon: <Gauge className="w-5 h-5" />, label: 'Umbral general', roles: ['administrador' as const] },
       { to: '/admin/distribuidores', icon: <Truck className="w-5 h-5" />, label: 'Distribuidores', roles: ['administrador' as const] },
     ],
   },

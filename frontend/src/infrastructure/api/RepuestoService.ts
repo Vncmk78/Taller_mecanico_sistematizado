@@ -61,6 +61,31 @@ class RepuestoService implements RepuestoPort {
         const { data } = await apiClient.get<RepuestoApi>(`/repuestos/${id}`);
         return mapRepuesto(data);
     }
+
+    async createRepuesto(input: { proveedorId: number; nombre: string; stockInicial?: number; umbralParticular?: number | null }): Promise<Repuesto> {
+        const body: Record<string, unknown> = {
+            proveedor_id: input.proveedorId,
+            nombre: input.nombre,
+            stock_inicial: input.stockInicial ?? 0,
+        };
+        if (input.umbralParticular !== undefined) body.umbral_particular = input.umbralParticular;
+        const { data } = await apiClient.post<RepuestoApi>('/repuestos', body);
+        return mapRepuesto(data);
+    }
+
+    async updateRepuesto(id: number, input: { nombre?: string; proveedorId?: number; umbralParticular?: number | null; observacion?: string | null }): Promise<Repuesto> {
+        const body: Record<string, unknown> = {};
+        if (input.nombre !== undefined) body.nombre = input.nombre;
+        if (input.proveedorId !== undefined) body.proveedor_id = input.proveedorId;
+        if (input.umbralParticular !== undefined) body.umbral_particular = input.umbralParticular;
+        if (input.observacion !== undefined) body.observacion = input.observacion;
+        const { data } = await apiClient.patch<RepuestoApi>(`/repuestos/${id}`, body);
+        return mapRepuesto(data);
+    }
+
+    async deleteRepuesto(id: number): Promise<void> {
+        await apiClient.delete(`/repuestos/${id}`);
+    }
 }
 
 export const repuestoService = new RepuestoService();

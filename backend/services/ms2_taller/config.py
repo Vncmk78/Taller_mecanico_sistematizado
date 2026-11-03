@@ -12,6 +12,7 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
+from services.ms2_taller.direccion_ms3 import url_ms3_por_defecto
 
 
 class Settings(ServiceSettings):
@@ -32,7 +33,7 @@ class Settings(ServiceSettings):
     JWT_SECRET_KEY: SecretStr = Field(min_length=32)
     JWT_ALGORITHM: Literal["HS256"] = "HS256"
 
-    MS3_URL: str = "http://localhost:8003"
+    MS3_URL: str = Field(default_factory=url_ms3_por_defecto)
     MS3_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
     # Publicación interna MS2 → MS1. El worker no se inicia si falta el secreto.
     EVENT_SHARED_SECRET: SecretStr | None = Field(default=None, min_length=32)

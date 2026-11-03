@@ -27,8 +27,7 @@
       "framework": "fastapi",
       "entrypoint": "services.ms2_taller.main:app",
       "bindings": [
-        { "type": "service", "service": "ms-auth", "format": "url", "env": "MS2_MS1_URL" },
-        { "type": "service", "service": "ms-presupuestos", "format": "url", "env": "MS2_MS3_URL" }
+        { "type": "service", "service": "ms-auth", "format": "url", "env": "MS2_MS1_URL" }
       ],
       "rewrites": [{ "source": "/ms2/(.*)", "destination": "/$1" }]
     },

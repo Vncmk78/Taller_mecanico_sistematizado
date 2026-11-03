@@ -17,8 +17,10 @@ from __future__ import annotations
 from typing import Protocol
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field
 
 from services.ms3_presupuestos.config import settings
+from shared.auth import NombreRol, PrincipalAutenticado
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
     AplicacionDisponibilidadRepuestosRespuesta,
@@ -54,6 +56,11 @@ class ServicioOrdenesNoDisponible(Exception):
 
 
 class VerificadorOrdenes(Protocol):
+    def verificar_creacion_presupuesto(
+        self, orden_id: int, token: str, principal: PrincipalAutenticado,
+    ) -> None:
+        """Exige existencia y, salvo Administrador, asignación al mecánico."""
+
     def verificar_acceso(self, orden_id: int, token: str) -> None:
         """Lanza OrdenNoVisible o ServicioOrdenesNoDisponible si no hay acceso."""
 
@@ -61,10 +68,33 @@ class VerificadorOrdenes(Protocol):
         """Exige propietario; la visibilidad por otro rol no es suficiente."""
 
 
+class _OrdenParaPresupuesto(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    orden_id: int = Field(gt=0)
+    mecanico_actual_id: int | None = Field(gt=0)
+
+
 class VerificadorOrdenesHttp:
     def __init__(self, url_base: str, timeout: float) -> None:
         self.url_base = url_base.rstrip("/")
         self.timeout = timeout
+
+    def verificar_creacion_presupuesto(
+        self, orden_id: int, token: str, principal: PrincipalAutenticado,
+    ) -> None:
+        respuesta = self._verificar(f"/ordenes/{orden_id}", orden_id, token)
+        try:
+            orden = _OrdenParaPresupuesto.model_validate(respuesta.json())
+        except ValueError as exc:
+            raise ServicioOrdenesNoDisponible() from exc
+        if orden.orden_id != orden_id:
+            raise ServicioOrdenesNoDisponible()
+        if (
+            NombreRol.ADMINISTRADOR not in principal.roles
+            and orden.mecanico_actual_id != principal.usuario_id
+        ):
+            raise OrdenNoVisible(orden_id)
 
     def verificar_acceso(self, orden_id: int, token: str) -> None:
         self._verificar(f"/ordenes/{orden_id}", orden_id, token)

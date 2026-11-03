@@ -72,7 +72,7 @@ en Kubernetes apuntarían al propio pod, no a otro microservicio.
 | --- | --- |
 | Gateway | GATEWAY_MS1_URL…GATEWAY_MS4_URL con URLs internas reales; GATEWAY_CORS_ORIGINS con el origen HTTPS de la web; GATEWAY_CORS_ORIGIN_REGEX vacío si no se autorizan previews Vercel |
 | MS1 | MS1_DATABASE_URL, MS1_JWT_SECRET_KEY; MS1_EVENT_SHARED_SECRET si se habilitan los eventos de MartinH |
-| MS2 | MS2_DATABASE_URL, MS2_JWT_SECRET_KEY, MS2_MS3_URL, MS2_TIMEZONE=America/Santiago; MS2_MS1_URL y secreto de eventos si corresponde a la versión desplegada |
+| MS2 | MS2_DATABASE_URL, MS2_JWT_SECRET_KEY, MS2_MS3_URL, MS2_MS1_URL, MS2_MS1_TIMEOUT_SEGUNDOS=3.0, MS2_TIMEZONE=America/Santiago; secreto de eventos si se habilita el worker |
 | MS3 | MS3_DATABASE_URL, MS3_JWT_SECRET_KEY, MS3_MS2_URL |
 | MS4 | MS4_DATABASE_URL, MS4_JWT_SECRET_KEY, MS4_MS2_URL y MS4_S3_* |
 

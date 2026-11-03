@@ -5,8 +5,8 @@ app móvil (Integración IV). La fuente de verdad interactiva está en el Swagge
 de la Gateway: <http://localhost:8000/docs> y su versión JSON en
 <http://localhost:8000/openapi.json>.
 
-**Versión estable del contrato: 1.1.0.** Copia congelada para integrar sin
-levantar la Gateway: [`docs/openapi/sgtm-gateway-1.1.0.json`](openapi/sgtm-gateway-1.1.0.json).
+**Versión estable del contrato: 2.0.0.** Copia congelada para integrar sin
+levantar la Gateway: [`docs/openapi/sgtm-gateway-2.0.0.json`](openapi/sgtm-gateway-2.0.0.json).
 Reglas de versionado e historial: [`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
 
 Reglas que se aplican a todos los endpoints:
@@ -382,10 +382,13 @@ tienen ni deben tener FK física entre bases de microservicios:
 | `entregado_por_id` | Usuario que registró la entrega física; lo fija `POST /api/ordenes/{id}/entrega` |
 | `diagnostico_autor_id`, `devuelto_por_id` | Referencias previstas por el modelo para etapas posteriores; todavía no tienen endpoints |
 
-La validación remota de que el `mecanico_id` existe, está activo y tiene rol
-Mecánico todavía no dispone de un contrato implementado entre MS2 y MS1. El
-endpoint actual conserva el identificador como referencia lógica; esta
-dependencia no debe sustituirse por acceso directo a la base de MS1.
+Antes de asignar o reasignar, MS2 consulta `GET {MS2_MS1_URL}/auth/usuarios/{mecanico_id}`
+con el mismo JWT del Administrador. Exige `id` coincidente, `is_active: true` y
+`roles` que contenga `mecanico`: destino inexistente, inactivo o sin ese rol
+responde `422`. MS1 no disponible o respuesta incompleta/incompatible responde
+`503`, sin escrituras locales. El timeout se configura con
+`MS2_MS1_TIMEOUT_SEGUNDOS` (3 segundos por defecto). No se accede a tablas de MS1.
+La comprobación es puntual: no constituye una transacción distribuida con MS1.
 
 ### Flujo implementado hasta Semana 3
 
@@ -914,8 +917,10 @@ reasignaciones.
 }
 ```
 
-`mecanico_id` es hoy una referencia lógica a MS1. La validación remota de
-existencia, actividad y rol Mecánico permanece pendiente del contrato con MS1.
+`mecanico_id` sigue siendo una referencia lógica a MS1. Antes de cualquier
+escritura se valida su existencia, actividad y rol mediante la API de MS1 con el
+JWT del Administrador: `422` si el destino no cumple, `503` si no puede validarse.
+Los rechazos no modifican responsable, estado, historial, outbox ni capacidad.
 Antes de cambiar el responsable, MS2 valida el máximo configurable de órdenes
 activas del mecánico de destino. Se cuentan sus órdenes asignadas cuyo estado no
 sea `Entregado` ni `Cancelado`; una orden `Recibido` sin asignar no consume
@@ -1434,6 +1439,19 @@ Pruebas que respaldan este contrato: `tests/test_ms4_api_evidencias.py`,
 (los ejemplos del Swagger se comparan con las respuestas reales de MS4).
 
 ## Presupuestos, repuestos, proveedores e inventario (MS3)
+
+### Validación al crear presupuestos (contrato 2.0.0)
+
+`POST /api/presupuestos` exige Mecánico o Administrador. Antes de guardar,
+MS3 consulta `GET {MS3_MS2_URL}/ordenes/{orden_id}` con el JWT original y exige
+una respuesta válida con el identificador solicitado. Un Mecánico debe coincidir
+con `mecanico_actual_id`, aunque además sea Cliente propietario; Administrador
+puede crear para cualquier orden existente. Orden inexistente, ajena o sin
+asignación correspondiente: `404`. MS2 no verificable, timeout, error o respuesta
+incompatible: `503`. En ambos rechazos no se crea presupuesto, versión ni ítems.
+La validación no cambia los permisos de otros endpoints de MS3 y no es una
+transacción distribuida ni bloquea una reasignación posterior en MS2.
+
 
 Todas exigen `Authorization: Bearer <jwt>`. Los esquemas completos, ejemplos y
 errores de cada operación están en `/docs` (tags **Presupuestos**,

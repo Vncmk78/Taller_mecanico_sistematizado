@@ -46,7 +46,7 @@ def _nombre(base: str) -> str:
 
 
 @pytest.fixture
-def api(db: Session) -> Iterator[TestClient]:
+def api(db: Session, ordenes_verificadas_para_persistencia) -> Iterator[TestClient]:
     app.dependency_overrides[get_db] = lambda: db
     try:
         with TestClient(app) as cliente:

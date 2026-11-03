@@ -118,7 +118,7 @@ def db_ordenes() -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def api_ordenes(db_ordenes: Session, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
+def api_ordenes(db_ordenes: Session, monkeypatch: pytest.MonkeyPatch, mecanicos_validos) -> Generator[TestClient, None, None]:
     # Alembic fileConfig deshabilita loggers existentes durante otras pruebas.
     # Restaurar solo este logger durante el caso, igual que la fixture de MS4.
     monkeypatch.setattr(logging.getLogger("services.ms2_taller.routers.ordenes"), "disabled", False)

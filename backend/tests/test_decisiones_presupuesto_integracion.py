@@ -63,7 +63,7 @@ def _sesion_por_peticion(fabrica):
 
 
 @pytest.fixture
-def flujo(monkeypatch):
+def flujo(monkeypatch, mecanicos_validos):
     yield from preparar_flujo(
         monkeypatch, _base_aislada(BaseMS2), _base_aislada(BaseMS3),
     )

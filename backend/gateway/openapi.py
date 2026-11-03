@@ -33,7 +33,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "1.1.0"
+_VERSION = "2.0.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -357,6 +357,7 @@ def _operacion(
         "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA)."
     ),
     esquema_404: dict[str, object] | None = None,
+    descripcion_503: str | None = None,
 ) -> dict[str, object]:
     parametros: list[dict[str, object]] = [_PARAMETRO_X_REQUEST_ID]
     if con_vehiculo_id:
@@ -401,6 +402,12 @@ def _operacion(
         "503": {"$ref": "#/components/responses/GatewaySaturada"},
         "504": {"$ref": "#/components/responses/TiempoAgotado"},
     }
+
+    if descripcion_503 is not None:
+        errores["503"] = _respuesta(
+            descripcion_503 + "; o pool de la Gateway agotado.",
+            {"oneOf": [_ref("ErrorDetalle"), _ref("ErrorRespuesta")]},
+        )
 
     # MS1 y MS2 acompañan el 401 con `WWW-Authenticate: Bearer` y la Gateway lo
     # reenvía; se documenta en cada operación protegida.
@@ -976,7 +983,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "asignación cambia Recibido a Esperando diagnóstico y "
                     "registra los historiales de asignación y estado. Una "
                     "reasignación conserva el estado; Entregado y Cancelado "
-                    "rechazan la operación."
+                    "rechazan la operación. MS2 consulta MS1 con el JWT del "
+                    "Administrador: el destino debe existir, estar activo y "
+                    "tener rol Mecánico (422 en otro caso). Si MS1 no permite "
+                    "validarlo, responde 503 sin guardar cambios."
                 ),
                 operation_id="asignar_mecanico",
                 cuerpo="AsignacionMecanicoActualizar",
@@ -987,12 +997,13 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
                     "409": "Autoasignación, estado terminal o capacidad excedida/no configurada",
-                    "422": "Datos inválidos",
+                    "422": "Destino inexistente, inactivo, sin rol Mecánico o datos inválidos",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
                 descripcion_404="Orden no encontrada.",
                 esquema_404=error_404_recurso,
+                descripcion_503="No fue posible validar el mecánico con MS1",
             )
         },
         "/api/ordenes/configuracion/capacidad/mecanicos": {

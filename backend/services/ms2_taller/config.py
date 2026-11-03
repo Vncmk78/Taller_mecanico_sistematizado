@@ -37,6 +37,7 @@ class Settings(ServiceSettings):
     # Publicación interna MS2 → MS1. El worker no se inicia si falta el secreto.
     EVENT_SHARED_SECRET: SecretStr | None = Field(default=None, min_length=32)
     MS1_URL: str = "http://localhost:8001"
+    MS1_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
     EVENT_WORKER_ENABLED: bool = False
     EVENT_POLL_SECONDS: float = Field(default=1.0, gt=0, le=60)
     EVENT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=60)

@@ -90,7 +90,7 @@ def bases_pg():
 
 
 @pytest.fixture
-def flujo_pg(bases_pg, monkeypatch):
+def flujo_pg(bases_pg, monkeypatch, mecanicos_validos):
     yield from preparar_flujo(monkeypatch, bases_pg.ms2, bases_pg.ms3)
 
 

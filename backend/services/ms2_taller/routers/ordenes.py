@@ -10,6 +10,12 @@ from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import obtener_principal_actual, obtener_token_bearer
+from services.ms2_taller.integracion_ms1 import (
+    MecanicoNoValidoError,
+    ServicioUsuariosNoDisponibleError,
+    VerificadorMecanicos,
+    obtener_verificador_mecanicos,
+)
 from services.ms2_taller.integracion_ms3 import (
     DecisionNoAplicableError, DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError,
     EnvioPresupuestoNoAplicableError, EnvioPresupuestoNoVisibleError,
@@ -854,6 +860,8 @@ def confirmar_entrega_orden(
     response_model=OrdenRespuesta,
     summary="Asignar o reasignar el mecánico responsable",
     responses={
+        422: {"description": "Destino inexistente, inactivo, sin rol Mecánico o datos inválidos"},
+        503: {"description": "MS1 no disponible para validar el destino; no se guarda el cambio"},
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
@@ -874,6 +882,8 @@ def actualizar_mecanico_responsable(
     body: AsignacionMecanicoActualizar,
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorMecanicos = Depends(obtener_verificador_mecanicos),
 ) -> OrdenTrabajo:
     if NombreRol.ADMINISTRADOR not in principal.roles:
         raise error_sin_permiso()
@@ -885,6 +895,19 @@ def actualizar_mecanico_responsable(
             status_code=status.HTTP_409_CONFLICT,
             detail="Un mecánico no puede autoasignarse una orden",
         )
+
+    try:
+        verificador.verificar(body.mecanico_id, token)
+    except MecanicoNoValidoError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="El usuario de destino debe existir, estar activo y tener rol Mecánico",
+        ) from exc
+    except ServicioUsuariosNoDisponibleError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="No fue posible validar el mecánico con el servicio de usuarios",
+        ) from exc
 
     try:
         return asignar_mecanico(

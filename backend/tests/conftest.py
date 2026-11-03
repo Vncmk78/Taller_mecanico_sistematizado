@@ -54,6 +54,20 @@ from shared.auth import NombreRol
 
 
 @pytest.fixture
+def mecanicos_validos():
+    """MS1 simulado para suites de estados/capacidad; la validación HTTP tiene suite propia."""
+    from types import SimpleNamespace
+    from services.ms2_taller.main import app as ms2
+    from services.ms2_taller.integracion_ms1 import obtener_verificador_mecanicos
+
+    ms2.dependency_overrides[obtener_verificador_mecanicos] = lambda: SimpleNamespace(
+        verificar=lambda _mecanico_id, _token: None,
+    )
+    yield
+    ms2.dependency_overrides.pop(obtener_verificador_mecanicos, None)
+
+
+@pytest.fixture
 def db() -> Generator[Session, None, None]:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",

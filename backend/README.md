@@ -299,6 +299,19 @@ reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
 | `GET /presupuestos/decisiones/{decision_id}` | **Cliente responsable**: hecho persistido que MS2 verifica antes de aplicar la decisión |
 | `POST /presupuestos/decisiones/{decision_id}/aplicacion` | **Cliente responsable**: reintenta la misma decisión, sin crear otra |
 
+**Conexión con la orden** (SCRUM-525): toda escritura (crear, nueva versión,
+editar borrador, enviar, decidir) verifica la orden en MS2 con el JWT de quien
+llama y lee su `estado_codigo`:
+
+| Situación | Respuesta |
+|---|---|
+| La orden no existe o no es visible para quien llama (el mecánico solo ve las asignadas) | `404` |
+| MS2 no responde | `503` |
+| Orden **Entregada** (7) o **Cancelada** (8) | `409`; además se liberan las unidades que la orden aún tenía reservadas (una sola vez) |
+| **Primera** decisión con la orden fuera de "Esperando aprobación de presupuesto" (3) | `409`, sin guardar la decisión |
+| Decisión de una **modificación** con la orden en curso (4, 5…) | Se registra; la orden no cambia |
+| MS2 no informa el estado | MS3 no aplica reglas por estado; MS2 valida al aplicar |
+
 Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
 la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
 nueva versión es una modificación (`es_modificacion`) y, mientras no se apruebe,

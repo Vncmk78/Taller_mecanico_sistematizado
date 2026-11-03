@@ -526,15 +526,21 @@ def test_ms2_sin_confirmacion_de_propiedad_no_deja_decision_guardada(flujo, monk
     assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
 
 
-def test_estado_incompatible_deja_decision_persistida_y_no_escribe_historial(flujo):
+def test_estado_incompatible_no_registra_decision_ni_historial(flujo):
+    """SCRUM-525: MS3 lee el estado de la orden en MS2 antes de guardar la decisión.
+
+    Con la orden fuera de "Esperando aprobación de presupuesto" responde 409 y no
+    deja una decisión huérfana que MS2 nunca podría aplicar. (Si el estado cambia
+    entre la verificación y la aplicación, sigue el camino 503 + reintento.)
+    """
     with flujo.db2() as db:
         db.get(OrdenTrabajo, flujo.orden_id).estado_codigo = RECIBIDO
         db.commit()
     respuesta = _decidir(flujo)
-    assert respuesta.status_code == 503
-    assert respuesta.json()["estado_ms2"] == 409
-    assert "no permitido" in respuesta.json()["detalle_ms2"]
-    assert _aplicar(flujo, respuesta.json()["decision_id"]).status_code == 409
+    assert respuesta.status_code == 409
+    assert "no está esperando la aprobación" in respuesta.json()["detail"]
+    with flujo.db3() as db:
+        assert db.scalar(select(func.count()).select_from(DecisionPresupuesto)) == 0
     assert _estado_y_historial(flujo) == (RECIBIDO, [])
 
 

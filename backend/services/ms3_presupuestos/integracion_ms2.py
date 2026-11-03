@@ -14,6 +14,7 @@ las pruebas lo reemplazan sin levantar MS2.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol
 
 import httpx
@@ -55,16 +56,28 @@ class ServicioOrdenesNoDisponible(Exception):
     """MS2 no respondió de forma utilizable; no se puede validar la orden."""
 
 
+@dataclass(frozen=True)
+class OrdenVisible:
+    """Lo que MS3 necesita saber de la orden (MS2 es la fuente, §8).
+
+    `estado_codigo` es None si MS2 no lo informó: en ese caso MS3 no puede
+    aplicar reglas por estado y deja la decisión final a MS2.
+    """
+
+    orden_id: int
+    estado_codigo: int | None = None
+
+
 class VerificadorOrdenes(Protocol):
     def verificar_creacion_presupuesto(
         self, orden_id: int, token: str, principal: PrincipalAutenticado,
-    ) -> None:
+    ) -> OrdenVisible | None:
         """Exige existencia y, salvo Administrador, asignación al mecánico."""
 
-    def verificar_acceso(self, orden_id: int, token: str) -> None:
+    def verificar_acceso(self, orden_id: int, token: str) -> OrdenVisible | None:
         """Lanza OrdenNoVisible o ServicioOrdenesNoDisponible si no hay acceso."""
 
-    def verificar_propiedad(self, orden_id: int, token: str) -> None:
+    def verificar_propiedad(self, orden_id: int, token: str) -> OrdenVisible | None:
         """Exige propietario; la visibilidad por otro rol no es suficiente."""
 
 
@@ -82,7 +95,7 @@ class VerificadorOrdenesHttp:
 
     def verificar_creacion_presupuesto(
         self, orden_id: int, token: str, principal: PrincipalAutenticado,
-    ) -> None:
+    ) -> OrdenVisible:
         respuesta = self._verificar(f"/ordenes/{orden_id}", orden_id, token)
         try:
             orden = _OrdenParaPresupuesto.model_validate(respuesta.json())
@@ -95,16 +108,18 @@ class VerificadorOrdenesHttp:
             and orden.mecanico_actual_id != principal.usuario_id
         ):
             raise OrdenNoVisible(orden_id)
+        return _orden(orden_id, respuesta)
 
-    def verificar_acceso(self, orden_id: int, token: str) -> None:
-        self._verificar(f"/ordenes/{orden_id}", orden_id, token)
+    def verificar_acceso(self, orden_id: int, token: str) -> OrdenVisible:
+        return _orden(orden_id, self._verificar(f"/ordenes/{orden_id}", orden_id, token))
 
-    def verificar_propiedad(self, orden_id: int, token: str) -> None:
+    def verificar_propiedad(self, orden_id: int, token: str) -> OrdenVisible:
         respuesta = self._verificar(f"/ordenes/{orden_id}?solo_propietario=true", orden_id, token)
         if respuesta.headers.get("X-Orden-Propiedad-Verificada") != "true":
             # Un MS2 anterior puede ignorar la query y devolver visibilidad
             # administrativa. Sin confirmación explícita, no guardar la decisión.
             raise ServicioOrdenesNoDisponible("MS2 no confirmó la verificación de propiedad")
+        return _orden(orden_id, respuesta)
 
     def _verificar(self, ruta: str, orden_id: int, token: str) -> httpx.Response:
         try:
@@ -120,6 +135,17 @@ class VerificadorOrdenesHttp:
         if respuesta.status_code in (403, 404):
             raise OrdenNoVisible(orden_id)
         raise ServicioOrdenesNoDisponible(f"MS2 respondió {respuesta.status_code}")
+
+
+def _orden(orden_id: int, respuesta: httpx.Response) -> OrdenVisible:
+    """Lee `estado_codigo` de OrdenRespuesta; si no viene o no es válido, queda None."""
+    try:
+        cuerpo = respuesta.json()
+    except ValueError:
+        return OrdenVisible(orden_id)
+    estado = cuerpo.get("estado_codigo") if isinstance(cuerpo, dict) else None
+    valido = isinstance(estado, int) and not isinstance(estado, bool) and 1 <= estado <= 8
+    return OrdenVisible(orden_id, estado if valido else None)
 
 
 def obtener_verificador_ordenes() -> VerificadorOrdenes:

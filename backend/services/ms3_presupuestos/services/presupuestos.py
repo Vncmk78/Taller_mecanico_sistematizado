@@ -53,6 +53,58 @@ from shared.contratos_decisiones import (
 )
 
 
+# ------------------------------------------------- conexión con la orden --
+# El estado de la orden vive en MS2 (§8). MS3 lo lee al verificar la orden
+# (GET /ordenes/{id}) y aplica estas reglas ANTES de escribir nada.
+
+ESTADOS_ORDEN = {
+    1: "Recibido", 2: "Esperando diagnóstico", 3: "Esperando aprobación de presupuesto",
+    4: "Esperando repuestos", 5: "En reparación", 6: "Listo", 7: "Entregado", 8: "Cancelado",
+}
+ESPERANDO_APROBACION = 3
+ESTADOS_CERRADOS = frozenset({7, 8})  # Entregado, Cancelado
+
+
+def nombre_estado(estado: int | None) -> str:
+    return ESTADOS_ORDEN.get(estado, "desconocido") if estado is not None else "desconocido"
+
+
+def orden_cerrada(estado: int | None) -> bool:
+    return estado in ESTADOS_CERRADOS
+
+
+def exigir_orden_abierta(orden_id: int, estado: int | None) -> None:
+    """Una orden Entregada o Cancelada ya no admite presupuestos, versiones ni decisiones."""
+    if orden_cerrada(estado):
+        raise ConflictoDeDatos(
+            f"La orden {orden_id} está {nombre_estado(estado)}: su presupuesto ya no admite "
+            "cambios ni decisiones"
+        )
+
+
+def exigir_estado_para_decidir(orden_id: int, estado: int | None, *, primera: bool) -> None:
+    """La primera decisión solo cabe si la orden espera la aprobación (estado 3).
+
+    Si MS2 no informó el estado (None) se deja pasar: MS2 valida al aplicar.
+    """
+    exigir_orden_abierta(orden_id, estado)
+    if primera and estado is not None and estado != ESPERANDO_APROBACION:
+        raise ConflictoDeDatos(
+            f"La orden {orden_id} no está esperando la aprobación del presupuesto "
+            f"(estado actual: {nombre_estado(estado)})"
+        )
+
+
+def liberar_reservas_de_orden_cerrada(uow: UnidadDeTrabajo, orden_id: int, *, usuario_id: int) -> int:
+    """Libera lo que una orden cerrada aún tenía reservado. Idempotente.
+
+    Devuelve cuántas unidades se liberaron (0 si no tenía reservas o ya se hizo).
+    """
+    resultado = reservas.liberar_orden(uow, orden_id, usuario_id=usuario_id,
+                                       clave_operacion=f"cierre-orden-{orden_id}")
+    return 0 if resultado.repetido else sum(m.cantidad for m in resultado.movimientos)
+
+
 # ---------------------------------------------------------------- escritura --
 
 def crear_presupuesto(

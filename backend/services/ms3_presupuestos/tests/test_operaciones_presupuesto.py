@@ -19,6 +19,7 @@ from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
 from services.ms3_presupuestos.integracion_ms2 import (
     OrdenNoVisible,
+    OrdenVisible,
     ServicioOrdenesNoDisponible,
     obtener_verificador_ordenes,
     obtener_coordinador_envios_presupuesto,
@@ -54,21 +55,28 @@ CLIENTE = _cabecera(NombreRol.CLIENTE, datos.CLIENTE_ID)
 
 
 class VerificadorFalso:
-    """Hace de MS2: `propias` son las órdenes visibles para el cliente."""
+    """Hace de MS2: `propias` son las órdenes visibles para el cliente; el
+    personal (mecánico/administrador) ve todas. `estados` simula estado_codigo."""
 
     def __init__(self) -> None:
         self.propias: set[int] = set()
+        self.estados: dict[int, int] = {}
         self.caido = False
         self.consultas: list[tuple[int, str]] = []
 
-    def verificar_acceso(self, orden_id: int, token: str) -> None:
+    def verificar_acceso(self, orden_id: int, token: str) -> OrdenVisible:
         self.consultas.append((orden_id, token))
         if self.caido:
             raise ServicioOrdenesNoDisponible("MS2 caído")
-        if orden_id not in self.propias:
+        personal = token in (ADMIN["Authorization"][7:], MECANICO["Authorization"][7:])
+        if not personal and orden_id not in self.propias:
             raise OrdenNoVisible(orden_id)
+        return OrdenVisible(orden_id, self.estados.get(orden_id))
 
     verificar_propiedad = verificar_acceso
+
+    def verificar_creacion_presupuesto(self, orden_id: int, token: str, _principal) -> OrdenVisible:
+        return self.verificar_acceso(orden_id, token)
 
 
 @pytest.fixture

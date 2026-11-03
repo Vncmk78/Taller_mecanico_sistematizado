@@ -89,3 +89,18 @@ def test_rechaza_dsn_de_otro_motor_sin_abrir_conexion(monkeypatch):
 def test_revisiones_se_leen_sin_importar_la_aplicacion():
     scripts = diagnostico.revisiones_codigo()
     assert scripts.get_heads() == ["0012_integracion_ms2"]
+
+
+@pytest.mark.parametrize("tabla", tuple(diagnostico.COLUMNAS))
+def test_diagnostico_cubre_las_columnas_actuales_de_cada_modelo(tabla):
+    from services.ms2_taller.models import Base
+
+    assert diagnostico.COLUMNAS[tabla] == set(Base.metadata.tables[tabla].columns.keys())
+
+
+def test_detecta_clave_de_disponibilidad_ausente_aunque_alembic_diga_head(monkeypatch):
+    columna = "disponibilidad_repuestos_clave_operacion"
+    conexion, scripts, _ = preparar(monkeypatch, faltante=("historial_estado", columna))
+    codigo, lineas = diagnostico.comprobar(conexion, scripts)
+    assert codigo == 1
+    assert f"FALTAN COLUMNAS: historial_estado: {columna}" in lineas

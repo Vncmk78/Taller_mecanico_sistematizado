@@ -8,8 +8,8 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 
 | | |
 |---|---|
-| Versión vigente | **2.0.0** |
-| Copia congelada | [`docs/openapi/sgtm-gateway-2.0.0.json`](openapi/sgtm-gateway-2.0.0.json) |
+| Versión vigente | **2.1.0** |
+| Copia congelada | [`docs/openapi/sgtm-gateway-2.1.0.json`](openapi/sgtm-gateway-2.1.0.json) |
 | Interactivo | `http://localhost:8000/docs` (Swagger) y `/openapi.json` |
 | Dónde se define | `gateway/openapi.py` (`_VERSION`), `gateway/openapi_ms3.py`, `gateway/openapi_ejemplos.py`, `shared/openapi_ordenes.py` |
 
@@ -20,7 +20,7 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 - **Sin levantar la Gateway:** usen el archivo congelado. Sirve para generar
   tipos o clientes (`openapi-typescript`, `openapi-generator`, Flutter/Dart,
   etc.) y mocks a partir de los ejemplos.
-- **Fijen la versión:** referencien `sgtm-gateway-2.0.0.json` para el comportamiento vigente, no «el último».
+- **Fijen la versión:** referencien `sgtm-gateway-2.1.0.json` para el comportamiento vigente, no «el último».
   Una versión nueva llega como un archivo nuevo; el anterior no se borra.
 - **Solo lo publicado es contrato.** Una ruta que la Gateway reenvía pero no
   aparece en el archivo puede cambiar sin aviso.
@@ -53,6 +53,19 @@ Si cambias el contrato y olvidas los pasos 2 y 3,
 mano: `python scripts/exportar_openapi.py --verificar`.
 
 ## 4. Historial
+
+### 2.1.0 — Modificación de un presupuesto aprobado
+
+MINOR: agrega sin romper.
+
+- Operación nueva `POST /api/presupuestos/{presupuesto_id}/modificacion`
+  (body `Modificacion`, `items` opcional): crea la versión siguiente como copia
+  editable de la versión aprobada. 409 si no hay versión aprobada o ya hay un
+  borrador abierto.
+- Campo nuevo `vigente` (bool) en `VersionDetalle`: la versión aprobada que
+  manda.
+- `PUT …/versiones/{numero}/items` documenta el 409 de la versión aprobada y
+  bloqueada, que indica cómo modificarla.
 
 ### 2.0.1 — Campos que siempre vienen, publicados como obligatorios
 

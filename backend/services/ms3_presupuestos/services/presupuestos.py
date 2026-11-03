@@ -135,6 +135,11 @@ def reemplazar_items(
         uow.presupuestos.obtener_para_actualizar(presupuesto_id)
         version = uow.presupuestos.version(presupuesto_id, numero)
         uow.sesion.refresh(version)
+        if version.bloqueada:
+            raise ConflictoDeDatos(
+                f"La versión {numero} está aprobada y bloqueada; para modificarla cree una "
+                f"nueva versión (POST /presupuestos/{presupuesto_id}/modificacion)"
+            )
         if not version.editable:
             raise ConflictoDeDatos(
                 f"La versión {numero} ya fue enviada y no se puede modificar; "
@@ -165,7 +170,10 @@ def crear_version(
     - Una corrección de una versión enviada sin decisión la REEMPLAZA: el
       cliente ya no puede decidir sobre la anterior (queda en el historial).
     - Tras una aprobación, la nueva versión es una MODIFICACIÓN
-      (es_modificacion = true): mientras no se apruebe, manda la vigente.
+      (es_modificacion = true): mientras no se apruebe, manda la vigente. La
+      base lo exige (trigger 0009_ms3).
+    - Sin `items` ni `copiar_de` se copia la última versión, salvo que el
+      cliente haya rechazado esa modificación: entonces se copia la aprobada.
     - Los ítems se copian como filas nuevas; jamás se mueven ni se editan
       los de otra versión (además lo impiden los triggers de 0003_ms3).
     """
@@ -188,8 +196,14 @@ def crear_version(
         if items is not None:
             nuevos_items = _construir_items(uow, items)
         else:
-            base = (uow.presupuestos.version(presupuesto_id, copiar_de)
-                    if copiar_de is not None else ultima)
+            if copiar_de is not None:
+                base = uow.presupuestos.version(presupuesto_id, copiar_de)
+            elif vigente is not None and decision is not None and decision.decision == "rechazado":
+                # El cliente rechazó la modificación: se parte de lo APROBADO,
+                # no de la propuesta rechazada.
+                base = vigente
+            else:
+                base = ultima
             nuevos_items = [_copiar_item(i) for i in sorted(base.items, key=lambda i: i.item_id)]
 
         nueva = VersionPresupuesto(
@@ -201,6 +215,33 @@ def crear_version(
         presupuesto.versiones.append(nueva)
         uow.sesion.flush()
     return nueva
+
+
+def crear_modificacion(
+    uow: UnidadDeTrabajo,
+    *,
+    presupuesto_id: int,
+    creado_por_id: int,
+    items: Sequence[ItemEntrada] | None = None,
+) -> VersionPresupuesto:
+    """Modificar el presupuesto APROBADO: siempre una versión nueva (§4.3).
+
+    La versión aprobada queda bloqueada y sigue mandando hasta que el cliente
+    apruebe la modificación. Sin `items`, la nueva versión parte como copia
+    de la aprobada vigente. Sin versión aprobada → 409 (se corrige con una
+    nueva versión normal).
+    """
+    presupuesto = uow.presupuestos.obtener_o_error(presupuesto_id)
+    vigente = presupuesto.version_vigente
+    if vigente is None:
+        raise ConflictoDeDatos(
+            f"El presupuesto {presupuesto_id} no tiene una versión aprobada; las correcciones "
+            f"se hacen con una nueva versión (POST /presupuestos/{presupuesto_id}/versiones)"
+        )
+    return crear_version(
+        uow, presupuesto_id=presupuesto_id, creado_por_id=creado_por_id, items=items,
+        copiar_de=None if items is not None else vigente.numero,
+    )
 
 
 def _copiar_item(item: ItemPresupuesto) -> ItemPresupuesto:
@@ -469,6 +510,7 @@ def a_version_detalle(version: VersionPresupuesto) -> VersionDetalle:
         creado_en=version.creado_en,
         enviado_en=version.enviado_en,
         bloqueada_en=version.bloqueada_en,
+        vigente=version.presupuesto.version_vigente is version,
         total=total_version(version),
         items=[_a_item(i) for i in sorted(version.items, key=lambda i: i.item_id)],
         decision=DecisionSalida.model_validate(version.decision) if version.decision else None,

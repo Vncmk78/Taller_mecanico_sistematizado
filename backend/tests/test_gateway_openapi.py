@@ -142,6 +142,7 @@ _ENDPOINTS_SEMANA_7 = {
     ("/api/presupuestos/{presupuesto_id}", "get"),
     ("/api/presupuestos/{presupuesto_id}/versiones/{numero}", "get"),
     ("/api/presupuestos/{presupuesto_id}/versiones", "post"),
+    ("/api/presupuestos/{presupuesto_id}/modificacion", "post"),
     ("/api/presupuestos/{presupuesto_id}/versiones/{numero}/items", "put"),
     ("/api/presupuestos/{presupuesto_id}/versiones/{numero}/envio", "post"),
     ("/api/presupuestos/{presupuesto_id}/envio-inicial", "get"),
@@ -229,7 +230,7 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
 
 def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["info"]["title"] == "SGTM — API Gateway"
-    assert esquema["info"]["version"] == "2.0.1"
+    assert esquema["info"]["version"] == "2.1.0"
     assert esquema["openapi"].startswith("3.")
 
 

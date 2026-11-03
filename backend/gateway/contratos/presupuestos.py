@@ -87,6 +87,17 @@ class NuevaVersion(BaseModel):
         return self
 
 
+class Modificacion(BaseModel):
+    """Modificar el presupuesto aprobado: crea la versión siguiente (§4.3).
+
+    Sin `items` copia la versión aprobada vigente; con `items` parte de esa lista.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ItemEntrada] | None = Field(default=None, max_length=MAX_ITEMS_POR_VERSION)
+
+
 class DecisionEntrada(BaseModel):
     """Decisión del cliente sobre la versión enviada (§4.3)."""
 
@@ -140,6 +151,8 @@ class VersionDetalle(BaseModel):
     creado_en: datetime
     enviado_en: datetime | None
     bloqueada_en: datetime | None
+    # true en la última versión APROBADA: el alcance autorizado que manda.
+    vigente: bool = False
     total: Decimal
     items: list[ItemSalida]
     decision: DecisionSalida | None

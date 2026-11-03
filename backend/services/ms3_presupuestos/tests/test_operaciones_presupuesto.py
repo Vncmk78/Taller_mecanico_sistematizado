@@ -188,12 +188,22 @@ def test_enviar_modificacion_no_cambia_la_orden(
 
 
 def test_no_se_envia_una_version_que_no_es_la_ultima(
-    api: TestClient, db: Session, presupuesto_borrador: Presupuesto
+    api: TestClient, db: Session, presupuesto_enviado: Presupuesto
 ) -> None:
-    # v1 borrador + v2 borrador (caso forzado): solo la última puede enviarse.
-    fabricas.nueva_version_siguiente(db, presupuesto_borrador)
-    r = api.post(_ruta(presupuesto_borrador, 1, "envio"), headers=ADMIN)
-    assert r.status_code == 409 and "reemplazada" in r.json()["detail"]
+    # v1 enviada + v2 borrador: v1 ya no se puede volver a enviar.
+    fabricas.nueva_version_siguiente(db, presupuesto_enviado)
+    r = api.post(_ruta(presupuesto_enviado, 1, "envio"), headers=ADMIN)
+    assert r.status_code == 409
+
+
+def test_la_base_no_admite_dos_borradores_a_la_vez(
+    db: Session, presupuesto_borrador: Presupuesto
+) -> None:
+    """Antes era un "caso forzado"; desde 0009_ms3 la base lo rechaza."""
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError, match="ya tiene una versión en borrador"), db.begin_nested():
+        fabricas.nueva_version_siguiente(db, presupuesto_borrador)
 
 
 def test_solo_el_administrador_envia(api: TestClient, presupuesto_borrador: Presupuesto) -> None:

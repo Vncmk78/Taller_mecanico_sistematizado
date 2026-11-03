@@ -5,6 +5,7 @@
     GET  /presupuestos/{presupuesto_id}                        detalle con sus versiones
     GET  /presupuestos/{presupuesto_id}/versiones/{n}          una versión
     POST /presupuestos/{presupuesto_id}/versiones              nueva versión (sin sobrescribir)
+    POST /presupuestos/{presupuesto_id}/modificacion           modificar lo aprobado (nueva versión)
     PUT  /presupuestos/{presupuesto_id}/versiones/{n}/items    reemplazar ítems (solo borrador)
     POST /presupuestos/{presupuesto_id}/versiones/{n}/envio    enviar al cliente (Administrador)
     POST /presupuestos/{presupuesto_id}/versiones/{n}/decision aprobar / rechazar (Cliente dueño)
@@ -51,6 +52,7 @@ from services.ms3_presupuestos.persistencia.repositorios import LIMITE_MAXIMO
 from services.ms3_presupuestos.schemas.presupuesto import (
     DecisionEntrada,
     ItemsVersion,
+    Modificacion,
     NuevaVersion,
     PaginaPresupuestos,
     PresupuestoCrear,
@@ -310,6 +312,43 @@ def crear_version(
         uow, presupuesto_id=presupuesto_id, creado_por_id=principal.usuario_id,
         items=body.items, copiar_de=body.copiar_de,
     )
+    return casos.a_detalle(casos.obtener_presupuesto(uow, presupuesto_id))
+
+
+@router.post(
+    "/{presupuesto_id}/modificacion",
+    response_model=PresupuestoDetalle,
+    status_code=status.HTTP_201_CREATED,
+    summary="Modificar el presupuesto aprobado (crea obligatoriamente una nueva versión)",
+    description=(
+        "La versión aprobada queda bloqueada y sigue vigente hasta que el cliente apruebe "
+        "la modificación. Sin `items`, la nueva versión es una copia editable de la "
+        "aprobada; se ajusta con `PUT .../versiones/{n}/items` y se envía como siempre."
+    ),
+    responses={
+        **_ERRORES_COMUNES,
+        **_NO_EXISTE,
+        **_503,
+        status.HTTP_409_CONFLICT: {
+            "description": "No hay versión aprobada, ya hay un borrador abierto o la orden está "
+                           "entregada/cancelada"
+        },
+        422: {"description": "Ítems inválidos o repuesto inexistente"},
+    },
+)
+def crear_modificacion(
+    body: Modificacion | None = None,
+    presupuesto_id: int = IdPresupuesto,
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
+) -> PresupuestoDetalle:
+    body = body or Modificacion()
+    presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
+    _orden_para_el_personal(uow, presupuesto.orden_id, presupuesto_id, token, verificador, principal)
+    casos.crear_modificacion(uow, presupuesto_id=presupuesto_id,
+                             creado_por_id=principal.usuario_id, items=body.items)
     return casos.a_detalle(casos.obtener_presupuesto(uow, presupuesto_id))
 
 

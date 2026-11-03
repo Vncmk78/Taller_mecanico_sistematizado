@@ -312,6 +312,16 @@ llama y lee su `estado_codigo`:
 | Decisión de una **modificación** con la orden en curso (4, 5…) | Se registra; la orden no cambia |
 | MS2 no informa el estado | MS3 no aplica reglas por estado; MS2 valida al aplicar |
 
+**Versión aprobada bloqueada** (SCRUM-528, migración `0009_ms3`): la versión
+aprobada no se edita ni se borra (API `409` y triggers de la base). Para
+cambiar lo aprobado se usa `POST /presupuestos/{id}/modificacion`: crea
+**obligatoriamente** la versión siguiente (`es_modificacion: true`) como copia
+editable de la aprobada (o con los `items` enviados). La aprobada sigue
+`vigente: true` hasta que el cliente apruebe la modificación. La base exige
+que toda versión creada después de una aprobación sea una modificación y que
+no haya dos borradores abiertos. Si el cliente rechaza una modificación, la
+siguiente parte de lo aprobado, no de lo rechazado.
+
 Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
 la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
 nueva versión es una modificación (`es_modificacion`) y, mientras no se apruebe,

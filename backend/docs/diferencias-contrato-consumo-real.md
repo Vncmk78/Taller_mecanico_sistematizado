@@ -57,7 +57,10 @@ evidencia viva de que la cancelación responde una solicitud, no una orden.
   confirmarlo con PostgreSQL antes de exigir `format: date-time` estricto.
 - **O-02 — El 429 de login no se trata aparte en el frontend.** El contrato lo
   publica desde 1.0.0 con `Retry-After`. `errors.ts` muestra el `detail`
-  («Demasiados intentos fallidos…»), pero no usa la espera.
+  («Demasiados intentos fallidos…»), pero no usa la espera. **Semana 9:** además,
+  CORS no exponía `Retry-After`, así que un cliente en navegador no podía leerla
+  aunque quisiera. Corregido en la Gateway (`expose_headers`) con regresión en
+  `tests/test_cabeceras_cliente_movil.py`; falta que el frontend la use.
 - **O-03 — Cancelación repetida.** El contrato distingue `201` (creada) de `200`
   (ya existía). El frontend no los distingue; tras la corrección de D-01 no
   afecta, porque vuelve a pedir la orden en ambos casos.

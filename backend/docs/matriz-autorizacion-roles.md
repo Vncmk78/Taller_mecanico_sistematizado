@@ -105,15 +105,19 @@ perfil local; sin perfil local responde `404`, no `403`.
 |---|---|---|---|
 | `POST /api/vehiculos` | ✅ | ❌ | ⚠️ * |
 | `GET /api/vehiculos` | ✅ los suyos | ❌ | ⚠️ * |
-| `GET /api/vehiculos/{id}` | ✅ el suyo | ❌ | ⚠️ * |
+| `GET /api/vehiculos/{id}` | ✅ el suyo | ⚠️ solo de sus órdenes asignadas (otro: `404`) | ⚠️ * |
 | `PATCH /api/vehiculos/{id}` | ✅ el suyo | ❌ | ⚠️ * |
-| `GET /api/vehiculos/asignados` | — | — | — |
+| `GET /api/vehiculos/asignados` | ❌ 403 | ✅ los de sus órdenes asignadas | ❌ 403 ** |
 
 \* Solo si la cuenta **además** tiene el rol `cliente` y existe su perfil `Cliente`
 en MS2. El rol `administrador` por sí solo **no** da acceso a vehículos.
 
-El mecánico **no tiene hoy ninguna forma de listar los vehículos que atiende**: esa
-ruta no existe.
+\*\* Salvo que la cuenta **además** tenga el rol `mecanico`.
+
+El mecánico lista los vehículos que atiende con `GET /api/vehiculos/asignados`
+(`services/ms2_taller/routers/vehiculos.py`, `listar_vehiculos_para_mecanico`).
+*Corregido en Semana 9: esta sección decía que la ruta no existía
+(observación O-01 de `contratos-integracion-iv.md`).*
 
 ### 4.3 Órdenes de trabajo (MS2)
 
@@ -268,14 +272,15 @@ Estas reglas dicen qué debe respetar cada tarea. No autorizan endpoints nuevos.
 Cuando un cliente web o app móvil muestre acciones a un mecánico, debe atenerse
 a esta matriz:
 
-- El mecánico solo puede **leer** órdenes donde `mecanico_actual_id` coincide con su
-  usuario. No existe ninguna acción de escritura habilitada para el rol `mecanico`.
+- El mecánico solo ve órdenes donde `mecanico_actual_id` coincide con su usuario.
+  Sobre ellas puede cambiar el estado (`PATCH /api/ordenes/{id}/estado`), registrar
+  bitácora y subir evidencias (§4.3 y `contratos-integracion-iv.md`).
 - **Asignar y reasignar es solo del Administrador.** El mecánico no puede
   autoasignarse ni cambiar el responsable de una orden.
-- No ofrecer acciones de cambio de estado: **no existe endpoint** de cambio general
-  de estado. La única transición automática es la que dispara la primera asignación.
-- No ofrecer listado de vehículos al mecánico: `GET /api/vehiculos/asignados` **no
-  existe**.
+- Ofrecer el cambio de estado solo en órdenes asignadas al mecánico, y sin los pares
+  reservados a operaciones específicas (`1 → 2`, `3 → 4/5`, `6 → 7` responden `409`).
+- Para listar los vehículos del mecánico usar `GET /api/vehiculos/asignados`; no
+  usar `GET /api/vehiculos`, que responde `403` al rol `mecanico`.
 - Ocultar una acción por rol es una medida de experiencia de usuario, **no** de
   seguridad. Cada endpoint que exponga esa acción debe repetir la comprobación en el
   servidor; confiar solo en la interfaz permite saltarse el permiso con `curl`.

@@ -109,7 +109,8 @@ estricto con un ID nuevo (B-05, …).
 
 - **O-01 — Matriz desactualizada.** `matriz-autorizacion-roles.md` §4.2 dice que
   `GET /api/vehiculos/asignados` no existe; la ruta está implementada en MS2,
-  publicada y documentada en `contratos-api-gateway.md`.
+  publicada y documentada en `contratos-api-gateway.md`. **Corregida en Semana 9**:
+  la matriz ya refleja la ruta y el cambio de estado del Mecánico.
 - **O-02 — La app no llama a `POST /api/ordenes/{orden_id}/decisiones-presupuesto`.**
   Lo invoca MS3 al registrar la decisión; la app decide solo por MS3
   (`.../versiones/{numero}/decision`) y reintenta por `.../aplicacion`.

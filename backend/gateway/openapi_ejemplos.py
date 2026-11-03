@@ -286,6 +286,50 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         "503 de MS4: MS2 no respondió al verificar la orden",
         {"detail": "El servicio de órdenes no está disponible"},
     ),
+    "detalle_cuenta_sin_roles": _ejemplo(
+        "403 de login: credenciales correctas, pero la cuenta no tiene roles",
+        {"detail": "El usuario no posee roles"},
+    ),
+    "detalle_cuenta_bloqueada": _ejemplo(
+        "429 de login: cuenta bloqueada por intentos fallidos",
+        {"detail": "Demasiados intentos fallidos. Inténtalo de nuevo más tarde"},
+        "MS1 envía Retry-After con los segundos que faltan para el desbloqueo.",
+    ),
+    "detalle_validacion_login_422": _ejemplo(
+        "422 de validación del body de login",
+        {
+            "detail": [
+                {
+                    "type": "missing",
+                    "loc": ["body", "email"],
+                    "msg": "Field required",
+                    "input": {},
+                },
+                {
+                    "type": "missing",
+                    "loc": ["body", "password"],
+                    "msg": "Field required",
+                    "input": {},
+                },
+            ]
+        },
+    ),
+    "detalle_validacion_id_vehiculo_422": _ejemplo(
+        "422 con un identificador de vehículo no numérico",
+        {
+            "detail": [
+                {
+                    "type": "int_parsing",
+                    "loc": ["path", "vehiculo_id"],
+                    "msg": (
+                        "Input should be a valid integer, unable to parse string "
+                        "as an integer"
+                    ),
+                    "input": "abc",
+                }
+            ]
+        },
+    ),
     "detalle_validacion_vehiculo_422": _ejemplo(
         "422 de validación del body de vehículo",
         {
@@ -365,7 +409,100 @@ _EJEMPLOS_AUTENTICACION: dict[str, Any] = {
 # (ruta, método) -> {"cuerpo": ejemplos, "respuestas": {código: ejemplos}}.
 # `/api/ordenes` no aparece a propósito: sus ejemplos son de
 # `shared.openapi_ordenes.py` y esta función nunca los pisa.
+_BITACORA_EJEMPLO: dict[str, Any] = {
+    "bitacora_id": 77,
+    "orden_id": 31,
+    "autor_usuario_id": 50,
+    "tipo": "accion",
+    "descripcion": "Se reemplazaron las pastillas delanteras",
+    "creado_en": "2026-09-28T12:15:00-03:00",
+    "repuestos": [{"nombre": "Pastillas de freno", "cantidad": 2}],
+}
+_BITACORA_OBSERVACION_EJEMPLO: dict[str, Any] = {
+    "bitacora_id": 76,
+    "orden_id": 31,
+    "autor_usuario_id": 50,
+    "tipo": "observacion",
+    "descripcion": "Ruido al frenar en el eje delantero",
+    "creado_en": "2026-09-28T11:40:00-03:00",
+    "repuestos": [],
+}
+_SOLICITUD_CANCELACION_EJEMPLO: dict[str, Any] = {
+    "solicitud_id": 12,
+    "orden_id": 31,
+    "cliente_usuario_id": 42,
+    "estado_al_solicitar": 3,
+    "motivo": "El cliente no continuará",
+    "estado": "pendiente",
+    "solicitada_en": "2026-10-23T10:30:00-03:00",
+    "administrador_id": None,
+    "confirmada_en": None,
+}
+
 _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
+    ("/api/ordenes/{orden_id}/bitacora", "get"): {
+        "respuestas": {
+            "200": {
+                "bitacora": {
+                    "summary": "Bitácora con una observación y una acción",
+                    "value": [_BITACORA_OBSERVACION_EJEMPLO, _BITACORA_EJEMPLO],
+                },
+                "sin_registros": {
+                    "summary": "Orden visible sin registros",
+                    "value": [],
+                },
+            }
+        },
+    },
+    ("/api/ordenes/{orden_id}/bitacora", "post"): {
+        "cuerpo": {
+            "accion": {
+                "summary": "Acción con repuestos utilizados",
+                "value": {
+                    "tipo": "accion",
+                    "descripcion": "Se reemplazaron las pastillas delanteras",
+                    "repuestos": [{"nombre": "Pastillas de freno", "cantidad": 2}],
+                },
+            },
+            "observacion": {
+                "summary": "Observación sin repuestos",
+                "value": {
+                    "tipo": "observacion",
+                    "descripcion": "Ruido al frenar en el eje delantero",
+                },
+            },
+        },
+        "respuestas": {
+            "201": {
+                "registrada": {
+                    "summary": "Entrada registrada por el mecánico asignado",
+                    "value": _BITACORA_EJEMPLO,
+                }
+            }
+        },
+    },
+    ("/api/ordenes/{orden_id}/cancelacion", "post"): {
+        "cuerpo": {
+            "solicitud": {
+                "summary": "Motivo de la solicitud del cliente",
+                "value": {"motivo": "El cliente no continuará"},
+            }
+        },
+        "respuestas": {
+            "201": {
+                "solicitud_creada": {
+                    "summary": "Solicitud pendiente de revisión",
+                    "value": _SOLICITUD_CANCELACION_EJEMPLO,
+                }
+            },
+            "200": {
+                "solicitud_existente": {
+                    "summary": "Mismo motivo repetido: devuelve la solicitud pendiente",
+                    "value": _SOLICITUD_CANCELACION_EJEMPLO,
+                }
+            },
+        },
+    },
     ("/api/auth/register", "post"): {
         "cuerpo": {
             "registro": {
@@ -417,6 +554,9 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
                     "detalle_credenciales_invalidas"
                 )
             },
+            "403": {"cuenta_sin_roles": _ref_ejemplo("detalle_cuenta_sin_roles")},
+            "422": {"datos_invalidos": _ref_ejemplo("detalle_validacion_login_422")},
+            "429": {"cuenta_bloqueada": _ref_ejemplo("detalle_cuenta_bloqueada")},
         },
     },
     ("/api/auth/me", "get"): {
@@ -497,9 +637,13 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
                 }
             },
             "401": _EJEMPLOS_AUTENTICACION,
-            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
             "404": {
                 "vehiculo_no_encontrado": _ref_ejemplo("detalle_vehiculo_no_encontrado")
+            },
+            "422": {
+                "identificador_invalido": _ref_ejemplo(
+                    "detalle_validacion_id_vehiculo_422"
+                )
             },
         },
     },

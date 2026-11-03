@@ -33,7 +33,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "0.1.0"
+_VERSION = "1.1.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -97,7 +97,28 @@ Se puede enviar `X-Request-ID` (letras, números y guiones) para rastrear una \
 petición; si no llega o es inválida, la Gateway genera un UUID y lo devuelve en la \
 respuesta. Es la misma clave que aparece en `error.request_id`.
 
+## Versión del contrato
+
+`info.version` sigue versionado semántico. **1.0.0 es la primera versión \
+estable** para integración (frontend web y app móvil de Integración IV); su copia \
+congelada está en `backend/docs/openapi/sgtm-gateway-1.0.0.json`.
+
+- **PATCH** (1.0.x): descripciones, ejemplos o estados de error que ya respondía \
+el servicio y faltaban documentar.
+- **MINOR** (1.x.0): operaciones, campos opcionales o valores nuevos; ningún \
+cliente existente se rompe.
+- **MAJOR** (2.0.0): quitar o renombrar rutas o campos, volver obligatorio un \
+campo, cambiar tipos o el significado de un estado.
+
+El historial de cambios y la política completa están en \
+`docs/versionado-contrato-openapi.md`.
+
 El detalle completo de los contratos está en `docs/contratos-api-gateway.md`."""
+
+_DESCRIPCION += (
+    f"\n\nVersión vigente: **{_VERSION}**. Copia congelada: "
+    f"`backend/docs/openapi/sgtm-gateway-{_VERSION}.json`."
+)
 
 _TAGS = [
     {
@@ -621,7 +642,18 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 respuestas_ok={
                     "200": _respuesta("Token de acceso y usuario.", _ref("TokenRespuesta"))
                 },
-                errores_ms={"401": "Credenciales inválidas"},
+                errores_ms={
+                    "401": "Credenciales inválidas",
+                    "403": (
+                        "Credenciales correctas, pero la cuenta no tiene roles: "
+                        "no puede emitirse un token"
+                    ),
+                    "422": "Body inválido (correo con formato inválido o campos ausentes)",
+                    "429": (
+                        "Demasiados intentos fallidos: la cuenta queda bloqueada "
+                        "temporalmente. `Retry-After` indica los segundos restantes"
+                    ),
+                },
                 requiere_auth=False,
             )
         },
@@ -825,7 +857,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 respuestas_ok={
                     "200": _respuesta("Vehículo encontrado.", _ref("VehiculoRespuesta"))
                 },
-                errores_ms={"401": "JWT ausente o inválido"},
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de vehículo inválido",
+                },
                 requiere_auth=True,
                 con_vehiculo_id=True,
                 descripcion_404=(
@@ -1633,6 +1668,17 @@ def _esquemas_documentados() -> dict[str, dict[str, object]]:
     return esquemas
 
 
+def _documentar_bloqueo_login(esquema: dict[str, object]) -> None:
+    """El `429` de login trae `Retry-After` con los segundos de bloqueo (MS1)."""
+    respuesta = esquema["paths"]["/api/auth/login"]["post"]["responses"]["429"]
+    respuesta["headers"] = {
+        "Retry-After": {
+            "description": "Segundos que faltan para que expire el bloqueo.",
+            "schema": {"type": "integer", "example": 900},
+        }
+    }
+
+
 def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
@@ -1677,6 +1723,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         if existente.get("properties") != definicion.get("properties"):
             raise ValueError(f"Esquema '{nombre}' de MS3 choca con otro contrato")
 
+    _documentar_bloqueo_login(esquema)
     agregar_ejemplos_ordenes(esquema, prefijo="/api")
     agregar_ejemplos_gateway(esquema)
     app.openapi_schema = esquema

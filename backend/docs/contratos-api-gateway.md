@@ -5,6 +5,10 @@ app móvil (Integración IV). La fuente de verdad interactiva está en el Swagge
 de la Gateway: <http://localhost:8000/docs> y su versión JSON en
 <http://localhost:8000/openapi.json>.
 
+**Versión estable del contrato: 1.1.0.** Copia congelada para integrar sin
+levantar la Gateway: [`docs/openapi/sgtm-gateway-1.1.0.json`](openapi/sgtm-gateway-1.1.0.json).
+Reglas de versionado e historial: [`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
+
 Reglas que se aplican a todos los endpoints:
 
 - La Gateway escucha en `/api/*` y reenvía al microservicio sin modificar el
@@ -449,7 +453,7 @@ Inicia sesión y entrega el token de acceso.
 | Auth | No requiere |
 | Body | `{"email": string, "password": string}` |
 | Respuesta OK | `200` con `TokenRespuesta` |
-| Errores | `401` credenciales inválidas · `403` la cuenta no tiene roles asignados · `404/502/500` de la Gateway |
+| Errores | `401` credenciales inválidas · `403` la cuenta no tiene roles asignados · `422` body inválido · `429` cuenta bloqueada por intentos fallidos (cabecera `Retry-After` en segundos) · `404/502/500` de la Gateway |
 
 ```json
 // Request
@@ -749,7 +753,7 @@ Un vehículo ajeno y uno inexistente producen el mismo `404`.
 | Auth | `Authorization: Bearer <token>` |
 | Body | — |
 | Respuesta OK | `200` con `VehiculoRespuesta` |
-| Errores | `401` JWT ausente/inválido · `404` inexistente o fuera del alcance del rol · `502/500` de infraestructura |
+| Errores | `401` JWT ausente/inválido · `404` inexistente o fuera del alcance del rol · `422` identificador no numérico · `502/500` de infraestructura |
 
 ### PATCH `/api/vehiculos/{vehiculo_id}`
 

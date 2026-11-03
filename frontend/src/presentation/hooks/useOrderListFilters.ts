@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { Order } from '@/domain/entities/Order';
 import { parseNumberOrDefault, parseStringOrDefault, serializeNumber, serializeString, useUrlState } from '@/presentation/hooks/useUrlState';
+import { usePersistentState } from '@/presentation/hooks/usePersistentState';
 
 export type OrderEstadoFilter = number | 'all';
 
@@ -25,6 +26,8 @@ interface UseOrderListFiltersResult {
     pageCount: number;
     rangeStart: number;
     rangeEnd: number;
+    /** Limpia filtros/paginación persistidos (URL o localStorage). */
+    resetFilters: () => void;
 }
 
 interface UseOrderListFiltersOptions {
@@ -32,6 +35,12 @@ interface UseOrderListFiltersOptions {
     syncWithUrl?: boolean;
     /** Clave base para los query params. Útil si hay varios listados en la misma ruta. */
     urlKeyPrefix?: string;
+    /** Persiste filtros en localStorage cuando syncWithUrl=false. */
+    persistInStorage?: boolean;
+    /** Clave para localStorage/sessionStorage. */
+    storageKey?: string;
+    /** Tipo de storage al persistir localmente. */
+    storageType?: 'local' | 'session';
 }
 
 /**
@@ -45,7 +54,13 @@ export function useOrderListFilters(
     searchableFields: (order: Order) => string,
     options: UseOrderListFiltersOptions = {}
 ): UseOrderListFiltersResult {
-    const { syncWithUrl = false, urlKeyPrefix = '' } = options;
+    const {
+        syncWithUrl = false,
+        urlKeyPrefix = '',
+        persistInStorage = true,
+        storageKey = 'tallerconect:orders-filters',
+        storageType = 'local',
+    } = options;
 
     const searchKey = `${urlKeyPrefix}q`;
     const estadoKey = `${urlKeyPrefix}estado`;
@@ -56,6 +71,11 @@ export function useOrderListFilters(
     const [estadoState, setEstadoState] = useState<OrderEstadoFilter>('all');
     const [pageState, setPageState] = useState(1);
     const [pageSizeState, setPageSizeState] = useState(DEFAULT_PAGE_SIZE);
+
+    const [searchStored, setSearchStored] = usePersistentState<string>(`${storageKey}:search`, '', storageType);
+    const [estadoStored, setEstadoStored] = usePersistentState<OrderEstadoFilter>(`${storageKey}:estado`, 'all', storageType);
+    const [pageStored, setPageStored] = usePersistentState<number>(`${storageKey}:page`, 1, storageType);
+    const [pageSizeStored, setPageSizeStored] = usePersistentState<number>(`${storageKey}:pageSize`, DEFAULT_PAGE_SIZE, storageType);
 
     const [searchUrl, setSearchUrl] = useUrlState(searchKey, {
         defaultValue: '',
@@ -98,10 +118,10 @@ export function useOrderListFilters(
         replace: true,
     });
 
-    const search = syncWithUrl ? searchUrl : searchState;
-    const estadoCodigo = syncWithUrl ? estadoUrl : estadoState;
-    const page = syncWithUrl ? pageUrl : pageState;
-    const pageSize = syncWithUrl ? pageSizeUrl : pageSizeState;
+    const search = syncWithUrl ? searchUrl : persistInStorage ? searchStored : searchState;
+    const estadoCodigo = syncWithUrl ? estadoUrl : persistInStorage ? estadoStored : estadoState;
+    const page = syncWithUrl ? pageUrl : persistInStorage ? pageStored : pageState;
+    const pageSize = syncWithUrl ? pageSizeUrl : persistInStorage ? pageSizeStored : pageSizeState;
 
     // Cambiar un filtro reinicia la paginación desde la primera página.
     const changeSearch = useCallback(
@@ -109,50 +129,81 @@ export function useOrderListFilters(
             if (syncWithUrl) {
                 setSearchUrl(value);
                 setPageUrl(1);
+            } else if (persistInStorage) {
+                setSearchStored(value);
+                setPageStored(1);
             } else {
                 setSearchState(value);
                 setPageState(1);
             }
         },
-        [syncWithUrl, setSearchUrl, setPageUrl]
+        [syncWithUrl, persistInStorage, setSearchUrl, setPageUrl, setSearchStored, setPageStored]
     );
     const changeEstado = useCallback(
         (value: OrderEstadoFilter) => {
             if (syncWithUrl) {
                 setEstadoUrl(value);
                 setPageUrl(1);
+            } else if (persistInStorage) {
+                setEstadoStored(value);
+                setPageStored(1);
             } else {
                 setEstadoState(value);
                 setPageState(1);
             }
         },
-        [syncWithUrl, setEstadoUrl, setPageUrl]
+        [syncWithUrl, persistInStorage, setEstadoUrl, setPageUrl, setEstadoStored, setPageStored]
     );
 
     const setPageSafe = useCallback(
         (nextPage: number) => {
             if (syncWithUrl) {
                 setPageUrl(nextPage);
+            } else if (persistInStorage) {
+                setPageStored(nextPage);
             } else {
                 setPageState(nextPage);
             }
         },
-        [syncWithUrl, setPageUrl]
+        [syncWithUrl, persistInStorage, setPageUrl, setPageStored]
     );
     const setPageSizeSafe = useCallback(
         (nextSize: number) => {
+            const size = (ORDER_PAGE_SIZES as readonly number[]).includes(nextSize) ? nextSize : DEFAULT_PAGE_SIZE;
             if (syncWithUrl) {
-                const size = (ORDER_PAGE_SIZES as readonly number[]).includes(nextSize) ? nextSize : DEFAULT_PAGE_SIZE;
                 setPageSizeUrl(size);
                 setPageUrl(1);
+            } else if (persistInStorage) {
+                setPageSizeStored(size);
+                setPageStored(1);
             } else {
-                const size = (ORDER_PAGE_SIZES as readonly number[]).includes(nextSize) ? nextSize : DEFAULT_PAGE_SIZE;
                 setPageSizeState(size);
                 setPageState(1);
             }
         },
-        [syncWithUrl, setPageSizeUrl, setPageUrl]
+        [syncWithUrl, persistInStorage, setPageSizeUrl, setPageUrl, setPageSizeStored, setPageStored]
     );
+
+    const resetFilters = useCallback(() => {
+        if (syncWithUrl) {
+            setSearchUrl('');
+            setEstadoUrl('all');
+            setPageUrl(1);
+            setPageSizeUrl(DEFAULT_PAGE_SIZE);
+            return;
+        }
+        if (persistInStorage) {
+            setSearchStored('');
+            setEstadoStored('all');
+            setPageStored(1);
+            setPageSizeStored(DEFAULT_PAGE_SIZE);
+            return;
+        }
+        setSearchState('');
+        setEstadoState('all');
+        setPageState(1);
+        setPageSizeState(DEFAULT_PAGE_SIZE);
+    }, [syncWithUrl, persistInStorage, setSearchUrl, setEstadoUrl, setPageUrl, setPageSizeUrl, setSearchStored, setEstadoStored, setPageStored, setPageSizeStored]);
 
     const filteredOrders = useMemo(() => {
         const term = search.trim().toLowerCase();
@@ -187,5 +238,6 @@ export function useOrderListFilters(
         pageCount,
         rangeStart: total === 0 ? 0 : (safePage - 1) * pageSize + 1,
         rangeEnd: Math.min(safePage * pageSize, total),
+        resetFilters,
     };
 }

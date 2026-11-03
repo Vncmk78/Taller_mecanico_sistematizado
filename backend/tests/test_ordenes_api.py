@@ -7,9 +7,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, func, select
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -579,6 +579,102 @@ def test_consulta_de_vehiculo_usa_for_update_en_postgresql():
 
     assert "WHERE vehiculo.vehiculo_id = 123" in sql
     assert sql.endswith("FOR UPDATE")
+
+
+@pytest.mark.parametrize("sqlstate", ["42703", "42P01", None, "secreto-invalido"])
+def test_listado_fallido_registra_codigo_sin_filtrar_sql_ni_credenciales(
+    api_ordenes: TestClient, db_ordenes: Session,
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    sqlstate: str | None,
+):
+    class ErrorDriver(Exception):
+        pass
+
+    original = ErrorDriver("postgresql://usuario:clave-privada@servidor/base")
+    original.sqlstate = sqlstate
+    fallo = DBAPIError(
+        "SELECT dato_privado FROM tabla_privada",
+        {"password": "password-privado"}, original,
+    )
+    rollbacks = []
+    rollback_real = db_ordenes.rollback
+
+    def fallar_consulta(*args, **kwargs):
+        raise fallo
+
+    def registrar_rollback():
+        rollbacks.append(True)
+        rollback_real()
+
+    monkeypatch.setattr(db_ordenes, "scalars", fallar_consulta)
+    monkeypatch.setattr(db_ordenes, "rollback", registrar_rollback)
+    respuesta = api_ordenes.get(
+        "/ordenes",
+        headers={**_headers_para(99, NombreRol.ADMINISTRADOR), "X-Request-ID": "integra4-500"},
+    )
+    assert respuesta.status_code == 500
+    assert respuesta.json() == {"detail": "No fue posible consultar las órdenes"}
+    assert rollbacks == [True]
+    registros = [r for r in caplog.records if "ms2_consulta_ordenes_fallida" in r.message]
+    assert len(registros) == 1
+    assert "request_id=integra4-500 tipo=DBAPIError" in registros[0].message
+    esperado = sqlstate if sqlstate in {"42703", "42P01"} else "no-disponible"
+    assert f"sqlstate={esperado}" in registros[0].message
+    assert registros[0].exc_info is None
+    for privado in (
+        "usuario", "clave-privada", "dato_privado", "tabla_privada",
+        "password-privado", "secreto-invalido", "Bearer",
+    ):
+        assert privado not in caplog.text + respuesta.text
+
+
+@pytest.mark.parametrize("request_id", [None, "id con espacios", "x" * 129])
+def test_listado_fallido_descarta_request_id_invalido(
+    api_ordenes: TestClient, db_ordenes: Session,
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    request_id: str | None,
+):
+    def fallar_consulta(*args, **kwargs):
+        raise SQLAlchemyError("detalle privado")
+
+    monkeypatch.setattr(db_ordenes, "scalars", fallar_consulta)
+    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+    if request_id is not None:
+        headers["X-Request-ID"] = request_id
+    respuesta = api_ordenes.get("/ordenes", headers=headers)
+    assert respuesta.status_code == 500
+    assert "request_id=no-disponible tipo=SQLAlchemyError sqlstate=no-disponible" in caplog.text
+    assert "detalle privado" not in caplog.text
+    if request_id is not None:
+        assert request_id not in caplog.text
+
+
+@pytest.mark.parametrize("rol,usuario", [
+    (NombreRol.CLIENTE, 10), (NombreRol.MECANICO, 50), (NombreRol.ADMINISTRADOR, 99),
+])
+def test_columna_historial_ausente_rompe_listado_y_recupera_al_restaurarla(
+    api_ordenes: TestClient, db_ordenes: Session,
+    caplog: pytest.LogCaptureFixture, rol: NombreRol, usuario: int,
+):
+    _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+    headers = {**_headers_para(usuario, rol), "X-Request-ID": "prueba-esquema-ms2"}
+    assert api_ordenes.get("/ordenes", headers=headers).status_code == 200
+    db_ordenes.execute(text(
+        "ALTER TABLE historial_estado RENAME COLUMN envio_presupuesto_id TO columna_temporal"
+    ))
+    db_ordenes.commit()
+    try:
+        respuesta = api_ordenes.get("/ordenes", headers=headers)
+        assert respuesta.status_code == 500
+        assert respuesta.json() == {"detail": "No fue posible consultar las órdenes"}
+        assert "request_id=prueba-esquema-ms2 tipo=OperationalError" in caplog.text
+        assert "envio_presupuesto_id" not in caplog.text + respuesta.text
+    finally:
+        db_ordenes.execute(text(
+            "ALTER TABLE historial_estado RENAME COLUMN columna_temporal TO envio_presupuesto_id"
+        ))
+        db_ordenes.commit()
+    assert api_ordenes.get("/ordenes", headers=headers).status_code == 200
 
 
 def test_get_administrador_ve_todas_las_ordenes(

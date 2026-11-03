@@ -11,10 +11,10 @@
   `request_id`; el cliente recibe un mensaje genérico y la cabecera de
   correlación.
 - MS4 conserva el identificador en los metadatos de las evidencias.
-- MS1, MS2 y MS3 no tienen hoy middleware o logging de negocio que adjunte el
-  `X-Request-ID` entrante a sus logs. La búsqueda en el código encuentra el
-  logging centralizado en Gateway; los servicios registran el dato en MS4, pero
-  no correlacionan sus consultas/cambios de estado en logs.
+- MS1, MS2 y MS3 no tienen middleware general que adjunte el `X-Request-ID`
+  entrante a todos sus logs. MS2 registra ahora ese identificador cuando falla
+  la persistencia de `GET /ordenes`, según el diagnóstico acotado más abajo.
+  Esto no añade correlación a los demás endpoints ni a las llamadas salientes.
 - En flujos síncronos MS3↔MS2, el JWT y las referencias de orden/decisión
   permiten entender parte del flujo, pero no sustituyen una clave común de
   solicitud. Cuando un POST devuelve timeout, el resultado puede estar
@@ -26,12 +26,44 @@
 2. Buscar ese ID en los logs de Gateway para ubicar la ruta, el prefijo y el
    error de transporte, si ocurrió allí.
 3. Usar el mismo valor como filtro al consultar metadatos de evidencia MS4.
-4. En MS1–MS3, usar la hora, endpoint e IDs de dominio (orden, presupuesto,
-   decisión) para correlacionar manualmente; los logs de esos servicios aún no
-   comparten automáticamente el request ID.
+4. Si falla el listado de órdenes, buscar en MS2 el evento
+   `ms2_consulta_ordenes_fallida` con el mismo `request_id`.
+5. En el resto de operaciones de MS1–MS3, usar la hora, endpoint e IDs de dominio
+   (orden, presupuesto, decisión) para correlacionar manualmente.
 
 Los registros de estado, decisión, auditoría o envío son evidencia de negocio
 persistida. Los logs describen la ejecución técnica; ninguno reemplaza al otro.
+
+## Diagnóstico acotado del error 500 de órdenes
+
+El router de MS2 conserva la respuesta pública existente:
+`500 {"detail": "No fue posible consultar las órdenes"}`. Después de que el
+servicio hace rollback, registra una línea como esta en el log del servidor:
+
+```text
+ms2_consulta_ordenes_fallida request_id=integra4-500 tipo=ProgrammingError sqlstate=42703
+```
+
+Solo se registra el nombre del tipo de excepción y el SQLSTATE de cinco
+caracteres del driver PostgreSQL. No se incluye la excepción completa, traza,
+SQL, parámetros, JWT, conexión ni identidad del usuario. Un request ID ausente
+o distinto del formato de la Gateway se sustituye por `no-disponible`; también
+se usa ese valor cuando el driver no proporciona un SQLSTATE válido.
+
+Según el [catálogo de PostgreSQL](https://www.postgresql.org/docs/current/errcodes-appendix.html),
+`42703` indica una columna inexistente y `42P01` una tabla inexistente. Esos
+códigos permiten orientar la revisión del esquema sin exponer el SQL. No
+identifican por sí solos qué migración falta: hay que contrastar la versión y
+columnas de la base con el commit realmente desplegado.
+
+La regresión en `tests/test_ordenes_api.py` reproduce una columna de historial
+ausente en SQLite en memoria: los tres roles pasan de `200` a `500` y recuperan
+`200` al restaurarla. Es evidencia de que esa diferencia de esquema puede causar
+el síntoma, no una confirmación de la causa de producción ni una prueba sobre
+PostgreSQL. El SQLSTATE PostgreSQL se verifica con errores simulados del driver.
+
+Esta instrumentación solo estará disponible en producción después de integrar
+y desplegar el cambio; no aplica migraciones ni corrige automáticamente la base.
 
 ## Recomendación para una tarea de implementación posterior
 

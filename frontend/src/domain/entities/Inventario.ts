@@ -78,3 +78,24 @@ export interface ResultadoMovimiento {
     alerta: { activa: boolean; nueva: boolean };
     repetido: boolean;
 }
+
+export interface DisponibilidadRepuesto {
+    repuestoId: number;
+    nombre: string;
+    proveedorNombre: string;
+    requerido: number;
+    stock: number;
+    reservadoParaOrden: number;
+    comprometidoOtrasOrdenes: number;
+    disponible: number;
+    alcanza: boolean;
+    faltan: number;
+}
+
+export interface ResultadoDisponibilidad {
+    ordenId: number | null;
+    disponible: boolean;
+    repuestos: DisponibilidadRepuesto[];
+    presupuestoId: number | null;
+    version: number | null;
+}

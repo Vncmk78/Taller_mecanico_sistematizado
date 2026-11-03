@@ -32,6 +32,7 @@ import { MechanicVehiclesPage } from '@/presentation/pages/mechanic/MechanicVehi
 import { MechanicVehicleDetailPage } from '@/presentation/pages/mechanic/MechanicVehicleDetailPage';
 import { MechanicOrdersPage } from '@/presentation/pages/mechanic/MechanicOrdersPage';
 import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicOrderDetailPage';
+import { MechanicBudgetPage } from '@/presentation/pages/mechanic/MechanicBudgetPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
 import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
@@ -111,6 +112,7 @@ export function AppRoutes() {
         <Route path="vehiculos/:id" element={<MechanicVehicleDetailPage />} />
         <Route path="ordenes" element={<MechanicOrdersPage />} />
         <Route path="ordenes/:id" element={<MechanicOrderDetailPage />} />
+        <Route path="ordenes/:id/presupuesto" element={<MechanicBudgetPage />} />
         <Route
           path="ordenes/:id/evidencias"
           element={<OrderEvidencePage backTo="/mechanic/ordenes" backLabel="Volver a mis órdenes" canUpload />}

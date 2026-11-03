@@ -112,3 +112,45 @@ describe('AuthService: mapeo contra el payload real de MS1', () => {
     expect(user.is_active).toBe(false);
   });
 });
+
+describe('AuthService: listado administrativo de usuarios', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('consulta GET /auth/usuarios y conserva todos los roles de cada cuenta', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: [usuarioRespuestaReal, usuarioConDosRoles],
+    });
+
+    const usuarios = await authService.listarUsuarios();
+
+    expect(apiClient.get).toHaveBeenCalledWith('/auth/usuarios');
+    expect(usuarios).toEqual([
+      {
+        id: '42',
+        email: 'mecanico@correo.cl',
+        full_name: 'Martín Herrera',
+        roles: ['mecanico'],
+        is_active: true,
+      },
+      {
+        id: '42',
+        email: 'mecanico@correo.cl',
+        full_name: 'Martín Herrera',
+        roles: ['mecanico', 'administrador'],
+        is_active: true,
+      },
+    ]);
+  });
+
+  it('normaliza roles ausentes a una lista vacía en lugar de romper el filtrado', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: [{ id: 9, email: 'sinrol@correo.cl', full_name: 'Sin Rol', is_active: true }],
+    });
+
+    const [usuario] = await authService.listarUsuarios();
+
+    expect(usuario.roles).toEqual([]);
+  });
+});

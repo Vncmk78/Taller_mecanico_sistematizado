@@ -18,6 +18,7 @@ import { orderService } from '@/infrastructure/api/OrderService';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { Button } from '@/presentation/components/ui/Button';
 
 interface CargaMecanico {
@@ -312,9 +313,12 @@ export function AdminDashboardPage() {
               />
             )}
             {!cargandoResumen && !errorResumen && cargaMecanicos.length === 0 && (
-              <p className="text-text-muted text-center py-10">
-                No hay mecánicos con órdenes asignadas.
-              </p>
+              <EmptyState
+                icon={Users}
+                title="No hay mecánicos con órdenes asignadas"
+                description="Las órdenes asignadas a mecánicos aparecerán aquí."
+                className="py-6"
+              />
             )}
             {!cargandoResumen &&
               cargaPaginada.map((mecanico) => (

@@ -11,6 +11,14 @@ vi.mock('@/infrastructure/api/RepuestoService', () => ({
     },
 }));
 
+// Fallo de transporte: error Axios sin respuesta HTTP (isOfflineError -> true).
+const axiosNetworkError = { isAxiosError: true };
+// Error del servidor: llego respuesta con status 500 (isOfflineError -> false).
+const axiosServerError = {
+    isAxiosError: true,
+    response: { status: 500, data: { detail: 'El servidor tuvo un problema. Intente m\u00e1s tarde.' } },
+};
+
 function repuesto(overrides: Partial<Repuesto> = {}): Repuesto {
     return {
         repuestoId: 1,
@@ -161,13 +169,16 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
 
     it('muestra el error y permite reintentar la carga', async () => {
         vi.mocked(repuestoService.getRepuestos)
-            .mockRejectedValueOnce(new Error('500'))
+            .mockRejectedValueOnce(axiosServerError)
             .mockResolvedValueOnce(pagina(catalogo));
 
         render(<AdminInventoryPage />);
 
         expect(
-            await screen.findByText('No se pudieron cargar los repuestos del inventario.')
+            await screen.findByText('No se pudieron cargar los repuestos del inventario')
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText('El servidor tuvo un problema. Intente m\u00e1s tarde.')
         ).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /reintentar/i }));
@@ -245,5 +256,31 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
 
         expect(await screen.findByText('Sin umbral')).toBeInTheDocument();
         expect(screen.getByText('-')).toBeInTheDocument();
+    });
+
+    it('muestra el banner offline cuando no hay respuesta del servidor', async () => {
+        vi.mocked(repuestoService.getRepuestos).mockRejectedValue(axiosNetworkError);
+
+        render(<AdminInventoryPage />);
+
+        expect(await screen.findByText(/No se pudo conectar con el servidor/)).toBeInTheDocument();
+        expect(screen.queryByText('No se pudieron cargar los repuestos del inventario')).not.toBeInTheDocument();
+    });
+
+    it('muestra el requestId cuando la Gateway lo env\u00eda en un error sin cach\u00e9', async () => {
+        const errorConReferencia = {
+            isAxiosError: true,
+            response: {
+                status: 500,
+                data: { detail: 'El servidor tuvo un problema. Intente m\u00e1s tarde.', error: { request_id: 'req-inventario-1' } },
+                headers: { 'x-request-id': 'req-inventario-1' },
+            },
+        };
+        vi.mocked(repuestoService.getRepuestos).mockRejectedValue(errorConReferencia);
+
+        render(<AdminInventoryPage />);
+
+        expect(await screen.findByText('No se pudieron cargar los repuestos del inventario')).toBeInTheDocument();
+        expect(screen.getByText('Referencia: req-inventario-1')).toBeInTheDocument();
     });
 });

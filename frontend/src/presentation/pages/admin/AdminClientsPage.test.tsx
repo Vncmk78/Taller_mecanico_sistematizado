@@ -10,6 +10,14 @@ vi.mock('@/infrastructure/api/AuthService', () => ({
     },
 }));
 
+// Fallo de transporte: error Axios sin respuesta HTTP (isOfflineError -> true).
+const axiosNetworkError = { isAxiosError: true };
+// Error del servidor: llego respuesta con status 500 (isOfflineError -> false).
+const axiosServerError = {
+    isAxiosError: true,
+    response: { status: 500, data: { detail: 'El servidor tuvo un problema. Intente m\u00e1s tarde.' } },
+};
+
 function usuario(overrides: Partial<UsuarioListado> = {}): UsuarioListado {
     return {
         id: '1',
@@ -84,7 +92,7 @@ describe('AdminClientsPage: listado y estados', () => {
 
     it('muestra el error y permite reintentar la carga', async () => {
         vi.mocked(authService.listarUsuarios)
-            .mockRejectedValueOnce(new Error('500'))
+            .mockRejectedValueOnce(axiosServerError)
             .mockResolvedValueOnce(usuariosDelSistema);
 
         render(<AdminClientsPage />);
@@ -141,5 +149,31 @@ describe('AdminClientsPage: listado y estados', () => {
         expect(screen.getByText('Bruno Díaz')).toBeInTheDocument();
         expect(screen.queryByText('Ana Pérez')).not.toBeInTheDocument();
         expect(screen.getByText(/1 de 2 clientes/)).toBeInTheDocument();
+    });
+
+    it('muestra el banner offline cuando no hay respuesta del servidor', async () => {
+        vi.mocked(authService.listarUsuarios).mockRejectedValue(axiosNetworkError);
+
+        render(<AdminClientsPage />);
+
+        expect(await screen.findByText(/No se pudo conectar con el servidor/)).toBeInTheDocument();
+        expect(screen.queryByText('No se pudieron cargar los clientes')).not.toBeInTheDocument();
+    });
+
+    it('muestra el requestId cuando la Gateway lo env\u00eda en un error sin cach\u00e9', async () => {
+        const errorConReferencia = {
+            isAxiosError: true,
+            response: {
+                status: 500,
+                data: { detail: 'El servidor tuvo un problema. Intente m\u00e1s tarde.', error: { request_id: 'req-clientes-1' } },
+                headers: { 'x-request-id': 'req-clientes-1' },
+            },
+        };
+        vi.mocked(authService.listarUsuarios).mockRejectedValue(errorConReferencia);
+
+        render(<AdminClientsPage />);
+
+        expect(await screen.findByText('No se pudieron cargar los clientes')).toBeInTheDocument();
+        expect(screen.getByText('Referencia: req-clientes-1')).toBeInTheDocument();
     });
 });

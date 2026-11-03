@@ -10,6 +10,14 @@ vi.mock('@/infrastructure/api/ProveedorService', () => ({
     },
 }));
 
+// Fallo de transporte: error Axios sin respuesta HTTP (isOfflineError -> true).
+const axiosNetworkError = { isAxiosError: true };
+// Error del servidor: llego respuesta con status 500 (isOfflineError -> false).
+const axiosServerError = {
+    isAxiosError: true,
+    response: { status: 500, data: { detail: 'El servidor tuvo un problema. Intente m\u00e1s tarde.' } },
+};
+
 function proveedor(overrides: Partial<Proveedor> = {}): Proveedor {
     return {
         proveedorId: 1,
@@ -70,7 +78,7 @@ describe('AdminDistributorsPage: listado y estados', () => {
 
     it('muestra el error y permite reintentar la carga', async () => {
         vi.mocked(proveedorService.getProveedores)
-            .mockRejectedValueOnce(new Error('500'))
+            .mockRejectedValueOnce(axiosServerError)
             .mockResolvedValueOnce(pagina(catalogo));
 
         render(<AdminDistributorsPage />);
@@ -154,5 +162,31 @@ describe('AdminDistributorsPage: listado y estados', () => {
 
         expect(await screen.findByText('ventas@delsur.cl')).toBeInTheDocument();
         expect(screen.getByText('+56 9 8765 4321')).toBeInTheDocument();
+    });
+
+    it('muestra el banner offline cuando no hay respuesta del servidor', async () => {
+        vi.mocked(proveedorService.getProveedores).mockRejectedValue(axiosNetworkError);
+
+        render(<AdminDistributorsPage />);
+
+        expect(await screen.findByText(/No se pudo conectar con el servidor/)).toBeInTheDocument();
+        expect(screen.queryByText('No se pudieron cargar los distribuidores')).not.toBeInTheDocument();
+    });
+
+    it('muestra el requestId cuando la Gateway lo env\u00eda en un error sin cach\u00e9', async () => {
+        const errorConReferencia = {
+            isAxiosError: true,
+            response: {
+                status: 500,
+                data: { detail: 'El servidor tuvo un problema. Intente m\u00e1s tarde.', error: { request_id: 'req-dist-1' } },
+                headers: { 'x-request-id': 'req-dist-1' },
+            },
+        };
+        vi.mocked(proveedorService.getProveedores).mockRejectedValue(errorConReferencia);
+
+        render(<AdminDistributorsPage />);
+
+        expect(await screen.findByText('No se pudieron cargar los distribuidores')).toBeInTheDocument();
+        expect(screen.getByText('Referencia: req-dist-1')).toBeInTheDocument();
     });
 });

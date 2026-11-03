@@ -106,16 +106,6 @@ export const bitacoraEntradaReal = {
     repuestos: [repuestoBitacoraReal],
 };
 
-/**
- * Ejemplo real de gateway/contratos/ordenes.py:219 (_EJEMPLO_BITACORA_CREAR).
- * Una acción sin repuestos no declara el campo; el backend lo completa en [].
- */
-export const bitacoraCrearObservacion = {
-    tipo: 'observacion' as const,
-    descripcion: 'El cliente reporta ruido al frenar',
-    repuestos: [],
-};
-
 /** Ejemplo real de gateway/contratos/auth.py:37 (_EJEMPLO_TOKEN). */
 export const tokenRespuestaReal = {
     access_token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3In0.firma',
@@ -225,9 +215,6 @@ export const sinPermiso = { detail: 'No tienes permiso para realizar esta operac
 export const estadoDesconocido = { detail: 'Estado de destino desconocido: 999' };
 /** Límite de bcrypt, que se mide en bytes y no en caracteres (ms1_auth/security/passwords.py). */
 export const contrasenaDemasiadoLarga = { detail: 'La contraseña no puede superar 72 bytes' };
-/** 500 manejado por la ruta de MS2: llega con `detail` y sin bloque `error`. */
-export const consultaVehiculosFallida = { detail: 'No fue posible consultar los vehículos' };
-export const consultaOrdenesFallida = { detail: 'No fue posible consultar las órdenes' };
 
 // --- Cambios de estado de una orden (PATCH /api/ordenes/{id}/estado) ---
 // Los cinco literales que el frontend puede recibir al avanzar un estado. La

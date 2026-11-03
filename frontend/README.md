@@ -305,9 +305,10 @@ El mapa completo de rutas está documentado en
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |
 
-Nota: el login consume la **API Gateway** (`POST /auth/login`). Si ni la Gateway ni
-el `auth-service` están desplegados, se muestra el error de credenciales. Las vistas
-de vehículos usan datos mock mientras MS2 no esté disponible.
+Nota: el login consume la **API Gateway** (`POST /api/auth/login`), que enruta al
+MS1 vigente de `backend/services/ms1_auth/`. El directorio alternativo
+`auth-service/` fue retirado. Los mocks se conservan para las pruebas; el estado
+del ambiente publicado debe comprobarse por separado.
 
 ### Accesibilidad
 
@@ -317,7 +318,7 @@ hallazgos y correcciones aplicadas) está documentada en
 
 ## Cómo ejecutar el proyecto localmente
 
-Requisitos: **Node.js 18+**.
+Requisitos: **Node.js 24.x**, compatible con las versiones actuales de Vite y Vitest.
 
 ```bash
 cd frontend

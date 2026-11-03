@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AppBrand } from '@/presentation/components/layout/AppBrand';
 import { AppNavLink, type NavSection } from '@/presentation/components/layout/AppNavLink';
@@ -27,6 +27,8 @@ export function RoleLayout({
   headerLeft,
   headerRightPrepend,
 }: RoleLayoutProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   if (variant === 'topnav') {
     return (
       <div className="min-h-screen flex flex-col animate-fade-in">
@@ -36,11 +38,11 @@ export function RoleLayout({
         >
           Saltar al contenido principal
         </a>
-        <header className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-10 py-4 border-b-3 border-b-primary-orange bg-[#111318] sticky top-0 z-50 text-white shadow-[0_4px_14px_rgba(0,0,0,0.25)]">
-          <div className="flex items-center gap-2.5 shrink-0">
+        <header className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 lg:px-10 py-4 border-b-3 border-b-primary-orange bg-[#111318] sticky top-0 z-50 text-white shadow-[0_4px_14px_rgba(0,0,0,0.25)]">
+          <div className="flex shrink-0 items-center gap-2.5">
             <AppBrand />
             {badge && (
-              <span className="hidden sm:inline-flex ml-3 text-xs bg-primary-blue/15 text-primary-blue px-3 py-1 rounded-full border border-primary-blue/40 font-bold">
+              <span className="ml-1 hidden text-xs bg-primary-blue/15 text-primary-blue px-3 py-1 rounded-full border border-primary-blue/40 font-bold sm:ml-3 sm:inline-flex">
                 {badge}
               </span>
             )}
@@ -48,10 +50,10 @@ export function RoleLayout({
 
           <nav
             aria-label="Navegación principal"
-            className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 justify-start xl:justify-center overflow-x-auto"
+            className="order-last flex w-full min-w-0 items-center gap-1 overflow-x-auto sm:gap-2 xl:order-none xl:w-auto xl:flex-1 xl:justify-center"
           >
             {sections.flatMap((section) => section.items).map((item) => (
-              <AppNavLink key={item.to} variant="topnav" {...item} />
+              <AppNavLink key={item.to} variant="topnav" onNavigate={() => setMenuOpen(false)} {...item} />
             ))}
           </nav>
 
@@ -79,12 +81,12 @@ export function RoleLayout({
       >
         Saltar al contenido principal
       </a>
-      <SidebarNav sections={sections} />
+      <SidebarNav sections={sections} open={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <main
         id="contenido-principal"
         tabIndex={-1}
-        className="flex-grow flex flex-col bg-bg-secondary h-screen overflow-y-auto focus:outline-none"
+        className="flex min-w-0 flex-grow flex-col bg-bg-secondary h-screen overflow-y-auto focus:outline-none"
       >
         <TopBar
           left={headerLeft}
@@ -93,6 +95,8 @@ export function RoleLayout({
           userName={userName}
           userSubtitle={userSubtitle}
           onLogout={onLogout}
+          onOpenMenu={() => setMenuOpen(true)}
+          menuOpen={menuOpen}
         />
 
         <div className="flex-grow">

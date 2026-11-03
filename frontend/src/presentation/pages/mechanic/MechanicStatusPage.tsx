@@ -268,7 +268,7 @@ export function MechanicStatusPage() {
             : 'No tiene órdenes asignadas por el momento.';
 
     return (
-    <div className="animate-fade-in p-10">
+    <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
         <h2 className="text-3xl font-bold mb-2 tracking-tight">Actualizar Estados</h2>
         <p className="text-text-muted text-lg mb-6">Mantén el flujo de las órdenes al día</p>
 

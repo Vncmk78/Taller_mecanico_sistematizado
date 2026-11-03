@@ -51,7 +51,7 @@ export function AdminInventoryAlertsPage() {
     const isServerError = status === 'error' && !isOffline;
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
             <div className="mb-6">
                 <h2 className="text-3xl font-bold mb-2 tracking-tight">Alertas de stock</h2>
                 <p className="text-text-muted text-lg">Repuestos con stock bajo su umbral efectivo</p>

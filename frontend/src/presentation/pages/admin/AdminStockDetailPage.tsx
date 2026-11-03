@@ -49,7 +49,7 @@ export function AdminStockDetailPage() {
     const isServerError = status === 'error' && !isOffline;
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Stock del repuesto #{id}</h2>
             <p className="text-text-muted text-lg mb-6">Stock físico, comprometido y disponible</p>
 

@@ -62,14 +62,14 @@ export function AdminOrdersPage() {
 
     return (
         <div className="animate-fade-in">
-            <div className="flex justify-between items-center px-10 pt-10 pb-6 gap-4 flex-wrap">
+            <div className="flex justify-between items-center px-4 sm:px-6 lg:px-10 pt-10 pb-6 gap-4 flex-wrap">
                 <div>
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Gestión de Órdenes</h2>
                     <p className="text-text-muted text-lg">Administración de órdenes de trabajo del taller</p>
                 </div>
             </div>
 
-            <div className="px-10 pb-6">
+            <div className="px-4 sm:px-6 lg:px-10 pb-6">
                 <OrderListToolbar
                     search={search}
                     onSearchChange={setSearch}
@@ -78,12 +78,12 @@ export function AdminOrdersPage() {
                 />
             </div>
 
-            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} requestId={requestId} className="mx-10 mb-6" />}
+            {isOffline && <OfflineBanner message={error} onRetry={loadOrders} requestId={requestId} className="mx-4 sm:mx-6 lg:mx-10 mb-6" />}
 
             {isServerError && filteredOrders.length > 0 && (
                 <Alert
                     tone="error"
-                    className="mx-10 mb-6"
+                    className="mx-4 sm:mx-6 lg:mx-10 mb-6"
                     action={<RetryButton tone="error" onClick={loadOrders} />}
                 >
                     {error ?? 'No se pudieron cargar las órdenes.'} Se muestran los últimos datos disponibles.
@@ -91,10 +91,10 @@ export function AdminOrdersPage() {
             )}
 
             {status === 'loading' ? (
-                <OrderListSkeleton className="px-10 pb-10" />
+                <OrderListSkeleton className="px-4 sm:px-6 lg:px-10 pb-10" />
             ) : isServerError && filteredOrders.length === 0 ? (
                 <ErrorState
-                    className="px-10 pb-10"
+                    className="px-4 sm:px-6 lg:px-10 pb-10"
                     title="No se pudieron cargar las órdenes"
                     message={error}
                     requestId={requestId}
@@ -102,7 +102,7 @@ export function AdminOrdersPage() {
                 />
             ) : (
                 <>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-10 pb-10">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-4 sm:px-6 lg:px-10 pb-10">
                         {pagedOrders.map((order) => (
                             <OrderCard
                                 key={order.id}
@@ -127,7 +127,7 @@ export function AdminOrdersPage() {
                     </div>
 
                     <OrderPagination
-                        className="px-10 pb-10"
+                        className="px-4 sm:px-6 lg:px-10 pb-10"
                         page={page}
                         pageCount={pageCount}
                         onPageChange={setPage}

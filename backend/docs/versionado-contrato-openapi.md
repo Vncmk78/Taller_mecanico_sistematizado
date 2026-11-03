@@ -8,8 +8,8 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 
 | | |
 |---|---|
-| Versión vigente | **1.0.0** |
-| Copia congelada | [`docs/openapi/sgtm-gateway-1.0.0.json`](openapi/sgtm-gateway-1.0.0.json) |
+| Versión vigente | **2.0.0** |
+| Copia congelada | [`docs/openapi/sgtm-gateway-2.0.0.json`](openapi/sgtm-gateway-2.0.0.json) |
 | Interactivo | `http://localhost:8000/docs` (Swagger) y `/openapi.json` |
 | Dónde se define | `gateway/openapi.py` (`_VERSION`), `gateway/openapi_ms3.py`, `gateway/openapi_ejemplos.py`, `shared/openapi_ordenes.py` |
 
@@ -20,7 +20,7 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 - **Sin levantar la Gateway:** usen el archivo congelado. Sirve para generar
   tipos o clientes (`openapi-typescript`, `openapi-generator`, Flutter/Dart,
   etc.) y mocks a partir de los ejemplos.
-- **Fijen la versión:** referencien `sgtm-gateway-1.0.0.json`, no «el último».
+- **Fijen la versión:** referencien `sgtm-gateway-2.0.0.json` para el comportamiento vigente, no «el último».
   Una versión nueva llega como un archivo nuevo; el anterior no se borra.
 - **Solo lo publicado es contrato.** Una ruta que la Gateway reenvía pero no
   aparece en el archivo puede cambiar sin aviso.
@@ -53,6 +53,33 @@ Si cambias el contrato y olvidas los pasos 2 y 3,
 mano: `python scripts/exportar_openapi.py --verificar`.
 
 ## 4. Historial
+
+### 2.0.0 — Validación de destinos y órdenes antes de escribir
+
+Definición de seguridad confirmada por Martín el 3 de noviembre de 2026.
+Se conservan sin reescribir las copias 1.0.0 y 1.1.0. Las firmas y respuestas de
+éxito se mantienen, pero se restringen operaciones antes aceptadas; por eso es
+MAJOR. MS2 exige destino activo con rol Mecánico consultando MS1 (`422` si no
+cumple). MS3 exige orden existente y asignación al Mecánico al crear presupuesto
+(`404` si no corresponde), salvo Administrador. Ambos fallan con `503` sin guardar
+cuando no pueden validar con el otro servicio. Los clientes web/móvil deben usar
+el JWT original y contemplar esos rechazos; no se agrega un nuevo secreto entre
+servicios. Requiere configurar `MS2_MS1_URL` y `MS3_MS2_URL` hacia sus APIs reales.
+
+
+### 1.1.0 — Integración de historial, avisos y disponibilidad
+
+Se conserva la copia 1.0.0. Este incremento agrega operaciones sin retirar las
+existentes: bandeja personal de notificaciones, historial paginado por vehículo,
+reserva verificada de repuestos y su aplicación en MS2. La respuesta de entrega
+incorpora datos de auditoría. Se conservan los métodos GET y POST cuando ambos
+comparten la ruta de disponibilidad de inventario. Los eventos `/interno/*`
+siguen fuera de la Gateway.
+
+Los ejemplos para móvil incluyen listado, detalle y finalización de órdenes por
+el Mecánico asignado. La validación del contrato y la copia congelada no prueban
+que la base del despliegue público esté migrada ni sustituyen una prueba desde
+la aplicación de Integración IV.
 
 ### 1.0.0 — Semana 8 (primera versión estable)
 

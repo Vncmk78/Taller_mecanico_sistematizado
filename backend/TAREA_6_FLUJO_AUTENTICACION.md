@@ -12,8 +12,9 @@
 > Los diagramas de las secciones 1, 3, 4, 5, 6, 7, 8, 9 y 10 se redactaron
 > contra un **monolito en Node/Express** (`:3001`, `bcryptjs`, `authMiddleware`,
 > `requireRole`, `checkOrderOwnership`, claims `id`/`email`/`role`). Ese código
-> quedó en `backend/src/` y **no forma parte del sistema en ejecución**: su
-> modelo `src/models/User` ni siquiera existe en el repositorio.
+> estaba en `backend/src/` y fue retirado junto con su suite Jest por no formar
+> parte del sistema en ejecución. Las rutas y fragmentos Node de este documento
+> son referencias históricas, no archivos ni endpoints disponibles.
 >
 > Se conservan aquí como registro del diseño original, no como especificación.
 > Para el comportamiento vigente usa la **sección 2** (claims reales) y

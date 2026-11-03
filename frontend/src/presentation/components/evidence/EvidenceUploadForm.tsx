@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Upload } from 'lucide-react';
 import { CONTEXTO_EVIDENCIA_LABEL, type ContextoEvidencia, type Evidencia } from '@/domain/entities/Evidencia';
+import type { Presupuesto } from '@/domain/entities/Presupuesto';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
@@ -35,36 +36,46 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
     const { showToast } = useToast();
 
     const fileRef = useRef<HTMLInputElement>(null);
-    const presupuestoCargadoRef = useRef(false);
+    const consultaPresupuestoRef = useRef<{
+        orderId: string;
+        promesa: Promise<Presupuesto | null>;
+    } | null>(null);
     const [archivo, setArchivo] = useState<File | null>(null);
     const [contexto, setContexto] = useState<ContextoEvidencia>('diagnostico');
     const [visibleCliente, setVisibleCliente] = useState(false);
     const [errorArchivo, setErrorArchivo] = useState('');
     const [errorLocal, setErrorLocal] = useState('');
-    const [presupuestoId, setPresupuestoId] = useState<string | null>(null);
-    const [estadoPresupuesto, setEstadoPresupuesto] = useState<EstadoPresupuesto>('idle');
+    const [presupuestoResuelto, setPresupuestoResuelto] = useState<{
+        orderId: string;
+        id: string | null;
+    } | null>(null);
 
     const esPresupuesto = contexto === 'presupuesto';
+    const resultadoActual = presupuestoResuelto?.orderId === orderId ? presupuestoResuelto : null;
+    const presupuestoId = resultadoActual?.id ?? null;
+    const estadoPresupuesto: EstadoPresupuesto = resultadoActual
+        ? (presupuestoId ? 'listo' : 'ausente')
+        : (esPresupuesto ? 'loading' : 'idle');
 
-    // En contexto presupuesto, la evidencia se asocia al presupuesto de la orden.
-    // El ref evita re-disparar la carga cuando `estadoPresupuesto` cambia (si
-    // estuviera en las dependencias, su cleanup cancelaría la petición en curso).
+    // Reutiliza la petición de esta orden al cambiar de contexto. Cada efecto
+    // observa la misma promesa y descarta su resultado cuando deja de estar activo.
     useEffect(() => {
-        if (!esPresupuesto || presupuestoCargadoRef.current) return;
-        presupuestoCargadoRef.current = true;
+        if (!esPresupuesto) return;
         let active = true;
-        setEstadoPresupuesto('loading');
-        presupuestoService
-            .getByOrder(orderId)
+        if (consultaPresupuestoRef.current?.orderId !== orderId) {
+            consultaPresupuestoRef.current = {
+                orderId,
+                promesa: presupuestoService.getByOrder(orderId),
+            };
+        }
+        consultaPresupuestoRef.current.promesa
             .then((presupuesto) => {
                 if (!active) return;
-                setPresupuestoId(presupuesto ? presupuesto.id : null);
-                setEstadoPresupuesto(presupuesto ? 'listo' : 'ausente');
+                setPresupuestoResuelto({ orderId, id: presupuesto?.id ?? null });
             })
             .catch(() => {
                 if (!active) return;
-                setPresupuestoId(null);
-                setEstadoPresupuesto('ausente');
+                setPresupuestoResuelto({ orderId, id: null });
             });
         return () => {
             active = false;
@@ -153,7 +164,7 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
                         id="evidencia-archivo"
                         type="file"
                         name="archivo"
-                        accept="image/*,video/*"
+                        accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,.jpg,.jpeg,.png,.webp,.mp4,.mov"
                         onChange={seleccionarArchivo}
                         className={INPUT_CLASS}
                         aria-invalid={errorArchivo ? true : undefined}
@@ -214,8 +225,10 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
             ) : (
                 <div className="mt-4 flex items-center justify-between rounded-lg border border-border-custom px-4 py-3">
                     <div>
-                        <p className="text-sm font-medium">Visible para el cliente</p>
-                        <p className="text-xs text-text-muted">
+                        <label htmlFor="evidencia-visible-cliente" className="cursor-pointer text-sm font-medium">
+                            Visible para el cliente
+                        </label>
+                        <p id="evidencia-visible-cliente-hint" className="text-xs text-text-muted">
                             Permite que el cliente vea esta evidencia desde su portal.
                         </p>
                     </div>
@@ -223,6 +236,7 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
                         <input
                             id="evidencia-visible-cliente"
                             type="checkbox"
+                            aria-describedby="evidencia-visible-cliente-hint"
                             className="peer sr-only"
                             checked={visibleCliente}
                             disabled={isUploading}

@@ -215,6 +215,28 @@ class OrdenRespuesta(BaseModel):
     )
 
 
+class HistorialOrdenesVehiculoRespuesta(BaseModel):
+    """Página del historial de órdenes visibles de un vehículo."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "items": [_EJEMPLO_RESPUESTA],
+                    "total": 1,
+                    "limit": 20,
+                    "offset": 0,
+                }
+            ]
+        }
+    )
+
+    items: list[OrdenRespuesta] = Field(description="Órdenes de la página actual.")
+    total: int = Field(description="Cantidad total de órdenes visibles del vehículo.")
+    limit: int = Field(description="Máximo de elementos solicitado para la página.")
+    offset: int = Field(description="Índice del primer elemento de la página.")
+
+
 class CambioEstadoSolicitud(BaseModel):
     """Datos controlables al solicitar un cambio de estado de una orden."""
 
@@ -237,6 +259,14 @@ class CambioEstadoSolicitud(BaseModel):
         description="Obligatoria al pasar a Cancelado; opcional en los demás destinos.",
         examples=["Inicia evaluación técnica"],
     )
+
+
+class EntregaOrdenRespuesta(OrdenRespuesta):
+    """Orden completa y confirmación auditable de entrega, también ante reintentos."""
+
+    entregado_en: datetime
+    entregado_por_id: int
+    historial_id: int
 
 
 class EntregaSolicitud(BaseModel):

@@ -20,6 +20,7 @@ from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
 from gateway.contratos import evidencias as contratos_evidencias
+from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
@@ -32,7 +33,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "1.0.0"
+_VERSION = "2.0.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -114,6 +115,11 @@ El historial de cambios y la política completa están en \
 
 El detalle completo de los contratos está en `docs/contratos-api-gateway.md`."""
 
+_DESCRIPCION += (
+    f"\n\nVersión vigente: **{_VERSION}**. Copia congelada: "
+    f"`backend/docs/openapi/sgtm-gateway-{_VERSION}.json`."
+)
+
 _TAGS = [
     {
         "name": "Autenticación",
@@ -146,6 +152,10 @@ _TAGS = [
             "Subida de fotos y videos de una orden, consulta por rol y "
             "descarga con URL prefirmada de corta duración (MS4)."
         ),
+    },
+    {
+        "name": "Notificaciones",
+        "description": "Bandeja personal de notificaciones (MS1).",
     },
     {
         "name": "Presupuestos",
@@ -184,6 +194,12 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("LoginSolicitud", contratos_auth.LoginSolicitud),
     ("UsuarioRespuesta", contratos_auth.UsuarioRespuesta),
     ("TokenRespuesta", contratos_auth.TokenRespuesta),
+    ("NotificacionRespuesta", contratos_auth.NotificacionRespuesta),
+    ("RepuestoReservado", contratos_inventario.RepuestoReservado),
+    (
+        "DisponibilidadRepuestosRespuesta",
+        contratos_inventario.DisponibilidadRepuestosRespuesta,
+    ),
     ("RolAsignarSolicitud", contratos_auth.RolAsignarSolicitud),
     ("VehiculoCrear", contratos_vehiculos.VehiculoCrear),
     ("VehiculoActualizar", contratos_vehiculos.VehiculoActualizar),
@@ -210,8 +226,13 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         contratos_ordenes.CupoDiarioIngresosRespuesta,
     ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
+    (
+        "HistorialOrdenesVehiculoRespuesta",
+        contratos_ordenes.HistorialOrdenesVehiculoRespuesta,
+    ),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
+    ("EntregaOrdenRespuesta", contratos_ordenes.EntregaOrdenRespuesta),
     ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
     ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
@@ -283,6 +304,23 @@ _PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
     "schema": {"type": "integer", "format": "int64", "minimum": 1, "example": 31},
 }
 
+_PARAMETROS_NOTIFICACIONES: list[dict[str, object]] = [
+    {
+        "name": "limite",
+        "in": "query",
+        "required": False,
+        "description": "Cantidad máxima de notificaciones a devolver (1–100).",
+        "schema": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100},
+    },
+    {
+        "name": "offset",
+        "in": "query",
+        "required": False,
+        "description": "Cantidad de notificaciones que se omiten al paginar.",
+        "schema": {"type": "integer", "default": 0, "minimum": 0},
+    },
+]
+
 
 def _ref(nombre: str) -> dict[str, object]:
     return {"$ref": f"#/components/schemas/{nombre}"}
@@ -314,10 +352,12 @@ def _operacion(
     con_orden_id: bool = False,
     parametros_extra: list[dict[str, object]] | None = None,
     cuerpo_multipart: str | None = None,
+    cuerpo_requerido: bool = True,
     descripcion_404: str = (
         "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA)."
     ),
     esquema_404: dict[str, object] | None = None,
+    descripcion_503: str | None = None,
 ) -> dict[str, object]:
     parametros: list[dict[str, object]] = [_PARAMETRO_X_REQUEST_ID]
     if con_vehiculo_id:
@@ -363,6 +403,12 @@ def _operacion(
         "504": {"$ref": "#/components/responses/TiempoAgotado"},
     }
 
+    if descripcion_503 is not None:
+        errores["503"] = _respuesta(
+            descripcion_503 + "; o pool de la Gateway agotado.",
+            {"oneOf": [_ref("ErrorDetalle"), _ref("ErrorRespuesta")]},
+        )
+
     # MS1 y MS2 acompañan el 401 con `WWW-Authenticate: Bearer` y la Gateway lo
     # reenvía; se documenta en cada operación protegida.
     if requiere_auth and "401" in errores:
@@ -384,7 +430,7 @@ def _operacion(
     }
     if cuerpo is not None:
         operacion["requestBody"] = {
-            "required": True,
+            "required": cuerpo_requerido,
             "content": {"application/json": {"schema": _ref(cuerpo)}},
         }
     if cuerpo_multipart is not None:
@@ -632,6 +678,106 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 requiere_auth=True,
             )
         },
+        "/api/notificaciones": {
+            "get": _operacion(
+                tag="Notificaciones",
+                resumen="Consultar mis notificaciones",
+                descripcion=(
+                    "Devuelve la bandeja del usuario autenticado, ordenada de "
+                    "más reciente a más antigua. Cada usuario solo puede ver "
+                    "sus propias notificaciones."
+                ),
+                operation_id="consultar_notificaciones",
+                cuerpo=None,
+                parametros_extra=_PARAMETROS_NOTIFICACIONES,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Notificaciones del usuario.",
+                        {"type": "array", "items": _ref("NotificacionRespuesta")},
+                    ) | {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": _ref("NotificacionRespuesta"),
+                                },
+                                "examples": {
+                                    "bandeja_vacia": {
+                                        "summary": "Sin notificaciones",
+                                        "description": "La bandeja aún no contiene avisos.",
+                                        "value": [],
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Parámetros de paginación inválidos",
+                },
+                requiere_auth=True,
+            )
+        },
+        "/api/inventario/ordenes/{orden_id}/disponibilidad": {
+            "post": _operacion(
+                tag="Inventario",
+                resumen="Confirmar disponibilidad y reservar repuestos",
+                descripcion=(
+                    "Solo Administrador. MS3 reserva las unidades enteras del "
+                    "alcance aprobado si el stock libre las cubre, descontando "
+                    "compromisos de otras órdenes. Luego coordina con MS2 el "
+                    "cambio auditado a En reparación. Una respuesta 503 indica "
+                    "que la reserva quedó persistida y se debe repetir la misma "
+                    "operación para confirmar su aplicación."
+                ),
+                operation_id="confirmar_disponibilidad_repuestos",
+                cuerpo=None,
+                con_orden_id=True,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Reserva confirmada y transición aplicada.",
+                        _ref("DisponibilidadRepuestosRespuesta"),
+                    ) | {
+                        "content": {
+                            "application/json": {
+                                "schema": _ref("DisponibilidadRepuestosRespuesta"),
+                                "examples": {
+                                    "reserva_confirmada": {
+                                        "summary": "Reserva confirmada",
+                                        "description": (
+                                            "El presupuesto aprobado quedó reservado "
+                                            "y la orden inició su reparación."
+                                        ),
+                                        "value": {
+                                            "clave_operacion": "disp:31:4",
+                                            "orden_id": 31,
+                                            "version_presupuesto": 4,
+                                            "repuestos": [
+                                                {"repuesto_id": 8, "cantidad": 2}
+                                            ],
+                                            "aplicacion_confirmada": True,
+                                        },
+                                    }
+                                },
+                            }
+                        }
+                    }
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "Stock libre insuficiente o estado incompatible",
+                    "422": "Cantidad de repuesto fraccionaria",
+                    "503": "MS2 no confirmó la transición; reintentar con la misma clave",
+                },
+                requiere_auth=True,
+                descripcion_404="Orden o presupuesto inexistente.",
+                esquema_404={
+                    "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]
+                },
+            )
+        },
         "/api/vehiculos": {
             "post": _operacion(
                 tag="Vehículos",
@@ -837,7 +983,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "asignación cambia Recibido a Esperando diagnóstico y "
                     "registra los historiales de asignación y estado. Una "
                     "reasignación conserva el estado; Entregado y Cancelado "
-                    "rechazan la operación."
+                    "rechazan la operación. MS2 consulta MS1 con el JWT del "
+                    "Administrador: el destino debe existir, estar activo y "
+                    "tener rol Mecánico (422 en otro caso). Si MS1 no permite "
+                    "validarlo, responde 503 sin guardar cambios."
                 ),
                 operation_id="asignar_mecanico",
                 cuerpo="AsignacionMecanicoActualizar",
@@ -848,12 +997,13 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
                     "409": "Autoasignación, estado terminal o capacidad excedida/no configurada",
-                    "422": "Datos inválidos",
+                    "422": "Destino inexistente, inactivo, sin rol Mecánico o datos inválidos",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
                 descripcion_404="Orden no encontrada.",
                 esquema_404=error_404_recurso,
+                descripcion_503="No fue posible validar el mecánico con MS1",
             )
         },
         "/api/ordenes/configuracion/capacidad/mecanicos": {
@@ -952,6 +1102,64 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 },
                 requiere_auth=True,
             ),
+        },
+        "/api/ordenes/vehiculo/{vehiculo_id}/historial": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar historial paginado de órdenes por vehículo",
+                descripcion=(
+                    "Filtro en MS2 por vehículo y página ordenada por creación "
+                    "descendente, con ID descendente como desempate. Administrador "
+                    "ve todas; Cliente solo un vehículo propio; Mecánico solo sus "
+                    "órdenes actualmente asignadas. Un vehículo visible sin órdenes "
+                    "devuelve items vacío y total 0."
+                ),
+                operation_id="consultar_historial_ordenes_vehiculo",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Página del historial del vehículo.",
+                        _ref("HistorialOrdenesVehiculoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador o parámetros de página inválidos",
+                    "404": "Vehículo inexistente o fuera de visibilidad",
+                    "500": "No fue posible consultar el historial",
+                },
+                requiere_auth=True,
+                con_vehiculo_id=True,
+                parametros_extra=[
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": False,
+                        "description": (
+                            "Cantidad de elementos: 20 por defecto, entre 1 y 100."
+                        ),
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                        },
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "required": False,
+                        "description": "Índice inicial, desde cero.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0,
+                        },
+                    },
+                ],
+                descripcion_404="Vehículo inexistente o no visible.",
+                esquema_404=error_404_recurso,
+            )
         },
         "/api/ordenes/{orden_id}/historial": {
             "get": _operacion(
@@ -1092,13 +1300,15 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "Cierra el ciclo normal (6 → 7): registra la fecha de entrega "
                     "y la identidad que la autorizó. Solo el Administrador puede "
                     "invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. "
-                    "Una orden que no está Lista o ya es terminal responde 409. "
-                    "Registra el historial en la misma transacción."
+                    "Repetir una entrega válida devuelve el registro original sin "
+                    "duplicar historial. Otro estado responde 409; una entrega "
+                    "histórica sin auditoría completa responde 500."
                 ),
                 operation_id="registrar_entrega_orden",
                 cuerpo="EntregaSolicitud",
+                cuerpo_requerido=False,
                 respuestas_ok={
-                    "200": _respuesta("Orden entregada.", _ref("OrdenRespuesta"))
+                    "200": _respuesta("Orden entregada; un reintento conserva la entrega original.", _ref("EntregaOrdenRespuesta"))
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
@@ -1501,12 +1711,11 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         routes=app.routes,
         tags=_TAGS,
     )
-    esquema["paths"] = {
-        **esquema["paths"],
-        **_caminos_documentados(),
-        **_caminos_evidencias(),
-        **caminos_ms3(),
-    }
+    # Una misma ruta puede publicar métodos de módulos distintos (p. ej.
+    # GET de disponibilidad y POST de reserva). Conservar ambos métodos.
+    for caminos in (_caminos_documentados(), _caminos_evidencias(), caminos_ms3()):
+        for ruta, operaciones in caminos.items():
+            esquema["paths"].setdefault(ruta, {}).update(operaciones)
 
     componentes = esquema.setdefault("components", {})
     componentes["securitySchemes"] = {

@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ClipboardList, SearchX } from 'lucide-react';
+import { ArrowLeft, SearchX } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -10,6 +10,7 @@ import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { VehicleOrderHistoryPanel } from '@/presentation/components/orders/VehicleOrderHistoryPanel';
 
 export function AdminVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -81,16 +82,12 @@ export function AdminVehicleDetailPage() {
             ownerLabel={vehicle.clientId ? `Cliente #${vehicle.clientId}` : undefined}
         />
 
-        <div className="card">
-            <h3 className="text-xl font-semibold flex items-center gap-2 mb-4 pb-4 border-b border-border-custom">
-            <ClipboardList className="w-5 h-5 text-text-muted" />
-            Historial de Órdenes
-            </h3>
-            <p className="text-text-muted text-sm">
-            El historial de mantenciones de este vehículo se mostrará aquí una vez implementada la
-            Gestión de Órdenes (próxima misión).
-            </p>
-        </div>
+        <VehicleOrderHistoryPanel
+            key={vehicle.id}
+            vehicleId={vehicle.id}
+            detailPathPrefix="/admin/ordenes"
+            vehicleLabel={`${vehicle.brand} ${vehicle.model}`}
+        />
         </div>
     </div>
     );

@@ -104,6 +104,42 @@ def test_archivo_congelado_no_publica_direcciones_internas(exportador, esquema) 
         assert interna not in contenido, interna
 
 
+def test_version_actual_conserva_operaciones_y_campos_de_la_base_1_0_0(esquema) -> None:
+    anterior = json.loads(
+        (RAIZ_BACKEND / "docs/openapi/sgtm-gateway-1.0.0.json").read_text(encoding="utf8")
+    )
+
+    def resolver(documento, valor):
+        while "$ref" in valor:
+            partes = valor["$ref"].removeprefix("#/").split("/")
+            valor = documento
+            for parte in partes:
+                valor = valor[parte]
+        return valor
+
+    metodos = {"get", "post", "put", "patch", "delete"}
+    for ruta, operaciones in anterior["paths"].items():
+        assert ruta in esquema["paths"], ruta
+        for metodo, previa in operaciones.items():
+            if metodo not in metodos:
+                continue
+            actual = esquema["paths"][ruta][metodo]
+            assert actual.get("security") == previa.get("security"), (metodo, ruta)
+            obligatorios_antes = {(p["name"], p["in"]) for p in previa.get("parameters", []) if p.get("required")}
+            obligatorios_ahora = {(p["name"], p["in"]) for p in actual.get("parameters", []) if p.get("required")}
+            assert obligatorios_ahora <= obligatorios_antes, (metodo, ruta)
+            for codigo, respuesta in previa["responses"].items():
+                if not codigo.startswith("2"):
+                    continue
+                nueva = actual["responses"][codigo]
+                for mime, contenido in respuesta.get("content", {}).items():
+                    antes = resolver(anterior, contenido["schema"])
+                    despues = resolver(esquema, nueva["content"][mime]["schema"])
+                    assert antes.get("type") == despues.get("type"), (metodo, ruta, codigo)
+                    assert set(antes.get("properties", {})) <= set(despues.get("properties", {})), (metodo, ruta, codigo)
+                    assert set(antes.get("required", [])) <= set(despues.get("required", [])), (metodo, ruta, codigo)
+
+
 # ── ejemplos nuevos de 1.0.0 contra respuestas reales ──────────────────────
 
 _REGISTRO = {

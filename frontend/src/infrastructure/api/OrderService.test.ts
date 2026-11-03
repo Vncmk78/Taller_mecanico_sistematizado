@@ -47,6 +47,21 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
     vi.clearAllMocks();
   });
 
+  it('getVehicleOrderHistory consulta el historial paginado por vehículo', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { items: [ordenApi], total: 1, limit: 20, offset: 0 },
+    });
+
+    const page = await orderService.getVehicleOrderHistory('7', { limit: 20, offset: 0 });
+
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/vehiculo/7/historial', {
+      params: { limit: 20, offset: 0 },
+    });
+    expect(page).toMatchObject({ total: 1, limit: 20, offset: 0 });
+    expect(page.items[0].id).toBe('3');
+    expect(page.items[0].vehicleId).toBe('7');
+  });
+
   it('getOrders consulta GET /ordenes y traduce OrdenRespuesta al dominio', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: [ordenApi] });
 
@@ -306,5 +321,35 @@ describe('OrderService: Bitácora de trabajo (contrato HTTP de MS2)', () => {
     expect(entry.repuestos).toEqual([]);
     const cuerpo = vi.mocked(apiClient.post).mock.calls[0][1] as Record<string, unknown>;
     expect(cuerpo.repuestos).toEqual([]);
+  });
+});
+
+describe('OrderService: solicitud y confirmación de cancelación', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('después de solicitar consulta la orden sin interpretar la solicitud como estado Cancelado', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { solicitud_id: 5, orden_id: 3, estado: 'pendiente', motivo: 'No continuar' },
+    });
+    vi.mocked(apiClient.get).mockResolvedValue({ data: { ...ordenApi, estado_codigo: 3 } });
+
+    const resultado = await orderService.cancelarComoCliente('3', ' No continuar ');
+
+    expect(apiClient.post).toHaveBeenCalledWith('/ordenes/3/cancelacion', { motivo: 'No continuar' });
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/3');
+    expect(resultado.id).toBe('3');
+    expect(resultado.estadoCodigo).toBe(3);
+    expect(resultado.vehicleId).toBe(String(ordenApi.vehiculo_id));
+  });
+
+  it('el administrador usa la confirmación específica y recibe la orden cancelada', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ data: { ...ordenApi, estado_codigo: 8 } });
+
+    const resultado = await orderService.confirmarCancelacion('3');
+
+    expect(apiClient.post).toHaveBeenCalledWith('/ordenes/3/cancelacion/confirmacion');
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(resultado.id).toBe('3');
+    expect(resultado.estadoCodigo).toBe(8);
   });
 });

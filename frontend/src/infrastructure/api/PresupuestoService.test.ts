@@ -9,6 +9,7 @@ vi.mock('@/infrastructure/config/apiClient', () => ({
     default: {
         get: vi.fn(),
         post: vi.fn(),
+        put: vi.fn(),
     },
 }));
 
@@ -189,4 +190,70 @@ describe('PresupuestoService: contrato HTTP de MS3 (presupuestos)', () => {
         expect(resultado.efectoEnOrden).toBeNull();
         expect(resultado.aplicacionConfirmada).toBe(false);
     });
+
+    it('create publica POST /presupuestos con ítems de mano de obra y repuestos', async () => {
+        vi.mocked(apiClient.post).mockResolvedValue({
+            data: { ...resumenApi, presupuesto_id: 502, versiones: [versionApi] },
+        });
+
+        const presupuesto = await presupuestoService.create('101', [
+            { tipo: 'mano_de_obra', descripcion: 'Mano de obra', cantidad: 2, precioUnitario: 10000, repuestoId: null },
+            { tipo: 'repuesto', descripcion: 'Filtro', cantidad: 1, precioUnitario: 5000, repuestoId: '9' },
+        ]);
+
+        expect(apiClient.post).toHaveBeenCalledWith('/presupuestos', {
+            orden_id: 101,
+            items: [
+                { tipo: 'mano_de_obra', descripcion: 'Mano de obra', cantidad: '2', precio_unitario: '10000', repuesto_id: null },
+                { tipo: 'repuesto', descripcion: 'Filtro', cantidad: '1', precio_unitario: '5000', repuesto_id: 9 },
+            ],
+        });
+        expect(presupuesto.id).toBe('502');
+    });
+
+    it('createVersion publica POST /presupuestos/{id}/versiones y copia la última si no envía items', async () => {
+        vi.mocked(apiClient.post).mockResolvedValue({
+            data: { ...resumenApi, presupuesto_id: 501, versiones: [versionApi] },
+        });
+
+        await presupuestoService.createVersion('501', { copiarDe: 1 });
+
+        expect(apiClient.post).toHaveBeenCalledWith('/presupuestos/501/versiones', {
+            copiar_de: 1,
+        });
+    });
+
+    it('replaceItems publica PUT a los ítems de una versión en borrador', async () => {
+        vi.mocked(apiClient.put).mockResolvedValue({ data: versionApi });
+
+        const version = await presupuestoService.replaceItems('501', 1, [
+            { tipo: 'mano_de_obra', descripcion: 'Ajuste', cantidad: 1, precioUnitario: 12000, repuestoId: null },
+        ]);
+
+        expect(apiClient.put).toHaveBeenCalledWith('/presupuestos/501/versiones/1/items', {
+            items: [
+                { tipo: 'mano_de_obra', descripcion: 'Ajuste', cantidad: '1', precio_unitario: '12000', repuesto_id: null },
+            ],
+        });
+        expect(version.numero).toBe(1);
+    });
+
+    it('send publica POST al envío y mapea ResultadoEnvio', async () => {
+        vi.mocked(apiClient.post).mockResolvedValue({
+            data: {
+                presupuesto: { ...resumenApi, estado_ultima_version: 'enviada', versiones: [versionApi] },
+                efecto_en_orden: 'esperando_aprobacion',
+                decision_id: null,
+                aplicacion_en_orden: { orden_id: 101, estado_aplicado: 4 },
+            },
+        });
+
+        const resultado = await presupuestoService.send('501', 1);
+
+        expect(apiClient.post).toHaveBeenCalledWith('/presupuestos/501/versiones/1/envio');
+        expect(resultado.efectoEnOrden).toBe('esperando_aprobacion');
+        expect(resultado.aplicacionConfirmada).toBe(true);
+        expect(resultado.presupuesto.estadoUltimaVersion).toBe('enviada');
+    });
 });
+

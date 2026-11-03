@@ -10,6 +10,7 @@ import type { Repuesto } from '@/domain/entities/Repuesto';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { Button } from '@/presentation/components/ui/Button';
+import { BudgetItemRow } from '@/presentation/components/budgets/BudgetItemRow';
 
 interface ItemForm {
     tipo: 'repuesto' | 'mano_de_obra';
@@ -246,14 +247,11 @@ export function MechanicBudgetPage() {
                 <div className="card p-6 mt-6">
                     <h3 className="text-xl font-semibold mb-2">Versión {version.numero} — {version.estado}</h3>
                     <p className="text-text-muted text-sm mb-4">Total: {version.total}</p>
-                    <ul className="space-y-2">
+                    <div className="flex flex-col gap-3">
                         {version.items.map((item) => (
-                            <li key={item.id} className="flex justify-between text-sm">
-                                <span>{item.descripcion} ({item.cantidad} × {item.precioUnitario})</span>
-                                <span>{item.subtotal}</span>
-                            </li>
+                            <BudgetItemRow key={item.id} item={item} />
                         ))}
-                    </ul>
+                    </div>
                 </div>
             )}
         </div>

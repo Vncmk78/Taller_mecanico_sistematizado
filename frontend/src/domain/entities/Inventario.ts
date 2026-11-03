@@ -99,3 +99,24 @@ export interface ResultadoDisponibilidad {
     presupuestoId: number | null;
     version: number | null;
 }
+
+export interface FaltanteStock {
+    repuestoId: number;
+    nombre: string;
+    solicitado: number;
+    disponible: number;
+    faltan: number;
+}
+
+export interface ResultadoReserva {
+    ordenId: number;
+    reservado: boolean;
+    faltantes: FaltanteStock[];
+    movimientos: Movimiento[];
+}
+
+export interface ResultadoOperacionOrden {
+    ordenId: number;
+    movimientos: Movimiento[];
+    repetido: boolean;
+}

@@ -11,6 +11,8 @@ import type {
     PaginaMovimientos as PaginaMovimientosEntity,
     ResultadoDisponibilidad as ResultadoDisponibilidadEntity,
     ResultadoMovimiento as ResultadoMovimientoEntity,
+    ResultadoOperacionOrden as ResultadoOperacionOrdenEntity,
+    ResultadoReserva as ResultadoReservaEntity,
     StockDetalle as StockDetalleEntity,
     TipoMovimiento,
     UmbralGeneral as UmbralGeneralEntity,
@@ -250,6 +252,59 @@ class InventarioService implements InventarioPort {
             })),
             presupuestoId: data.presupuesto_id,
             version: data.version,
+        };
+    }
+
+    async reservar(ordenId: number): Promise<ResultadoReservaEntity> {
+        const { data } = await apiClient.post<{
+            orden_id: number;
+            reservado: boolean;
+            faltantes: Array<{ repuesto_id: number; nombre: string; solicitado: number; disponible: number; faltan: number }>;
+            movimientos: MovimientoApi[];
+        }>(`/inventario/ordenes/${ordenId}/reserva`);
+        return {
+            ordenId: data.orden_id,
+            reservado: data.reservado,
+            faltantes: data.faltantes.map((f) => ({
+                repuestoId: f.repuesto_id,
+                nombre: f.nombre,
+                solicitado: f.solicitado,
+                disponible: f.disponible,
+                faltan: f.faltan,
+            })),
+            movimientos: data.movimientos.map(mapMovimiento),
+        };
+    }
+
+    async consumir(
+        ordenId: number,
+        items: Array<{ repuestoId: number; cantidad: number }>,
+        claveOperacion: string
+    ): Promise<ResultadoOperacionOrdenEntity> {
+        const body = {
+            clave_operacion: claveOperacion,
+            items: items.map((i) => ({ repuesto_id: i.repuestoId, cantidad: i.cantidad })),
+        };
+        const { data } = await apiClient.post<{ orden_id: number; movimientos: MovimientoApi[]; repetido: boolean }>(
+            `/inventario/ordenes/${ordenId}/consumos`,
+            body
+        );
+        return {
+            ordenId: data.orden_id,
+            movimientos: data.movimientos.map(mapMovimiento),
+            repetido: data.repetido,
+        };
+    }
+
+    async liberar(ordenId: number, claveOperacion: string): Promise<ResultadoOperacionOrdenEntity> {
+        const { data } = await apiClient.post<{ orden_id: number; movimientos: MovimientoApi[]; repetido: boolean }>(
+            `/inventario/ordenes/${ordenId}/liberacion`,
+            { clave_operacion: claveOperacion }
+        );
+        return {
+            ordenId: data.orden_id,
+            movimientos: data.movimientos.map(mapMovimiento),
+            repetido: data.repetido,
         };
     }
 

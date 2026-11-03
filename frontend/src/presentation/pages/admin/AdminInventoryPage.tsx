@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Package, X } from 'lucide-react';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
+import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import type { Repuesto } from '@/domain/entities/Repuesto';
 import { InventoryToolbar } from '@/presentation/components/inventory/InventoryToolbar';
 import { StockStatusBadge } from '@/presentation/components/inventory/StockStatusBadge';
@@ -9,6 +10,9 @@ import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
+
+import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import {
     Table,
     TableBody,
@@ -24,6 +28,8 @@ import {
  */
 export const LIMITE_REPUESTOS = 200;
 
+type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
+
 /** Texto buscable de un repuesto: código interno, nombre y proveedor. */
 function textoBuscable(repuesto: Repuesto): string {
     return [repuesto.repuestoId, repuesto.nombre, repuesto.proveedorNombre]
@@ -34,20 +40,30 @@ function textoBuscable(repuesto: Repuesto): string {
 export function AdminInventoryPage() {
     const [repuestos, setRepuestos] = useState<Repuesto[]>([]);
     const [total, setTotal] = useState(0);
-    const [loading, setLoading] = useState(true);
+
+    const [status, setStatus] = useState<FetchStatus>('loading');
     const [error, setError] = useState<string | null>(null);
+    const [isOffline, setIsOffline] = useState(false);
+    const [requestId, setRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [estado, setEstado] = useState<StockFilter>('todos');
 
     const loadRepuestos = useCallback(async () => {
+        setStatus('loading');
+        setError(null);
+        setIsOffline(false);
+        setRequestId(null);
         try {
             const response = await repuestoService.getRepuestos({ limite: LIMITE_REPUESTOS });
             setRepuestos(response.repuestos);
             setTotal(response.total);
-        } catch {
-            setError('No se pudieron cargar los repuestos del inventario.');
-        } finally {
-            setLoading(false);
+
+            setStatus('success');
+        } catch (err) {
+            setError(getApiErrorMessage(err, 'No se pudieron cargar los repuestos del inventario.'));
+            setIsOffline(isOfflineError(err));
+            setRequestId(getApiErrorRequestId(err));
+            setStatus('error');
         }
     }, []);
 
@@ -59,8 +75,6 @@ export function AdminInventoryPage() {
     }, [loadRepuestos]);
 
     const handleRetry = () => {
-        setError(null);
-        setLoading(true);
         void loadRepuestos();
     };
 
@@ -80,6 +94,8 @@ export function AdminInventoryPage() {
         setEstado('todos');
     };
 
+    const isServerError = status === 'error' && !isOffline;
+
     return (
         <div className="p-10 animate-fade-in">
             <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
@@ -87,7 +103,7 @@ export function AdminInventoryPage() {
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Inventario</h2>
                     <p className="text-text-muted text-lg">Control de repuestos y stock del taller</p>
                 </div>
-                {!loading && !error && (
+                {status === 'success' && (
                     <p className="text-sm text-text-muted" aria-live="polite">
                         {filteredRepuestos.length} de {total} repuestos
                     </p>
@@ -103,8 +119,6 @@ export function AdminInventoryPage() {
                         estado={estado}
                         onEstadoChange={setEstado}
                     />
-                    {/* Con cero resultados el vacío ya ofrece "Limpiar filtros":
-                        no duplicamos el mismo nombre accesible en la barra. */}
                     {hasActiveFilters && filteredRepuestos.length > 0 && (
                         <Button variant="secondary" onClick={clearFilters} className="gap-2">
                             <X className="w-4 h-4" aria-hidden />
@@ -114,20 +128,44 @@ export function AdminInventoryPage() {
                 </div>
             </div>
 
-            {!loading && !error && total > repuestos.length && (
+            {isOffline && (
+                <OfflineBanner
+                    message={error}
+                    onRetry={handleRetry}
+                    requestId={requestId}
+                    className="mb-6"
+                />
+            )}
+
+            {isServerError && filteredRepuestos.length > 0 && (
+                <Alert
+                    tone="error"
+                    className="mb-6"
+                    action={<RetryButton tone="error" onClick={handleRetry} />}
+                >
+                    {error ?? 'No se pudieron cargar los repuestos del inventario.'} Se muestran los últimos datos disponibles.
+                </Alert>
+            )}
+
+            {status === 'success' && total > repuestos.length && (
                 <Alert tone="info" className="mb-6">
                     El catálogo tiene {total} repuestos; esta vista muestra los primeros{' '}
                     {repuestos.length}.
                 </Alert>
             )}
 
-            {loading ? (
+            {status === 'loading' ? (
                 <div className="card p-16 text-center">
                     <p className="text-text-muted">Cargando inventario...</p>
                 </div>
-            ) : error ? (
+            ) : isServerError && filteredRepuestos.length === 0 ? (
                 <div className="card p-8">
-                    <ErrorState title={error} onRetry={handleRetry} />
+                    <ErrorState
+                        title="No se pudieron cargar los repuestos del inventario"
+                        message={error}
+                        requestId={requestId}
+                        onRetry={handleRetry}
+                    />
                 </div>
             ) : filteredRepuestos.length === 0 ? (
                 <div className="card p-8">

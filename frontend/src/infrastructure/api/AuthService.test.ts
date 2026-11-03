@@ -153,4 +153,28 @@ describe('AuthService: listado administrativo de usuarios', () => {
 
     expect(usuario.roles).toEqual([]);
   });
+
+  it('traduce el payload literal publicado por la Gateway', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: [
+        {
+          id: 7,
+          email: 'ana@correo.cl',
+          full_name: 'Ana P\u00e9rez',
+          roles: ['cliente'],
+          is_active: true,
+        },
+      ],
+    });
+
+    const [usuario] = await authService.listarUsuarios();
+
+    expect(usuario).toEqual({
+      id: '7',
+      email: 'ana@correo.cl',
+      full_name: 'Ana P\u00e9rez',
+      roles: ['cliente'],
+      is_active: true,
+    });
+  });
 });

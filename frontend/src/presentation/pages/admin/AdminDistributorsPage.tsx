@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Truck, X } from 'lucide-react';
 import { proveedorService } from '@/infrastructure/api/ProveedorService';
-import { getApiErrorMessage } from '@/infrastructure/api/errors';
+import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import type { Proveedor, TipoDistribuidor } from '@/domain/entities/Proveedor';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import {
     Table,
     TableBody,
@@ -17,11 +19,10 @@ import {
     TableRow,
 } from '@/presentation/components/ui/Table';
 
-/**
- * Tope de una sola página de `GET /proveedores`: el backend rechaza con 422
- * cualquier `limite` mayor a 200 (`LIMITE_MAXIMO` de MS3).
- */
+/**\n * Tope de una sola página de `GET /proveedores`: el backend rechaza con 422\n * cualquier `limite` mayor a 200 (`LIMITE_MAXIMO` de MS3).\n */
 export const LIMITE_PROVEEDORES = 200;
+
+type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const TIPO_LABEL: Record<TipoDistribuidor, string> = {
     oficial: 'Oficial',
@@ -40,23 +41,31 @@ function textoBuscable(proveedor: Proveedor): string {
 export function AdminDistributorsPage() {
     const [proveedores, setProveedores] = useState<Proveedor[]>([]);
     const [total, setTotal] = useState(0);
-    const [loading, setLoading] = useState(true);
+    const [status, setStatus] = useState<FetchStatus>('loading');
     const [error, setError] = useState<string | null>(null);
+    const [isOffline, setIsOffline] = useState(false);
+    const [requestId, setRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
 
     const loadProveedores = useCallback(async () => {
+        setStatus('loading');
+        setError(null);
+        setIsOffline(false);
+        setRequestId(null);
         try {
             const response = await proveedorService.getProveedores({
                 limite: LIMITE_PROVEEDORES,
             });
             setProveedores(response.proveedores);
             setTotal(response.total);
+            setStatus('success');
         } catch (err) {
             setError(
                 getApiErrorMessage(err, 'No se pudieron cargar los distribuidores del taller.')
             );
-        } finally {
-            setLoading(false);
+            setIsOffline(isOfflineError(err));
+            setRequestId(getApiErrorRequestId(err));
+            setStatus('error');
         }
     }, []);
 
@@ -67,8 +76,6 @@ export function AdminDistributorsPage() {
     }, [loadProveedores]);
 
     const handleRetry = () => {
-        setError(null);
-        setLoading(true);
         void loadProveedores();
     };
 
@@ -82,6 +89,8 @@ export function AdminDistributorsPage() {
 
     const clearFilters = () => setSearch('');
 
+    const isServerError = status === 'error' && !isOffline;
+
     return (
         <div className="p-10 animate-fade-in">
             <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
@@ -91,7 +100,7 @@ export function AdminDistributorsPage() {
                         Proveedores de repuestos y su tipo de distribución
                     </p>
                 </div>
-                {!loading && !error && (
+                {status === 'success' && (
                     <p className="text-sm text-text-muted" aria-live="polite">
                         {filteredProveedores.length} de {total} distribuidores
                     </p>
@@ -120,8 +129,6 @@ export function AdminDistributorsPage() {
                             className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
                         />
                     </div>
-                    {/* Con cero resultados el vacío ya ofrece "Limpiar filtros":
-                        no duplicamos el mismo nombre accesible en la barra. */}
                     {hasActiveFilters && filteredProveedores.length > 0 && (
                         <Button variant="secondary" onClick={clearFilters} className="gap-2">
                             <X className="w-4 h-4" aria-hidden />
@@ -131,22 +138,42 @@ export function AdminDistributorsPage() {
                 </div>
             </div>
 
-            {!loading && !error && total > proveedores.length && (
+            {isOffline && (
+                <OfflineBanner
+                    message={error}
+                    onRetry={handleRetry}
+                    requestId={requestId}
+                    className="mb-6"
+                />
+            )}
+
+            {isServerError && filteredProveedores.length > 0 && (
+                <Alert
+                    tone="error"
+                    className="mb-6"
+                    action={<RetryButton tone="error" onClick={handleRetry} />}
+                >
+                    {error ?? 'No se pudieron cargar los distribuidores del taller.'} Se muestran los últimos datos disponibles.
+                </Alert>
+            )}
+
+            {status === 'success' && total > proveedores.length && (
                 <Alert tone="info" className="mb-6">
                     El catálogo tiene {total} distribuidores; esta vista muestra los primeros{' '}
                     {proveedores.length}.
                 </Alert>
             )}
 
-            {loading ? (
+            {status === 'loading' ? (
                 <div className="card p-16 flex justify-center">
                     <LoadingState message="Cargando distribuidores..." />
                 </div>
-            ) : error ? (
+            ) : isServerError && filteredProveedores.length === 0 ? (
                 <div className="card p-8">
                     <ErrorState
                         title="No se pudieron cargar los distribuidores"
                         message={error}
+                        requestId={requestId}
                         onRetry={handleRetry}
                     />
                 </div>

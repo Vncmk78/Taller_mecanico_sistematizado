@@ -136,4 +136,42 @@ describe('RepuestoService: contrato HTTP de MS3 (repuestos)', () => {
         expect(pagina.umbralGeneral).toBeNull();
         expect(pagina.repuestos[0].umbralEfectivo).toBeNull();
     });
+
+    it('traduce el payload literal publicado por la Gateway', async () => {
+        vi.mocked(apiClient.get).mockResolvedValue({
+            data: {
+                total: 1,
+                desde: 0,
+                limite: 50,
+                umbral_general: 5,
+                repuestos: [
+                    {
+                        repuesto_id: 12,
+                        nombre: 'Pastillas de freno delanteras',
+                        proveedor_id: 3,
+                        proveedor_nombre: 'Repuestos del Sur',
+                        proveedor_tipo_distribuidor: 'oficial',
+                        stock: 8,
+                        umbral_particular: null,
+                        umbral_efectivo: 5,
+                        bajo_umbral: false,
+                    },
+                ],
+            },
+        });
+
+        const pagina = await repuestoService.getRepuestos();
+
+        expect(pagina.repuestos[0]).toEqual({
+            repuestoId: 12,
+            nombre: 'Pastillas de freno delanteras',
+            proveedorId: 3,
+            proveedorNombre: 'Repuestos del Sur',
+            proveedorTipoDistribuidor: 'oficial',
+            stock: 8,
+            umbralParticular: null,
+            umbralEfectivo: 5,
+            bajoUmbral: false,
+        });
+    });
 });

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Users, X } from 'lucide-react';
 import { authService } from '@/infrastructure/api/AuthService';
-import { getApiErrorMessage } from '@/infrastructure/api/errors';
+import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import type { UsuarioListado } from '@/domain/entities/User';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import {
     Table,
     TableBody,
@@ -15,6 +18,8 @@ import {
     TableHeaderCell,
     TableRow,
 } from '@/presentation/components/ui/Table';
+
+type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
 function textoBuscable(usuario: UsuarioListado): string {
     return [usuario.full_name, usuario.email].join(' ').toLowerCase();
@@ -28,18 +33,26 @@ function textoBuscable(usuario: UsuarioListado): string {
  */
 export function AdminClientsPage() {
     const [clientes, setClientes] = useState<UsuarioListado[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [status, setStatus] = useState<FetchStatus>('loading');
     const [error, setError] = useState<string | null>(null);
+    const [isOffline, setIsOffline] = useState(false);
+    const [requestId, setRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
 
     const loadClientes = useCallback(async () => {
+        setStatus('loading');
+        setError(null);
+        setIsOffline(false);
+        setRequestId(null);
         try {
             const usuarios = await authService.listarUsuarios();
             setClientes(usuarios.filter((usuario) => usuario.roles.includes('cliente')));
+            setStatus('success');
         } catch (err) {
             setError(getApiErrorMessage(err, 'No se pudieron cargar los clientes del taller.'));
-        } finally {
-            setLoading(false);
+            setIsOffline(isOfflineError(err));
+            setRequestId(getApiErrorRequestId(err));
+            setStatus('error');
         }
     }, []);
 
@@ -50,8 +63,6 @@ export function AdminClientsPage() {
     }, [loadClientes]);
 
     const handleRetry = () => {
-        setError(null);
-        setLoading(true);
         void loadClientes();
     };
 
@@ -65,6 +76,8 @@ export function AdminClientsPage() {
 
     const clearFilters = () => setSearch('');
 
+    const isServerError = status === 'error' && !isOffline;
+
     return (
         <div className="p-10 animate-fade-in">
             <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
@@ -74,7 +87,7 @@ export function AdminClientsPage() {
                         Cuentas de clientes registradas en el taller
                     </p>
                 </div>
-                {!loading && !error && (
+                {status === 'success' && (
                     <p className="text-sm text-text-muted" aria-live="polite">
                         {filteredClientes.length} de {clientes.length} clientes
                     </p>
@@ -103,8 +116,6 @@ export function AdminClientsPage() {
                             className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
                         />
                     </div>
-                    {/* Con cero resultados el vacío ya ofrece "Limpiar filtros":
-                        no duplicamos el mismo nombre accesible en la barra. */}
                     {hasActiveFilters && filteredClientes.length > 0 && (
                         <Button variant="secondary" onClick={clearFilters} className="gap-2">
                             <X className="w-4 h-4" aria-hidden />
@@ -114,15 +125,35 @@ export function AdminClientsPage() {
                 </div>
             </div>
 
-            {loading ? (
+            {isOffline && (
+                <OfflineBanner
+                    message={error}
+                    onRetry={handleRetry}
+                    requestId={requestId}
+                    className="mb-6"
+                />
+            )}
+
+            {isServerError && filteredClientes.length > 0 && (
+                <Alert
+                    tone="error"
+                    className="mb-6"
+                    action={<RetryButton tone="error" onClick={handleRetry} />}
+                >
+                    {error ?? 'No se pudieron cargar los clientes del taller.'} Se muestran los últimos datos disponibles.
+                </Alert>
+            )}
+
+            {status === 'loading' ? (
                 <div className="card p-16 flex justify-center">
                     <LoadingState message="Cargando clientes..." />
                 </div>
-            ) : error ? (
+            ) : isServerError && filteredClientes.length === 0 ? (
                 <div className="card p-8">
                     <ErrorState
                         title="No se pudieron cargar los clientes"
                         message={error}
+                        requestId={requestId}
                         onRetry={handleRetry}
                     />
                 </div>

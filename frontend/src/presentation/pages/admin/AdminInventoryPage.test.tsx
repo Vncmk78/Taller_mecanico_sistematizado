@@ -185,4 +185,65 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
             await screen.findByText(/El catálogo tiene 512 repuestos/)
         ).toBeInTheDocument();
     });
+
+    it('consulta el servicio una sola vez al montar', async () => {
+        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+
+        render(<AdminInventoryPage />);
+
+        await screen.findByText('Filtro de aceite');
+        expect(repuestoService.getRepuestos).toHaveBeenCalledTimes(1);
+        expect(repuestoService.getRepuestos).toHaveBeenCalledWith({ limite: 200 });
+    });
+
+    it('combina la búsqueda de texto con el filtro de estado de stock', async () => {
+        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+
+        render(<AdminInventoryPage />);
+        await screen.findByText('Filtro de aceite');
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar repuestos' }), {
+            target: { value: 'pastillas' },
+        });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Filtrar por estado de stock' }), {
+            target: { value: 'critico' },
+        });
+
+        expect(screen.getByText('Pastillas de freno')).toBeInTheDocument();
+        expect(screen.queryByText('Filtro de aceite')).not.toBeInTheDocument();
+        expect(screen.queryByText('Bujías')).not.toBeInTheDocument();
+        expect(screen.getByText(/1 de 3 repuestos/)).toBeInTheDocument();
+    });
+
+    it('permite limpiar los filtros desde el estado vacío', async () => {
+        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+
+        render(<AdminInventoryPage />);
+        await screen.findByText('Filtro de aceite');
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar repuestos' }), {
+            target: { value: 'inexistente' },
+        });
+
+        expect(
+            screen.getByText('No se encontraron repuestos con los filtros aplicados')
+        ).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /limpiar filtros/i }));
+
+        expect(screen.getByRole('searchbox', { name: 'Buscar repuestos' })).toHaveValue('');
+        expect(screen.getByText('Filtro de aceite')).toBeInTheDocument();
+        expect(screen.getByText('Bujías')).toBeInTheDocument();
+    });
+
+    it('muestra un guion cuando el repuesto no tiene umbral efectivo', async () => {
+        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(
+            pagina([repuesto({ repuestoId: 9, nombre: 'Sin umbral', umbralEfectivo: null, umbralParticular: null })])
+        );
+
+        render(<AdminInventoryPage />);
+
+        expect(await screen.findByText('Sin umbral')).toBeInTheDocument();
+        expect(screen.getByText('-')).toBeInTheDocument();
+    });
 });

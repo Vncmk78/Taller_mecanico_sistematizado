@@ -136,4 +136,23 @@ describe('AdminDistributorsPage: listado y estados', () => {
 
         expect(await screen.findByText(/El catálogo tiene 512 distribuidores/)).toBeInTheDocument();
     });
+
+    it('consulta el servicio una sola vez al montar', async () => {
+        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+
+        render(<AdminDistributorsPage />);
+
+        await screen.findByText('Repuestos del Sur');
+        expect(proveedorService.getProveedores).toHaveBeenCalledTimes(1);
+        expect(proveedorService.getProveedores).toHaveBeenCalledWith({ limite: 200 });
+    });
+
+    it('muestra el contacto de cada distribuidor y su tipo', async () => {
+        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+
+        render(<AdminDistributorsPage />);
+
+        expect(await screen.findByText('ventas@delsur.cl')).toBeInTheDocument();
+        expect(screen.getByText('+56 9 8765 4321')).toBeInTheDocument();
+    });
 });

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Package, X } from 'lucide-react';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
+import { proveedorService } from '@/infrastructure/api/ProveedorService';
+import { RepuestoFormDialog } from '@/presentation/components/inventory/RepuestoFormDialog';
+import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
 import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import type { Repuesto } from '@/domain/entities/Repuesto';
+import type { Proveedor } from '@/domain/entities/Proveedor';
 import { InventoryToolbar } from '@/presentation/components/inventory/InventoryToolbar';
 import { StockStatusBadge } from '@/presentation/components/inventory/StockStatusBadge';
 import { getStockStatus, type StockFilter } from '@/presentation/utils/stockStatus';
@@ -47,6 +51,13 @@ export function AdminInventoryPage() {
     const [requestId, setRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [estado, setEstado] = useState<StockFilter>('todos');
+    const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+    const [formOpen, setFormOpen] = useState(false);
+    const [editing, setEditing] = useState<Repuesto | null>(null);
+    const [formError, setFormError] = useState<string | null>(null);
+    const [formSubmitting, setFormSubmitting] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<Repuesto | null>(null);
+    const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
     const loadRepuestos = useCallback(async () => {
         setStatus('loading');
@@ -74,8 +85,68 @@ export function AdminInventoryPage() {
         void loadRepuestos();
     }, [loadRepuestos]);
 
+    useEffect(() => {
+        void (async () => {
+            try {
+                const response = await proveedorService.getProveedores({ limite: 200 });
+                setProveedores(response.proveedores);
+            } catch {
+                setProveedores([]);
+            }
+        })();
+    }, []);
+
     const handleRetry = () => {
         void loadRepuestos();
+    };
+
+    const handleCreate = async (values: { proveedorId: number; nombre: string; stockInicial?: number; umbralParticular: number | null }) => {
+        setFormSubmitting(true);
+        setFormError(null);
+        try {
+            await repuestoService.createRepuesto(values);
+            setFormOpen(false);
+            setEditing(null);
+            await loadRepuestos();
+        } catch (err) {
+            setFormError(getApiErrorMessage(err, 'No se pudo crear el repuesto.'));
+        } finally {
+            setFormSubmitting(false);
+        }
+    };
+
+    const handleUpdate = async (values: { proveedorId: number; nombre: string; stockInicial?: number; umbralParticular: number | null }) => {
+        if (!editing) return;
+        setFormSubmitting(true);
+        setFormError(null);
+        try {
+            await repuestoService.updateRepuesto(editing.repuestoId, {
+                nombre: values.nombre,
+                proveedorId: values.proveedorId,
+                umbralParticular: values.umbralParticular,
+            });
+            setFormOpen(false);
+            setEditing(null);
+            await loadRepuestos();
+        } catch (err) {
+            setFormError(getApiErrorMessage(err, 'No se pudo actualizar el repuesto.'));
+        } finally {
+            setFormSubmitting(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!deleteTarget) return;
+        setDeleteSubmitting(true);
+        try {
+            await repuestoService.deleteRepuesto(deleteTarget.repuestoId);
+            setDeleteTarget(null);
+            await loadRepuestos();
+        } catch {
+            setDeleteTarget(null);
+        } finally {
+            setDeleteSubmitting(false);
+        }
     };
 
     const filteredRepuestos = useMemo(() => {
@@ -103,6 +174,9 @@ export function AdminInventoryPage() {
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Inventario</h2>
                     <p className="text-text-muted text-lg">Control de repuestos y stock del taller</p>
                 </div>
+                <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
+                    Nuevo repuesto
+                </Button>
                 {status === 'success' && (
                     <p className="text-sm text-text-muted" aria-live="polite">
                         {filteredRepuestos.length} de {total} repuestos
@@ -204,6 +278,7 @@ export function AdminInventoryPage() {
                                 <TableHeaderCell className="text-right">Stock actual</TableHeaderCell>
                                 <TableHeaderCell className="text-right">Umbral</TableHeaderCell>
                                 <TableHeaderCell className="text-center">Estado de stock</TableHeaderCell>
+                                <TableHeaderCell className="text-center">Acciones</TableHeaderCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -225,12 +300,36 @@ export function AdminInventoryPage() {
                                     <TableCell className="text-center">
                                         <StockStatusBadge repuesto={repuesto} />
                                     </TableCell>
+                                    <TableCell className="text-center">
+                                        <div className="flex justify-center gap-2">
+                                            <Button variant="secondary" onClick={() => { setEditing(repuesto); setFormError(null); setFormOpen(true); }}>Editar</Button>
+                                            <Button variant="danger" onClick={() => setDeleteTarget(repuesto)}>Eliminar</Button>
+                                        </div>
+                                    </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
                     </Table>
                 </div>
             )}
+
+            <RepuestoFormDialog
+                open={formOpen}
+                initial={editing}
+                proveedores={proveedores}
+                isSubmitting={formSubmitting}
+                error={formError}
+                onSubmit={editing ? handleUpdate : handleCreate}
+                onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
+            />
+            <ConfirmDialog
+                open={!!deleteTarget}
+                title="Eliminar repuesto"
+                description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
+                isLoading={deleteSubmitting}
+                onConfirm={handleDelete}
+                onCancel={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }

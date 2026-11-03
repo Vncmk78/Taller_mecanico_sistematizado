@@ -44,6 +44,29 @@ class ProveedorService implements ProveedorPort {
             proveedores: data.proveedores.map(mapProveedor),
         };
     }
+
+    async createProveedor(input: { nombre: string; contacto: string; tipoDistribuidor?: TipoDistribuidor }): Promise<Proveedor> {
+        const body: Record<string, unknown> = {
+            nombre: input.nombre,
+            contacto: input.contacto,
+        };
+        if (input.tipoDistribuidor) body.tipo_distribuidor = input.tipoDistribuidor;
+        const { data } = await apiClient.post<ProveedorApi>('/proveedores', body);
+        return mapProveedor(data);
+    }
+
+    async updateProveedor(id: number, input: { nombre?: string; contacto?: string; tipoDistribuidor?: TipoDistribuidor }): Promise<Proveedor> {
+        const body: Record<string, unknown> = {};
+        if (input.nombre !== undefined) body.nombre = input.nombre;
+        if (input.contacto !== undefined) body.contacto = input.contacto;
+        if (input.tipoDistribuidor !== undefined) body.tipo_distribuidor = input.tipoDistribuidor;
+        const { data } = await apiClient.patch<ProveedorApi>(`/proveedores/${id}`, body);
+        return mapProveedor(data);
+    }
+
+    async deleteProveedor(id: number): Promise<void> {
+        await apiClient.delete(`/proveedores/${id}`);
+    }
 }
 
 export const proveedorService = new ProveedorService();

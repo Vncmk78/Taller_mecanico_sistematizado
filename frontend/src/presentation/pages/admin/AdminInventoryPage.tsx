@@ -103,7 +103,9 @@ export function AdminInventoryPage() {
                         estado={estado}
                         onEstadoChange={setEstado}
                     />
-                    {hasActiveFilters && (
+                    {/* Con cero resultados el vacío ya ofrece "Limpiar filtros":
+                        no duplicamos el mismo nombre accesible en la barra. */}
+                    {hasActiveFilters && filteredRepuestos.length > 0 && (
                         <Button variant="secondary" onClick={clearFilters} className="gap-2">
                             <X className="w-4 h-4" aria-hidden />
                             Limpiar filtros

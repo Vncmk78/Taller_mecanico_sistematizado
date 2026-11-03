@@ -6,6 +6,7 @@ from typing import Protocol
 import httpx
 
 from services.ms2_taller.config import settings
+from services.ms2_taller.direccion_ms3 import cabeceras_para_ms3
 from shared.contratos_decisiones import (
     DisponibilidadRepuestosSolicitud,
     DisponibilidadRepuestosVerificada,
@@ -70,7 +71,7 @@ class VerificadorEnviosPresupuestoHttp:
         try:
             respuesta = httpx.get(
                 f"{self.url_base}/presupuestos/{presupuesto_id}/envio-inicial",
-                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+                headers=cabeceras_para_ms3(self.url_base, token), timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise ServicioPresupuestosNoDisponibleError("No fue posible consultar MS3") from exc
@@ -102,7 +103,7 @@ class VerificadorDecisionesHttp:
         try:
             respuesta = httpx.get(
                 f"{self.url_base}/presupuestos/decisiones/{decision_id}",
-                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+                headers=cabeceras_para_ms3(self.url_base, token), timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise ServicioPresupuestosNoDisponibleError("No fue posible consultar MS3") from exc
@@ -130,7 +131,7 @@ class VerificadorAprobacionInicialHttp:
         try:
             respuesta = httpx.get(
                 f"{self.url_base}/presupuestos/ordenes/{orden_id}/primera-aprobacion",
-                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+                headers=cabeceras_para_ms3(self.url_base, token), timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise ServicioPresupuestosNoDisponibleError("No fue posible consultar MS3") from exc
@@ -172,7 +173,7 @@ class VerificadorDisponibilidadRepuestosHttp:
         try:
             respuesta = httpx.get(
                 f"{self.url_base}/inventario/ordenes/{orden_id}/disponibilidad/{clave_operacion}",
-                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+                headers=cabeceras_para_ms3(self.url_base, token), timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise ServicioPresupuestosNoDisponibleError(

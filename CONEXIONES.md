@@ -81,6 +81,13 @@ menos 32 caracteres para HS256. El secreto de eventos MS1↔MS2 es independiente
 del JWT y debe coincidir en ambos servicios. No dar las claves JWT o DSN a la
 Gateway. No copiar el `.env` completo a cada aplicación.
 
+En Vercel, MS2 → MS3 usa por defecto `https://<VERCEL_URL>/ms3` del mismo
+despliegue: omitir `MS2_MS3_URL` y habilitar variables de sistema. MS3 → MS2
+conserva su binding; añadir el inverso causa el error de ciclo del despliegue.
+Si el dominio está protegido, configurar Protection Bypass for Automation en
+el panel; MS2 utiliza el secreto de plataforma solo para ese destino, junto al
+JWT original. En Kubero mantener las URLs internas explícitas de la tabla.
+
 Bases separadas: `taller_ms1`, `taller_ms2`, `taller_ms3`, `taller_ms4`.
 Usar usuarios con acceso únicamente a su base y el modo TLS indicado por la UCT:
 

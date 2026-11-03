@@ -686,3 +686,53 @@ def test_cancelacion_cliente_y_mecanico_no_pueden_confirmar_ni_listar_pendientes
     assert flujo.ms2.post(f"{ruta}/confirmacion", headers=headers).status_code == 403
     assert flujo.ms2.get("/ordenes/cancelaciones/pendientes", headers=headers).status_code == 403
     assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+
+
+def _usar_ingreso_publico_ms3(monkeypatch, *, protegido=False):
+    """Simula solo el ingreso de Vercel; las APIs y bases de MS2/MS3 siguen siendo reales."""
+    from services.ms2_taller.direccion_ms3 import url_ms3_por_defecto
+
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("VERCEL_URL", "taller-preview.vercel.app")
+    base = url_ms3_por_defecto()
+    monkeypatch.setattr(settings_ms2, "MS3_URL", base)
+    transporte = httpx.get
+    llamadas = []
+
+    def get(url, *, headers, timeout):
+        if url.startswith(base + "/"):
+            llamadas.append((url, headers))
+            if protegido and headers.get("x-vercel-protection-bypass") != "secreto-plataforma-prueba":
+                return httpx.Response(401)
+            url = "http://ms3-prueba" + url.removeprefix(base)
+        return transporte(url, headers=headers, timeout=timeout)
+
+    monkeypatch.setattr(httpx, "get", get)
+    return llamadas
+
+
+@pytest.mark.parametrize("protegido", [False, True])
+def test_envio_y_decision_completan_el_flujo_con_ms3_por_https_publico(flujo, monkeypatch, protegido):
+    monkeypatch.delenv("VERCEL_AUTOMATION_BYPASS_SECRET", raising=False)
+    if protegido:
+        monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "secreto-plataforma-prueba")
+    llamadas = _usar_ingreso_publico_ms3(monkeypatch, protegido=protegido)
+    enviada = _enviar_presupuesto_inicial(flujo)
+    assert enviada.status_code == 200, enviada.text
+    aprobada = _decidir(flujo)
+    assert aprobada.status_code == 201, aprobada.text
+    estado, historial = _estado_y_historial(flujo)
+    assert estado == EN_REPARACION
+    assert [(h.estado_anterior, h.estado_nuevo) for h in historial] == [(2, 3), (3, 5)]
+    assert llamadas
+    assert all(headers["Authorization"].startswith("Bearer ") for _, headers in llamadas)
+    assert "secreto-plataforma-prueba" not in enviada.text + aprobada.text
+
+
+def test_proteccion_vercel_sin_credencial_no_omite_validacion_de_ms3(flujo, monkeypatch):
+    monkeypatch.delenv("VERCEL_AUTOMATION_BYPASS_SECRET", raising=False)
+    llamadas = _usar_ingreso_publico_ms3(monkeypatch, protegido=True)
+    r = _enviar_presupuesto_inicial(flujo)
+    assert r.status_code == 503
+    assert llamadas
+    assert _estado_y_historial(flujo) == (2, [])

@@ -127,8 +127,7 @@ export function useOrderListFilters(
     const changeSearch = useCallback(
         (value: string) => {
             if (syncWithUrl) {
-                setSearchUrl(value);
-                setPageUrl(1);
+                setSearchUrl(value, { [pageKey]: null });
             } else if (persistInStorage) {
                 setSearchStored(value);
                 setPageStored(1);
@@ -137,13 +136,12 @@ export function useOrderListFilters(
                 setPageState(1);
             }
         },
-        [syncWithUrl, persistInStorage, setSearchUrl, setPageUrl, setSearchStored, setPageStored]
+        [syncWithUrl, persistInStorage, setSearchUrl, pageKey, setSearchStored, setPageStored]
     );
     const changeEstado = useCallback(
         (value: OrderEstadoFilter) => {
             if (syncWithUrl) {
-                setEstadoUrl(value);
-                setPageUrl(1);
+                setEstadoUrl(value, { [pageKey]: null });
             } else if (persistInStorage) {
                 setEstadoStored(value);
                 setPageStored(1);
@@ -152,7 +150,7 @@ export function useOrderListFilters(
                 setPageState(1);
             }
         },
-        [syncWithUrl, persistInStorage, setEstadoUrl, setPageUrl, setEstadoStored, setPageStored]
+        [syncWithUrl, persistInStorage, setEstadoUrl, pageKey, setEstadoStored, setPageStored]
     );
 
     const setPageSafe = useCallback(
@@ -171,8 +169,7 @@ export function useOrderListFilters(
         (nextSize: number) => {
             const size = (ORDER_PAGE_SIZES as readonly number[]).includes(nextSize) ? nextSize : DEFAULT_PAGE_SIZE;
             if (syncWithUrl) {
-                setPageSizeUrl(size);
-                setPageUrl(1);
+                setPageSizeUrl(size, { [pageKey]: null });
             } else if (persistInStorage) {
                 setPageSizeStored(size);
                 setPageStored(1);
@@ -181,15 +178,12 @@ export function useOrderListFilters(
                 setPageState(1);
             }
         },
-        [syncWithUrl, persistInStorage, setPageSizeUrl, setPageUrl, setPageSizeStored, setPageStored]
+        [syncWithUrl, persistInStorage, setPageSizeUrl, pageKey, setPageSizeStored, setPageStored]
     );
 
     const resetFilters = useCallback(() => {
         if (syncWithUrl) {
-            setSearchUrl('');
-            setEstadoUrl('all');
-            setPageUrl(1);
-            setPageSizeUrl(DEFAULT_PAGE_SIZE);
+            setSearchUrl('', { [estadoKey]: null, [pageKey]: null, [pageSizeKey]: null });
             return;
         }
         if (persistInStorage) {
@@ -203,7 +197,7 @@ export function useOrderListFilters(
         setEstadoState('all');
         setPageState(1);
         setPageSizeState(DEFAULT_PAGE_SIZE);
-    }, [syncWithUrl, persistInStorage, setSearchUrl, setEstadoUrl, setPageUrl, setPageSizeUrl, setSearchStored, setEstadoStored, setPageStored, setPageSizeStored]);
+    }, [syncWithUrl, persistInStorage, setSearchUrl, estadoKey, pageKey, pageSizeKey, setSearchStored, setEstadoStored, setPageStored, setPageSizeStored]);
 
     const filteredOrders = useMemo(() => {
         const term = search.trim().toLowerCase();

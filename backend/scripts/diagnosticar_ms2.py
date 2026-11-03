@@ -32,10 +32,12 @@ COLUMNAS = {
     "estado_orden": frozenset({"estado_codigo", "nombre"}),
     "historial_estado": frozenset(
         "historial_id orden_id estado_anterior estado_nuevo actor_usuario_id origen "
-        "fecha_hora observacion decision_presupuesto_id envio_presupuesto_id".split()
+        "fecha_hora observacion decision_presupuesto_id envio_presupuesto_id "
+        "disponibilidad_repuestos_clave_operacion".split()
     ),
     "historial_asignacion": frozenset(
-        "orden_id mecanico_anterior_id mecanico_nuevo_id administrador_id".split()
+        "asignacion_id orden_id mecanico_anterior_id mecanico_nuevo_id administrador_id "
+        "fecha_hora observacion".split()
     ),
     "bitacora_orden": frozenset(
         "bitacora_id orden_id autor_usuario_id tipo descripcion creado_en".split()

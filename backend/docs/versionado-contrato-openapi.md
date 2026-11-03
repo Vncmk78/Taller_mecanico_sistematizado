@@ -54,6 +54,28 @@ mano: `python scripts/exportar_openapi.py --verificar`.
 
 ## 4. Historial
 
+### 2.0.1 — Campos que siempre vienen, publicados como obligatorios
+
+PATCH: no cambia ninguna respuesta, solo documenta lo que ya pasaba. Cierra la
+diferencia D-02 de `diferencias-contrato-consumo-real.md`.
+
+| Esquema | Campos que pasan a obligatorios |
+|---|---|
+| `TokenRespuesta` (login) | `token_type` |
+| `BitacoraRespuesta` | `repuestos` (`[]` en una observación) |
+| `ResultadoOperacion` (envío y decisión de presupuesto) | `efecto_en_orden`, `repuestos_faltantes`, `repuestos_reservados`, `decision_id`, `aplicacion_en_orden` (pueden valer `null`, pero siempre vienen) |
+
+Los modelos de respuesta declaran `json_schema_serialization_defaults_required=True`
+en MS1, MS2, MS3 y en sus copias de `gateway/contratos/`. La Gateway publica como
+obligatorios los campos con valor por defecto de esos modelos
+(`_exigir_campos_siempre_serializados` en `gateway/openapi.py`), y el OpenAPI de
+cada microservicio también.
+
+`backend/requirements.txt` fija `pydantic>=2.12,<2.14`: el JSON Schema de los
+`Decimal` cambia entre versiones de pydantic (2.12 y 2.13 publican `pattern`,
+2.14 no), y sin ese rango la copia congelada no se podía reproducir en todos los
+equipos.
+
 ### 2.0.0 — Validación de destinos y órdenes antes de escribir
 
 Definición de seguridad confirmada por Martín el 3 de noviembre de 2026.

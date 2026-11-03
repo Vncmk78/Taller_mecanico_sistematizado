@@ -67,7 +67,48 @@ para Administrador, que ve todos. Mecánico debe consultar
 `GET /api/vehiculos/asignados`, que lista vehículos con órdenes actualmente
 asignadas a ese mecánico.
 
-## 3. Consultar historial de órdenes de un vehículo
+## 3. Listar órdenes del mecánico y consultar su detalle
+
+```http
+GET /api/ordenes
+Authorization: Bearer <jwt del mecánico>
+```
+
+MS2 obtiene la identidad desde el JWT y devuelve solo las órdenes actualmente
+asignadas al Mecánico. No se envía un `mecanico_id` elegido por la aplicación.
+Administrador puede ver todas y Cliente solo las de sus vehículos. Una lista
+vacía válida responde `200 []`; un `500` nunca debe interpretarse como lista
+vacía.
+
+Ejemplo de respuesta `200`:
+
+```json
+[
+  {
+    "orden_id": 31,
+    "vehiculo_id": 12,
+    "ingreso_id": 18,
+    "estado_codigo": 5,
+    "mecanico_actual_id": 50,
+    "creado_por_id": 99,
+    "creado_en": "2026-09-28T10:30:00-03:00",
+    "actualizado_en": "2026-09-28T12:35:00-03:00"
+  }
+]
+```
+
+Para abrir esa orden:
+
+```http
+GET /api/ordenes/31
+Authorization: Bearer <jwt del mecánico>
+```
+
+Devuelve `200` con el objeto de orden (sin la lista). Una orden inexistente o
+ajena devuelve `404`. La aplicación debe usar `orden_id` para abrir el detalle
+y `estado_codigo` para interpretar el catálogo de estados.
+
+## 4. Consultar historial de órdenes de un vehículo
 
 ```http
 GET /api/ordenes/vehiculo/12/historial?limit=20&offset=0
@@ -106,7 +147,7 @@ propios; Mecánico solo órdenes actualmente asignadas a él; Administrador ve
 cualquier vehículo existente. El cliente móvil debe poder tratar el mismo
 `404` para recurso inexistente y recurso sin autorización.
 
-## 4. Estados de la orden
+## 5. Estados de la orden
 
 `estado_codigo` es un código entero del catálogo de MS2, no texto libre:
 
@@ -127,7 +168,35 @@ estado desde el cliente: MS2 valida transiciones y hechos de negocio; usar la
 operación específica documentada para cada acción. `Entregado` y `Cancelado`
 son terminales.
 
-## 5. Errores y compatibilidad
+## 6. Finalizar el trabajo del mecánico
+
+Cuando la orden está `En reparación` (`estado_codigo=5`), el Mecánico asignado
+puede registrar que quedó `Listo` (`6`):
+
+```http
+PATCH /api/ordenes/31/estado
+Authorization: Bearer <jwt del mecánico asignado>
+Content-Type: application/json
+```
+
+```json
+{
+  "estado_destino": 6,
+  "observacion": "Trabajo autorizado finalizado"
+}
+```
+
+La respuesta `200` conserva el contrato de orden con `estado_codigo=6`; MS2
+guarda el actor autenticado y el cambio en el historial dentro de la misma
+transacción. Sin el rol o la asignación requeridos responde `403`; si la
+transición no corresponde al estado actual, `409`.
+
+No existe una actualización genérica `PUT/PATCH /api/ordenes/{orden_id}`.
+Asignación, decisiones de presupuesto, entrega y cancelación tienen operaciones
+específicas en el contrato completo. No enviar el objeto de orden completo ni
+atribuir el cambio con un actor elegido por la aplicación.
+
+## 7. Errores y compatibilidad
 
 - `401`: sesión ausente, expirada o inválida; renovar/iniciar sesión según el
   flujo de la aplicación.

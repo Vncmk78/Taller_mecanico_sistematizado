@@ -73,6 +73,19 @@ JSON es <http://localhost:8000/openapi.json>. Además de los esquemas, el esquem
 publica **un ejemplo real por body y por respuesta**, para que el frontend y la
 app móvil puedan copiar un payload sin inventarlo.
 
+### Cobertura (Semana 7)
+
+El Swagger de la Gateway documenta **todos** los endpoints de negocio de los
+cuatro microservicios (71 operaciones): MS1 completo (incluida la gestión de
+usuarios y roles), MS2 completo (incluida la coordinación
+`POST /api/ordenes/{orden_id}/envios-presupuesto`), MS3 completo (presupuestos,
+repuestos, proveedores e inventario, ver la sección de MS3 más abajo) y MS4.
+`tests/test_gateway_openapi.py::test_cada_endpoint_de_los_cuatro_microservicios_esta_documentado`
+lee el OpenAPI real de los cuatro apps y falla si un endpoint queda sin
+documentar o si se documenta uno que no existe. Los contratos de MS3 son copias
+en `gateway/contratos/{presupuestos,catalogo,inventario}.py` y otra prueba
+compara sus campos y obligatoriedad con los modelos reales de MS3.
+
 ### Respuestas reutilizables
 
 `components.responses` publica las respuestas que se repiten en todas las
@@ -194,6 +207,45 @@ Estados por servicio:
   `codigo_http`.
 - `tiempo_agotado` — superó el timeout de 2 s.
 - `caido` — sin conexión (servicio apagado o no arrancado).
+
+### GET `/api/health/servicios/{servicio}` (diagnóstico, Semana 7)
+
+Diagnóstico de **un** microservicio (`ms1_auth`, `ms2_taller`,
+`ms3_presupuestos` o `ms4_evidencias`). Comprueba en paralelo y por separado:
+
+| Comprobación | Camino interno | Servicios |
+|---|---|---|
+| `proceso` | `/health` | Los cuatro |
+| `base` | `/health/db` | Los cuatro |
+| `almacenamiento` | `/health/storage` (MinIO/S3) | Solo `ms4_evidencias` |
+
+```json
+{
+  "servicio": "ms3_presupuestos",
+  "descripcion": "Presupuestos, Repuestos, Proveedores e Inventario",
+  "estado": "degradado",
+  "comprobaciones": {
+    "proceso": { "estado": "ok", "latencia_ms": 3 },
+    "base": { "estado": "error", "latencia_ms": 15, "codigo_http": 500 }
+  },
+  "prefijos": ["/api/inventario", "/api/presupuesto", "/api/presupuestos", "/api/proveedores", "/api/repuestos"],
+  "timeouts": { "conexion": 3.0, "lectura": 15.0, "escritura": 15.0, "health": 2.0 },
+  "comprobado_en": "2026-10-31T23:40:00+00:00"
+}
+```
+
+- Estado de cada comprobación: `ok`, `error` (respondió con otro código; trae
+  `codigo_http`), `tiempo_agotado` o `caido`.
+- `estado` general: `ok` (todo responde, `200`), `degradado` (el proceso vive
+  pero falla la base o el almacenamiento, `503`) o `caido` (ni el proceso
+  responde, `503`).
+- `timeouts` son los que la Gateway aplica a ese servicio (incluye
+  `GATEWAY_MS<n>_TIMEOUT_SECONDS` si está definido).
+- Un nombre desconocido responde `404 RUTA_NO_ENCONTRADA` sin consultar a nadie.
+- `Cache-Control: no-store`; no expone URLs internas (el detalle queda en el log).
+
+Uso típico ante un `502`/`504`: consultar el diagnóstico del servicio que
+aparece en el log de la Gateway para saber si cayó el proceso o una dependencia.
 
 ## Rutas de Presupuestos y Evidencias
 
@@ -1377,6 +1429,52 @@ Pruebas que respaldan este contrato: `tests/test_ms4_api_evidencias.py`,
 `tests/test_gateway_evidencias.py` y `tests/test_gateway_openapi_evidencias.py`
 (los ejemplos del Swagger se comparan con las respuestas reales de MS4).
 
+## Presupuestos, repuestos, proveedores e inventario (MS3)
+
+Todas exigen `Authorization: Bearer <jwt>`. Los esquemas completos, ejemplos y
+errores de cada operación están en `/docs` (tags **Presupuestos**,
+**Repuestos**, **Proveedores** e **Inventario**); la documentación vive en
+`gateway/openapi_ms3.py`. Dinero y cantidades de ítems viajan como texto
+(`"38990.00"`) para no perder precisión.
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| `POST` | `/api/presupuestos` | Mecánico, Administrador | Crea el presupuesto de una orden con su versión 1 en borrador |
+| `GET` | `/api/presupuestos` | Todos (Cliente con `orden_id` propia) | Lista paginada o búsqueda por `orden_id` |
+| `GET` | `/api/presupuestos/ordenes/{orden_id}/primera-aprobacion` | Administrador, Cliente propietario | ¿La orden tiene aprobación inicial persistida? |
+| `GET` | `/api/presupuestos/{presupuesto_id}` | Todos (Cliente: solo versiones enviadas) | Detalle con versiones |
+| `GET` | `/api/presupuestos/{presupuesto_id}/versiones/{numero}` | Todos | Una versión con ítems y decisión |
+| `POST` | `/api/presupuestos/{presupuesto_id}/versiones` | Mecánico, Administrador | Nueva versión sin tocar las anteriores |
+| `PUT` | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/items` | Mecánico, Administrador | Reemplaza los ítems de un borrador |
+| `POST` | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/envio` | Administrador | Envía al cliente (congela la versión; coordina con MS2) |
+| `GET` | `/api/presupuestos/{presupuesto_id}/envio-inicial` | MS2 con el JWT original | Verifica el envío inicial |
+| `POST` | `/api/presupuestos/{presupuesto_id}/envio-inicial/aplicacion` | Administrador | Reintenta aplicar el envío inicial en MS2 |
+| `POST` | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/decision` | Cliente dueño | Aprueba o rechaza la versión enviada |
+| `GET` | `/api/presupuestos/decisiones/{decision_id}` | Cliente responsable | Hecho persistido de una decisión |
+| `POST` | `/api/presupuestos/decisiones/{decision_id}/aplicacion` | Cliente responsable | Reintenta aplicar la decisión en MS2 |
+| `GET`, `POST` | `/api/repuestos` | Consulta: Mecánico, Administrador · Alta: Administrador | Catálogo con stock y umbral |
+| `GET`, `PATCH`, `DELETE` | `/api/repuestos/{repuesto_id}` | Ídem | Detalle, cambio de nombre/proveedor/umbral, baja sin historial |
+| `GET` | `/api/repuestos/{repuesto_id}/trazabilidad` | Mecánico, Administrador | Proveedores, ingresos y uso por orden |
+| `GET`, `POST` | `/api/proveedores` | Consulta: Mecánico, Administrador · Alta: Administrador | Proveedores |
+| `GET`, `PATCH`, `DELETE` | `/api/proveedores/{proveedor_id}` | Ídem | Detalle con repuestos, cambios, baja sin repuestos |
+| `GET` | `/api/proveedores/{proveedor_id}/trazabilidad` | Mecánico, Administrador | Repuestos abastecidos y unidades |
+| `POST`, `GET` | `/api/inventario/movimientos` | Ingreso/ajuste: Administrador · compromiso/consumo/liberación: Mecánico, Administrador | Movimiento idempotente por `clave_operacion` y listado |
+| `GET` | `/api/inventario/stock/{repuesto_id}` | Mecánico, Administrador | Stock, comprometido y disponible |
+| `GET` | `/api/inventario/alertas` | Mecánico, Administrador | Repuestos bajo su umbral |
+| `GET`, `PUT` | `/api/inventario/umbral-general` | Consulta: Mecánico, Administrador · cambio: Administrador | Umbral general |
+| `GET` | `/api/inventario/historial-umbral` | Mecánico, Administrador | Cambios de umbral |
+| `POST` | `/api/inventario/disponibilidad` | Mecánico, Administrador | ¿Alcanza el stock? (no mueve stock) |
+| `GET` | `/api/inventario/ordenes/{orden_id}/disponibilidad` | Mecánico, Administrador | Stock para lo pendiente del presupuesto aprobado |
+| `POST` | `/api/inventario/ordenes/{orden_id}/reserva` | Mecánico, Administrador | Reserva todo o nada |
+| `POST` | `/api/inventario/ordenes/{orden_id}/consumos` | Mecánico, Administrador | Descuenta repuestos usados (todo o nada, idempotente) |
+| `POST` | `/api/inventario/ordenes/{orden_id}/liberacion` | Mecánico, Administrador | Libera lo reservado |
+
+El `503` de las operaciones que validan la orden en MS2 (listado, detalle,
+versiones, primera aprobación, envío y decisión) puede venir de MS3
+(`{"detail": ...}` o el cuerpo de aplicación pendiente con su ruta de
+reintento) o de la Gateway (`GATEWAY_SATURADA`); el OpenAPI publica ambos. El
+`409` por stock insuficiente trae `faltantes` por repuesto (`RechazoStock`).
+
 ## Contratos todavía no publicados
 
 Las siguientes capacidades no tienen un endpoint implementado y no deben ser
@@ -1386,7 +1484,7 @@ consumidas como parte del contrato actual:
 |---|---|
 | Máximo de órdenes activas por mecánico | Implementado en MS2; GET/PUT de configuración y validación en asignación |
 | Cupo diario de ingresos físicos | Implementado en MS2; GET/PUT de configuración diaria y validación concurrente al registrar un ingreso nuevo |
-| Presupuestos, repuestos e inventario | Los contratos de MS3 se publicarán cuando sus endpoints estén definidos y verificados |
+| Presupuestos, repuestos e inventario | Publicados en la Semana 7 (sección MS3 y `/docs`) |
 
 El frontend web y la aplicación móvil deben consumir exclusivamente las rutas
 publicadas por la API Gateway con prefijo `/api`. La existencia de una llamada o

@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from gateway.config import settings
 from gateway.esquemas import DetalleError, ErrorRespuesta
 
 logger = logging.getLogger("gateway")
@@ -73,6 +74,11 @@ MENSAJE_GATEWAY_SATURADA = "La Gateway está ocupada. Intente más tarde."
 MENSAJE_ERROR_MICROSERVICIO = "El servicio respondió con un error inesperado."
 MENSAJE_CONTENT_LENGTH_INVALIDA = "La cabecera Content-Length es inválida"
 
+# Estados de "no disponible por ahora": se acompañan de `Retry-After` (RFC 9110
+# §10.2.3) para que web y móvil sepan cuánto esperar antes de reintentar un
+# GET (decisión R3 de estudio-resiliencia-timeouts-retries.md).
+ESTADOS_REINTENTABLES = frozenset({502, 503, 504})
+
 
 def mapear_error_httpx(exc: httpx.RequestError) -> tuple[int, str, str]:
     """Mapea un fallo de red de HTTPX a `(estado, código, detalle)`.
@@ -107,6 +113,12 @@ def respuesta_error(
     El `request_id` se agrega aquí (y no solo en el middleware) porque el
     manejador HTTP corre fuera de la cadena de middlewares y el middleware no
     alcanzaría a inyectarle la cabecera.
+
+    Cabeceras estándar de todo error de la Gateway (Semana 7):
+    - `X-Request-ID`: para rastrear la petición.
+    - `Cache-Control: no-store`: un error transitorio no se debe cachear.
+    - `Retry-After` (solo 502, 503 y 504): segundos sugeridos antes de
+      reintentar (`GATEWAY_RETRY_AFTER_SECONDS`).
     """
     request_id = _request_id(request)
     cuerpo = ErrorRespuesta(
@@ -118,10 +130,13 @@ def respuesta_error(
             request_id=request_id,
         ),
     )
+    cabeceras = {"X-Request-ID": request_id, "Cache-Control": "no-store"}
+    if estado in ESTADOS_REINTENTABLES:
+        cabeceras["Retry-After"] = str(settings.RETRY_AFTER_SECONDS)
     return JSONResponse(
         status_code=estado,
         content=cuerpo.model_dump(),
-        headers={"X-Request-ID": request_id},
+        headers=cabeceras,
     )
 
 

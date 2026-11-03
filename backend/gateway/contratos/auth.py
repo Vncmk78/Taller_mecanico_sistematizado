@@ -95,6 +95,20 @@ class LoginSolicitud(BaseModel):
     )
 
 
+class RolAsignarSolicitud(BaseModel):
+    """Asignación de un rol restringido a un usuario existente (solo Administrador).
+
+    Un rol desconocido responde `422` en MS1 sin llegar al caso de uso.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"rol": "mecanico"}]},
+    )
+
+    rol: Rol = Field(description="Rol a asignar.", examples=["mecanico"])
+
+
 class UsuarioRespuesta(BaseModel):
     """Representación de un usuario expuesta por la API."""
 

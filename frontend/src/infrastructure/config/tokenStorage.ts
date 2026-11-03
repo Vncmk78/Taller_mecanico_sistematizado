@@ -11,7 +11,3 @@ export function setToken(token: string): void {
 export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
-
-export function hasToken(): boolean {
-  return localStorage.getItem(TOKEN_KEY) !== null;
-}

@@ -18,13 +18,14 @@ Web / Móvil ──► API Gateway (:8000) ──► MS1 Auth/Usuarios  (:8001)
 gateway/
 ├── main.py          Crea la app, configura CORS, middleware y handlers
 ├── config.py        Variables de entorno (prefijo GATEWAY_)
-├── rutas.py         Tabla de enrutamiento: prefijo -> microservicio
+├── rutas.py         Catálogo de los 4 microservicios y tabla prefijo -> microservicio
 ├── esquemas.py      Modelos Pydantic del formato común (errores)
 ├── errores.py       Formato común de errores + middleware del 500 (dentro de CORS)
 ├── middleware.py    Cabecera X-Request-ID en cada petición
 ├── openapi.py       Reescribe el Swagger con los contratos reales de MS1, MS2 y MS4
+├── openapi_ms3.py   Documentación de MS3 (presupuestos, repuestos, proveedores, inventario)
 ├── openapi_ejemplos.py Ejemplos reales, respuestas comunes y X-Request-ID
-├── contratos/       Copias de los contratos HTTP de MS1, MS2 y MS4 (para documentar)
+├── contratos/       Copias de los contratos HTTP de MS1..MS4 (para documentar)
 └── routers/
     ├── health.py    GET /  y  GET /api/health (endpoints propios de la Gateway)
     └── proxy.py     Reenvío de /api/* hacia los microservicios
@@ -32,8 +33,11 @@ gateway/
 
 ## Documentación
 
-El Swagger de la Gateway publica los contratos reales que enruta (Auth,
-Vehículos, Órdenes y Evidencias), con sus esquemas, ejemplos y el botón Authorize:
+El Swagger de la Gateway publica los contratos reales que enruta de los cuatro
+microservicios (Autenticación, Usuarios, Vehículos, Órdenes, Presupuestos,
+Repuestos, Proveedores, Inventario y Evidencias), con sus esquemas, ejemplos y el
+botón Authorize. Desde la Semana 7 cubre las 71 operaciones de negocio y una
+prueba lo compara con el OpenAPI real de MS1..MS4:
 
 - `GET /docs` — Swagger UI.
 - `GET /openapi.json` — esquema OpenAPI completo.
@@ -51,8 +55,8 @@ esquema.
 
 Los contratos viven en `gateway/contratos/` (la Gateway no importa código de
 los microservicios). `tests/test_gateway_openapi.py` compara esas copias con
-los esquemas reales de MS1 y MS2: si alguien cambia un campo, el test falla y
-avisa que la documentación quedó desactualizada.
+los esquemas reales de MS1, MS2, MS3 y MS4: si alguien cambia un campo, el test
+falla y avisa que la documentación quedó desactualizada.
 
 ## Cómo se enruta
 
@@ -79,6 +83,29 @@ prefijos (`presupuestos`, `repuestos`, `proveedores`, `inventario`) y MS4 todo
 bajo `evidencias`, nunca bajo `/ordenes/...` (ver
 [`docs/contratos-api-gateway.md`](../docs/contratos-api-gateway.md)).
 
+### Catálogo de microservicios (Semana 7)
+
+`rutas.py` define el catálogo `MICROSERVICIOS`: por cada servicio, su nombre
+público (`ms1_auth`, `ms2_taller`, `ms3_presupuestos`, `ms4_evidencias`), su
+URL interna, los **prefijos que publica** y los **alias** heredados. Es la
+única fuente del direccionamiento: de ahí salen la tabla `RUTAS` del proxy, la
+lista de servicios de `/api/health/servicios` y el índice `/`. Si un prefijo
+quedara asignado a dos servicios, la Gateway no arranca.
+
+| Servicio | Prefijos publicados | Alias heredados |
+|---|---|---|
+| `ms1_auth` | `auth` | — |
+| `ms2_taller` | `vehiculos`, `ordenes` | `vehiculo`, `orden`, `clientes`, `mecanicos` |
+| `ms3_presupuestos` | `presupuestos`, `repuestos`, `proveedores`, `inventario` | `presupuesto` |
+| `ms4_evidencias` | `evidencias` | `evidencia` |
+
+Los alias se reenvían al mismo servicio; como el servicio no publica rutas bajo
+ellos, la respuesta es el `404` del propio microservicio (no
+`RUTA_NO_ENCONTRADA`). `tests/test_gateway_direccionamiento.py` lee el OpenAPI
+de los cuatro apps reales y comprueba que **cada endpoint** publicado resuelve
+al servicio correcto, que los prefijos del catálogo coinciden exactamente con
+los publicados y que el proxy reenvía método, ruta y query a la URL interna.
+
 ## Formato común
 
 Contrato único de solicitudes, respuestas y errores de la Gateway.
@@ -103,7 +130,11 @@ Contrato único de solicitudes, respuestas y errores de la Gateway.
 El reenvío usa un único cliente HTTPX compartido (`gateway/cliente_http.py`),
 creado de forma perezosa y cerrado en el lifespan de la app, con timeouts por
 fase (conectar 3 s, leer/escribir 15 s, pool 5 s). El prefijo `evidencias` usa
-read/write de 60 s porque sube archivos. Los fallos de red se mapean según la
+read/write de 60 s porque sube archivos. Desde la Semana 7 cada servicio puede
+tener su propio read/write (`GATEWAY_MS<n>_TIMEOUT_SECONDS`, ver
+`docs/estudio-resiliencia-timeouts-retries.md`); el log de cada fallo de red
+nombra el servicio (`ms3_presupuestos`), la excepción y el timeout aplicado,
+nunca la URL interna. Los fallos de red se mapean según la
 decisión 2 del estudio: `ConnectError`/`ConnectTimeout` → 502,
 `Read/WriteTimeout` → 504 y `PoolTimeout` → 503.
 
@@ -151,6 +182,12 @@ este cuerpo:
 Los detalles de la Gateway están en español ("Ruta no encontrada",
 "Método no permitido", etc.) para que el frontend los muestre tal cual.
 
+Cabeceras estándar de los errores de la Gateway (Semana 7): `X-Request-ID`,
+`Cache-Control: no-store` y, en `502`, `503` y `504`, `Retry-After` con los
+segundos sugeridos antes de reintentar (`GATEWAY_RETRY_AFTER_SECONDS`). Web y
+móvil solo reintentan automáticamente un `GET` (máximo 2 veces, respetando
+`Retry-After`); nunca una escritura.
+
 El 500 se genera en `ManejoErroresMiddleware`, montado **por dentro de CORS**
 (orden: `RequestId -> CORS -> ManejoErrores`): así la respuesta de error sale
 con `Access-Control-Allow-Origin` y `X-Request-ID`, igual que cualquier otra
@@ -168,6 +205,7 @@ uvicorn gateway.main:app --reload --port 8000
 - `GET http://localhost:8000/` — descripción y prefijos `/api/*` que enruta.
 - `GET http://localhost:8000/api/health` — `{"status": "ok", "servicio": "gateway"}`.
 - `GET http://localhost:8000/api/health/servicios` — estado de los 4 microservicios.
+- `GET http://localhost:8000/api/health/servicios/ms3_presupuestos` — diagnóstico de uno.
 - `http://localhost:8000/docs` — Swagger de la Gateway.
 
 ## Health checks
@@ -199,7 +237,18 @@ Responde `200` con `"status": "ok"` si los cuatro están `ok`, y `503` con
 Toda respuesta trae `Cache-Control: no-store` y `X-Request-ID`; el body no
 expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 
+- `GET /api/health/servicios/{servicio}` (Semana 7) — diagnóstico de un solo
+  servicio: comprueba por separado `proceso` (`/health`), `base`
+  (`/health/db`) y, en MS4, `almacenamiento` (`/health/storage`), con la
+  latencia de cada una, el timeout que la Gateway aplica al servicio y sus
+  prefijos. `estado` es `ok` (200), `degradado` (el proceso vive pero falla una
+  dependencia, 503) o `caido` (ni el proceso responde, 503). Las comprobaciones
+  posibles están en el catálogo de `rutas.py` (`comprobaciones`).
+
 ## Variables de entorno
+
+Referencia completa (incluye MS1..MS4, MinIO, frontend y quién llama a quién):
+[`docs/variables-entorno-y-direcciones.md`](../docs/variables-entorno-y-direcciones.md).
 
 | Variable | Por defecto | Uso |
 |---|---|---|
@@ -212,6 +261,8 @@ expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 | `GATEWAY_TIMEOUT_WRITE_SECONDS` | `15.0` | Espera al enviar el body (si no, 504) |
 | `GATEWAY_TIMEOUT_POOL_SECONDS` | `5.0` | Espera por una conexión libre del pool (si no, 503) |
 | `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` | `60.0` | read/write ampliados para el prefijo `evidencias` |
+| `GATEWAY_MS1_TIMEOUT_SECONDS` … `GATEWAY_MS4_TIMEOUT_SECONDS` | (vacío) | read/write propios de cada servicio; tienen prioridad sobre los generales y sobre el de archivos (recomendado 10 / 15 / 15 / 60) |
+| `GATEWAY_RETRY_AFTER_SECONDS` | `5` | Valor de `Retry-After` en los `502`, `503` y `504` de la Gateway |
 | `GATEWAY_MAX_BODY_BYTES` | `1048576` | Límite de body (bytes) para los prefijos JSON (1 MiB); superarlo responde `413` |
 | `GATEWAY_MAX_BODY_ARCHIVOS_BYTES` | `12582912` | Límite de body (bytes) para `evidencias` (12 MiB: foto de 10 MB + margen del multipart) |
 | `GATEWAY_HEALTH_TIMEOUT_SECONDS` | `2.0` | Timeout por servicio en `GET /api/health/servicios` |
@@ -221,5 +272,5 @@ expone URLs internas (los detalles de cada fallo quedan en el log del servidor).
 ## Pruebas
 
 ```bash
-pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py tests/test_gateway_formato.py tests/test_gateway_openapi.py tests/test_gateway_evidencias.py -v
+pytest tests/test_gateway_estructura.py tests/test_gateway_rutas.py tests/test_gateway_direccionamiento.py tests/test_gateway_formato.py tests/test_gateway_openapi.py tests/test_gateway_evidencias.py -v
 ```

@@ -170,6 +170,12 @@ mecánico puede responder `409`. Preparar una orden visible para cada cuenta de
 prueba en staging para comprobar detalle/historial sin insertar datos durante
 la prueba de consultas. No copiar ni borrar datos de Neon como paso automático.
 
+> Referencia completa de todas las variables (Gateway, MS1..MS4, MinIO y
+> frontend) y de las direcciones internas entre servicios:
+> [`backend/docs/variables-entorno-y-direcciones.md`](backend/docs/variables-entorno-y-direcciones.md).
+
+En el proyecto de Vercel, configurar como Environment Variables (Production):
+
 ## 6. Verificación para la aplicación móvil
 
 Completar en el `.env` local las variables `GATEWAY_URL` y

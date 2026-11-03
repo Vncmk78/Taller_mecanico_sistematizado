@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { Order } from '@/domain/entities/Order';
+import { parseNumberOrDefault, parseStringOrDefault, serializeNumber, serializeString, useUrlState } from '@/presentation/hooks/useUrlState';
+import { usePersistentState } from '@/presentation/hooks/usePersistentState';
 
 export type OrderEstadoFilter = number | 'all';
 
@@ -24,6 +26,21 @@ interface UseOrderListFiltersResult {
     pageCount: number;
     rangeStart: number;
     rangeEnd: number;
+    /** Limpia filtros/paginación persistidos (URL o localStorage). */
+    resetFilters: () => void;
+}
+
+interface UseOrderListFiltersOptions {
+    /** Sincroniza search, estado, page y pageSize con la URL (query params). */
+    syncWithUrl?: boolean;
+    /** Clave base para los query params. Útil si hay varios listados en la misma ruta. */
+    urlKeyPrefix?: string;
+    /** Persiste filtros en localStorage cuando syncWithUrl=false. */
+    persistInStorage?: boolean;
+    /** Clave para localStorage/sessionStorage. */
+    storageKey?: string;
+    /** Tipo de storage al persistir localmente. */
+    storageType?: 'local' | 'session';
 }
 
 /**
@@ -34,22 +51,153 @@ interface UseOrderListFiltersResult {
  */
 export function useOrderListFilters(
     orders: Order[],
-    searchableFields: (order: Order) => string
+    searchableFields: (order: Order) => string,
+    options: UseOrderListFiltersOptions = {}
 ): UseOrderListFiltersResult {
-    const [search, setSearch] = useState('');
-    const [estadoCodigo, setEstadoCodigo] = useState<OrderEstadoFilter>('all');
-    const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+    const {
+        syncWithUrl = false,
+        urlKeyPrefix = '',
+        persistInStorage = true,
+        storageKey = 'tallerconect:orders-filters',
+        storageType = 'local',
+    } = options;
+
+    const searchKey = `${urlKeyPrefix}q`;
+    const estadoKey = `${urlKeyPrefix}estado`;
+    const pageKey = `${urlKeyPrefix}page`;
+    const pageSizeKey = `${urlKeyPrefix}pageSize`;
+
+    const [searchState, setSearchState] = useState('');
+    const [estadoState, setEstadoState] = useState<OrderEstadoFilter>('all');
+    const [pageState, setPageState] = useState(1);
+    const [pageSizeState, setPageSizeState] = useState(DEFAULT_PAGE_SIZE);
+
+    const [searchStored, setSearchStored] = usePersistentState<string>(`${storageKey}:search`, '', storageType);
+    const [estadoStored, setEstadoStored] = usePersistentState<OrderEstadoFilter>(`${storageKey}:estado`, 'all', storageType);
+    const [pageStored, setPageStored] = usePersistentState<number>(`${storageKey}:page`, 1, storageType);
+    const [pageSizeStored, setPageSizeStored] = usePersistentState<number>(`${storageKey}:pageSize`, DEFAULT_PAGE_SIZE, storageType);
+
+    const [searchUrl, setSearchUrl] = useUrlState(searchKey, {
+        defaultValue: '',
+        parse: parseStringOrDefault(''),
+        serialize: serializeString,
+        replace: true,
+    });
+    const [estadoUrl, setEstadoUrl] = useUrlState<OrderEstadoFilter>(estadoKey, {
+        defaultValue: 'all',
+        parse: (raw) => {
+            if (raw === null || raw === '' || raw === 'all') return 'all';
+            const parsed = Number(raw);
+            if (Number.isNaN(parsed)) return 'all';
+            return parsed;
+        },
+        serialize: (value) => {
+            if (value === 'all') return null;
+            return String(value);
+        },
+        replace: true,
+    });
+    const [pageUrl, setPageUrl] = useUrlState(pageKey, {
+        defaultValue: 1,
+        parse: parseNumberOrDefault(1),
+        serialize: serializeNumber,
+        replace: true,
+    });
+    const [pageSizeUrl, setPageSizeUrl] = useUrlState(pageSizeKey, {
+        defaultValue: DEFAULT_PAGE_SIZE,
+        parse: (raw) => {
+            const parsed = parseNumberOrDefault(DEFAULT_PAGE_SIZE)(raw);
+            if ((ORDER_PAGE_SIZES as readonly number[]).includes(parsed)) return parsed;
+            return DEFAULT_PAGE_SIZE;
+        },
+        serialize: (value) => {
+            if (value === DEFAULT_PAGE_SIZE) return null;
+            if ((ORDER_PAGE_SIZES as readonly number[]).includes(value)) return String(value);
+            return null;
+        },
+        replace: true,
+    });
+
+    const search = syncWithUrl ? searchUrl : persistInStorage ? searchStored : searchState;
+    const estadoCodigo = syncWithUrl ? estadoUrl : persistInStorage ? estadoStored : estadoState;
+    const page = syncWithUrl ? pageUrl : persistInStorage ? pageStored : pageState;
+    const pageSize = syncWithUrl ? pageSizeUrl : persistInStorage ? pageSizeStored : pageSizeState;
 
     // Cambiar un filtro reinicia la paginación desde la primera página.
-    const changeSearch = (value: string) => {
-        setSearch(value);
-        setPage(1);
-    };
-    const changeEstado = (value: OrderEstadoFilter) => {
-        setEstadoCodigo(value);
-        setPage(1);
-    };
+    const changeSearch = useCallback(
+        (value: string) => {
+            if (syncWithUrl) {
+                setSearchUrl(value, { [pageKey]: null });
+            } else if (persistInStorage) {
+                setSearchStored(value);
+                setPageStored(1);
+            } else {
+                setSearchState(value);
+                setPageState(1);
+            }
+        },
+        [syncWithUrl, persistInStorage, setSearchUrl, pageKey, setSearchStored, setPageStored]
+    );
+    const changeEstado = useCallback(
+        (value: OrderEstadoFilter) => {
+            if (syncWithUrl) {
+                setEstadoUrl(value, { [pageKey]: null });
+            } else if (persistInStorage) {
+                setEstadoStored(value);
+                setPageStored(1);
+            } else {
+                setEstadoState(value);
+                setPageState(1);
+            }
+        },
+        [syncWithUrl, persistInStorage, setEstadoUrl, pageKey, setEstadoStored, setPageStored]
+    );
+
+    const setPageSafe = useCallback(
+        (nextPage: number) => {
+            if (syncWithUrl) {
+                setPageUrl(nextPage);
+            } else if (persistInStorage) {
+                setPageStored(nextPage);
+            } else {
+                setPageState(nextPage);
+            }
+        },
+        [syncWithUrl, persistInStorage, setPageUrl, setPageStored]
+    );
+    const setPageSizeSafe = useCallback(
+        (nextSize: number) => {
+            const size = (ORDER_PAGE_SIZES as readonly number[]).includes(nextSize) ? nextSize : DEFAULT_PAGE_SIZE;
+            if (syncWithUrl) {
+                setPageSizeUrl(size, { [pageKey]: null });
+            } else if (persistInStorage) {
+                setPageSizeStored(size);
+                setPageStored(1);
+            } else {
+                setPageSizeState(size);
+                setPageState(1);
+            }
+        },
+        [syncWithUrl, persistInStorage, setPageSizeUrl, pageKey, setPageSizeStored, setPageStored]
+    );
+
+    const resetFilters = useCallback(() => {
+        if (syncWithUrl) {
+            setSearchUrl('', { [estadoKey]: null, [pageKey]: null, [pageSizeKey]: null });
+            return;
+        }
+        if (persistInStorage) {
+            setSearchStored('');
+            setEstadoStored('all');
+            setPageStored(1);
+            setPageSizeStored(DEFAULT_PAGE_SIZE);
+            return;
+        }
+        setSearchState('');
+        setEstadoState('all');
+        setPageState(1);
+        setPageSizeState(DEFAULT_PAGE_SIZE);
+    }, [syncWithUrl, persistInStorage, setSearchUrl, estadoKey, pageKey, pageSizeKey, setSearchStored, setEstadoStored, setPageStored, setPageSizeStored]);
 
     const filteredOrders = useMemo(() => {
         const term = search.trim().toLowerCase();
@@ -75,14 +223,15 @@ export function useOrderListFilters(
         estadoCodigo,
         setEstadoCodigo: changeEstado,
         page: safePage,
-        setPage,
+        setPage: setPageSafe,
         pageSize,
-        setPageSize,
+        setPageSize: setPageSizeSafe,
         filteredOrders,
         pagedOrders,
         total,
         pageCount,
         rangeStart: total === 0 ? 0 : (safePage - 1) * pageSize + 1,
         rangeEnd: Math.min(safePage * pageSize, total),
+        resetFilters,
     };
 }

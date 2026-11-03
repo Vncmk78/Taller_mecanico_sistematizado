@@ -107,6 +107,3 @@ export function validarArchivoEvidencia(file: File | null): ResultadoValidacionE
         maxBytes: limites.maxBytes,
     };
 }
-
-export const MAX_BYTES_IMAGEN = LIMITES_POR_TIPO.imagen.maxBytes;
-export const MAX_BYTES_VIDEO = LIMITES_POR_TIPO.video.maxBytes;

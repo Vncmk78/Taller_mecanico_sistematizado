@@ -5,11 +5,6 @@
 // bitácora no referencia el catálogo de repuestos de MS3.
 export type TipoBitacora = 'observacion' | 'accion';
 
-export const TIPO_BITACORA_LABEL: Record<TipoBitacora, string> = {
-    observacion: 'Observación',
-    accion: 'Acción',
-};
-
 export interface RepuestoBitacora {
     nombre: string;
     cantidad: number;

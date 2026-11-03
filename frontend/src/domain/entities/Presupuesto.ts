@@ -25,11 +25,6 @@ export function estadoVersionLabel(estado: EstadoVersionPresupuesto): string {
     return ESTADO_VERSION_LABEL[estado] ?? estado;
 }
 
-export const TIPO_ITEM_LABEL: Record<TipoItemPresupuesto, string> = {
-    repuesto: 'Repuesto',
-    mano_de_obra: 'Mano de obra',
-};
-
 export interface ItemPresupuesto {
     id: string;
     tipo: TipoItemPresupuesto;

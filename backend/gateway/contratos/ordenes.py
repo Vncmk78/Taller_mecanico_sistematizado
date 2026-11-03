@@ -445,7 +445,12 @@ class RepuestoBitacoraRespuesta(BaseModel):
 class BitacoraRespuesta(BaseModel):
     """Entrada de la bitácora de trabajo de una orden expuesta por MS2."""
 
-    model_config = ConfigDict(json_schema_extra={"examples": [_EJEMPLO_BITACORA]})
+    # Todo campo con valor por defecto se serializa siempre: el esquema de
+    # salida lo marca obligatorio (contrato 2.0.1, diferencia D-02).
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [_EJEMPLO_BITACORA]},
+        json_schema_serialization_defaults_required=True,
+    )
 
     bitacora_id: int = Field(
         description="Identificador de la entrada de la bitácora.", examples=[77]

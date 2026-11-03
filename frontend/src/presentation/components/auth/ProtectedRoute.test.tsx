@@ -105,6 +105,19 @@ describe('ProtectedRoute: acceso a rutas protegidas', () => {
     expect(screen.getByTestId('admin-panel')).toBeInTheDocument();
   });
 
+  it('un usuario multirol entra con cualquiera de sus roles, no solo el del portal de ingreso (D-03)', () => {
+    useAuthStore.setState({
+      user: { ...clientUser, role: 'administrador', roles: ['administrador', 'mecanico'] },
+      token: 'token-multirol',
+      isAuthenticated: true,
+    });
+
+    renderProtectedRoute({ entry: '/admin', allowedRoles: ['mecanico'] });
+
+    expect(screen.getByTestId('admin-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('access-denied')).not.toBeInTheDocument();
+  });
+
   it('lleva a /acceso-denegado cuando no tiene permisos para la ruta', () => {
     useAuthStore.setState({
       user: clientUser,

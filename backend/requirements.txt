@@ -6,8 +6,12 @@ uvicorn[standard]>=0.30
 sqlalchemy>=2.0
 alembic>=1.13
 psycopg[binary]>=3.1
-pydantic>=2.7
+# El OpenAPI congelado (docs/openapi/) depende del JSON Schema que genera
+# pydantic: 2.12 y 2.13 publican `pattern` en los Decimal y 2.14 no. Se fija el
+# rango para que el contrato publicado sea reproducible en todos los equipos.
+pydantic>=2.12,<2.14
 pydantic-settings>=2.7
+python-dotenv>=1,<2
 python-jose[cryptography]>=3.3,<4
 bcrypt>=4.0,<5
 email-validator>=2.1,<3

@@ -29,6 +29,7 @@ RUTAS = {
     ("get", "/presupuestos/{presupuesto_id}/versiones/{numero}"),
     ("put", "/presupuestos/{presupuesto_id}/versiones/{numero}/items"),
     ("post", "/presupuestos/{presupuesto_id}/versiones"),
+    ("post", "/presupuestos/{presupuesto_id}/modificacion"),
     ("post", "/presupuestos/{presupuesto_id}/versiones/{numero}/envio"),
     ("get", "/presupuestos/{presupuesto_id}/envio-inicial"),
     ("post", "/presupuestos/{presupuesto_id}/envio-inicial/aplicacion"),

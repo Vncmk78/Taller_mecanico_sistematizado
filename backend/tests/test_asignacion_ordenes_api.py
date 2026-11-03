@@ -94,6 +94,7 @@ def db_asignaciones() -> Generator[Session, None, None]:
 @pytest.fixture
 def api_asignaciones(
     db_asignaciones: Session,
+    mecanicos_validos,
 ) -> Generator[TestClient, None, None]:
     def reemplazar_db():
         yield db_asignaciones

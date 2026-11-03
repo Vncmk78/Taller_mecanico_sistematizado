@@ -36,7 +36,7 @@ export function RoleLayout({
         >
           Saltar al contenido principal
         </a>
-        <header className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-10 py-4 border-b border-border-custom bg-surface sticky top-0 z-50">
+        <header className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-10 py-4 border-b-3 border-b-primary-orange bg-[#111318] sticky top-0 z-50 text-white shadow-[0_4px_14px_rgba(0,0,0,0.25)]">
           <div className="flex items-center gap-2.5 shrink-0">
             <AppBrand />
             {badge && (
@@ -84,7 +84,7 @@ export function RoleLayout({
       <main
         id="contenido-principal"
         tabIndex={-1}
-        className="flex-grow flex flex-col bg-bg-main h-screen overflow-y-auto focus:outline-none"
+        className="flex-grow flex flex-col bg-bg-secondary h-screen overflow-y-auto focus:outline-none"
       >
         <TopBar
           left={headerLeft}

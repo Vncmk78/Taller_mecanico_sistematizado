@@ -40,14 +40,16 @@ export function AdminVehiclesPage() {
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Catálogo de Vehículos Registrados</h2>
             <p className="text-text-muted text-lg">Trazabilidad completa: fichas técnicas e historial por patente</p>
         </div>
-        <div className="relative w-[320px]">
+        <div role="search" aria-label="Buscar vehículos" className="relative w-[320px]">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden />
             <input
-            type="text"
+            type="search"
+            name="buscar-vehiculos-catalogo"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
             aria-label="Buscar por patente, marca o modelo"
+            autoComplete="off"
             className="w-full py-3 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
             />
         </div>

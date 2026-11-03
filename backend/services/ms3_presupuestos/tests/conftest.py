@@ -22,6 +22,22 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
+
+@pytest.fixture
+def ordenes_verificadas_para_persistencia():
+    """Aísla MS2 en suites ORM; los permisos HTTP se prueban con las APIs reales."""
+    from types import SimpleNamespace
+    from services.ms3_presupuestos.main import app
+    from services.ms3_presupuestos.integracion_ms2 import obtener_verificador_ordenes
+
+    app.dependency_overrides[obtener_verificador_ordenes] = lambda: SimpleNamespace(
+        verificar_creacion_presupuesto=lambda _orden, _token, _principal: None,
+        verificar_acceso=lambda _orden, _token: None,
+        verificar_propiedad=lambda _orden, _token: None,
+    )
+    yield
+    app.dependency_overrides.pop(obtener_verificador_ordenes, None)
+
 URL_POR_DEFECTO = "postgresql+psycopg://taller:taller@localhost:5435/taller_ms3"
 RUTA_ALEMBIC = "services/ms3_presupuestos/alembic.ini"
 
@@ -123,3 +139,33 @@ def presupuesto_ejemplo(db: Session, catalogo: dict[str, Repuesto]) -> Presupues
     """El presupuesto de la semilla (pastillas + mano de obra = $68.990), enviado."""
     return fabricas.nuevo_presupuesto(db, estado="enviado",
                                       items=fabricas.items_de_ejemplo(catalogo))
+
+
+# --------------------------------------------------------------------------- #
+# MS2 de prueba                                                               #
+# --------------------------------------------------------------------------- #
+# Crear/editar/enviar/decidir un presupuesto verifica la orden en MS2. En las
+# pruebas de MS3 no hay MS2: por defecto se usa uno permisivo que ve todas las
+# órdenes y no informa estado (MS3 no aplica reglas por estado). Las pruebas
+# que necesitan otro comportamiento sobrescriben la dependencia en su fixture.
+
+class _Ms2Permisivo:
+    def verificar_acceso(self, orden_id: int, token: str):
+        from services.ms3_presupuestos.integracion_ms2 import OrdenVisible
+        return OrdenVisible(orden_id)
+
+    verificar_propiedad = verificar_acceso
+
+
+@pytest.fixture(autouse=True)
+def _ms2_permisivo():
+    from services.ms3_presupuestos.integracion_ms2 import obtener_verificador_ordenes
+    from services.ms3_presupuestos.main import app
+
+    previo = app.dependency_overrides.get(obtener_verificador_ordenes)
+    app.dependency_overrides.setdefault(obtener_verificador_ordenes, _Ms2Permisivo)
+    yield
+    if previo is None:
+        app.dependency_overrides.pop(obtener_verificador_ordenes, None)
+    else:
+        app.dependency_overrides[obtener_verificador_ordenes] = previo

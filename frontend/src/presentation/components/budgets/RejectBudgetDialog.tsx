@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -32,8 +32,13 @@ export function RejectBudgetDialog({
 }: RejectBudgetDialogProps) {
     const [motivo, setMotivo] = useState('');
     const [confirmarCancelacion, setConfirmarCancelacion] = useState(false);
-    const [localError, setLocalError] = useState<string | null>(null);
+    const [localError, setLocalError] = useState<{
+        campo: 'motivo' | 'confirmacion';
+        mensaje: string;
+    } | null>(null);
     const { ref: dialogRef, handleKeyDown: handleDialogKeyDown } = useDialogFocus<HTMLDivElement>();
+    const titleId = useId();
+    const descriptionId = useId();
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -46,20 +51,38 @@ export function RejectBudgetDialog({
     const handleConfirm = () => {
         const limpio = motivo.trim();
         if (!limpio) {
-            setLocalError('Indique el motivo del rechazo.');
+            setLocalError({
+                campo: 'motivo',
+                mensaje: 'Indique el motivo del rechazo.',
+            });
             return;
         }
         if (limpio.length < MOTIVO_MIN) {
-            setLocalError(`Describa el motivo con al menos ${MOTIVO_MIN} caracteres.`);
+            setLocalError({
+                campo: 'motivo',
+                mensaje: `Describa el motivo con al menos ${MOTIVO_MIN} caracteres.`,
+            });
             return;
         }
         if (cancelaServicio && !confirmarCancelacion) {
-            setLocalError('Debe confirmar que desea cancelar el servicio.');
+            setLocalError({
+                campo: 'confirmacion',
+                mensaje: 'Debe confirmar que desea cancelar el servicio.',
+            });
             return;
         }
         setLocalError(null);
         onConfirm(limpio, confirmarCancelacion);
     };
+
+    const errorId =
+        localError?.campo === 'motivo'
+            ? 'motivo-rechazo-error'
+            : localError?.campo === 'confirmacion'
+              ? 'confirmacion-cancelacion-error'
+              : undefined;
+    const errorDelMotivo = localError?.campo === 'motivo';
+    const errorDeConfirmacion = localError?.campo === 'confirmacion';
 
     return (
         <div
@@ -72,7 +95,8 @@ export function RejectBudgetDialog({
                 ref={dialogRef}
                 role="dialog"
                 aria-modal="true"
-                aria-label="Rechazar presupuesto"
+                aria-labelledby={titleId}
+                aria-describedby={descriptionId}
                 tabIndex={-1}
                 onKeyDown={handleDialogKeyDown}
                 className="card relative w-full max-w-[480px] p-8 outline-none"
@@ -87,8 +111,10 @@ export function RejectBudgetDialog({
                     <X className="w-5 h-5" aria-hidden />
                 </button>
 
-                <h3 className="text-2xl font-bold tracking-tight text-text-main">Rechazar presupuesto</h3>
-                <p className="mt-2 text-text-muted text-sm">
+                <h3 id={titleId} className="text-2xl font-bold tracking-tight text-text-main">
+                    Rechazar presupuesto
+                </h3>
+                <p id={descriptionId} className="mt-2 text-text-muted text-sm">
                     Cuéntenos por qué rechaza este presupuesto. El taller revisará su comentario.
                 </p>
 
@@ -97,17 +123,30 @@ export function RejectBudgetDialog({
                 </label>
                 <textarea
                     id="motivo-rechazo"
+                    name="motivo"
                     value={motivo}
-                    onChange={(event) => setMotivo(event.target.value)}
+                    onChange={(event) => {
+                        setMotivo(event.target.value);
+                        if (errorDelMotivo) setLocalError(null);
+                    }}
                     maxLength={MOTIVO_MAX}
                     rows={4}
                     disabled={isLoading}
+                    aria-required="true"
+                    aria-invalid={errorDelMotivo ? true : undefined}
+                    aria-describedby={[
+                        'motivo-rechazo-hint',
+                        'motivo-rechazo-contador',
+                        errorDelMotivo ? 'motivo-rechazo-error' : null,
+                    ]
+                        .filter(Boolean)
+                        .join(' ')}
                     className="w-full py-3 px-4 bg-surface border border-border-custom rounded-lg text-text-main text-base outline-none focus:border-primary-blue focus:shadow-[0_0_0_3px_rgba(21,40,63,0.15)] resize-none disabled:opacity-50"
                     placeholder="Ej: El costo me parece elevado / prefiero una segunda opinión."
                 />
                 <div className="flex justify-between text-xs text-text-muted mt-1">
-                    <span>Mínimo {MOTIVO_MIN} caracteres.</span>
-                    <span aria-live="polite">
+                    <span id="motivo-rechazo-hint">Mínimo {MOTIVO_MIN} caracteres.</span>
+                    <span id="motivo-rechazo-contador" aria-live="polite">
                         {motivo.length}/{MOTIVO_MAX}
                     </span>
                 </div>
@@ -115,10 +154,21 @@ export function RejectBudgetDialog({
                 {cancelaServicio && (
                     <label className="flex items-start gap-3 mt-4 text-sm text-text-main cursor-pointer">
                         <input
+                            id="confirmar-cancelacion"
                             type="checkbox"
+                            name="confirmar-cancelacion"
                             checked={confirmarCancelacion}
-                            onChange={(event) => setConfirmarCancelacion(event.target.checked)}
+                            onChange={(event) => {
+                                setConfirmarCancelacion(event.target.checked);
+                                if (errorDeConfirmacion) setLocalError(null);
+                            }}
                             disabled={isLoading}
+                            aria-invalid={errorDeConfirmacion ? true : undefined}
+                            aria-describedby={
+                                errorDeConfirmacion
+                                    ? 'confirmacion-cancelacion-error'
+                                    : undefined
+                            }
                             className="mt-0.5 accent-status-red"
                         />
                         <span>
@@ -128,8 +178,8 @@ export function RejectBudgetDialog({
                 )}
 
                 {(localError || error) && (
-                    <Alert tone="error" className="mt-4">
-                        {localError ?? error}
+                    <Alert tone="error" className="mt-4" id={errorId}>
+                        {localError?.mensaje ?? error}
                     </Alert>
                 )}
 

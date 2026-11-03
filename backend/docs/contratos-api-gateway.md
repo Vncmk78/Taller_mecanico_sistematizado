@@ -5,6 +5,10 @@ app móvil (Integración IV). La fuente de verdad interactiva está en el Swagge
 de la Gateway: <http://localhost:8000/docs> y su versión JSON en
 <http://localhost:8000/openapi.json>.
 
+**Versión estable del contrato: 2.0.0.** Copia congelada para integrar sin
+levantar la Gateway: [`docs/openapi/sgtm-gateway-2.0.0.json`](openapi/sgtm-gateway-2.0.0.json).
+Reglas de versionado e historial: [`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
+
 Reglas que se aplican a todos los endpoints:
 
 - La Gateway escucha en `/api/*` y reenvía al microservicio sin modificar el
@@ -72,6 +76,19 @@ La fuente interactiva del contrato es <http://localhost:8000/docs> y su versión
 JSON es <http://localhost:8000/openapi.json>. Además de los esquemas, el esquema
 publica **un ejemplo real por body y por respuesta**, para que el frontend y la
 app móvil puedan copiar un payload sin inventarlo.
+
+### Cobertura (Semana 7)
+
+El Swagger de la Gateway documenta **todos** los endpoints de negocio de los
+cuatro microservicios (71 operaciones): MS1 completo (incluida la gestión de
+usuarios y roles), MS2 completo (incluida la coordinación
+`POST /api/ordenes/{orden_id}/envios-presupuesto`), MS3 completo (presupuestos,
+repuestos, proveedores e inventario, ver la sección de MS3 más abajo) y MS4.
+`tests/test_gateway_openapi.py::test_cada_endpoint_de_los_cuatro_microservicios_esta_documentado`
+lee el OpenAPI real de los cuatro apps y falla si un endpoint queda sin
+documentar o si se documenta uno que no existe. Los contratos de MS3 son copias
+en `gateway/contratos/{presupuestos,catalogo,inventario}.py` y otra prueba
+compara sus campos y obligatoriedad con los modelos reales de MS3.
 
 ### Respuestas reutilizables
 
@@ -195,6 +212,45 @@ Estados por servicio:
 - `tiempo_agotado` — superó el timeout de 2 s.
 - `caido` — sin conexión (servicio apagado o no arrancado).
 
+### GET `/api/health/servicios/{servicio}` (diagnóstico, Semana 7)
+
+Diagnóstico de **un** microservicio (`ms1_auth`, `ms2_taller`,
+`ms3_presupuestos` o `ms4_evidencias`). Comprueba en paralelo y por separado:
+
+| Comprobación | Camino interno | Servicios |
+|---|---|---|
+| `proceso` | `/health` | Los cuatro |
+| `base` | `/health/db` | Los cuatro |
+| `almacenamiento` | `/health/storage` (MinIO/S3) | Solo `ms4_evidencias` |
+
+```json
+{
+  "servicio": "ms3_presupuestos",
+  "descripcion": "Presupuestos, Repuestos, Proveedores e Inventario",
+  "estado": "degradado",
+  "comprobaciones": {
+    "proceso": { "estado": "ok", "latencia_ms": 3 },
+    "base": { "estado": "error", "latencia_ms": 15, "codigo_http": 500 }
+  },
+  "prefijos": ["/api/inventario", "/api/presupuesto", "/api/presupuestos", "/api/proveedores", "/api/repuestos"],
+  "timeouts": { "conexion": 3.0, "lectura": 15.0, "escritura": 15.0, "health": 2.0 },
+  "comprobado_en": "2026-10-31T23:40:00+00:00"
+}
+```
+
+- Estado de cada comprobación: `ok`, `error` (respondió con otro código; trae
+  `codigo_http`), `tiempo_agotado` o `caido`.
+- `estado` general: `ok` (todo responde, `200`), `degradado` (el proceso vive
+  pero falla la base o el almacenamiento, `503`) o `caido` (ni el proceso
+  responde, `503`).
+- `timeouts` son los que la Gateway aplica a ese servicio (incluye
+  `GATEWAY_MS<n>_TIMEOUT_SECONDS` si está definido).
+- Un nombre desconocido responde `404 RUTA_NO_ENCONTRADA` sin consultar a nadie.
+- `Cache-Control: no-store`; no expone URLs internas (el detalle queda en el log).
+
+Uso típico ante un `502`/`504`: consultar el diagnóstico del servicio que
+aparece en el log de la Gateway para saber si cayó el proceso o una dependencia.
+
 ## Rutas de Presupuestos y Evidencias
 
 La Gateway decide el destino por el **primer segmento** de la ruta y reenvía
@@ -236,6 +292,45 @@ cual, de modo que `/api/evidencia/x` llegaría a MS4 como `/evidencia/x`, una
 ruta que ningún servicio expone. Se conservan por compatibilidad con MS2 (los
 usa el equipo) y no se consideran contrato: MS3 y MS4 publican únicamente sus
 prefijos en plural.
+
+### POST `/api/inventario/ordenes/{orden_id}/disponibilidad`
+
+Solo Administrador. MS3 identifica la versión aprobada vigente y suma las
+cantidades de repuestos requeridas. Las cantidades de repuestos deben ser
+enteras, acorde con el inventario actual; la mano de obra conserva su escala
+decimal. MS3 bloquea los repuestos en orden estable, resta los compromisos
+pendientes de otras órdenes al stock físico y registra movimientos de
+`compromiso` solo si el stock libre cubre todas las unidades. Si una versión
+aprobada reemplaza otra que ya tenía compromisos, libera el saldo anterior y
+reserva el nuevo alcance en una sola transacción.
+
+Después de reservar, MS3 envía a MS2 una clave determinista derivada de la orden
+y versión. MS2 verifica esa reserva en MS3, comprueba que la orden esté en
+`Esperando repuestos` y guarda el cambio a `En reparación` junto con el historial
+del Administrador. Repetir la petición devuelve la misma aplicación, sin
+duplicar movimientos ni historial.
+
+```http
+POST /api/inventario/ordenes/71/disponibilidad
+Authorization: Bearer <token-administrador>
+```
+
+```json
+{
+  "clave_operacion": "disp:71:42",
+  "orden_id": 71,
+  "version_presupuesto": 3,
+  "repuestos": [{ "repuesto_id": 8, "cantidad": 2 }],
+  "aplicacion_confirmada": true
+}
+```
+
+`409` informa que falta stock libre, que no hay una aprobación vigente o que
+el estado de la orden ya no permite continuar. `422` rechaza cantidades de
+repuestos fraccionarias. Un `503` significa que MS3 ya guardó la reserva, pero
+MS2 no confirmó el cambio; debe repetirse la misma operación para completar la
+transición idempotente. La reserva queda registrada para no ofrecer esas
+unidades a otra orden mientras se resuelve el reintento.
 
 ## Relaciones y flujo inicial de MS2
 
@@ -287,10 +382,13 @@ tienen ni deben tener FK física entre bases de microservicios:
 | `entregado_por_id` | Usuario que registró la entrega física; lo fija `POST /api/ordenes/{id}/entrega` |
 | `diagnostico_autor_id`, `devuelto_por_id` | Referencias previstas por el modelo para etapas posteriores; todavía no tienen endpoints |
 
-La validación remota de que el `mecanico_id` existe, está activo y tiene rol
-Mecánico todavía no dispone de un contrato implementado entre MS2 y MS1. El
-endpoint actual conserva el identificador como referencia lógica; esta
-dependencia no debe sustituirse por acceso directo a la base de MS1.
+Antes de asignar o reasignar, MS2 consulta `GET {MS2_MS1_URL}/auth/usuarios/{mecanico_id}`
+con el mismo JWT del Administrador. Exige `id` coincidente, `is_active: true` y
+`roles` que contenga `mecanico`: destino inexistente, inactivo o sin ese rol
+responde `422`. MS1 no disponible o respuesta incompleta/incompatible responde
+`503`, sin escrituras locales. El timeout se configura con
+`MS2_MS1_TIMEOUT_SEGUNDOS` (3 segundos por defecto). No se accede a tablas de MS1.
+La comprobación es puntual: no constituye una transacción distribuida con MS1.
 
 ### Flujo implementado hasta Semana 3
 
@@ -358,7 +456,7 @@ Inicia sesión y entrega el token de acceso.
 | Auth | No requiere |
 | Body | `{"email": string, "password": string}` |
 | Respuesta OK | `200` con `TokenRespuesta` |
-| Errores | `401` credenciales inválidas · `403` la cuenta no tiene roles asignados · `404/502/500` de la Gateway |
+| Errores | `401` credenciales inválidas · `403` la cuenta no tiene roles asignados · `422` body inválido · `429` cuenta bloqueada por intentos fallidos (cabecera `Retry-After` en segundos) · `404/502/500` de la Gateway |
 
 ```json
 // Request
@@ -557,6 +655,35 @@ Para obtener las tres identidades de prueba (Cliente, Mecánico y
 Administrador) existe `scripts/seed_usuarios_prueba.py`; el registro público solo
 puede crear clientes, porque los roles se asignan en el servidor.
 
+## Notificaciones (MS1)
+
+### GET `/api/notificaciones`
+
+Lista los avisos del usuario autenticado, ordenados desde el más reciente. Cada
+usuario solo consulta su propia bandeja.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Query | `limite` opcional (1–100, por defecto 50), `offset` opcional (por defecto 0) |
+| Respuesta | Lista con `notificacion_id`, `tipo`, `orden_id`, `vehiculo_id`, `titulo`, `mensaje`, `ocurrido_en` y `creado_en` |
+| Error | `401` si el token falta o no es válido · `500` si MS1 no puede consultar la bandeja |
+
+El contrato interno de MS2 es `POST /interno/eventos/ordenes/estado`, llamado
+directamente al servicio MS1, fuera de la Gateway. Requiere
+`X-Service-Token`, comparado en tiempo constante contra `MS1_EVENT_SHARED_SECRET`;
+MS2 usa el mismo valor como `MS2_EVENT_SHARED_SECRET`. El payload versionado por
+tipo `orden.estado_cambiado` lleva `evento_id` UUID estable, hora con zona,
+`orden_id`, `vehiculo_id`, `cliente_usuario_id` y códigos de estado anterior y
+nuevo. MS1 verifica que el destinatario sea una cuenta Cliente activa y crea un
+aviso lógico una sola vez por `evento_id`; las repeticiones devuelven la misma
+notificación. El mensaje lo compone MS1, no se acepta texto arbitrario del
+productor.
+
+Esta primera entrega cubre almacenamiento y consulta web de avisos. No afirma
+que correo o push hayan sido enviados: requieren sus canales/proveedores y el
+registro de dispositivos de Integración IV.
+
 ## Vehículos (MS2)
 
 Todas requieren `Authorization: Bearer <token>` con rol Cliente y un perfil
@@ -629,7 +756,7 @@ Un vehículo ajeno y uno inexistente producen el mismo `404`.
 | Auth | `Authorization: Bearer <token>` |
 | Body | — |
 | Respuesta OK | `200` con `VehiculoRespuesta` |
-| Errores | `401` JWT ausente/inválido · `404` inexistente o fuera del alcance del rol · `502/500` de infraestructura |
+| Errores | `401` JWT ausente/inválido · `404` inexistente o fuera del alcance del rol · `422` identificador no numérico · `502/500` de infraestructura |
 
 ### PATCH `/api/vehiculos/{vehiculo_id}`
 
@@ -712,6 +839,30 @@ Lista solamente las órdenes visibles para la identidad autenticada:
 | Respuesta OK | `200` con lista de `OrdenRespuesta` |
 | Errores | `401` JWT ausente/inválido · `500` consulta · `502` MS2 no disponible |
 
+### GET `/api/ordenes/vehiculo/{vehiculo_id}/historial`
+
+Consulta en MS2 el historial de órdenes de un vehículo con paginación en el
+servidor. Ordena por `creado_en` descendente y usa `orden_id` descendente para
+desempatar. `limit` acepta de 1 a 100 (por defecto 20) y `offset` desde 0
+(por defecto 0). La respuesta incluye `items`, `total`, `limit` y `offset`.
+
+- Administrador: consulta cualquier vehículo existente.
+- Cliente: consulta un vehículo propio; si no tiene órdenes recibe `items: []`.
+- Mecánico: consulta únicamente órdenes actualmente asignadas a él; el vehículo
+  debe tener al menos una orden asignada para ser visible.
+- Multirol: combina los alcances existentes; Administrador conserva visibilidad
+  global.
+
+Un vehículo inexistente o fuera del alcance responde `404`, igual que el
+detalle de vehículo.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` |
+| Parámetros | `vehiculo_id` en ruta; `limit` y `offset` opcionales |
+| Respuesta OK | `200` con `{ "items": [OrdenRespuesta], "total": 3, "limit": 20, "offset": 0 }` |
+| Errores | `401` JWT ausente/inválido · `404` vehículo inexistente o no visible · `422` parámetros inválidos · `500` consulta · `502` MS2 no disponible |
+
 ### GET `/api/ordenes/{orden_id}`
 
 Devuelve una orden solo si es visible conforme a las mismas reglas del listado.
@@ -766,14 +917,36 @@ reasignaciones.
 }
 ```
 
-`mecanico_id` es hoy una referencia lógica a MS1. La validación remota de
-existencia, actividad y rol Mecánico permanece pendiente del contrato con MS1.
+`mecanico_id` sigue siendo una referencia lógica a MS1. Antes de cualquier
+escritura se valida su existencia, actividad y rol mediante la API de MS1 con el
+JWT del Administrador: `422` si el destino no cumple, `503` si no puede validarse.
+Los rechazos no modifican responsable, estado, historial, outbox ni capacidad.
 Antes de cambiar el responsable, MS2 valida el máximo configurable de órdenes
 activas del mecánico de destino. Se cuentan sus órdenes asignadas cuyo estado no
 sea `Entregado` ni `Cancelado`; una orden `Recibido` sin asignar no consume
 capacidad. La reasignación solo se confirma si el destino tiene cupo y el cambio
 se serializa junto con las demás asignaciones mediante la fila de configuración.
 Cada validación aceptada o rechazada queda registrada en el historial de MS2.
+
+### POST `/api/ordenes/{orden_id}/entrega`
+
+Registra la entrega física de una orden que se encuentra en `Listo`. Solo un
+Administrador puede confirmarla. MS2 obtiene el usuario responsable desde el
+JWT y la fecha/hora desde la base de datos; actualiza `OrdenTrabajo`, completa
+`entregado_en` y `entregado_por_id`, y agrega `HistorialEstado` en una sola
+transacción. Si la respuesta se pierde y se repite la petición, devuelve el
+registro original sin cambiar la fecha ni duplicar el historial.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Administrador |
+| Body | Opcional: `{ "observacion": "Entregado al cliente" }`; rechaza texto vacío |
+| Respuesta OK | `200` con los campos de `OrdenRespuesta`, `entregado_en`, `entregado_por_id` e `historial_id` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` estado distinto de `Listo` · `422` observación vacía · `500` persistencia o auditoría inconsistente |
+
+Una repetición válida devuelve la misma respuesta de entrega. El `PATCH`
+genérico sigue rechazando `Listo → Entregado`; tampoco permite registrar como
+entregada la devolución física de una orden cancelada.
 
 ### GET y PUT `/api/ordenes/configuracion/capacidad/mecanicos`
 
@@ -996,30 +1169,6 @@ valida en el servicio de MS2 y no cambia las precondiciones de cada transición.
 { "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 6,
   "mecanico_actual_id": 50, "creado_por_id": 99,
   "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-28T11:00:00-03:00" }
-```
-
-### POST `/api/ordenes/{orden_id}/entrega`
-
-Registra la entrega física de una orden `Listo` y la deja en `Entregado`
-(`6 → 7`). Es exclusivo del Administrador y reemplaza al PATCH directo, que
-responde `409`. En la misma transacción MS2 actualiza el estado, fija
-`entregado_en` y `entregado_por_id` con la identidad del JWT y agrega el
-`HistorialEstado` con origen `usuario`.
-
-| Atributo | Descripción |
-|---|---|
-| Auth | `Authorization: Bearer <token>` con rol Administrador |
-| Body | `{"observacion"?: string no vacío}` |
-| Respuesta OK | `200` con `OrdenRespuesta` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` la orden no está `Listo` o ya es terminal · `422` observación vacía · `500` persistencia · `502` MS2 no disponible |
-
-```json
-// Request
-{ "observacion": "Entregado al cliente" }
-// Response 200
-{ "orden_id": 31, "vehiculo_id": 12, "ingreso_id": 18, "estado_codigo": 7,
-  "mecanico_actual_id": 50, "creado_por_id": 99,
-  "creado_en": "2026-09-28T10:30:00-03:00", "actualizado_en": "2026-09-29T09:00:00-03:00" }
 ```
 
 ### POST `/api/ordenes/{orden_id}/cancelacion`
@@ -1289,6 +1438,65 @@ Pruebas que respaldan este contrato: `tests/test_ms4_api_evidencias.py`,
 `tests/test_gateway_evidencias.py` y `tests/test_gateway_openapi_evidencias.py`
 (los ejemplos del Swagger se comparan con las respuestas reales de MS4).
 
+## Presupuestos, repuestos, proveedores e inventario (MS3)
+
+### Validación al crear presupuestos (contrato 2.0.0)
+
+`POST /api/presupuestos` exige Mecánico o Administrador. Antes de guardar,
+MS3 consulta `GET {MS3_MS2_URL}/ordenes/{orden_id}` con el JWT original y exige
+una respuesta válida con el identificador solicitado. Un Mecánico debe coincidir
+con `mecanico_actual_id`, aunque además sea Cliente propietario; Administrador
+puede crear para cualquier orden existente. Orden inexistente, ajena o sin
+asignación correspondiente: `404`. MS2 no verificable, timeout, error o respuesta
+incompatible: `503`. En ambos rechazos no se crea presupuesto, versión ni ítems.
+La validación no cambia los permisos de otros endpoints de MS3 y no es una
+transacción distribuida ni bloquea una reasignación posterior en MS2.
+
+
+Todas exigen `Authorization: Bearer <jwt>`. Los esquemas completos, ejemplos y
+errores de cada operación están en `/docs` (tags **Presupuestos**,
+**Repuestos**, **Proveedores** e **Inventario**); la documentación vive en
+`gateway/openapi_ms3.py`. Dinero y cantidades de ítems viajan como texto
+(`"38990.00"`) para no perder precisión.
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| `POST` | `/api/presupuestos` | Mecánico, Administrador | Crea el presupuesto de una orden con su versión 1 en borrador |
+| `GET` | `/api/presupuestos` | Todos (Cliente con `orden_id` propia) | Lista paginada o búsqueda por `orden_id` |
+| `GET` | `/api/presupuestos/ordenes/{orden_id}/primera-aprobacion` | Administrador, Cliente propietario | ¿La orden tiene aprobación inicial persistida? |
+| `GET` | `/api/presupuestos/{presupuesto_id}` | Todos (Cliente: solo versiones enviadas) | Detalle con versiones |
+| `GET` | `/api/presupuestos/{presupuesto_id}/versiones/{numero}` | Todos | Una versión con ítems y decisión |
+| `POST` | `/api/presupuestos/{presupuesto_id}/versiones` | Mecánico, Administrador | Nueva versión sin tocar las anteriores |
+| `PUT` | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/items` | Mecánico, Administrador | Reemplaza los ítems de un borrador |
+| `POST` | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/envio` | Administrador | Envía al cliente (congela la versión; coordina con MS2) |
+| `GET` | `/api/presupuestos/{presupuesto_id}/envio-inicial` | MS2 con el JWT original | Verifica el envío inicial |
+| `POST` | `/api/presupuestos/{presupuesto_id}/envio-inicial/aplicacion` | Administrador | Reintenta aplicar el envío inicial en MS2 |
+| `POST` | `/api/presupuestos/{presupuesto_id}/versiones/{numero}/decision` | Cliente dueño | Aprueba o rechaza la versión enviada |
+| `GET` | `/api/presupuestos/decisiones/{decision_id}` | Cliente responsable | Hecho persistido de una decisión |
+| `POST` | `/api/presupuestos/decisiones/{decision_id}/aplicacion` | Cliente responsable | Reintenta aplicar la decisión en MS2 |
+| `GET`, `POST` | `/api/repuestos` | Consulta: Mecánico, Administrador · Alta: Administrador | Catálogo con stock y umbral |
+| `GET`, `PATCH`, `DELETE` | `/api/repuestos/{repuesto_id}` | Ídem | Detalle, cambio de nombre/proveedor/umbral, baja sin historial |
+| `GET` | `/api/repuestos/{repuesto_id}/trazabilidad` | Mecánico, Administrador | Proveedores, ingresos y uso por orden |
+| `GET`, `POST` | `/api/proveedores` | Consulta: Mecánico, Administrador · Alta: Administrador | Proveedores |
+| `GET`, `PATCH`, `DELETE` | `/api/proveedores/{proveedor_id}` | Ídem | Detalle con repuestos, cambios, baja sin repuestos |
+| `GET` | `/api/proveedores/{proveedor_id}/trazabilidad` | Mecánico, Administrador | Repuestos abastecidos y unidades |
+| `POST`, `GET` | `/api/inventario/movimientos` | Ingreso/ajuste: Administrador · compromiso/consumo/liberación: Mecánico, Administrador | Movimiento idempotente por `clave_operacion` y listado |
+| `GET` | `/api/inventario/stock/{repuesto_id}` | Mecánico, Administrador | Stock, comprometido y disponible |
+| `GET` | `/api/inventario/alertas` | Mecánico, Administrador | Repuestos bajo su umbral |
+| `GET`, `PUT` | `/api/inventario/umbral-general` | Consulta: Mecánico, Administrador · cambio: Administrador | Umbral general |
+| `GET` | `/api/inventario/historial-umbral` | Mecánico, Administrador | Cambios de umbral |
+| `POST` | `/api/inventario/disponibilidad` | Mecánico, Administrador | ¿Alcanza el stock? (no mueve stock) |
+| `GET` | `/api/inventario/ordenes/{orden_id}/disponibilidad` | Mecánico, Administrador | Stock para lo pendiente del presupuesto aprobado |
+| `POST` | `/api/inventario/ordenes/{orden_id}/reserva` | Mecánico, Administrador | Reserva todo o nada |
+| `POST` | `/api/inventario/ordenes/{orden_id}/consumos` | Mecánico, Administrador | Descuenta repuestos usados (todo o nada, idempotente) |
+| `POST` | `/api/inventario/ordenes/{orden_id}/liberacion` | Mecánico, Administrador | Libera lo reservado |
+
+El `503` de las operaciones que validan la orden en MS2 (listado, detalle,
+versiones, primera aprobación, envío y decisión) puede venir de MS3
+(`{"detail": ...}` o el cuerpo de aplicación pendiente con su ruta de
+reintento) o de la Gateway (`GATEWAY_SATURADA`); el OpenAPI publica ambos. El
+`409` por stock insuficiente trae `faltantes` por repuesto (`RechazoStock`).
+
 ## Contratos todavía no publicados
 
 Las siguientes capacidades no tienen un endpoint implementado y no deben ser
@@ -1298,7 +1506,7 @@ consumidas como parte del contrato actual:
 |---|---|
 | Máximo de órdenes activas por mecánico | Implementado en MS2; GET/PUT de configuración y validación en asignación |
 | Cupo diario de ingresos físicos | Implementado en MS2; GET/PUT de configuración diaria y validación concurrente al registrar un ingreso nuevo |
-| Presupuestos, repuestos e inventario | Los contratos de MS3 se publicarán cuando sus endpoints estén definidos y verificados |
+| Presupuestos, repuestos e inventario | Publicados en la Semana 7 (sección MS3 y `/docs`) |
 
 El frontend web y la aplicación móvil deben consumir exclusivamente las rutas
 publicadas por la API Gateway con prefijo `/api`. La existencia de una llamada o

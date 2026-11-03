@@ -126,7 +126,12 @@ export function BitacoraForm({ ordenId, onSuccess, className }: BitacoraFormProp
 
             <label className="mb-4 block text-sm">
                 <span className="mb-1 block text-text-muted">Tipo</span>
-                <select aria-label="Tipo de entrada" className={INPUT_CLASS} {...register('tipo')}>
+                <select
+                    id="bitacora-tipo"
+                    aria-label="Tipo de entrada"
+                    className={INPUT_CLASS}
+                    {...register('tipo')}
+                >
                     <option value="accion">Acción</option>
                     <option value="observacion">Observación</option>
                 </select>
@@ -135,15 +140,20 @@ export function BitacoraForm({ ordenId, onSuccess, className }: BitacoraFormProp
             <label className="mb-4 block text-sm">
                 <span className="mb-1 block text-text-muted">Descripción</span>
                 <textarea
+                    id="bitacora-descripcion"
                     rows={3}
                     aria-label="Descripción de la entrada"
+                    aria-required="true"
                     aria-invalid={errors.descripcion ? true : undefined}
+                    aria-describedby={
+                        errors.descripcion ? 'bitacora-descripcion-error' : undefined
+                    }
                     placeholder="Describe la observación o la acción realizada..."
                     className={`${INPUT_CLASS} ${errors.descripcion ? 'border-status-red' : ''}`}
                     {...register('descripcion')}
                 />
                 {errors.descripcion && (
-                    <p role="alert" className="mt-1 text-sm text-status-red">
+                    <p id="bitacora-descripcion-error" role="alert" className="mt-1 text-sm text-status-red">
                         {errors.descripcion.message}
                     </p>
                 )}
@@ -159,30 +169,52 @@ export function BitacoraForm({ ordenId, onSuccess, className }: BitacoraFormProp
                             <div key={field.id} className="flex items-start gap-2">
                                 <div className="flex-1">
                                     <input
+                                        id={`bitacora-repuesto-${index}-nombre`}
                                         aria-label={`Nombre del repuesto ${index + 1}`}
+                                        aria-required="true"
                                         aria-invalid={errors.repuestos?.[index]?.nombre ? true : undefined}
+                                        aria-describedby={
+                                            errors.repuestos?.[index]?.nombre
+                                                ? `bitacora-repuesto-${index}-nombre-error`
+                                                : undefined
+                                        }
                                         placeholder="Nombre del repuesto"
                                         className={INPUT_CLASS}
                                         {...register(`repuestos.${index}.nombre`)}
                                     />
                                     {errors.repuestos?.[index]?.nombre && (
-                                        <p role="alert" className="mt-1 text-sm text-status-red">
+                                        <p
+                                            id={`bitacora-repuesto-${index}-nombre-error`}
+                                            role="alert"
+                                            className="mt-1 text-sm text-status-red"
+                                        >
                                             {errors.repuestos[index]?.nombre?.message}
                                         </p>
                                     )}
                                 </div>
                                 <div className="w-24">
                                     <input
+                                        id={`bitacora-repuesto-${index}-cantidad`}
                                         type="number"
                                         min={1}
                                         inputMode="numeric"
                                         aria-label={`Cantidad del repuesto ${index + 1}`}
+                                        aria-required="true"
                                         aria-invalid={errors.repuestos?.[index]?.cantidad ? true : undefined}
+                                        aria-describedby={
+                                            errors.repuestos?.[index]?.cantidad
+                                                ? `bitacora-repuesto-${index}-cantidad-error`
+                                                : undefined
+                                        }
                                         className={INPUT_CLASS}
                                         {...register(`repuestos.${index}.cantidad`)}
                                     />
                                     {errors.repuestos?.[index]?.cantidad && (
-                                        <p role="alert" className="mt-1 text-xs text-status-red">
+                                        <p
+                                            id={`bitacora-repuesto-${index}-cantidad-error`}
+                                            role="alert"
+                                            className="mt-1 text-xs text-status-red"
+                                        >
                                             {errors.repuestos[index]?.cantidad?.message}
                                         </p>
                                     )}

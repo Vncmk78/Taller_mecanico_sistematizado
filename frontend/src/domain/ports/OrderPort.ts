@@ -3,6 +3,11 @@ import type { Order } from '../entities/Order';
 import type { OrderHistoryEntry } from '../entities/OrderHistory';
 
 export interface OrderPort {
+    /** Página del historial de órdenes de un vehículo visible para el rol autenticado. */
+    getVehicleOrderHistory(
+        vehicleId: string,
+        page: { limit: number; offset: number }
+    ): Promise<{ items: Order[]; total: number; limit: number; offset: number }>;
     /** Lista de órdenes visibles para el rol autenticado (el servidor filtra por rol). */
     getOrders(): Promise<Order[]>;
     /** Detalle de una orden por id (404 si no está en el alcance del rol). */
@@ -29,4 +34,6 @@ export interface OrderPort {
     registrarEntrega(ordenId: string, observacion?: string): Promise<Order>;
     /** Cancelación iniciada por el cliente propietario (POST /ordenes/{id}/cancelacion). */
     cancelarComoCliente(ordenId: string, motivo: string): Promise<Order>;
+    /** Administrador confirma una solicitud pendiente; MS2 verifica la aprobación en MS3. */
+    confirmarCancelacion(ordenId: string): Promise<Order>;
 }

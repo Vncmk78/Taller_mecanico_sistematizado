@@ -19,6 +19,7 @@ from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
 from services.ms3_presupuestos.integracion_ms2 import (
     OrdenNoVisible,
+    OrdenVisible,
     ServicioOrdenesNoDisponible,
     obtener_verificador_ordenes,
     obtener_coordinador_envios_presupuesto,
@@ -54,21 +55,28 @@ CLIENTE = _cabecera(NombreRol.CLIENTE, datos.CLIENTE_ID)
 
 
 class VerificadorFalso:
-    """Hace de MS2: `propias` son las órdenes visibles para el cliente."""
+    """Hace de MS2: `propias` son las órdenes visibles para el cliente; el
+    personal (mecánico/administrador) ve todas. `estados` simula estado_codigo."""
 
     def __init__(self) -> None:
         self.propias: set[int] = set()
+        self.estados: dict[int, int] = {}
         self.caido = False
         self.consultas: list[tuple[int, str]] = []
 
-    def verificar_acceso(self, orden_id: int, token: str) -> None:
+    def verificar_acceso(self, orden_id: int, token: str) -> OrdenVisible:
         self.consultas.append((orden_id, token))
         if self.caido:
             raise ServicioOrdenesNoDisponible("MS2 caído")
-        if orden_id not in self.propias:
+        personal = token in (ADMIN["Authorization"][7:], MECANICO["Authorization"][7:])
+        if not personal and orden_id not in self.propias:
             raise OrdenNoVisible(orden_id)
+        return OrdenVisible(orden_id, self.estados.get(orden_id))
 
     verificar_propiedad = verificar_acceso
+
+    def verificar_creacion_presupuesto(self, orden_id: int, token: str, _principal) -> OrdenVisible:
+        return self.verificar_acceso(orden_id, token)
 
 
 @pytest.fixture
@@ -180,12 +188,22 @@ def test_enviar_modificacion_no_cambia_la_orden(
 
 
 def test_no_se_envia_una_version_que_no_es_la_ultima(
-    api: TestClient, db: Session, presupuesto_borrador: Presupuesto
+    api: TestClient, db: Session, presupuesto_enviado: Presupuesto
 ) -> None:
-    # v1 borrador + v2 borrador (caso forzado): solo la última puede enviarse.
-    fabricas.nueva_version_siguiente(db, presupuesto_borrador)
-    r = api.post(_ruta(presupuesto_borrador, 1, "envio"), headers=ADMIN)
-    assert r.status_code == 409 and "reemplazada" in r.json()["detail"]
+    # v1 enviada + v2 borrador: v1 ya no se puede volver a enviar.
+    fabricas.nueva_version_siguiente(db, presupuesto_enviado)
+    r = api.post(_ruta(presupuesto_enviado, 1, "envio"), headers=ADMIN)
+    assert r.status_code == 409
+
+
+def test_la_base_no_admite_dos_borradores_a_la_vez(
+    db: Session, presupuesto_borrador: Presupuesto
+) -> None:
+    """Antes era un "caso forzado"; desde 0009_ms3 la base lo rechaza."""
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError, match="ya tiene una versión en borrador"), db.begin_nested():
+        fabricas.nueva_version_siguiente(db, presupuesto_borrador)
 
 
 def test_solo_el_administrador_envia(api: TestClient, presupuesto_borrador: Presupuesto) -> None:

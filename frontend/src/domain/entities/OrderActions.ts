@@ -37,8 +37,8 @@ export function destinosAvanceMecanico(estadoCodigo: number): number[] {
     return AVANCES_MECANICO[estadoCodigo] ?? [];
 }
 
-// Orden cancelable por su responsable (cliente) o por el taller (administrador):
-// mientras no haya avanzado a un estado terminal ni esté en manos del mecánico.
+// El cliente solicita y el administrador confirma. El backend comprueba además
+// la solicitud pendiente y la ausencia de aprobación inicial en MS3.
 const ESTADOS_CANCELABLES = new Set([1, 2, 3]);
 
 const CANCELADO = 8;
@@ -99,9 +99,9 @@ function accionesAdministrador(order: Order): AccionOrden[] {
     if (ESTADOS_CANCELABLES.has(order.estadoCodigo)) {
         acciones.push({
             id: 'cancelar',
-            etiqueta: 'Cancelar orden',
+            etiqueta: 'Confirmar cancelación',
             destinos: [CANCELADO],
-            requiereMotivo: true,
+            requiereMotivo: false,
             habilitada: true,
         });
     }
@@ -136,8 +136,8 @@ function accionesCliente(order: Order): AccionOrden[] {
     if (ESTADOS_CANCELABLES.has(order.estadoCodigo)) {
         acciones.push({
             id: 'cancelar',
-            etiqueta: 'Cancelar solicitud',
-            destinos: [CANCELADO],
+            etiqueta: 'Solicitar cancelación',
+            destinos: [],
             requiereMotivo: true,
             habilitada: true,
         });

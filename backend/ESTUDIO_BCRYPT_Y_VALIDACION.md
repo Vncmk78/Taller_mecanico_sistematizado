@@ -1,5 +1,11 @@
 # 📚 ESTUDIO: Hashing Seguro de Contraseñas y Validación de Credenciales
 
+> Registro histórico del backend Node/Express, retirado del proyecto activo.
+> Los ejemplos con `bcryptjs` explican ese diseño anterior. La implementación
+> vigente de contraseñas está en
+> [`services/ms1_auth/security/passwords.py`](services/ms1_auth/security/passwords.py)
+> y sus contratos en [`docs/contratos-api-gateway.md`](docs/contratos-api-gateway.md).
+
 **Asignatura:** Taller de Integración II  
 **Año:** 4to Ingeniería Civil Informática  
 **Fecha:** Septiembre 2024

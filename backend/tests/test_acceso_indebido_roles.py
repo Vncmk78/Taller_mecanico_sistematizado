@@ -1,37 +1,10 @@
-"""Revisión de casos de acceso indebido entre roles (matriz de autorización).
+"""Regresión de roles, propiedad y asignaciones usando MS1, MS2 y MS3 reales.
 
-Contrasta dos zonas de `docs/matriz-autorizacion-roles.md` contra la
-implementación real de los guards. La Gateway **no valida el JWT**, así que toda
-decisión de autorización vive en el microservicio y se prueba aquí directamente.
-
-El módulo tiene dos partes:
-
-- **Límites que sí están implementados** (pruebas que PASAN): verifican que los
-  guards `requerir_roles` rechazan al rol equivocado con `403` y que la falta de
-  token responde `401`, **no** `403`. Protegen contra regresiones reales.
-
-- **Huecos declarados en la matriz** (pruebas `xfail(strict=True)`): la matriz
-  ya los lista como pendientes (§4.4 "limitar al mecánico a las órdenes que
-  tiene asignadas"; §4.3 `mecanico_id` "no se valida en el servidor que exista,
-  esté activo ni tenga el rol mecanico"). La aserción enuncia el comportamiento
-  **correcto**, y el marcador documenta que hoy no se cumple.
-
-  Por qué `xfail(strict=True)` y no un `assert` simple: si la aserción fallara
-  rojo, la suite entera quedaría roja por un defecto que no introduce este
-  cambio; y si se caracterizara el comportamiento actual (201/200), el código
-  quedaría "bendecido" como correcto en un tema de seguridad. Con `strict=True`,
-  en cuanto alguien implemente la corrección la prueba pasa y **strict** la
-  convierte en fallo, obligando a retirar el marcador. Es un registro honesto
-  del pendiente, no una afirmación de que esté resuelto.
-
-Los códigos exactos de rechazo de esos huecos todavía no son contrato (la
-matriz no los fija), así que las aserciones piden solo la esencia de seguridad:
-**que la operación sea rechazada**. MS4 queda fuera: sus filas 📐
-(`visible_cliente`, `Eliminar`) son endpoints que aún no existen —el router solo
-expone `POST` y `GET`— y un endpoint inexistente no es un acceso explotable.
-
-SQLite comprueba contratos y autorización; los triggers y locks de PostgreSQL se
-verifican en las pruebas ORM de cada servicio, no aquí.
+Cada API usa su propia base SQLite; el transporte HTTP se dirige a TestClient.
+Los cuatro defectos originalmente registrados como xfail ahora se exigen como
+rechazos 422 (destino de asignación) y 404 (orden de presupuesto no autorizada).
+También se comprueba 503 sin escrituras ante una caída del servicio consultado.
+Locks, triggers y concurrencia PostgreSQL se verifican en sus suites específicas.
 """
 
 from __future__ import annotations
@@ -43,7 +16,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -59,6 +32,10 @@ for _servicio in ("MS1", "MS2", "MS3", "MS4"):
     )
 
 from services.ms2_taller.config import settings as settings_ms2  # noqa: E402
+from services.ms1_auth.config import settings as settings_ms1  # noqa: E402
+from services.ms1_auth.db import get_db as get_db_ms1  # noqa: E402
+from services.ms1_auth.main import app as app_ms1  # noqa: E402
+from services.ms1_auth.models import Rol, Usuario, UsuarioRol  # noqa: E402
 from services.ms2_taller.db import get_db as get_db_ms2  # noqa: E402
 from services.ms2_taller.main import app as app_ms2  # noqa: E402
 from services.ms2_taller.models import (  # noqa: E402
@@ -72,16 +49,6 @@ from services.ms3_presupuestos.main import app as app_ms3  # noqa: E402
 from services.ms3_presupuestos.models import Base as BaseMS3  # noqa: E402
 from shared.auth import NombreRol, crear_token_acceso  # noqa: E402
 
-
-# Los dos huecos revisados, con la referencia exacta en la matriz.
-HUECO_MS3_SIN_ASIGNAR = (
-    "matriz-autorizacion-roles.md §4.4: pendiente limitar al mecánico a las "
-    "órdenes que tiene asignadas (dato de MS2)"
-)
-HUECO_MS2_MECANICO_ID = (
-    "matriz-autorizacion-roles.md §4.3: mecanico_id no se valida en el servidor "
-    "que exista, esté activo ni tenga el rol mecanico"
-)
 
 # Una orden en estado no terminal, requisito de la asignación de mecánico.
 ORDEN_VIVA = RECIBIDO
@@ -118,24 +85,24 @@ def _sesion_por_peticion(fabrica):
     return dependencia
 
 
-def _sin_token_externo(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Falla rápido y con mensaje claro si algo intenta consultar MS2 o MS3.
-
-    Ninguna de las operaciones revisadas debiera salirse de su servicio: la
-    creación de presupuesto (MS3) no valida la orden contra MS2 y la asignación
-    (MS2) no consulta MS1. Si algún día eso cambia, mejor enterarse aquí.
-    """
-
-    def _rechazar(url, **_kwargs):
-        raise AssertionError(f"Llamada HTTP inesperada a {url}")
-
-    monkeypatch.setattr(httpx, "get", _rechazar)
-    monkeypatch.setattr(httpx, "post", _rechazar)
-
-
 @pytest.fixture
-def escenario(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    """MS2 y MS3 con bases propias en memoria y una orden viva sembrada."""
+def escenario(monkeypatch: pytest.MonkeyPatch, db: Session) -> SimpleNamespace:
+    """Tres APIs reales con bases separadas; solo se reemplaza el transporte HTTP."""
+
+    sesion_ms1 = db
+    roles = {rol.nombre: rol for rol in db.scalars(select(Rol))}
+    for usuario_id, rol, activo in [
+        (42, NombreRol.CLIENTE, True), (77, NombreRol.MECANICO, True),
+        (78, NombreRol.MECANICO, False), (99, NombreRol.ADMINISTRADOR, True),
+    ]:
+        usuario = Usuario(
+            usuario_id=usuario_id, correo=f"cuenta{usuario_id}@example.test",
+            nombre="Cuenta de prueba", contrasena_hash="hash-no-utilizado-en-esta-prueba",
+            activo=activo,
+        )
+        usuario.roles = [UsuarioRol(rol=roles[rol.value])]
+        db.add(usuario)
+    db.commit()
 
     engine2, fabrica2 = _base_aislada(BaseMS2)
     engine3, fabrica3 = _base_aislada(BaseMS3)
@@ -173,14 +140,33 @@ def escenario(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
     # Mismo secreto en ambos servicios: los tokens se emiten con el de MS2.
     monkeypatch.setattr(settings_ms3, "JWT_SECRET_KEY", settings_ms2.JWT_SECRET_KEY)
-    monkeypatch.setattr(settings_ms3, "MS2_URL", "http://ms2-no-debe-usarse")
+    monkeypatch.setattr(settings_ms1, "JWT_SECRET_KEY", settings_ms2.JWT_SECRET_KEY)
+    monkeypatch.setattr(settings_ms2, "MS1_URL", "http://ms1-prueba")
+    monkeypatch.setattr(settings_ms3, "MS2_URL", "http://ms2-prueba")
+    app_ms1.dependency_overrides[get_db_ms1] = lambda: sesion_ms1
     app_ms2.dependency_overrides[get_db_ms2] = _sesion_por_peticion(fabrica2)
     app_ms3.dependency_overrides[get_db_ms3] = _sesion_por_peticion(fabrica3)
-    _sin_token_externo(monkeypatch)
+    fallos = {"ms1": False, "ms2": False}
+    llamadas = []
+    with TestClient(app_ms1) as ms1, TestClient(app_ms2) as ms2, TestClient(app_ms3) as ms3:
+        def get(url, *, headers, timeout):
+            llamadas.append((url, headers, timeout))
+            for nombre, cliente in [("ms1", ms1), ("ms2", ms2)]:
+                base = f"http://{nombre}-prueba"
+                if url.startswith(base + "/"):
+                    if fallos[nombre]:
+                        raise httpx.ConnectError("Servicio simulado caído")
+                    respuesta = cliente.get(url.removeprefix(base), headers=headers)
+                    if nombre == "ms1":
+                        assert respuesta.status_code in (200, 404), respuesta.json()
+                    return respuesta
+            raise AssertionError(f"Destino HTTP inesperado: {url}")
 
-    with TestClient(app_ms2) as ms2, TestClient(app_ms3) as ms3:
-        yield SimpleNamespace(ms2=ms2, ms3=ms3, orden_id=orden_id)
+        monkeypatch.setattr(httpx, "get", get)
+        yield SimpleNamespace(ms2=ms2, ms3=ms3, orden_id=orden_id,
+                              db2=fabrica2, db3=fabrica3, fallos=fallos, llamadas=llamadas)
 
+    app_ms1.dependency_overrides.pop(get_db_ms1, None)
     app_ms2.dependency_overrides.pop(get_db_ms2, None)
     app_ms3.dependency_overrides.pop(get_db_ms3, None)
     engine2.dispose()
@@ -308,64 +294,56 @@ def test_asignacion_solo_administrador_en_rol_multiple(
 
 
 # ---------------------------------------------------------------------------
-# Huecos declarados en la matriz: registrados como xfail estricto
+# Defectos corregidos: regresiones obligatorias
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=HUECO_MS3_SIN_ASIGNAR)
 def test_mecanico_no_asignado_no_crea_presupuesto_de_orden_ajena(
     escenario: SimpleNamespace,
 ) -> None:
     """Un mecánico no debe crear presupuesto de una orden que no atiende.
 
-    `crear` (MS3) solo aplica `requerir_roles(MECANICO, ADMINISTRADOR)` y nunca
-    recibe el `VerificadorOrdenes` que sí usan los caminos del cliente, de modo
-    que cualquier mecánico del taller puede presupuestar órdenes ajenas.
+    MS3 consulta la orden a MS2 con el JWT original antes de persistir.
     """
 
     respuesta = _crear_presupuesto(escenario, usuario_id=77, roles=NombreRol.MECANICO)
 
-    # Debe rechazarse: el código exacto (403) aún no es contrato.
-    assert respuesta.status_code >= 400, (
+    assert respuesta.status_code == 404, (
         f"Un mecánico creó presupuesto de una orden que no atiende: {respuesta.status_code}"
     )
 
 
-@pytest.mark.xfail(strict=True, reason=HUECO_MS3_SIN_ASIGNAR)
 def test_mecanico_no_crea_presupuesto_de_orden_inexistente(
     escenario: SimpleNamespace,
 ) -> None:
     """MS3 guarda `orden_id` como referencia lógica sin comprobarla (§8).
 
-    Ni la existencia de la orden ni su pertenencia se verifican al crear: el
-    presupuesto queda asociado a un `orden_id` que puede no existir.
+    La validación por API evita guardar una referencia inexistente.
     """
 
     respuesta = _crear_presupuesto(
         escenario, orden_id=999999, usuario_id=77, roles=NombreRol.MECANICO
     )
 
-    assert respuesta.status_code >= 400, (
+    assert respuesta.status_code == 404, (
         f"Se creó presupuesto para la orden inexistente 999999: {respuesta.status_code}"
     )
 
 
-@pytest.mark.xfail(strict=True, reason=HUECO_MS2_MECANICO_ID)
 def test_administrador_no_asigna_a_un_usuario_inexistente(
     escenario: SimpleNamespace,
 ) -> None:
-    """`mecanico_id` no se valida contra MS1: se guarda tal cual."""
+    """MS1 responde 404 y MS2 rechaza el destino con 422."""
 
     respuesta = _asignar_mecanico(
         escenario, 12345, usuario_id=99, roles=NombreRol.ADMINISTRADOR
     )
 
-    assert respuesta.status_code >= 400, (
+    assert respuesta.status_code == 422, (
         f"Se asignó como mecánico al usuario inexistente 12345: {respuesta.status_code}"
     )
 
 
-@pytest.mark.xfail(strict=True, reason=HUECO_MS2_MECANICO_ID)
 def test_administrador_no_asigna_a_un_usuario_sin_rol_mecanico(
     escenario: SimpleNamespace,
 ) -> None:
@@ -375,6 +353,88 @@ def test_administrador_no_asigna_a_un_usuario_sin_rol_mecanico(
         escenario, 42, usuario_id=99, roles=NombreRol.ADMINISTRADOR
     )
 
-    assert respuesta.status_code >= 400, (
+    assert respuesta.status_code == 422, (
         f"Se asignó como mecánico a la cuenta 42 (rol cliente): {respuesta.status_code}"
     )
+
+
+def _datos_guardados(escenario):
+    """Incluye órdenes, historial, outbox, capacidad y las tres tablas de presupuesto."""
+    datos = []
+    for fabrica, base in [(escenario.db2, BaseMS2), (escenario.db3, BaseMS3)]:
+        with fabrica() as db:
+            for tabla in sorted(base.metadata.tables.values(), key=lambda t: t.name):
+                filas = db.execute(select(tabla).order_by(*tabla.primary_key.columns)).all()
+                datos.append((tabla.name, [tuple(fila) for fila in filas]))
+    return datos
+
+
+@pytest.mark.parametrize("mecanico_id", [12345, 42, 78])
+def test_destino_invalido_no_deja_escrituras(escenario, mecanico_id):
+    antes = _datos_guardados(escenario)
+    r = _asignar_mecanico(escenario, mecanico_id, usuario_id=99, roles=NombreRol.ADMINISTRADOR)
+    assert r.status_code == 422
+    assert _datos_guardados(escenario) == antes
+    assert escenario.llamadas[0][1] == _cabeceras(99, NombreRol.ADMINISTRADOR)
+
+
+def test_ms1_caido_no_modifica_reasignacion_ni_historial(escenario):
+    assert _asignar_mecanico(escenario, 77, usuario_id=99,
+                            roles=NombreRol.ADMINISTRADOR).status_code == 200
+    antes = _datos_guardados(escenario)
+    escenario.fallos["ms1"] = True
+    r = _asignar_mecanico(escenario, 78, usuario_id=99, roles=NombreRol.ADMINISTRADOR)
+    assert r.status_code == 503
+    assert _datos_guardados(escenario) == antes
+
+
+@pytest.mark.parametrize("rol", [NombreRol.MECANICO, NombreRol.ADMINISTRADOR])
+def test_ms2_caido_no_crea_presupuesto(escenario, rol):
+    antes = _datos_guardados(escenario)
+    escenario.fallos["ms2"] = True
+    r = _crear_presupuesto(escenario, usuario_id=77, roles=rol)
+    assert r.status_code == 503
+    assert _datos_guardados(escenario) == antes
+
+
+@pytest.mark.parametrize("roles", [NombreRol.MECANICO, NombreRol.ADMINISTRADOR,
+                                   (NombreRol.CLIENTE, NombreRol.MECANICO)])
+def test_orden_inexistente_no_deja_presupuesto(escenario, roles):
+    antes = _datos_guardados(escenario)
+    r = _crear_presupuesto(escenario, orden_id=999999, usuario_id=77, roles=roles)
+    assert r.status_code == 404
+    assert _datos_guardados(escenario) == antes
+
+
+def test_cliente_mecanico_propietario_sin_asignacion_no_crea_presupuesto(escenario):
+    antes = _datos_guardados(escenario)
+    r = _crear_presupuesto(escenario, usuario_id=42,
+                           roles=(NombreRol.CLIENTE, NombreRol.MECANICO))
+    assert r.status_code == 404  # MS2 sí muestra su orden; MS3 exige además asignación.
+    assert _datos_guardados(escenario) == antes
+
+
+def test_mecanico_asignado_crea_presupuesto_con_su_identidad(escenario):
+    assert _asignar_mecanico(escenario, 77, usuario_id=99,
+                            roles=NombreRol.ADMINISTRADOR).status_code == 200
+    r = _crear_presupuesto(escenario, usuario_id=77, roles=NombreRol.MECANICO)
+    assert r.status_code == 201
+    assert r.json()["versiones"][0]["creado_por_id"] == 77
+    assert escenario.llamadas[-1][1] == _cabeceras(77, NombreRol.MECANICO)
+
+
+@pytest.mark.parametrize("asignada", [False, True])
+def test_administrador_crea_presupuesto_sin_exigir_asignacion_propia(escenario, asignada):
+    if asignada:
+        assert _asignar_mecanico(escenario, 77, usuario_id=99,
+                                roles=NombreRol.ADMINISTRADOR).status_code == 200
+    r = _crear_presupuesto(escenario, usuario_id=99,
+                           roles=(NombreRol.ADMINISTRADOR, NombreRol.MECANICO))
+    assert r.status_code == 201
+
+
+def test_rol_insuficiente_no_consulta_servicios_externos(escenario):
+    assert _crear_presupuesto(escenario, usuario_id=42, roles=NombreRol.CLIENTE).status_code == 403
+    assert _asignar_mecanico(escenario, 77, usuario_id=77,
+                            roles=NombreRol.MECANICO).status_code == 403
+    assert escenario.llamadas == []

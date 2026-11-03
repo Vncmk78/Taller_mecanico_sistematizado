@@ -5,6 +5,7 @@
     GET  /presupuestos/{presupuesto_id}                        detalle con sus versiones
     GET  /presupuestos/{presupuesto_id}/versiones/{n}          una versión
     POST /presupuestos/{presupuesto_id}/versiones              nueva versión (sin sobrescribir)
+    POST /presupuestos/{presupuesto_id}/modificacion           modificar lo aprobado (nueva versión)
     PUT  /presupuestos/{presupuesto_id}/versiones/{n}/items    reemplazar ítems (solo borrador)
     POST /presupuestos/{presupuesto_id}/versiones/{n}/envio    enviar al cliente (Administrador)
     POST /presupuestos/{presupuesto_id}/versiones/{n}/decision aprobar / rechazar (Cliente dueño)
@@ -15,8 +16,15 @@ Acceso (§4.3):
 - Cliente: solo presupuestos de SUS órdenes (MS3 lo confirma con MS2
   reenviando su JWT) y solo versiones ya enviadas; decide sobre la última.
 
-Errores: 404 recurso inexistente o ajeno, 409 conflicto de estado de la versión,
-422 datos o regla inválida, 503 MS2 no disponible para validar la orden.
+Conexión con la orden (MS2, §8): toda escritura verifica la orden en MS2 con
+el JWT de quien llama (visibilidad por rol) y lee su estado:
+- orden Entregada o Cancelada → 409 (y se liberan las unidades que aún tenía
+  reservadas);
+- la primera decisión solo cabe con la orden en "Esperando aprobación de
+  presupuesto" (3) → si no, 409.
+
+Errores: 404 recurso inexistente o ajeno, 409 conflicto de estado de la versión
+o de la orden, 422 datos o regla inválida, 503 MS2 no disponible para validar la orden.
 """
 from __future__ import annotations
 
@@ -32,6 +40,7 @@ from services.ms3_presupuestos.integracion_ms2 import (
     CoordinadorOrdenes,
     CoordinadorEnviosPresupuesto,
     OrdenNoVisible,
+    OrdenVisible,
     ServicioOrdenesNoDisponible,
     VerificadorOrdenes,
     obtener_verificador_ordenes,
@@ -43,6 +52,7 @@ from services.ms3_presupuestos.persistencia.repositorios import LIMITE_MAXIMO
 from services.ms3_presupuestos.schemas.presupuesto import (
     DecisionEntrada,
     ItemsVersion,
+    Modificacion,
     NuevaVersion,
     PaginaPresupuestos,
     PresupuestoCrear,
@@ -83,16 +93,37 @@ def _es_personal(principal: PrincipalAutenticado) -> bool:
 def _exigir_orden_del_cliente(
     orden_id: int, presupuesto_id: int | None, token: str, verificador: VerificadorOrdenes,
     *, solo_propietario: bool = False,
-) -> None:
+) -> OrdenVisible | None:
     """404 si la orden no es del cliente: no se revela si el presupuesto existe."""
     try:
         if solo_propietario:
-            verificador.verificar_propiedad(orden_id, token)
-        else:
-            verificador.verificar_acceso(orden_id, token)
+            return verificador.verificar_propiedad(orden_id, token)
+        return verificador.verificar_acceso(orden_id, token)
     except OrdenNoVisible as exc:
         recurso = f"Presupuesto {presupuesto_id}" if presupuesto_id else f"Orden {orden_id}"
         raise RecursoNoEncontrado(f"{recurso} no existe") from exc
+
+
+def _estado(orden: OrdenVisible | None) -> int | None:
+    return orden.estado_codigo if orden is not None else None
+
+
+def _exigir_orden_abierta(
+    uow: UnidadDeTrabajo, orden: OrdenVisible | None, orden_id: int, usuario_id: int,
+) -> None:
+    """409 si la orden está Entregada o Cancelada; antes libera lo que tenía reservado."""
+    if casos.orden_cerrada(_estado(orden)):
+        casos.liberar_reservas_de_orden_cerrada(uow, orden_id, usuario_id=usuario_id)
+    casos.exigir_orden_abierta(orden_id, _estado(orden))
+
+
+def _orden_para_el_personal(
+    uow: UnidadDeTrabajo, orden_id: int, presupuesto_id: int | None, token: str,
+    verificador: VerificadorOrdenes, principal: PrincipalAutenticado,
+) -> None:
+    """La orden debe ser visible para el mecánico/administrador y seguir abierta."""
+    orden = _exigir_orden_del_cliente(orden_id, presupuesto_id, token, verificador)
+    _exigir_orden_abierta(uow, orden, orden_id, principal.usuario_id)
 
 
 # ------------------------------------------------------------------ crear --
@@ -104,7 +135,10 @@ def _exigir_orden_del_cliente(
     summary="Crear el presupuesto de una orden (versión 1 en borrador)",
     responses={
         **_ERRORES_COMUNES,
-        status.HTTP_409_CONFLICT: {"description": "La orden ya tiene presupuesto"},
+        **_503,
+        404: {"description": "Orden inexistente o no asignada al mecánico"},
+        status.HTTP_409_CONFLICT: {"description": "La orden ya tiene presupuesto o está "
+                                                  "entregada/cancelada"},
         422: {"description": "Ítems inválidos o repuesto inexistente"},
     },
 )
@@ -112,7 +146,16 @@ def crear(
     body: PresupuestoCrear,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> PresupuestoDetalle:
+    # La orden debe existir en MS2, estar asignada al mecánico (el
+    # administrador presupuesta cualquiera) y no estar entregada ni cancelada.
+    try:
+        orden = verificador.verificar_creacion_presupuesto(body.orden_id, token, principal)
+    except OrdenNoVisible as exc:
+        raise RecursoNoEncontrado(f"Orden {body.orden_id} no existe") from exc
+    _exigir_orden_abierta(uow, orden, body.orden_id, principal.usuario_id)
     presupuesto = casos.crear_presupuesto(
         uow, orden_id=body.orden_id, items=body.items, creado_por_id=principal.usuario_id
     )
@@ -259,12 +302,53 @@ def crear_version(
     presupuesto_id: int = IdPresupuesto,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> PresupuestoDetalle:
     body = body or NuevaVersion()
+    presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
+    _orden_para_el_personal(uow, presupuesto.orden_id, presupuesto_id, token, verificador, principal)
     casos.crear_version(
         uow, presupuesto_id=presupuesto_id, creado_por_id=principal.usuario_id,
         items=body.items, copiar_de=body.copiar_de,
     )
+    return casos.a_detalle(casos.obtener_presupuesto(uow, presupuesto_id))
+
+
+@router.post(
+    "/{presupuesto_id}/modificacion",
+    response_model=PresupuestoDetalle,
+    status_code=status.HTTP_201_CREATED,
+    summary="Modificar el presupuesto aprobado (crea obligatoriamente una nueva versión)",
+    description=(
+        "La versión aprobada queda bloqueada y sigue vigente hasta que el cliente apruebe "
+        "la modificación. Sin `items`, la nueva versión es una copia editable de la "
+        "aprobada; se ajusta con `PUT .../versiones/{n}/items` y se envía como siempre."
+    ),
+    responses={
+        **_ERRORES_COMUNES,
+        **_NO_EXISTE,
+        **_503,
+        status.HTTP_409_CONFLICT: {
+            "description": "No hay versión aprobada, ya hay un borrador abierto o la orden está "
+                           "entregada/cancelada"
+        },
+        422: {"description": "Ítems inválidos o repuesto inexistente"},
+    },
+)
+def crear_modificacion(
+    body: Modificacion | None = None,
+    presupuesto_id: int = IdPresupuesto,
+    uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
+) -> PresupuestoDetalle:
+    body = body or Modificacion()
+    presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
+    _orden_para_el_personal(uow, presupuesto.orden_id, presupuesto_id, token, verificador, principal)
+    casos.crear_modificacion(uow, presupuesto_id=presupuesto_id,
+                             creado_por_id=principal.usuario_id, items=body.items)
     return casos.a_detalle(casos.obtener_presupuesto(uow, presupuesto_id))
 
 
@@ -280,14 +364,18 @@ def crear_version(
         status.HTTP_409_CONFLICT: {"description": "La versión ya fue enviada (congelada)"},
         422: {"description": "Ítems inválidos o repuesto inexistente"},
     },
-    dependencies=[Depends(_personal_del_taller)],
 )
 def reemplazar_items(
     body: ItemsVersion,
     presupuesto_id: int = IdPresupuesto,
     numero: int = NumeroVersion,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> VersionDetalle:
+    presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
+    _orden_para_el_personal(uow, presupuesto.orden_id, presupuesto_id, token, verificador, principal)
     version_editada = casos.reemplazar_items(
         uow, presupuesto_id=presupuesto_id, numero=numero, items=body.items
     )
@@ -317,15 +405,18 @@ def reemplazar_items(
         422: {"description": "Sin ítems o con ítems sin precio"},
         503: {"description": "El envío se guardó, pero falta confirmar el efecto en MS2"},
     },
-    dependencies=[Depends(_solo_administrador)],
 )
 def enviar(
     presupuesto_id: int = IdPresupuesto,
     numero: int = NumeroVersion,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_solo_administrador),
     token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
     coordinador: CoordinadorEnviosPresupuesto = Depends(obtener_coordinador_envios_presupuesto),
 ) -> ResultadoOperacion:
+    presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
+    _orden_para_el_personal(uow, presupuesto.orden_id, presupuesto_id, token, verificador, principal)
     resultado = casos.enviar_version(uow, presupuesto_id=presupuesto_id, numero=numero)
     if resultado.efecto_en_orden == "esperando_aprobacion":
         resultado.aplicacion_en_orden = coordinador.aplicar(
@@ -410,11 +501,16 @@ def decidir(
     coordinador: CoordinadorOrdenes = Depends(obtener_coordinador_ordenes),
 ) -> ResultadoOperacion:
     presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
-    _exigir_orden_del_cliente(
+    orden = _exigir_orden_del_cliente(
         presupuesto.orden_id, presupuesto_id, token, verificador, solo_propietario=True,
     )
     # Una versión en borrador no existe para el cliente.
     casos.obtener_version(uow, presupuesto_id, numero, solo_enviadas=True)
+    # Conexión con la orden: cerrada → 409 (liberando reservas); la primera
+    # decisión exige que la orden esté esperando la aprobación.
+    _exigir_orden_abierta(uow, orden, presupuesto.orden_id, principal.usuario_id)
+    casos.exigir_estado_para_decidir(presupuesto.orden_id, _estado(orden),
+                                     primera=presupuesto.version_vigente is None)
     # decidir_version vuelve a leer con FOR UPDATE (populate_existing): decide
     # sobre el estado confirmado más reciente, no sobre esta lectura previa.
     resultado = casos.decidir_version(

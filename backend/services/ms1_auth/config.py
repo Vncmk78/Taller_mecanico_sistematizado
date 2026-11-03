@@ -31,6 +31,9 @@ class Settings(ServiceSettings):
     JWT_ALGORITHM: Literal["HS256"] = "HS256"
     JWT_EXPIRE_MINUTES: int = Field(default=60, gt=0)
 
+    # Secreto independiente del JWT, compartido solo entre MS1 y MS2 para el
+    # contrato interno de eventos. Si falta, la ruta interna queda deshabilitada.
+    EVENT_SHARED_SECRET: SecretStr | None = Field(default=None, min_length=32)
     # Tratamiento de intentos repetidos de autenticación incorrecta: tras
     # `LOGIN_MAX_INTENTOS` fallos consecutivos, la cuenta queda bloqueada
     # temporalmente durante `LOGIN_BLOQUEO_MINUTOS` minutos.

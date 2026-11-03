@@ -76,6 +76,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
     const [destino, setDestino] = useState('');
     const [observacion, setObservacion] = useState('');
     const [motivo, setMotivo] = useState('');
+    const [motivoError, setMotivoError] = useState('');
     const [mecanicoId, setMecanicoId] = useState('');
     const [mecanicos, setMecanicos] = useState<UsuarioListado[]>([]);
     const [submitting, setSubmitting] = useState(false);
@@ -109,6 +110,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
         setDestino('');
         setObservacion('');
         setMotivo('');
+        setMotivoError('');
         setMecanicoId('');
     };
 
@@ -124,7 +126,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
         if (pending.id === 'avanzar_estado' && !destino) return;
         if (pending.id === 'asignar_mecanico' && !mecanicoId) return;
         if (pending.requiereMotivo && !motivo.trim()) {
-            setError('Debe indicar un motivo.');
+            setMotivoError('Debe indicar un motivo.');
             return;
         }
 
@@ -154,7 +156,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                     actualizada =
                         actor.rol === 'cliente'
                             ? await orderService.cancelarComoCliente(order.id, motivo)
-                            : await orderService.cambiarEstado(order.id, 8, motivo);
+                            : await orderService.confirmarCancelacion(order.id);
                     break;
                 default:
                     return;
@@ -162,7 +164,9 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
 
             updateOrder(actualizada);
             showToast(
-                `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`,
+                pending.id === 'cancelar' && actor.rol === 'cliente'
+                    ? `Solicitud de cancelación de la orden n° ${order.id} enviada. Pendiente de confirmación administrativa.`
+                    : `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`,
                 'success'
             );
             setPending(null);
@@ -177,6 +181,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
 
     const abrir = (accion: AccionOrden) => {
         setError('');
+        setMotivoError('');
         setPending(accion);
     };
 
@@ -227,9 +232,12 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <label className="flex flex-col gap-1 text-sm">
                                     <span className="text-text-muted">Siguiente estado</span>
                                     <select
+                                        id={`orden-${order.id}-${accion.id}-destino`}
+                                        name="destino"
                                         value={destino}
                                         onChange={(e) => setDestino(e.target.value)}
                                         aria-label={`Siguiente estado de la orden ${order.id}`}
+                                        aria-required="true"
                                         className={INPUT_CLASS}
                                     >
                                         <option value="">Seleccionar...</option>
@@ -246,9 +254,12 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <label className="flex flex-col gap-1 text-sm">
                                     <span className="text-text-muted">Mecánico responsable</span>
                                     <select
+                                        id={`orden-${order.id}-${accion.id}-mecanico`}
+                                        name="mecanico"
                                         value={mecanicoId}
                                         onChange={(e) => setMecanicoId(e.target.value)}
                                         aria-label={`Mecánico para la orden ${order.id}`}
+                                        aria-required="true"
                                         disabled={loadingMecanicos}
                                         className={INPUT_CLASS}
                                     >
@@ -268,20 +279,50 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <label className="flex flex-col gap-1 text-sm">
                                     <span className="text-text-muted">Motivo (obligatorio)</span>
                                     <input
+                                        id={`orden-${order.id}-${accion.id}-motivo`}
                                         type="text"
+                                        name="motivo"
                                         value={motivo}
-                                        onChange={(e) => setMotivo(e.target.value)}
+                                        onChange={(e) => {
+                                            setMotivo(e.target.value);
+                                            if (motivoError) setMotivoError('');
+                                        }}
                                         placeholder="Explique el motivo de la cancelación..."
                                         aria-label={`Motivo de la orden ${order.id}`}
+                                        aria-required="true"
+                                        aria-invalid={motivoError ? true : undefined}
+                                        aria-describedby={
+                                            motivoError
+                                                ? `orden-${order.id}-${accion.id}-motivo-error`
+                                                : `orden-${order.id}-${accion.id}-motivo-hint`
+                                        }
                                         className={INPUT_CLASS}
                                     />
+                                    {motivoError ? (
+                                        <p
+                                            id={`orden-${order.id}-${accion.id}-motivo-error`}
+                                            role="alert"
+                                            className="text-sm text-status-red"
+                                        >
+                                            {motivoError}
+                                        </p>
+                                    ) : (
+                                        <span
+                                            id={`orden-${order.id}-${accion.id}-motivo-hint`}
+                                            className="text-xs text-text-muted"
+                                        >
+                                            Obligatorio para cancelar la orden.
+                                        </span>
+                                    )}
                                 </label>
                             ) : (
-                                accion.id !== 'asignar_mecanico' && (
+                                accion.id !== 'asignar_mecanico' && accion.id !== 'cancelar' && (
                                     <label className="flex flex-col gap-1 text-sm">
                                         <span className="text-text-muted">Observación (opcional)</span>
                                         <input
+                                            id={`orden-${order.id}-${accion.id}-observacion`}
                                             type="text"
+                                            name="observacion"
                                             value={observacion}
                                             onChange={(e) => setObservacion(e.target.value)}
                                             placeholder="Comentario..."
@@ -296,7 +337,9 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <label className="flex flex-col gap-1 text-sm">
                                     <span className="text-text-muted">Observación (opcional)</span>
                                     <input
+                                        id={`orden-${order.id}-${accion.id}-observacion`}
                                         type="text"
+                                        name="observacion"
                                         value={observacion}
                                         onChange={(e) => setObservacion(e.target.value)}
                                         placeholder="Comentario de la asignación..."
@@ -311,6 +354,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 disabled={!accion.habilitada || isOffline || !puedeConfirmar(accion)}
                                 onClick={() => abrir(accion)}
                                 className="self-start"
+                                title={!accion.habilitada && accion.motivoBloqueo ? accion.motivoBloqueo : undefined}
                             >
                                 {accion.etiqueta}
                             </Button>
@@ -322,9 +366,11 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
             <ConfirmDialog
                 open={pending !== null}
                 tone={pending?.id === 'cancelar' ? 'danger' : 'primary'}
-                title={tituloDialogo(pending)}
-                description={descripcionDialogo(pending, order, { destino, motivo, mecanicos, mecanicoId })}
-                confirmLabel={etiquetaConfirmar(pending)}
+                title={tituloDialogo(pending, actor.rol === 'cliente')}
+                description={descripcionDialogo(pending, order, {
+                    destino, motivo, mecanicos, mecanicoId, solicitudCliente: actor.rol === 'cliente',
+                })}
+                confirmLabel={etiquetaConfirmar(pending, actor.rol === 'cliente')}
                 isLoading={submitting}
                 onConfirm={ejecutar}
                 onCancel={() => setPending(null)}
@@ -338,29 +384,30 @@ interface DescripcionContexto {
     motivo: string;
     mecanicos: UsuarioListado[];
     mecanicoId: string;
+    solicitudCliente: boolean;
 }
 
-function tituloDialogo(accion: AccionOrden | null): string {
+function tituloDialogo(accion: AccionOrden | null, solicitudCliente: boolean): string {
     switch (accion?.id) {
         case 'asignar_mecanico':
             return '¿Confirmar la asignación?';
         case 'registrar_entrega':
             return '¿Registrar la entrega del vehículo?';
         case 'cancelar':
-            return '¿Confirmar la cancelación?';
+            return solicitudCliente ? '¿Solicitar la cancelación?' : '¿Confirmar la cancelación?';
         default:
             return '¿Confirmar el avance de estado?';
     }
 }
 
-function etiquetaConfirmar(accion: AccionOrden | null): string {
+function etiquetaConfirmar(accion: AccionOrden | null, solicitudCliente: boolean): string {
     switch (accion?.id) {
         case 'asignar_mecanico':
             return 'Asignar mecánico';
         case 'registrar_entrega':
             return 'Registrar entrega';
         case 'cancelar':
-            return 'Cancelar orden';
+            return solicitudCliente ? 'Solicitar cancelación' : 'Confirmar cancelación';
         default:
             return 'Avanzar estado';
     }
@@ -381,7 +428,9 @@ function descripcionDialogo(
         case 'registrar_entrega':
             return `La orden n° ${order.id} pasará a Entregado. Confirme que el vehículo fue entregado al cliente.`;
         case 'cancelar':
-            return `La orden n° ${order.id} pasará a Cancelado.${ctx.motivo ? `\nMotivo: ${ctx.motivo}` : ''}`;
+            return ctx.solicitudCliente
+                ? `Se solicitará cancelar la orden n° ${order.id}. Su estado no cambiará hasta que un administrador confirme.${ctx.motivo ? `\nMotivo: ${ctx.motivo}` : ''}`
+                : `Se confirmará la solicitud pendiente de la orden n° ${order.id}. MS2 comprobará que no exista una aprobación del presupuesto antes de cancelarla.`;
         default:
             return `La orden n° ${order.id} pasará de ${ordenStatusLabel(order.estadoCodigo)} a ${
                 ctx.destino ? ordenStatusLabel(Number(ctx.destino)) : ''

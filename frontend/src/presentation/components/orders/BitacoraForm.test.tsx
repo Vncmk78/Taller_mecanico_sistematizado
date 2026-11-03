@@ -64,6 +64,63 @@ describe('BitacoraForm', () => {
         expect(orderService.registrarBitacora).not.toHaveBeenCalled();
     });
 
+    it('asocia el error de la descripción con el campo y lo marca obligatorio', async () => {
+        renderForm();
+
+        const descripcion = screen.getByLabelText('Descripción de la entrada');
+        expect(descripcion).toHaveAttribute('aria-required', 'true');
+        expect(descripcion).not.toHaveAttribute('aria-invalid');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Registrar entrada' }));
+
+        await screen.findByText('Describe la observación o la acción realizada');
+        expect(descripcion).toHaveAttribute('aria-invalid', 'true');
+
+        const errorId = descripcion.getAttribute('aria-describedby');
+        expect(errorId).toBe('bitacora-descripcion-error');
+        expect(document.getElementById(errorId as string)).toHaveTextContent(
+            'Describe la observación o la acción realizada'
+        );
+    });
+
+    it('asocia los errores de cada repuesto con su campo', async () => {
+        renderForm();
+
+        fireEvent.change(screen.getByLabelText('Descripción de la entrada'), {
+            target: { value: 'Cambio de pastillas' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Agregar repuesto' }));
+
+        const nombre = screen.getByLabelText('Nombre del repuesto 1');
+        const cantidad = screen.getByLabelText('Cantidad del repuesto 1');
+        expect(nombre).toHaveAttribute('aria-required', 'true');
+        expect(cantidad).toHaveAttribute('aria-required', 'true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Registrar entrada' }));
+        await screen.findByText('Indica el nombre del repuesto');
+
+        expect(nombre).toHaveAttribute('aria-invalid', 'true');
+        expect(nombre.getAttribute('aria-describedby')).toBe(
+            'bitacora-repuesto-0-nombre-error'
+        );
+        expect(document.getElementById('bitacora-repuesto-0-nombre-error')).toHaveTextContent(
+            'Indica el nombre del repuesto'
+        );
+
+        fireEvent.change(nombre, { target: { value: 'Pastillas' } });
+        fireEvent.change(cantidad, { target: { value: '0' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Registrar entrada' }));
+        await screen.findByText('La cantidad debe ser mayor que 0');
+
+        expect(cantidad).toHaveAttribute('aria-invalid', 'true');
+        expect(cantidad.getAttribute('aria-describedby')).toBe(
+            'bitacora-repuesto-0-cantidad-error'
+        );
+        expect(document.getElementById('bitacora-repuesto-0-cantidad-error')).toHaveTextContent(
+            'La cantidad debe ser mayor que 0'
+        );
+    });
+
     it('registra una acción con sus repuestos', async () => {
         vi.mocked(orderService.registrarBitacora).mockResolvedValue(respuesta);
 

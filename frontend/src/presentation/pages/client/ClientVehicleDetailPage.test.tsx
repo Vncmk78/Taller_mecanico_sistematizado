@@ -7,7 +7,6 @@ import type { Vehicle } from '@/domain/entities/Vehicle';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
-import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { ClientVehicleDetailPage } from './ClientVehicleDetailPage';
 
@@ -23,6 +22,7 @@ vi.mock('@/infrastructure/api/VehicleService', () => ({
 
 vi.mock('@/infrastructure/api/OrderService', () => ({
     orderService: {
+        getVehicleOrderHistory: vi.fn(),
         getOrders: vi.fn(),
         getOrderById: vi.fn(),
         getOrderHistory: vi.fn(),
@@ -73,17 +73,6 @@ const ordenDelVehiculo: Order = {
     actualizadoEn: '2026-09-20T10:00:00.000Z',
 };
 
-const ordenDeOtroVehiculo: Order = {
-    id: '102',
-    vehicleId: '2',
-    ingresoId: 2,
-    estadoCodigo: 5,
-    mecanicoActualId: null,
-    creadoPorId: 'c2',
-    creadoEn: '2026-09-18T15:00:00.000Z',
-    actualizadoEn: '2026-09-19T10:00:00.000Z',
-};
-
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
 const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
 
@@ -109,8 +98,9 @@ describe('ClientVehicleDetailPage: ficha de un vehículo propio', () => {
             },
         });
         useVehicleStore.setState({ vehicles: [], status: 'idle', error: null, isOffline: false });
-        useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
-        vi.mocked(orderService.getOrders).mockResolvedValue([]);
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [], total: 0, limit: 20, offset: 0,
+        });
         vi.clearAllMocks();
     });
 
@@ -164,12 +154,11 @@ describe('ClientVehicleDetailPage: ficha de un vehículo propio', () => {
         ).toHaveAttribute('href', '/client/vehiculos');
     });
 
-    it('lista solo las órdenes del vehículo consultado en el historial', async () => {
+    it('consulta el historial paginado del vehículo propio y lista sus órdenes', async () => {
         vi.mocked(vehicleService.getVehicleById).mockResolvedValue(mio);
-        vi.mocked(orderService.getOrders).mockResolvedValue([
-            ordenDelVehiculo,
-            ordenDeOtroVehiculo,
-        ]);
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [ordenDelVehiculo], total: 1, limit: 20, offset: 0,
+        });
 
         renderPage('1');
 
@@ -177,14 +166,20 @@ describe('ClientVehicleDetailPage: ficha de un vehículo propio', () => {
             name: /Orden n° 101 · Ford Fiesta/,
         });
         expect(linkOrdenPropia).toHaveAttribute('href', '/client/ordenes/101');
-        expect(screen.getByText('Actualizada el', { exact: false })).toBeInTheDocument();
+        expect(screen.getByText('Ingresó el', { exact: false })).toBeInTheDocument();
         expect(screen.getByText('1 orden')).toBeInTheDocument();
         expect(screen.queryByRole('link', { name: /Orden n° 102/ })).not.toBeInTheDocument();
+        expect(orderService.getVehicleOrderHistory).toHaveBeenCalledWith('1', {
+            limit: 20,
+            offset: 0,
+        });
     });
 
     it('muestra mensaje de historial vacío cuando no hay órdenes', async () => {
         vi.mocked(vehicleService.getVehicleById).mockResolvedValue(mio);
-        vi.mocked(orderService.getOrders).mockResolvedValue([]);
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [], total: 0, limit: 20, offset: 0,
+        });
 
         renderPage('1');
 
@@ -195,7 +190,7 @@ describe('ClientVehicleDetailPage: ficha de un vehículo propio', () => {
 
     it('muestra un error reintentable en el historial cuando no se pueden cargar las órdenes', async () => {
         vi.mocked(vehicleService.getVehicleById).mockResolvedValue(mio);
-        vi.mocked(orderService.getOrders).mockRejectedValue(axios500);
+        vi.mocked(orderService.getVehicleOrderHistory).mockRejectedValue(axios500);
 
         renderPage('1');
 

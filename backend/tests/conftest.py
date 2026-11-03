@@ -21,6 +21,9 @@ os.environ.setdefault(
     "MS2_DATABASE_URL",
     "sqlite+pysqlite:////tmp/sgtm_ms2_config_only.db",
 )
+# Las pruebas HTTP no deben arrancar el publicador que usa la base/servicio
+# externo configurado en el .env del desarrollador.
+os.environ["MS2_EVENT_WORKER_ENABLED"] = "false"
 os.environ.setdefault(
     "MS3_JWT_SECRET_KEY",
     "clave-secreta-exclusiva-para-pruebas-de-ms3-123456",
@@ -48,6 +51,20 @@ from services.ms1_auth.db import Base, get_db
 from services.ms1_auth.main import app
 from services.ms1_auth.models import Rol
 from shared.auth import NombreRol
+
+
+@pytest.fixture
+def mecanicos_validos():
+    """MS1 simulado para suites de estados/capacidad; la validación HTTP tiene suite propia."""
+    from types import SimpleNamespace
+    from services.ms2_taller.main import app as ms2
+    from services.ms2_taller.integracion_ms1 import obtener_verificador_mecanicos
+
+    ms2.dependency_overrides[obtener_verificador_mecanicos] = lambda: SimpleNamespace(
+        verificar=lambda _mecanico_id, _token: None,
+    )
+    yield
+    ms2.dependency_overrides.pop(obtener_verificador_mecanicos, None)
 
 
 @pytest.fixture

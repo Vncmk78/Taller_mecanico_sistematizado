@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { TAMANO_MAXIMO_EVIDENCIA_BYTES, type Evidencia } from '@/domain/entities/Evidencia';
+import type { Evidencia } from '@/domain/entities/Evidencia';
 import type { Presupuesto } from '@/domain/entities/Presupuesto';
 import { evidenciaService } from '@/infrastructure/api/EvidenciaService';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
@@ -85,7 +85,22 @@ describe('EvidenceUploadForm: validaciones antes de enviar', () => {
 
         expect(await screen.findByText('Selecciona una foto o un video.')).toBeInTheDocument();
         expect(inputArchivo()).toHaveAttribute('aria-invalid', 'true');
+        expect(inputArchivo().getAttribute('aria-describedby')).toBe(
+            'evidencia-archivo-hint evidencia-archivo-error'
+        );
+        expect(document.getElementById('evidencia-archivo-error')).toHaveTextContent(
+            'Selecciona una foto o un video.'
+        );
         expect(evidenciaService.crear).not.toHaveBeenCalled();
+    });
+
+    it('describe el campo de archivo con el formato y el tamaño permitidos', () => {
+        renderForm();
+
+        expect(inputArchivo().getAttribute('aria-describedby')).toBe('evidencia-archivo-hint');
+        expect(document.getElementById('evidencia-archivo-hint')).toHaveTextContent(
+            'Máximo 10 MB para imágenes y 12 MB para videos.'
+        );
     });
 
     it('al elegir un archivo muestra su nombre y tamaño y habilita el envío', () => {
@@ -118,16 +133,16 @@ describe('EvidenceUploadForm: validaciones antes de enviar', () => {
         expect(evidenciaService.crear).not.toHaveBeenCalled();
     });
 
-    it('acepta un archivo justo en el límite de 12 MB y rechaza uno de un byte más', async () => {
+    it('acepta una imagen justo en el límite de 10 MB y rechaza una de un byte más', async () => {
         vi.mocked(evidenciaService.crear).mockResolvedValue(evidencia);
         renderForm();
 
-        seleccionar(conTamano(foto('justo.jpg'), TAMANO_MAXIMO_EVIDENCIA_BYTES + 1));
+        seleccionar(conTamano(foto('justo.jpg'), 10 * 1024 * 1024 + 1));
         fireEvent.click(botonSubir());
-        expect(await screen.findByText('El archivo supera el límite de 12 MB.')).toBeInTheDocument();
+        expect(await screen.findByText('El archivo supera el límite de 10 MB para imágenes.')).toBeInTheDocument();
         expect(evidenciaService.crear).not.toHaveBeenCalled();
 
-        seleccionar(conTamano(foto('justo.jpg'), TAMANO_MAXIMO_EVIDENCIA_BYTES));
+        seleccionar(conTamano(foto('justo.jpg'), 10 * 1024 * 1024));
         fireEvent.click(botonSubir());
         await waitFor(() => expect(evidenciaService.crear).toHaveBeenCalledTimes(1));
     });
@@ -147,6 +162,57 @@ describe('EvidenceUploadForm: datos enviados según el contexto', () => {
     beforeEach(() => {
         useEvidenceStore.getState().reset();
         vi.clearAllMocks();
+    });
+
+    it('la visibilidad tiene nombre y descripción accesibles y se activa pulsando el texto', () => {
+        renderForm();
+        const casilla = screen.getByRole('checkbox', { name: 'Visible para el cliente' });
+        expect(casilla).toHaveAccessibleDescription(
+            'Permite que el cliente vea esta evidencia desde su portal.'
+        );
+        expect(casilla).not.toBeChecked();
+        fireEvent.click(screen.getByText('Visible para el cliente'));
+        expect(casilla).toBeChecked();
+    });
+
+    it('recupera la consulta pendiente al salir del contexto presupuesto y volver', async () => {
+        let resolver: (p: Presupuesto | null) => void = () => {};
+        vi.mocked(presupuestoService.getByOrder).mockReturnValue(
+            new Promise<Presupuesto | null>((resolve) => { resolver = resolve; })
+        );
+        vi.mocked(evidenciaService.crear).mockResolvedValue(evidencia);
+        renderForm();
+        const contexto = screen.getByLabelText('Contexto');
+        fireEvent.change(contexto, { target: { value: 'presupuesto' } });
+        fireEvent.change(contexto, { target: { value: 'diagnostico' } });
+        fireEvent.change(contexto, { target: { value: 'presupuesto' } });
+        await act(async () => resolver({ id: '77' } as Presupuesto));
+        seleccionar(foto());
+        fireEvent.click(botonSubir());
+        await waitFor(() => expect(evidenciaService.crear).toHaveBeenCalledWith(
+            expect.objectContaining({ ordenId: '31', presupuestoId: '77' }),
+            expect.any(Function)
+        ));
+        expect(presupuestoService.getByOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it('al cambiar de orden consulta su presupuesto y descarta la respuesta anterior', async () => {
+        let resolverAnterior: (p: Presupuesto | null) => void = () => {};
+        vi.mocked(presupuestoService.getByOrder)
+            .mockReturnValueOnce(new Promise<Presupuesto | null>((resolve) => { resolverAnterior = resolve; }))
+            .mockResolvedValueOnce({ id: '88' } as Presupuesto);
+        vi.mocked(evidenciaService.crear).mockResolvedValue(evidencia);
+        const vista = renderForm();
+        fireEvent.change(screen.getByLabelText('Contexto'), { target: { value: 'presupuesto' } });
+        vista.rerender(<ToastProvider><EvidenceUploadForm orderId="32" /></ToastProvider>);
+        await waitFor(() => expect(presupuestoService.getByOrder).toHaveBeenCalledWith('32'));
+        await act(async () => resolverAnterior({ id: '77' } as Presupuesto));
+        seleccionar(foto());
+        fireEvent.click(botonSubir());
+        await waitFor(() => expect(evidenciaService.crear).toHaveBeenCalledWith(
+            expect.objectContaining({ ordenId: '32', presupuestoId: '88' }),
+            expect.any(Function)
+        ));
     });
 
     it('envía el contexto elegido y la marca de visible para el cliente', async () => {
@@ -241,6 +307,22 @@ describe('EvidenceUploadForm: datos enviados según el contexto', () => {
 
         expect(await screen.findByText('Esperando el presupuesto de la orden...')).toBeInTheDocument();
         expect(evidenciaService.crear).not.toHaveBeenCalled();
+    });
+
+    it('un error del presupuesto no marca el archivo como inválido', async () => {
+        vi.mocked(presupuestoService.getByOrder).mockResolvedValue(null);
+        renderForm();
+
+        fireEvent.change(screen.getByLabelText('Contexto'), { target: { value: 'presupuesto' } });
+        expect(await screen.findByText('Esta orden no tiene un presupuesto registrado.')).toBeInTheDocument();
+        seleccionar(foto());
+        fireEvent.click(botonSubir());
+
+        expect(
+            await screen.findByText('Esta orden no tiene un presupuesto al que asociar la evidencia.')
+        ).toBeInTheDocument();
+        expect(inputArchivo()).not.toHaveAttribute('aria-invalid');
+        expect(inputArchivo().getAttribute('aria-describedby')).toBe('evidencia-archivo-hint');
     });
 });
 

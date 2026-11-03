@@ -13,8 +13,8 @@ export function UserMenu({ userName, subtitle, onLogout, prepend }: UserMenuProp
     <div className="flex items-center gap-3">
       {prepend}
       <div className="hidden sm:block text-right">
-        <div className="text-sm font-bold">{userName}</div>
-        <div className="text-xs text-text-muted">{subtitle}</div>
+        <div className="text-sm font-bold text-white">{userName}</div>
+        <div className="text-xs text-[#CBD5E1]">{subtitle}</div>
       </div>
       <button
         type="button"

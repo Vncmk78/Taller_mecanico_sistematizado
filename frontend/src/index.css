@@ -1,22 +1,24 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary-blue: #15283F;
-  --color-primary-blue-hover: #0F1E30;
-  --color-primary-orange: #F26A2E;
-  --color-primary-orange-hover: #DE5A1E;
-  --color-bg-main: #F5F7FA;
-  --color-bg-secondary: #F0F4F8;
+  --color-primary-blue: #111318;
+  --color-primary-blue-hover: #08090C;
+  --color-primary-orange: #901826;
+  --color-primary-orange-hover: #6E101B;
+  --color-bg-main: #E2E8F0;
+  --color-bg-secondary: #CBD5E1;
   --color-surface: #FFFFFF;
-  --color-text-main: #17212B;
-  --color-text-muted: #637083;
-  --color-border-custom: #DDE3EA;
-  --color-status-yellow: #C47A17;
-  --color-status-blue: #3267B2;
-  --color-status-orange: #F26A2E;
-  --color-status-green: #16835D;
-  --color-status-red: #C54545;
-  --color-status-purple: #8E24AA;
+  --color-surface-elevated: #F8FAFC;
+  --color-text-main: #0F172A;
+  --color-text-muted: #475569;
+  --color-border-custom: #94A3B8;
+  --color-border-strong: #64748B;
+  --color-status-yellow: #B45309;
+  --color-status-blue: #1E40AF;
+  --color-status-orange: #D97706;
+  --color-status-green: #15803D;
+  --color-status-red: #B91C1C;
+  --color-status-purple: #6D28D9;
   --font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 

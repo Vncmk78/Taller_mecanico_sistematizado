@@ -64,6 +64,81 @@ tablas de los cuatro dominios terminen mezcladas en una misma migración.
 
 ## Puesta en marcha
 
+### Comunicación MS2–MS3 en Vercel
+
+Vercel rechaza bindings circulares. Se conserva MS3 → MS2 como binding y MS2
+consulta MS3 por `https://<VERCEL_URL>/ms3`, usando el dominio de ese mismo
+despliegue. Omitir `MS2_MS3_URL` en Vercel para activar esta resolución y habilitar
+las variables de sistema del proyecto. Una URL explícita sigue teniendo prioridad.
+En desarrollo se conserva `http://localhost:8003`; en Kubero se configura el
+origen interno de MS3 mediante `MS2_MS3_URL`.
+
+El JWT original siempre se reenvía. Si la URL del despliegue está protegida,
+el administrador debe habilitar Protection Bypass for Automation en Vercel:
+la plataforma proporciona `VERCEL_AUTOMATION_BYPASS_SECRET`. MS2 lo envía como
+`x-vercel-protection-bypass` únicamente a `/ms3` en el dominio de ese despliegue.
+No copiar ese secreto al frontend, a Git ni a otros servicios externos; no
+desactivar la autenticación JWT ni Deployment Protection. Sin autorización de
+plataforma, la integración falla con `503` antes de guardar cambios.
+
+Referencias: [variables de sistema](https://vercel.com/docs/environment-variables/system-environment-variables)
+y [protección para automatización](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation).
+
+### Imágenes para Kubero u otro entorno de contenedores
+
+Desde la raíz del repositorio:
+
+```bash
+docker build -t sgtm-backend:revision .
+docker build -t sgtm-frontend:revision frontend
+```
+
+La imagen backend se ejecuta en cinco instancias independientes, con
+`SGTM_SERVICIO=gateway`, `ms1`, `ms2`, `ms3` o `ms4`. `PORT` configura el puerto
+interno (8000 por defecto). El frontend sirve la SPA y reenvía `/api/*` a la
+Gateway; requiere `GATEWAY_UPSTREAM` con su origen HTTP interno, sin ruta ni
+barra final. No usar la URL del panel de administración de Kubero como URL API.
+
+Configurar mediante el entorno de cada instancia:
+
+- Cada MS recibe su propio `MSn_DATABASE_URL` con `postgresql+psycopg://` y una
+  base independiente. Los cuatro `MSn_JWT_SECRET_KEY` deben coincidir con el
+  secreto emisor de MS1 y tener al menos 32 caracteres.
+- La Gateway recibe `GATEWAY_MS1_URL` a `GATEWAY_MS4_URL`, con los orígenes
+  internos de los servicios, y los orígenes web permitidos en su CORS.
+- Las comunicaciones entre dominios requieren `MS2_MS3_URL`, `MS3_MS2_URL`,
+  `MS4_MS2_URL` y `MS4_MS3_URL` con los orígenes correspondientes.
+- MS4 necesita sus valores `MS4_S3_*`, un bucket privado y credenciales con
+  permisos acotados. `MS4_S3_PUBLIC_ENDPOINT` debe ser accesible desde el
+  navegador para que funcionen las descargas firmadas.
+
+Las imágenes no incluyen `.env`, entornos virtuales, dependencias locales ni
+copias de revisión. El backend corre con un usuario sin privilegios. El arranque
+no ejecuta migraciones ni crea usuarios automáticamente.
+
+Desde `backend/`, con las conexiones del entorno configuradas:
+
+```bash
+python scripts/verificar_migraciones.py  # Solo lectura, incluye MS1 a MS4.
+python scripts/diagnosticar_ms2.py       # Solo lectura, revisa columnas de órdenes.
+```
+
+Si hacen falta migraciones, revisar primero el commit desplegado y ejecutar de
+forma controlada `python scripts/migrar.py` desde esa misma versión. El migrador
+aplica `heads` y vuelve a comprobar las cuatro bases; aborta ante revisiones
+desconocidas o si dos servicios apuntan a una misma base. No realiza downgrade,
+stamp, seeds ni creación de bases. Una falla puede dejar servicios anteriores
+ya migrados: las cuatro bases no comparten una transacción.
+
+`/health/db` solo comprueba conexión mediante `SELECT 1`; un `200` no confirma
+que las tablas y columnas estén al día. Antes de entregar una URL a web o móvil,
+verificar también login, listado, detalle, permisos y operaciones de órdenes.
+`scripts/prueba_integracion_app.py` automatiza consultas con cuentas de prueba
+configuradas en `APP_TEST_{CLIENTE,MECANICO,ADMINISTRADOR}_{EMAIL,PASSWORD}`.
+No prueba escrituras ni sustituye la integración dentro de la aplicación móvil.
+
+### Desarrollo local
+
 ```bash
 cd backend
 
@@ -224,6 +299,29 @@ reenviando su JWT; si MS2 no responde → `503`) y solo versiones ya enviadas.
 | `GET /presupuestos/decisiones/{decision_id}` | **Cliente responsable**: hecho persistido que MS2 verifica antes de aplicar la decisión |
 | `POST /presupuestos/decisiones/{decision_id}/aplicacion` | **Cliente responsable**: reintenta la misma decisión, sin crear otra |
 
+**Conexión con la orden** (SCRUM-525): toda escritura (crear, nueva versión,
+editar borrador, enviar, decidir) verifica la orden en MS2 con el JWT de quien
+llama y lee su `estado_codigo`:
+
+| Situación | Respuesta |
+|---|---|
+| La orden no existe o no es visible para quien llama (el mecánico solo ve las asignadas) | `404` |
+| MS2 no responde | `503` |
+| Orden **Entregada** (7) o **Cancelada** (8) | `409`; además se liberan las unidades que la orden aún tenía reservadas (una sola vez) |
+| **Primera** decisión con la orden fuera de "Esperando aprobación de presupuesto" (3) | `409`, sin guardar la decisión |
+| Decisión de una **modificación** con la orden en curso (4, 5…) | Se registra; la orden no cambia |
+| MS2 no informa el estado | MS3 no aplica reglas por estado; MS2 valida al aplicar |
+
+**Versión aprobada bloqueada** (SCRUM-528, migración `0009_ms3`): la versión
+aprobada no se edita ni se borra (API `409` y triggers de la base). Para
+cambiar lo aprobado se usa `POST /presupuestos/{id}/modificacion`: crea
+**obligatoriamente** la versión siguiente (`es_modificacion: true`) como copia
+editable de la aprobada (o con los `items` enviados). La aprobada sigue
+`vigente: true` hasta que el cliente apruebe la modificación. La base exige
+que toda versión creada después de una aprobación sea una modificación y que
+no haya dos borradores abiertos. Si el cliente rechaza una modificación, la
+siguiente parte de lo aprobado, no de lo rechazado.
+
 Reglas de versiones (§4.3): una corrección de una versión enviada sin decisión
 la reemplaza (ya no se decide sobre la anterior); después de una aprobación la
 nueva versión es una modificación (`es_modificacion`) y, mientras no se apruebe,
@@ -375,6 +473,23 @@ entregan el orden de cada listado y el saldo reservado leyendo solo el índice;
 el saldo de varios repuestos sale en una consulta. Revisión y mediciones en
 [`docs/revision-indices-inventario.md`](docs/revision-indices-inventario.md);
 `tests/test_indices_inventario.py` lo verifica con `EXPLAIN`.
+
+**Integración presupuesto aprobado → stock** (`tests/test_integracion_presupuesto_stock.py`,
+SCRUM-529): flujo HTTP real MS3 ↔ MS2 con bases separadas (SQLite siempre y
+PostgreSQL si están `SCRUM397438_MS2_TEST_URL`/`SCRUM397438_MS3_TEST_URL`):
+aprobar con stock deja la orden en reparación y reserva las unidades; sin stock
+la deja esperando repuestos sin reservar; al llegar stock la reserva se
+completa; usar los repuestos descuenta lo reservado; rechazar cancela sin tocar
+el stock; una modificación aprobada ajusta la reserva; y reintentar la
+aplicación en MS2 no reserva dos veces.
+
+**Pruebas de presupuestos, inventario, stock y proveedores**
+(`services/ms3_presupuestos/tests/test_flujo_presupuesto_inventario_proveedores.py`, SCRUM-526):
+el recorrido completo del taller (proveedor → repuesto → presupuesto → envío →
+aprobación con reserva → consumo → alerta de stock bajo → reposición →
+trazabilidad), aprobar sin stock y reponer, dos órdenes compitiendo por el mismo
+repuesto, repuestos/proveedores en uso que no se pueden borrar, cambio de
+proveedor sin perder lo entregado, y permisos del cliente.
 
 **Pruebas de límites de stock** (`tests/test_stock_insuficiente_exacto_multiple.py`):
 para cada forma de usar stock (consumo, compromiso, ajuste, aprobación, validación

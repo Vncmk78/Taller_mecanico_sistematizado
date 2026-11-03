@@ -66,7 +66,7 @@ describe('AdminVehiclesPage: catálogo de vehículos y sus estados', () => {
         renderPage();
         await screen.findByText('Ford Fiesta');
 
-        fireEvent.change(screen.getByRole('textbox', { name: 'Buscar por patente, marca o modelo' }), {
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por patente, marca o modelo' }), {
             target: { value: 'zzz' },
         });
 

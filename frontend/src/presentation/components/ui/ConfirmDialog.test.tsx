@@ -18,6 +18,37 @@ describe('ConfirmDialog: confirmación de acciones', () => {
     expect(screen.getByText('Esta acción no se puede deshacer.')).toBeInTheDocument();
   });
 
+  it('asocia el diálogo con su título y su descripción', () => {
+    render(
+      <ConfirmDialog
+        open
+        title="¿Cancelar orden?"
+        description="Se perderán los cambios."
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog');
+    const titleId = dialog.getAttribute('aria-labelledby');
+    const descriptionId = dialog.getAttribute('aria-describedby');
+
+    expect(titleId).toBeTruthy();
+    expect(descriptionId).toBeTruthy();
+    expect(document.getElementById(titleId as string)).toHaveTextContent('¿Cancelar orden?');
+    expect(document.getElementById(descriptionId as string)).toHaveTextContent(
+      'Se perderán los cambios.'
+    );
+  });
+
+  it('omite aria-describedby cuando no hay descripción', () => {
+    render(
+      <ConfirmDialog open title="Confirmar" onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
+
+    expect(screen.getByRole('dialog')).not.toHaveAttribute('aria-describedby');
+  });
+
   it('llama onConfirm al confirmar', () => {
     const handleConfirm = vi.fn();
     const handleCancel = vi.fn();

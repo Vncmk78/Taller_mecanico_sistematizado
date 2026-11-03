@@ -474,6 +474,15 @@ el saldo de varios repuestos sale en una consulta. Revisión y mediciones en
 [`docs/revision-indices-inventario.md`](docs/revision-indices-inventario.md);
 `tests/test_indices_inventario.py` lo verifica con `EXPLAIN`.
 
+**Integración presupuesto aprobado → stock** (`tests/test_integracion_presupuesto_stock.py`,
+SCRUM-529): flujo HTTP real MS3 ↔ MS2 con bases separadas (SQLite siempre y
+PostgreSQL si están `SCRUM397438_MS2_TEST_URL`/`SCRUM397438_MS3_TEST_URL`):
+aprobar con stock deja la orden en reparación y reserva las unidades; sin stock
+la deja esperando repuestos sin reservar; al llegar stock la reserva se
+completa; usar los repuestos descuenta lo reservado; rechazar cancela sin tocar
+el stock; una modificación aprobada ajusta la reserva; y reintentar la
+aplicación en MS2 no reserva dos veces.
+
 **Pruebas de límites de stock** (`tests/test_stock_insuficiente_exacto_multiple.py`):
 para cada forma de usar stock (consumo, compromiso, ajuste, aprobación, validación
 y descuento de varios repuestos), el stock exacto se acepta y deja 0, y una

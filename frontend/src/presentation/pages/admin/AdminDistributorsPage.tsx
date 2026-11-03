@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Truck, X } from 'lucide-react';
 import { proveedorService } from '@/infrastructure/api/ProveedorService';
+import { ProveedorFormDialog } from '@/presentation/components/inventory/ProveedorFormDialog';
+import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
 import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import type { Proveedor, TipoDistribuidor } from '@/domain/entities/Proveedor';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -46,6 +48,12 @@ export function AdminDistributorsPage() {
     const [isOffline, setIsOffline] = useState(false);
     const [requestId, setRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
+    const [formOpen, setFormOpen] = useState(false);
+    const [editing, setEditing] = useState<Proveedor | null>(null);
+    const [formError, setFormError] = useState<string | null>(null);
+    const [formSubmitting, setFormSubmitting] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<Proveedor | null>(null);
+    const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
     const loadProveedores = useCallback(async () => {
         setStatus('loading');
@@ -79,6 +87,51 @@ export function AdminDistributorsPage() {
         void loadProveedores();
     };
 
+    const handleCreate = async (values: { nombre: string; contacto: string; tipoDistribuidor: TipoDistribuidor }) => {
+        setFormSubmitting(true);
+        setFormError(null);
+        try {
+            await proveedorService.createProveedor(values);
+            setFormOpen(false);
+            setEditing(null);
+            await loadProveedores();
+        } catch (err) {
+            setFormError(getApiErrorMessage(err, 'No se pudo crear el proveedor.'));
+        } finally {
+            setFormSubmitting(false);
+        }
+    };
+
+    const handleUpdate = async (values: { nombre: string; contacto: string; tipoDistribuidor: TipoDistribuidor }) => {
+        if (!editing) return;
+        setFormSubmitting(true);
+        setFormError(null);
+        try {
+            await proveedorService.updateProveedor(editing.proveedorId, values);
+            setFormOpen(false);
+            setEditing(null);
+            await loadProveedores();
+        } catch (err) {
+            setFormError(getApiErrorMessage(err, 'No se pudo actualizar el proveedor.'));
+        } finally {
+            setFormSubmitting(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!deleteTarget) return;
+        setDeleteSubmitting(true);
+        try {
+            await proveedorService.deleteProveedor(deleteTarget.proveedorId);
+            setDeleteTarget(null);
+            await loadProveedores();
+        } catch {
+            setDeleteTarget(null);
+        } finally {
+            setDeleteSubmitting(false);
+        }
+    };
+
     const filteredProveedores = useMemo(() => {
         const term = search.trim().toLowerCase();
         if (term === '') return proveedores;
@@ -100,6 +153,9 @@ export function AdminDistributorsPage() {
                         Proveedores de repuestos y su tipo de distribución
                     </p>
                 </div>
+                <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
+                    Nuevo proveedor
+                </Button>
                 {status === 'success' && (
                     <p className="text-sm text-text-muted" aria-live="polite">
                         {filteredProveedores.length} de {total} distribuidores
@@ -212,6 +268,7 @@ export function AdminDistributorsPage() {
                                 <TableHeaderCell>Contacto</TableHeaderCell>
                                 <TableHeaderCell>Tipo</TableHeaderCell>
                                 <TableHeaderCell className="text-right">Repuestos</TableHeaderCell>
+                                <TableHeaderCell className="text-center">Acciones</TableHeaderCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -233,12 +290,35 @@ export function AdminDistributorsPage() {
                                     <TableCell className="text-right font-medium">
                                         {proveedor.cantidadRepuestos}
                                     </TableCell>
+                                    <TableCell className="text-center">
+                                        <div className="flex justify-center gap-2">
+                                            <Button variant="secondary" onClick={() => { setEditing(proveedor); setFormError(null); setFormOpen(true); }}>Editar</Button>
+                                            <Button variant="danger" onClick={() => setDeleteTarget(proveedor)}>Eliminar</Button>
+                                        </div>
+                                    </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
                     </Table>
                 </div>
             )}
+
+            <ProveedorFormDialog
+                open={formOpen}
+                initial={editing}
+                isSubmitting={formSubmitting}
+                error={formError}
+                onSubmit={editing ? handleUpdate : handleCreate}
+                onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
+            />
+            <ConfirmDialog
+                open={!!deleteTarget}
+                title="Eliminar proveedor"
+                description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
+                isLoading={deleteSubmitting}
+                onConfirm={handleDelete}
+                onCancel={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }

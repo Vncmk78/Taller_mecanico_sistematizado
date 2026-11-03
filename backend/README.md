@@ -64,6 +64,26 @@ tablas de los cuatro dominios terminen mezcladas en una misma migración.
 
 ## Puesta en marcha
 
+### Comunicación MS2–MS3 en Vercel
+
+Vercel rechaza bindings circulares. Se conserva MS3 → MS2 como binding y MS2
+consulta MS3 por `https://<VERCEL_URL>/ms3`, usando el dominio de ese mismo
+despliegue. Omitir `MS2_MS3_URL` en Vercel para activar esta resolución y habilitar
+las variables de sistema del proyecto. Una URL explícita sigue teniendo prioridad.
+En desarrollo se conserva `http://localhost:8003`; en Kubero se configura el
+origen interno de MS3 mediante `MS2_MS3_URL`.
+
+El JWT original siempre se reenvía. Si la URL del despliegue está protegida,
+el administrador debe habilitar Protection Bypass for Automation en Vercel:
+la plataforma proporciona `VERCEL_AUTOMATION_BYPASS_SECRET`. MS2 lo envía como
+`x-vercel-protection-bypass` únicamente a `/ms3` en el dominio de ese despliegue.
+No copiar ese secreto al frontend, a Git ni a otros servicios externos; no
+desactivar la autenticación JWT ni Deployment Protection. Sin autorización de
+plataforma, la integración falla con `503` antes de guardar cambios.
+
+Referencias: [variables de sistema](https://vercel.com/docs/environment-variables/system-environment-variables)
+y [protección para automatización](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation).
+
 ### Imágenes para Kubero u otro entorno de contenedores
 
 Desde la raíz del repositorio:

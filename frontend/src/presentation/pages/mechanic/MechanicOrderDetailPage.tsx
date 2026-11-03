@@ -13,6 +13,9 @@ import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { useOrderDetail } from '@/presentation/hooks/useOrderDetail';
+import { useBudgetDetail } from '@/presentation/hooks/useBudgetDetail';
+import { BudgetItemRow } from '@/presentation/components/budgets/BudgetItemRow';
+import { BudgetStatusBadge } from '@/presentation/components/budgets/BudgetStatusBadge';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
 import type { ResultadoDisponibilidad } from '@/domain/entities/Inventario';
@@ -27,6 +30,7 @@ export function MechanicOrderDetailPage() {
     const { order, loading, notFound, failed, refetch } = useOrderDetail(id, (oid) =>
         orderService.getOrderById(oid)
     );
+    const { presupuesto: presupuestoOrden } = useBudgetDetail(id);
     const { isOffline, error, requestId } = useOrderStore();
     const user = useAuthStore((s) => s.user);
     const vehicles = useVehicleStore((s) => s.vehicles);
@@ -141,6 +145,20 @@ export function MechanicOrderDetailPage() {
                             </li>
                         ))}
                     </ul>
+                </section>
+            )}
+
+            {presupuestoOrden && (presupuestoOrden.versiones?.length ?? 0) > 0 && (
+                <section className="card p-6 mt-6" aria-labelledby="mechanic-order-budget-title">
+                    <h3 id="mechanic-order-budget-title" className="text-xl font-semibold mb-4">
+                        Presupuesto (líneas)
+                    </h3>
+                    <BudgetStatusBadge estado={presupuestoOrden.estadoUltimaVersion} />
+                    <div className="flex flex-col gap-3 mt-4">
+                        {(presupuestoOrden.versiones[presupuestoOrden.versiones.length - 1]?.items ?? []).map((item) => (
+                            <BudgetItemRow key={item.id} item={item} />
+                        ))}
+                    </div>
                 </section>
             )}
 

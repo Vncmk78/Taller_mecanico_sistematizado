@@ -42,6 +42,7 @@ Resultado:
 | Contratos de las 25 operaciones móviles | 179 comprobaciones ok | `pytest tests/test_contratos_integracion_iv.py` |
 | Respuestas reales contra el contrato | 29 de 29 ok | `pytest tests/test_contrato_consumo_real.py` |
 | Cabeceras para clientes móviles y externos | 4 de 4 ok (2 fallaban antes de corregir H-01) | `pytest tests/test_cabeceras_cliente_movil.py` |
+| Regresión de incompatibilidades corregidas (B-01 a B-04, D-01, D-02, O-01) | 18 de 18 ok | `pytest tests/test_regresion_incompatibilidades.py` |
 | Producción accesible desde red externa | `200` en `/api/health`; los 4 servicios `ok` tras el arranque en frío | Estudio §2.2 |
 | Incompatibilidades corregidas | H-01 (`Retry-After` no expuesto por CORS) y O-01 (matriz de roles desactualizada) | Estudio §3 |
 | Pendientes para el equipo móvil | Confirmar stack y si habrá build web (H-02); recibir cuentas de prueba | — |

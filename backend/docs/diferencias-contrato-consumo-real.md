@@ -49,6 +49,12 @@ diferencia nueva se registra ahí como `xfail` estricto con un ID nuevo (D-04, �
 `test_d01_la_cancelacion_real_no_trae_los_campos_de_orden` se conserva como
 evidencia viva de que la cancelación responde una solicitud, no una orden.
 
+**Regresión (Semana 9):** cada incompatibilidad corregida (B-01 a B-04, D-01,
+D-02, H-01 y O-01) tiene una prueba con su ID en
+`tests/test_regresion_incompatibilidades.py` y
+`tests/test_cabeceras_cliente_movil.py`. Al corregir una nueva, se agrega ahí
+con su ID.
+
 ## 4. Observaciones (no son diferencias del contrato)
 
 - **O-01 — Fechas sin zona horaria en el entorno de prueba.** Con SQLite, MS2

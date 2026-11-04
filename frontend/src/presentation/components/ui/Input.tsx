@@ -6,6 +6,7 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   icon?: ReactNode;
   error?: string;
   hint?: string;
+  containerClassName?: string;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
@@ -15,6 +16,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       icon,
       error,
       hint,
+      containerClassName = 'mb-6',
       className = '',
       required,
       'aria-describedby': ariaDescribedBy,
@@ -33,7 +35,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       [ariaDescribedBy, hintId, errorId].filter(Boolean).join(' ') || undefined;
 
     return (
-      <div className="mb-6">
+      <div className={containerClassName}>
         {label && (
           <label htmlFor={inputId} className="block mb-2 text-sm text-text-muted">
             {label}

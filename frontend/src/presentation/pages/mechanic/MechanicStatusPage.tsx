@@ -20,7 +20,9 @@ import { Button } from '@/presentation/components/ui/Button';
 import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { Input } from '@/presentation/components/ui/Input';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { Select } from '@/presentation/components/ui/Select';
 import { useToast } from '@/presentation/components/ui/toastContext';
 import { useOrderListFilters } from '@/presentation/hooks/useOrderListFilters';
 import {
@@ -98,38 +100,34 @@ function OrderAdvanceCard({ order, patente, vehicleLabel, allowed }: OrderAdvanc
         {allowed ? (
             <>
                 <div className="mt-5 pt-5 border-t border-border-custom flex flex-col sm:flex-row gap-3 sm:items-end">
-                    <label className="flex flex-col gap-1 text-sm flex-1 min-w-40">
-                        <span className="text-text-muted">Siguiente estado</span>
-                        <select
-                            id={`orden-${order.id}-destino`}
-                            name="destino"
-                            value={destino}
-                            onChange={(e) => setDestino(e.target.value)}
-                            aria-label={`Siguiente estado de la orden ${order.id}`}
-                            aria-required="true"
-                            className="w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
-                        >
-                            <option value="">Seleccionar...</option>
-                            {avances.map((codigo) => (
-                                <option key={codigo} value={codigo}>
-                                    {ESTADOS_ORDEN[codigo]}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="flex flex-col gap-1 text-sm flex-1">
-                        <span className="text-text-muted">Observación (opcional)</span>
-                        <input
-                            id={`orden-${order.id}-observacion`}
-                            name="observacion"
-                            type="text"
-                            value={observacion}
-                            onChange={(e) => setObservacion(e.target.value)}
-                            placeholder="Comentario del avance..."
-                            aria-label={`Observación de la orden ${order.id}`}
-                            className="w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
-                        />
-                    </label>
+                    <Select
+                        id={`orden-${order.id}-destino`}
+                        name="destino"
+                        label="Siguiente estado"
+                        value={destino}
+                        onChange={(e) => setDestino(e.target.value)}
+                        aria-label={`Siguiente estado de la orden ${order.id}`}
+                        aria-required="true"
+                        containerClassName="flex-1 min-w-40 mb-0"
+                    >
+                        <option value="">Seleccionar...</option>
+                        {avances.map((codigo) => (
+                            <option key={codigo} value={codigo}>
+                                {ESTADOS_ORDEN[codigo]}
+                            </option>
+                        ))}
+                    </Select>
+                    <Input
+                        id={`orden-${order.id}-observacion`}
+                        name="observacion"
+                        type="text"
+                        label="Observación (opcional)"
+                        value={observacion}
+                        onChange={(e) => setObservacion(e.target.value)}
+                        placeholder="Comentario del avance..."
+                        aria-label={`Observación de la orden ${order.id}`}
+                        containerClassName="flex-1 mb-0"
+                    />
                     <Button
                         variant="primary"
                         disabled={!destino || isOffline}

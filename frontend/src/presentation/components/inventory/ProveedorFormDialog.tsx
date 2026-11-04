@@ -2,9 +2,11 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { X } from 'lucide-react';
 import { Button } from '@/presentation/components/ui/Button';
+import { FormActions } from '@/presentation/components/ui/FormActions';
+import { FormModal } from '@/presentation/components/ui/FormModal';
 import { Input } from '@/presentation/components/ui/Input';
+import { Select } from '@/presentation/components/ui/Select';
 import type { Proveedor, TipoDistribuidor } from '@/domain/entities/Proveedor';
 
 const schema = z.object({
@@ -51,33 +53,24 @@ export function ProveedorFormDialog({ open, initial, isSubmitting, error, onSubm
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div className="card w-full max-w-[520px] p-6 relative">
-                <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute right-4 top-4 text-text-muted">
-                    <X className="w-5 h-5" />
-                </button>
-                <h3 className="text-xl font-bold mb-4">{initial ? 'Editar proveedor' : 'Nuevo proveedor'}</h3>
-                <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                    <Input label="Nombre" {...register('nombre')} error={errors.nombre?.message} />
-                    <Input label="Contacto" {...register('contacto')} error={errors.contacto?.message} />
-                    <label className="block">
-                        <span className="block mb-2 text-sm text-text-muted">Tipo</span>
-                        <select
-                            {...register('tipoDistribuidor')}
-                            className="w-full bg-surface border border-border-custom rounded-lg px-3 py-2 text-text-main text-sm"
-                        >
-                            <option value="oficial">Oficial</option>
-                            <option value="generico">Genérico</option>
-                        </select>
-                        {errors.tipoDistribuidor && <p className="text-status-red text-xs mt-1">{errors.tipoDistribuidor.message}</p>}
-                    </label>
-                    {error && <p className="text-status-red text-sm">{error}</p>}
-                    <div className="flex justify-end gap-3">
-                        <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-                        <Button type="submit" isLoading={isSubmitting}>{initial ? 'Guardar' : 'Crear'}</Button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        <FormModal
+            open={open}
+            title={initial ? 'Editar proveedor' : 'Nuevo proveedor'}
+            onClose={onClose}
+        >
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                <Input label="Nombre" {...register('nombre')} error={errors.nombre?.message} />
+                <Input label="Contacto" {...register('contacto')} error={errors.contacto?.message} />
+                <Select label="Tipo" {...register('tipoDistribuidor')} error={errors.tipoDistribuidor?.message}>
+                    <option value="oficial">Oficial</option>
+                    <option value="generico">Genérico</option>
+                </Select>
+                {error && <p className="text-status-red text-sm">{error}</p>}
+                <FormActions>
+                    <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+                    <Button type="submit" isLoading={isSubmitting}>{initial ? 'Guardar' : 'Crear'}</Button>
+                </FormActions>
+            </form>
+        </FormModal>
     );
 }

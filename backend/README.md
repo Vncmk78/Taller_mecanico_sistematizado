@@ -557,6 +557,16 @@ instalado `dblink`/`postgres_fdw`. Pruebas: `tests/test_ms3_aislamiento.py`
 (sin base; además verifica que el código de MS3 no importa `ms1_`/`ms2_`/`ms4_`)
 y `services/ms3_presupuestos/tests/test_aislamiento_bd.py` (PostgreSQL).
 
+### Integridad referencial, índices y mapeos ORM (MS1–MS4)
+
+`tests/test_integridad_referencial_servicios.py` migra cada servicio desde cero
+en una base descartable y comprueba que el modelo ORM coincide con las
+migraciones, que toda tabla tiene PK, que toda FK tiene índice (o una excepción
+documentada), que el ON DELETE es explícito e igual al del modelo, y que no hay
+FK entre servicios. Necesita `INTEGRIDAD_PG_ADMIN_URL` (PostgreSQL local);
+sin ella se salta. Revisión y hallazgos en
+[`docs/revision-integridad-referencial-orm.md`](docs/revision-integridad-referencial-orm.md).
+
 ## MS4 — Evidencia Multimedia
 
 MS4 guarda los **metadatos** de las evidencias (fotos/videos) en su propia base;

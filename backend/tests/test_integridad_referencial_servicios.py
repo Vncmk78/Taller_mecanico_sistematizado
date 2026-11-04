@@ -54,9 +54,6 @@ DIFERENCIAS_ACEPTADAS: dict[str, set[str]] = {
     # con SQLite en las pruebas de integración).
     "ms3_presupuestos": {"ix_repuesto_nombre_trgm", "ix_proveedor_nombre_trgm",
                          "ix_proveedor_contacto_trgm"},
-    # Creado por 0008_ms2 pero no declarado en OrdenTrabajo (hallazgo de esta
-    # revisión): se corrige en el modelo con "Corregir mapeos ORM…".
-    "ms2_taller": {"ix_orden_mecanico_estado"},
 }
 
 # FK sin índice propio aceptadas, con el motivo (tabla.columna).

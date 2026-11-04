@@ -567,6 +567,14 @@ FK entre servicios. Necesita `INTEGRIDAD_PG_ADMIN_URL` (PostgreSQL local);
 sin ella se salta. Revisión y hallazgos en
 [`docs/revision-integridad-referencial-orm.md`](docs/revision-integridad-referencial-orm.md).
 
+**Mapeos ORM y límites transaccionales** (`tests/test_mapeos_y_transacciones.py`):
+`Repuesto.proveedor` e `ItemPresupuesto.repuesto` cargan por lote (`selectin`)
+en vez de una consulta por fila; leer el proveedor de un repuesto ya no trae
+todos sus repuestos; los movimientos reciben su fecha con `RETURNING` (sin
+`refresh`). Antes de cada llamada a MS2 el router cierra la transacción de
+lectura con `uow.liberar_conexion()`, para no dejar la conexión
+*idle in transaction* mientras MS2 responde (y consulta de vuelta a MS3).
+
 ## MS4 — Evidencia Multimedia
 
 MS4 guarda los **metadatos** de las evidencias (fotos/videos) en su propia base;

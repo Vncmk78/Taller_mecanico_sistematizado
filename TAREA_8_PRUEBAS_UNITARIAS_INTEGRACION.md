@@ -34,7 +34,7 @@
 
 ## 📋 RESUMEN
 
-La suite vigente cubre, con **1113 pruebas** en 54 archivos:
+La suite vigente cubre, con **1142 pruebas** en 55 archivos:
 
 - ✅ Autenticación (registro, login, `/auth/me`, intentos fallidos, historial de roles)
 - ✅ JWT: firma, expiración, claims obligatorios, formato de `sub` y `roles`, integridad del token
@@ -42,12 +42,13 @@ La suite vigente cubre, con **1113 pruebas** en 54 archivos:
 - ✅ Propiedad de recursos y acceso cruzado, con `404` indistinguible
 - ✅ Acceso indebido entre roles y recursos ajenos del mismo rol
 - ✅ Autenticación por canales web y móvil
+- ✅ Credenciales vacías o inválidas y cuentas con roles múltiples
 - ✅ API Gateway: enrutamiento, formato de errores, OpenAPI, CORS, evidencias, health
 - ✅ Integración real del JWT emitido por MS1 validado en MS2 a través de la Gateway
 - ✅ Contratos de MS3 (presupuestos, aislamiento, persistencia) y MS4 (evidencias, ciclo de archivos, huérfanos)
 - ✅ Decisiones de presupuesto (integración y migraciones)
 
-**Total:** 1113 pruebas → **1054 pasan, 55 se omiten y 4 son `xfail` estricto**
+**Total:** 1142 pruebas → **1083 pasan, 55 se omiten y 4 son `xfail` estricto**
 (que registran huecos de seguridad abiertos; ver la sección «Casos pendientes»).
 Las omitidas son las que requieren un servicio externo levantado (MinIO o
 PostgreSQL descartable) y se habilitan siguiendo la sección «Cómo ejecutar».
@@ -81,6 +82,7 @@ backend/
 │   ├── test_autenticacion_canales.py               (10)  Autenticación por canales web/móvil
 │   ├── test_auth_api.py                            (8)  Registro, login, /auth/me
 │   ├── test_autorizacion.py                        (6)  401 vs 403, multirol
+│   ├── test_credenciales_vacias_y_multirol.py       (29)  Credenciales vacías/inválidas y cuentas multirol
 │   ├── test_decisiones_presupuesto_integracion.py  (28)  Decisiones de presupuesto
 │   ├── test_decisiones_presupuesto_postgresql.py   (45)  Decisiones en PostgreSQL (se omiten sin PG)
 │   ├── test_gateway_errores_proxy.py               (28)  Errores del proxy
@@ -318,10 +320,10 @@ python -m pytest tests -q
 
 ### Resultado verificado
 ```
-1054 passed, 55 skipped, 4 xfailed, 51 warnings in 295.78s (0:04:55)
+1083 passed, 55 skipped, 4 xfailed, 51 warnings in 302.50s (0:05:02)
 ```
 
-De las 1113 pruebas, **55 se omiten** por depender de un servicio externo no
+De las 1142 pruebas, **55 se omiten** por depender de un servicio externo no
 levantado y **4 son `xfail` estricto** (huecos de seguridad registrados, no
 fallos). El desglose completo está en la sección
 [«Casos pendientes»](#-casos-pendientes).
@@ -366,6 +368,7 @@ python verificar_conexion.py     # requiere los 4 servicios de DB levantados
 |---|---|---|
 | `shared/auth.py` — emisión y validación de JWT | `test_jwt.py` (11), `test_integridad_token_jwt.py` (12) | 23 |
 | `services/ms1_auth` — registro, login, `/auth/me`, roles, seguridad, canales web/móvil | `test_auth_api.py` (8), `test_autorizacion.py` (6), `test_usuarios_roles.py` (43), `test_historial_roles.py` (6), `test_login_intentos_fallidos.py` (2), `test_autenticacion_canales.py` (10), `test_normalizacion_401_403.py` (14), `test_seguridad_autenticacion.py` (12) | 101 |
+| `services/ms1_auth` — credenciales vacías o inválidas y cuentas con roles múltiples | `test_credenciales_vacias_y_multirol.py` | 29 |
 | `services/ms2_taller` — vehículos | `test_vehiculos_api.py` | 58 |
 | `services/ms2_taller` — órdenes y asignación de mecánico | `test_ordenes_api.py` (142), `test_asignacion_ordenes_api.py` (24) | 166 |
 | `services/ms2_taller` — validadores de dominio | `test_validadores_orden.py` | 22 |
@@ -375,9 +378,9 @@ python verificar_conexion.py     # requiere los 4 servicios de DB levantados
 | `services/ms3_presupuestos` — decisiones de presupuesto | `test_decisiones_presupuesto_integracion.py` (28), `test_decisiones_presupuesto_postgresql.py` (45, se omiten sin PostgreSQL), `test_migraciones_decisiones.py` (2) | 75 |
 | `services/ms4_evidencias` | `test_ms4_validacion_contenido.py` (43), `test_ms4_limites_archivos.py` (49), `test_ms4_asociacion_ordenes.py` (38), `test_ms4_autorizacion_evidencias.py` (24), `test_ms4_huerfanos.py` (23, 1 se omite sin MinIO), `test_ms4_logs.py` (23), `test_ms4_api_evidencias.py` (20), `test_ms4_convencion_metadatos.py` (19), `test_ms4_recepcion.py` (18), `test_ms4_modelo_evidencia.py` (17), `test_ms4_url_firmada.py` (17), `test_ms4_ciclo_archivos.py` (12, 6 se omiten sin MinIO), `test_ms4_errores_carga.py` (12), `test_ms4_estructura.py` (6), `test_ms4_config.py` (2), `test_ms4_minio_integracion.py` (2, se omiten sin MinIO), `test_ms4_recepcion_minio.py` (1, se omite sin MinIO) | 326 |
 | Seguridad transversal — acceso indebido entre roles y recursos ajenos del mismo rol | `test_acceso_indebido_roles.py` (10, 4 `xfail` estricto), `test_acceso_recursos_ajenos_mismo_rol.py` (8) | 18 |
-| **Total** | **54 archivos** | **1113** |
+| **Total** | **55 archivos** | **1142** |
 
-**Total de la suite: 1113 pruebas** → 1054 pasan, 55 se omiten (10 de MinIO y 45
+**Total de la suite: 1142 pruebas** → 1083 pasan, 55 se omiten (10 de MinIO y 45
 de PostgreSQL descartable) y 4 son `xfail` estricto (huecos de seguridad
 registrados en la sección «Casos pendientes»).
 
@@ -391,6 +394,11 @@ registrados en la sección «Casos pendientes»).
   estado, responsable ni fechas.
 - Rollback: los fallos de persistencia no dejan escrituras parciales.
 - Idempotencia: repetir la misma asignación no crea historial duplicado.
+- Credenciales vacías o solo espacios: el `422` se resuelve en la capa de
+  schemas, **sin** contar como intento fallido (no puede bloquear la cuenta);
+  la contraseña incorrecta no vacía sí cuenta y bloquea al agotar los intentos,
+  con el mismo mensaje genérico. Las reglas de credenciales aplican igual a una
+  cuenta con varios roles que a una de un rol.
 
 No se publica un porcentaje de cobertura de líneas: la suite no se ejecuta con
 `--cov`, así que cualquier cifra en este documento estaría sin respaldo. Para
@@ -500,10 +508,10 @@ test('Cliente cannot access another clients order', async () => {
 ### Suite vigente — resultado verificado
 
 ```
-1054 passed, 55 skipped, 4 xfailed, 51 warnings in 295.78s (0:04:55)
+1083 passed, 55 skipped, 4 xfailed, 51 warnings in 302.50s (0:05:02)
 ```
 
-Reproducir con `cd backend && python -m pytest tests -q`. De las 1113 pruebas,
+Reproducir con `cd backend && python -m pytest tests -q`. De las 1142 pruebas,
 55 se omiten por depender de servicios externos (10 de MinIO y 45 de PostgreSQL
 descartable) y 4 son `xfail` estricto por huecos de seguridad abiertos; el
 detalle está en la sección «Casos pendientes».
@@ -565,7 +573,7 @@ Time:        1.234s
 
 ## ⏳ CASOS PENDIENTES
 
-De las 1113 pruebas de la suite vigente, **1054 pasan**. Las restantes **59 no
+De las 1142 pruebas de la suite vigente, **1083 pasan**. Las restantes **59 no
 son fallos**: 55 se omiten por depender de un servicio externo no levantado y 4
 están marcadas `xfail` estricto porque registran un hueco de seguridad abierto.
 Este documento las deja todas identificadas; ninguna se esconde ni se
@@ -656,15 +664,16 @@ Los tres caminos que fallan —`src/**/*.js`, `main: "src/index.js"` en
 ✅ **Refactoring seguro:** Puede cambiar código sin miedo  
 ✅ **Documentación viva:** Las pruebas documentan el comportamiento  
 ✅ **Catch bugs:** Previene regressions  
-✅ **Quality:** 1113 pruebas de uso cubiertas, incluidas las de seguridad
+✅ **Quality:** 1142 pruebas de uso cubiertas, incluidas las de seguridad
 
 ---
 
 ## 🎯 CONCLUSIÓN
 
 **Pruebas completas y verificadas sobre el sistema en ejecución:**
-- 1113 pruebas: 1054 pasan, 55 se omiten por servicios externos (10 MinIO y 45 PostgreSQL descartable), 4 son `xfail` estricto por huecos de seguridad abiertos, 0 fallos
+- 1142 pruebas: 1083 pasan, 55 se omiten por servicios externos (10 MinIO y 45 PostgreSQL descartable), 4 son `xfail` estricto por huecos de seguridad abiertos, 0 fallos
 - Autenticación verificada
+- Credenciales vacías/inválidas y cuentas con roles múltiples verificadas
 - Autorización verificada, con `401` y `403` diferenciados
 - Propiedad de recursos y acceso cruzado verificados, con `404` indistinguible
 - Contrato de claims del JWT verificado contra `shared/auth.py`

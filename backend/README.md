@@ -575,6 +575,13 @@ todos sus repuestos; los movimientos reciben su fecha con `RETURNING` (sin
 lectura con `uow.liberar_conexion()`, para no dejar la conexión
 *idle in transaction* mientras MS2 responde (y consulta de vuelta a MS3).
 
+**Consultas por endpoint e índices** (`tests/test_consultas_por_endpoint.py`):
+cada endpoint de lectura hace el mismo número de consultas con 2 o con 8 filas
+(sin N+1) y no supera su presupuesto medido. La migración `0010_ms3` agrega
+`ix_movimiento_inventario_fecha` para el historial general de movimientos
+(de ~120 ms a <1 ms con 500.000 movimientos). Mediciones y propuestas en
+[`docs/consultas-lentas-y-ajustes-indices.md`](docs/consultas-lentas-y-ajustes-indices.md).
+
 ## MS4 — Evidencia Multimedia
 
 MS4 guarda los **metadatos** de las evidencias (fotos/videos) en su propia base;

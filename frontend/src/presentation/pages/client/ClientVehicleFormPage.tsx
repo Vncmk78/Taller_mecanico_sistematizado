@@ -104,8 +104,8 @@ export function ClientVehicleFormPage() {
     };
 
     return (
-    <div className="p-10 animate-fade-in flex justify-center">
-        <GlassCard className="w-full max-w-[600px] p-10">
+    <div className="p-4 sm:p-6 lg:p-10 animate-fade-in flex justify-center">
+        <GlassCard className="w-full max-w-[600px] p-6 sm:p-10">
         <h1 className="text-2xl font-bold mb-2 text-center flex items-center justify-center gap-3">
             <Car className="w-6 h-6 text-primary-orange" aria-hidden /> Registrar Nuevo Vehículo
         </h1>

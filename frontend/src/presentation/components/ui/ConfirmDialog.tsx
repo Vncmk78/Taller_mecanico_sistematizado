@@ -57,7 +57,7 @@ export function ConfirmDialog({
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         onKeyDown={handleDialogKeyDown}
-        className="card relative w-full max-w-[440px] p-8 text-center outline-none"
+        className="card relative w-full max-w-[440px] p-5 sm:p-8 text-center outline-none"
       >
         <button
           type="button"

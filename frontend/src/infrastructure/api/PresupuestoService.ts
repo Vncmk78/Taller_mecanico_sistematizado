@@ -8,7 +8,7 @@ import type {
     TipoItemPresupuesto,
     VersionPresupuesto,
 } from '@/domain/entities/Presupuesto';
-import type { PresupuestoPort } from '@/domain/ports/PresupuestoPort';
+import type { ItemPresupuestoInput, PresupuestoPort, ResultadoEnvio } from '@/domain/ports/PresupuestoPort';
 import apiClient from '../config/apiClient';
 
 // Contrato HTTP de MS3 (presupuestos) a través de la API Gateway. El backend usa
@@ -154,6 +154,76 @@ class PresupuestoService implements PresupuestoPort {
     async getById(presupuestoId: string): Promise<Presupuesto> {
         const { data } = await apiClient.get<PresupuestoDetalleApi>(`/presupuestos/${presupuestoId}`);
         return mapDetalleApi(data);
+    }
+
+    async create(ordenId: string, items: ItemPresupuestoInput[]): Promise<Presupuesto> {
+        const body = {
+            orden_id: Number(ordenId),
+            items: items.map((item) => ({
+                tipo: item.tipo,
+                descripcion: item.descripcion,
+                cantidad: String(item.cantidad),
+                precio_unitario: String(item.precioUnitario),
+                repuesto_id: item.repuestoId ? Number(item.repuestoId) : null,
+            })),
+        };
+        const { data } = await apiClient.post<PresupuestoDetalleApi>('/presupuestos', body);
+        return mapDetalleApi(data);
+    }
+
+    async createVersion(
+        presupuestoId: string,
+        options: { items?: ItemPresupuestoInput[]; copiarDe?: number } = {}
+    ): Promise<Presupuesto> {
+        const body: Record<string, unknown> = {};
+        if (options.items) {
+            body.items = options.items.map((item) => ({
+                tipo: item.tipo,
+                descripcion: item.descripcion,
+                cantidad: String(item.cantidad),
+                precio_unitario: String(item.precioUnitario),
+                repuesto_id: item.repuestoId ? Number(item.repuestoId) : null,
+            }));
+        }
+        if (options.copiarDe) body.copiar_de = options.copiarDe;
+        const { data } = await apiClient.post<PresupuestoDetalleApi>(
+            `/presupuestos/${presupuestoId}/versiones`,
+            body
+        );
+        return mapDetalleApi(data);
+    }
+
+    async replaceItems(
+        presupuestoId: string,
+        numero: number,
+        items: ItemPresupuestoInput[]
+    ): Promise<VersionPresupuesto> {
+        const body = {
+            items: items.map((item) => ({
+                tipo: item.tipo,
+                descripcion: item.descripcion,
+                cantidad: String(item.cantidad),
+                precio_unitario: String(item.precioUnitario),
+                repuesto_id: item.repuestoId ? Number(item.repuestoId) : null,
+            })),
+        };
+        const { data } = await apiClient.put<VersionDetalleApi>(
+            `/presupuestos/${presupuestoId}/versiones/${numero}/items`,
+            body
+        );
+        return mapVersionApi(data);
+    }
+
+    async send(presupuestoId: string, numero: number): Promise<ResultadoEnvio> {
+        const { data } = await apiClient.post<ResultadoOperacionApi>(
+            `/presupuestos/${presupuestoId}/versiones/${numero}/envio`
+        );
+        return {
+            presupuesto: mapDetalleApi(data.presupuesto),
+            efectoEnOrden: (data.efecto_en_orden as string | null) ?? null,
+            decisionId: data.decision_id === null ? null : String(data.decision_id),
+            aplicacionConfirmada: data.aplicacion_en_orden !== null,
+        };
     }
 
     async decidir(

@@ -48,7 +48,7 @@ export function MechanicVehiclesPage() {
     const isServerError = status === 'error' && !isOffline;
 
     return (
-    <div className="animate-fade-in p-10">
+    <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
         <h2 className="text-3xl font-bold mb-2">Vehículos en Mis Órdenes Asignadas</h2>
         <p className="text-text-muted mb-6">
         Ficha técnica de solo lectura de los vehículos que tiene actualmente asignados.

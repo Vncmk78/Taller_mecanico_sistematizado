@@ -59,7 +59,7 @@ export function ApproveBudgetDialog({
                 aria-describedby={descriptionId}
                 tabIndex={-1}
                 onKeyDown={handleDialogKeyDown}
-                className="card relative w-full max-w-[480px] p-8 outline-none"
+                className="card relative w-full max-w-[480px] p-5 sm:p-8 outline-none"
             >
                 <button
                     type="button"

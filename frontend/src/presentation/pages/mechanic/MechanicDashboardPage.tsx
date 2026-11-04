@@ -72,7 +72,7 @@ export function MechanicDashboardPage() {
 
     if (status === 'loading') {
         return (
-            <div className="animate-fade-in p-10">
+            <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
                 <h2 className="text-3xl font-bold mb-2">Panel del Mecánico</h2>
                 <p className="text-text-muted mb-6">Resumen de tus órdenes asignadas</p>
                 <OrderListSkeleton count={2} />
@@ -82,7 +82,7 @@ export function MechanicDashboardPage() {
 
     if (isServerError && myOrders.length === 0) {
         return (
-            <div className="animate-fade-in p-10">
+            <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
                 <ErrorState
                     title="No se pudieron cargar tus órdenes"
                     message={error}
@@ -94,7 +94,7 @@ export function MechanicDashboardPage() {
     }
 
     return (
-    <div className="animate-fade-in p-10">
+    <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
         <h2 className="text-3xl font-bold mb-2">Panel del Mecánico</h2>
         <p className="text-text-muted mb-6">Resumen de tus órdenes asignadas</p>
 

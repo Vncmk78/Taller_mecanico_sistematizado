@@ -34,6 +34,9 @@ from services.ms3_presupuestos.db import Base
 
 class HistorialUmbral(Base):
     __tablename__ = "historial_umbral"
+    # Las fechas las pone la base (now()): RETURNING las trae en el mismo INSERT,
+    # sin un SELECT extra por fila al leerlas (revisión de consultas, semana 9).
+    __mapper_args__ = {"eager_defaults": True}
 
     __table_args__ = (
         CheckConstraint(

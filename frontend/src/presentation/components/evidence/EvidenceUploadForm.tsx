@@ -6,6 +6,7 @@ import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { ProgressBar } from '@/presentation/components/ui/ProgressBar';
+import { Select } from '@/presentation/components/ui/Select';
 import { useToast } from '@/presentation/components/ui/toastContext';
 import { useEvidenceUpload } from '@/presentation/hooks/useEvidenceUpload';
 import { formatBytes } from '@/presentation/utils/evidenceDisplay';
@@ -13,7 +14,7 @@ import { formatearLimitesParaTexto, validarArchivoEvidencia } from '@/presentati
 
 const CONTEXTOS: ContextoEvidencia[] = ['diagnostico', 'presupuesto', 'reparacion', 'resultado_final'];
 
-const INPUT_CLASS =
+const FILE_INPUT_CLASS =
     'w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue file:mr-3 file:rounded-md file:border-0 file:bg-primary-blue file:px-3 file:py-1.5 file:text-white file:cursor-pointer';
 
 interface EvidenceUploadFormProps {
@@ -166,7 +167,7 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
                         name="archivo"
                         accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,.jpg,.jpeg,.png,.webp,.mp4,.mov"
                         onChange={seleccionarArchivo}
-                        className={INPUT_CLASS}
+                        className={FILE_INPUT_CLASS}
                         aria-invalid={errorArchivo ? true : undefined}
                         aria-describedby={
                             errorArchivo
@@ -189,27 +190,25 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
                     )}
                 </div>
 
-                <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-text-muted">Contexto</span>
-                    <select
-                        id="evidencia-contexto"
-                        name="contexto"
-                        value={contexto}
-                        onChange={(evento) => {
-                            setContexto(evento.target.value as ContextoEvidencia);
-                            limpiarResultado();
-                        }}
-                        aria-describedby={esPresupuesto ? 'evidencia-contexto-hint' : undefined}
-                        className={INPUT_CLASS}
-                        disabled={isUploading}
-                    >
-                        {CONTEXTOS.map((valor) => (
-                            <option key={valor} value={valor}>
-                                {CONTEXTO_EVIDENCIA_LABEL[valor]}
-                            </option>
-                        ))}
-                    </select>
-                </label>
+                <Select
+                    id="evidencia-contexto"
+                    name="contexto"
+                    label="Contexto"
+                    value={contexto}
+                    onChange={(evento) => {
+                        setContexto(evento.target.value as ContextoEvidencia);
+                        limpiarResultado();
+                    }}
+                    aria-describedby={esPresupuesto ? 'evidencia-contexto-hint' : undefined}
+                    containerClassName="mb-0"
+                    disabled={isUploading}
+                >
+                    {CONTEXTOS.map((valor) => (
+                        <option key={valor} value={valor}>
+                            {CONTEXTO_EVIDENCIA_LABEL[valor]}
+                        </option>
+                    ))}
+                </Select>
             </div>
 
             {esPresupuesto ? (

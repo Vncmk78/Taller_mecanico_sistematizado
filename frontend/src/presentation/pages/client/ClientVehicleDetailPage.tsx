@@ -24,7 +24,7 @@ export function ClientVehicleDetailPage() {
     );
     const { isOffline, error, requestId } = useVehicleStore();
     if (loading) {
-        return <LoadingState message="Cargando ficha del vehículo..." className="p-10" />;
+        return <LoadingState message="Cargando ficha del vehículo..." className="p-4 sm:p-6 lg:p-10" />;
     }
 
     // El fetch falló y no hay copia local: se muestra un error reintentable en
@@ -32,7 +32,7 @@ export function ClientVehicleDetailPage() {
     if (failed) {
         return (
 <ErrorState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 title="No se pudo cargar la ficha del vehículo"
                 message={error}
                 requestId={requestId}
@@ -50,7 +50,7 @@ export function ClientVehicleDetailPage() {
     if (!vehicle || notFound || vehicle.clientId !== clientId) {
         return (
 <EmptyState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 icon={SearchX}
                 title="Vehículo no encontrado o no pertenece a su cuenta."
                 description="Verifique la patente o que el vehículo siga registrado a su nombre."

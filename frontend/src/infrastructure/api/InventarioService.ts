@@ -9,7 +9,10 @@ import type {
     Movimiento as MovimientoEntity,
     PaginaAlertas as PaginaAlertasEntity,
     PaginaMovimientos as PaginaMovimientosEntity,
+    ResultadoDisponibilidad as ResultadoDisponibilidadEntity,
     ResultadoMovimiento as ResultadoMovimientoEntity,
+    ResultadoOperacionOrden as ResultadoOperacionOrdenEntity,
+    ResultadoReserva as ResultadoReservaEntity,
     StockDetalle as StockDetalleEntity,
     TipoMovimiento,
     UmbralGeneral as UmbralGeneralEntity,
@@ -211,6 +214,98 @@ class InventarioService implements InventarioPort {
         if (input.observacion) body.observacion = input.observacion;
         const { data } = await apiClient.put<UmbralGeneralApi>('/inventario/umbral-general', body);
         return mapUmbral(data);
+    }
+
+    async getDisponibilidadOrden(ordenId: number): Promise<ResultadoDisponibilidadEntity> {
+        const { data } = await apiClient.get<{
+            orden_id: number | null;
+            disponible: boolean;
+            repuestos: Array<{
+                repuesto_id: number;
+                nombre: string;
+                proveedor_nombre: string;
+                requerido: number;
+                stock: number;
+                reservado_para_orden: number;
+                comprometido_otras_ordenes: number;
+                disponible: number;
+                alcanza: boolean;
+                faltan: number;
+            }>;
+            presupuesto_id: number | null;
+            version: number | null;
+        }>(`/inventario/ordenes/${ordenId}/disponibilidad`);
+        return {
+            ordenId: data.orden_id,
+            disponible: data.disponible,
+            repuestos: data.repuestos.map((r) => ({
+                repuestoId: r.repuesto_id,
+                nombre: r.nombre,
+                proveedorNombre: r.proveedor_nombre,
+                requerido: r.requerido,
+                stock: r.stock,
+                reservadoParaOrden: r.reservado_para_orden,
+                comprometidoOtrasOrdenes: r.comprometido_otras_ordenes,
+                disponible: r.disponible,
+                alcanza: r.alcanza,
+                faltan: r.faltan,
+            })),
+            presupuestoId: data.presupuesto_id,
+            version: data.version,
+        };
+    }
+
+    async reservar(ordenId: number): Promise<ResultadoReservaEntity> {
+        const { data } = await apiClient.post<{
+            orden_id: number;
+            reservado: boolean;
+            faltantes: Array<{ repuesto_id: number; nombre: string; solicitado: number; disponible: number; faltan: number }>;
+            movimientos: MovimientoApi[];
+        }>(`/inventario/ordenes/${ordenId}/reserva`);
+        return {
+            ordenId: data.orden_id,
+            reservado: data.reservado,
+            faltantes: data.faltantes.map((f) => ({
+                repuestoId: f.repuesto_id,
+                nombre: f.nombre,
+                solicitado: f.solicitado,
+                disponible: f.disponible,
+                faltan: f.faltan,
+            })),
+            movimientos: data.movimientos.map(mapMovimiento),
+        };
+    }
+
+    async consumir(
+        ordenId: number,
+        items: Array<{ repuestoId: number; cantidad: number }>,
+        claveOperacion: string
+    ): Promise<ResultadoOperacionOrdenEntity> {
+        const body = {
+            clave_operacion: claveOperacion,
+            items: items.map((i) => ({ repuesto_id: i.repuestoId, cantidad: i.cantidad })),
+        };
+        const { data } = await apiClient.post<{ orden_id: number; movimientos: MovimientoApi[]; repetido: boolean }>(
+            `/inventario/ordenes/${ordenId}/consumos`,
+            body
+        );
+        return {
+            ordenId: data.orden_id,
+            movimientos: data.movimientos.map(mapMovimiento),
+            repetido: data.repetido,
+        };
+    }
+
+    async liberar(ordenId: number, claveOperacion: string): Promise<ResultadoOperacionOrdenEntity> {
+        const { data } = await apiClient.post<{ orden_id: number; movimientos: MovimientoApi[]; repetido: boolean }>(
+            `/inventario/ordenes/${ordenId}/liberacion`,
+            { clave_operacion: claveOperacion }
+        );
+        return {
+            ordenId: data.orden_id,
+            movimientos: data.movimientos.map(mapMovimiento),
+            repetido: data.repetido,
+        };
     }
 
     async getHistorialUmbral(

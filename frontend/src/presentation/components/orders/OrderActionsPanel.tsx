@@ -17,15 +17,14 @@ import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
+import { Input } from '@/presentation/components/ui/Input';
+import { Select } from '@/presentation/components/ui/Select';
 import { useToast } from '@/presentation/components/ui/toastContext';
 
 interface OrderActionsPanelProps {
     order: Order;
     className?: string;
 }
-
-const INPUT_CLASS =
-    'w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue';
 
 /**
  * Presenta las acciones habilitadas para el estado actual de la orden según el
@@ -229,124 +228,94 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                             className="flex flex-col gap-3 pb-5 border-b border-border-custom last:border-b-0 last:pb-0"
                         >
                             {accion.id === 'avanzar_estado' && (
-                                <label className="flex flex-col gap-1 text-sm">
-                                    <span className="text-text-muted">Siguiente estado</span>
-                                    <select
-                                        id={`orden-${order.id}-${accion.id}-destino`}
-                                        name="destino"
-                                        value={destino}
-                                        onChange={(e) => setDestino(e.target.value)}
-                                        aria-label={`Siguiente estado de la orden ${order.id}`}
-                                        aria-required="true"
-                                        className={INPUT_CLASS}
-                                    >
-                                        <option value="">Seleccionar...</option>
-                                        {accion.destinos.map((codigo) => (
-                                            <option key={codigo} value={codigo}>
-                                                {ESTADOS_ORDEN[codigo]}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
+                                <Select
+                                    id={`orden-${order.id}-${accion.id}-destino`}
+                                    name="destino"
+                                    label="Siguiente estado"
+                                    value={destino}
+                                    onChange={(e) => setDestino(e.target.value)}
+                                    aria-label={`Siguiente estado de la orden ${order.id}`}
+                                    aria-required="true"
+                                    containerClassName="mb-0"
+                                >
+                                    <option value="">Seleccionar...</option>
+                                    {accion.destinos.map((codigo) => (
+                                        <option key={codigo} value={codigo}>
+                                            {ESTADOS_ORDEN[codigo]}
+                                        </option>
+                                    ))}
+                                </Select>
                             )}
 
                             {accion.id === 'asignar_mecanico' && (
-                                <label className="flex flex-col gap-1 text-sm">
-                                    <span className="text-text-muted">Mecánico responsable</span>
-                                    <select
-                                        id={`orden-${order.id}-${accion.id}-mecanico`}
-                                        name="mecanico"
-                                        value={mecanicoId}
-                                        onChange={(e) => setMecanicoId(e.target.value)}
-                                        aria-label={`Mecánico para la orden ${order.id}`}
-                                        aria-required="true"
-                                        disabled={loadingMecanicos}
-                                        className={INPUT_CLASS}
-                                    >
-                                        <option value="">
-                                            {loadingMecanicos ? 'Cargando mecánicos...' : 'Seleccionar...'}
+                                <Select
+                                    id={`orden-${order.id}-${accion.id}-mecanico`}
+                                    name="mecanico"
+                                    label="Mecánico responsable"
+                                    value={mecanicoId}
+                                    onChange={(e) => setMecanicoId(e.target.value)}
+                                    aria-label={`Mecánico para la orden ${order.id}`}
+                                    aria-required="true"
+                                    disabled={loadingMecanicos}
+                                    containerClassName="mb-0"
+                                >
+                                    <option value="">
+                                        {loadingMecanicos ? 'Cargando mecánicos...' : 'Seleccionar...'}
+                                    </option>
+                                    {mecanicos.map((m) => (
+                                        <option key={m.id} value={m.id}>
+                                            {m.full_name}
                                         </option>
-                                        {mecanicos.map((m) => (
-                                            <option key={m.id} value={m.id}>
-                                                {m.full_name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
+                                    ))}
+                                </Select>
                             )}
 
                             {accion.requiereMotivo ? (
-                                <label className="flex flex-col gap-1 text-sm">
-                                    <span className="text-text-muted">Motivo (obligatorio)</span>
-                                    <input
-                                        id={`orden-${order.id}-${accion.id}-motivo`}
-                                        type="text"
-                                        name="motivo"
-                                        value={motivo}
-                                        onChange={(e) => {
-                                            setMotivo(e.target.value);
-                                            if (motivoError) setMotivoError('');
-                                        }}
-                                        placeholder="Explique el motivo de la cancelación..."
-                                        aria-label={`Motivo de la orden ${order.id}`}
-                                        aria-required="true"
-                                        aria-invalid={motivoError ? true : undefined}
-                                        aria-describedby={
-                                            motivoError
-                                                ? `orden-${order.id}-${accion.id}-motivo-error`
-                                                : `orden-${order.id}-${accion.id}-motivo-hint`
-                                        }
-                                        className={INPUT_CLASS}
-                                    />
-                                    {motivoError ? (
-                                        <p
-                                            id={`orden-${order.id}-${accion.id}-motivo-error`}
-                                            role="alert"
-                                            className="text-sm text-status-red"
-                                        >
-                                            {motivoError}
-                                        </p>
-                                    ) : (
-                                        <span
-                                            id={`orden-${order.id}-${accion.id}-motivo-hint`}
-                                            className="text-xs text-text-muted"
-                                        >
-                                            Obligatorio para cancelar la orden.
-                                        </span>
-                                    )}
-                                </label>
+                                <Input
+                                    id={`orden-${order.id}-${accion.id}-motivo`}
+                                    type="text"
+                                    name="motivo"
+                                    label="Motivo (obligatorio)"
+                                    value={motivo}
+                                    onChange={(e) => {
+                                        setMotivo(e.target.value);
+                                        if (motivoError) setMotivoError('');
+                                    }}
+                                    placeholder="Explique el motivo de la cancelación..."
+                                    aria-label={`Motivo de la orden ${order.id}`}
+                                    aria-required="true"
+                                    hint={motivoError ? undefined : 'Obligatorio para cancelar la orden.'}
+                                    error={motivoError || undefined}
+                                    containerClassName="mb-0"
+                                />
                             ) : (
                                 accion.id !== 'asignar_mecanico' && accion.id !== 'cancelar' && (
-                                    <label className="flex flex-col gap-1 text-sm">
-                                        <span className="text-text-muted">Observación (opcional)</span>
-                                        <input
-                                            id={`orden-${order.id}-${accion.id}-observacion`}
-                                            type="text"
-                                            name="observacion"
-                                            value={observacion}
-                                            onChange={(e) => setObservacion(e.target.value)}
-                                            placeholder="Comentario..."
-                                            aria-label={`Observación de la orden ${order.id}`}
-                                            className={INPUT_CLASS}
-                                        />
-                                    </label>
+                                    <Input
+                                        id={`orden-${order.id}-${accion.id}-observacion`}
+                                        type="text"
+                                        name="observacion"
+                                        label="Observación (opcional)"
+                                        value={observacion}
+                                        onChange={(e) => setObservacion(e.target.value)}
+                                        placeholder="Comentario..."
+                                        aria-label={`Observación de la orden ${order.id}`}
+                                        containerClassName="mb-0"
+                                    />
                                 )
                             )}
 
                             {accion.id === 'asignar_mecanico' && (
-                                <label className="flex flex-col gap-1 text-sm">
-                                    <span className="text-text-muted">Observación (opcional)</span>
-                                    <input
-                                        id={`orden-${order.id}-${accion.id}-observacion`}
-                                        type="text"
-                                        name="observacion"
-                                        value={observacion}
-                                        onChange={(e) => setObservacion(e.target.value)}
-                                        placeholder="Comentario de la asignación..."
-                                        aria-label={`Observación de la orden ${order.id}`}
-                                        className={INPUT_CLASS}
-                                    />
-                                </label>
+                                <Input
+                                    id={`orden-${order.id}-${accion.id}-observacion`}
+                                    type="text"
+                                    name="observacion"
+                                    label="Observación (opcional)"
+                                    value={observacion}
+                                    onChange={(e) => setObservacion(e.target.value)}
+                                    placeholder="Comentario de la asignación..."
+                                    aria-label={`Observación de la orden ${order.id}`}
+                                    containerClassName="mb-0"
+                                />
                             )}
 
                             <Button

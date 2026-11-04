@@ -112,4 +112,37 @@ describe('RoleLayout: layout y navegación reutilizable', () => {
       screen.getByRole('navigation', { name: 'Navegación principal' })
     ).toBeInTheDocument();
   });
+
+  it('en móvil abre y cierra el menú lateral con el botón del encabezado', () => {
+    renderRoleLayout();
+
+    const toggle = screen.getByRole('button', { name: 'Abrir menú de navegación' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-controls', 'navegacion-lateral');
+    expect(screen.getByRole('complementary')).toHaveAttribute('id', 'navegacion-lateral');
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Cerrar menú de navegación' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar menú lateral' }));
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Cerrar menú de navegación' })).not.toBeInTheDocument();
+  });
+
+  it('al navegar desde el menú lateral en móvil el panel se cierra', async () => {
+    renderRoleLayout();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir menú de navegación' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Vehículos' }));
+
+    expect(await screen.findByText('Catálogo de vehículos')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Abrir menú de navegación' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.queryByRole('button', { name: 'Cerrar menú de navegación' })).not.toBeInTheDocument();
+  });
 });

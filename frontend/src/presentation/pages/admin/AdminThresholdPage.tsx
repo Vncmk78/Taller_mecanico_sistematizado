@@ -82,7 +82,7 @@ export function AdminThresholdPage() {
     const isServerError = status === 'error' && !isOffline;
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Umbral general de stock</h2>
             <p className="text-text-muted text-lg mb-6">Configuración vigente e historial de cambios</p>
 

@@ -245,7 +245,7 @@ export function AdminDashboardPage() {
 
   return (
     <div className="animate-fade-in">
-      <div className="flex justify-between items-center px-10 pt-10 pb-5">
+      <div className="flex flex-wrap justify-between items-center gap-3 px-4 sm:px-6 lg:px-10 pt-10 pb-5">
         <div>
           <h2 className="text-3xl font-bold mb-2 tracking-tight">
             Panel de Control Global
@@ -260,7 +260,7 @@ export function AdminDashboardPage() {
       </div>
 
       {errorResumen && (
-        <div className="px-10 pb-4">
+        <div className="px-4 sm:px-6 lg:px-10 pb-4">
           <ErrorState
             title="No se pudo cargar el resumen del panel"
             message={errorResumen}
@@ -270,7 +270,7 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5 px-10 pb-7">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5 px-4 sm:px-6 lg:px-10 pb-7">
         {stats.map((stat) => (
           <div
             key={stat.label}
@@ -293,7 +293,7 @@ export function AdminDashboardPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-[2fr_1fr] gap-7 px-10 pb-10">
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-7 px-4 sm:px-6 lg:px-10 pb-10">
         <div className="card flex flex-col p-7">
           <div className="flex justify-between items-center mb-6 border-b border-border-custom pb-4">
             <h3 className="text-xl font-semibold">Carga de mecánicos</h3>
@@ -324,7 +324,7 @@ export function AdminDashboardPage() {
               cargaPaginada.map((mecanico) => (
                 <div
                   key={mecanico.mecanicoId}
-                  className="flex items-center justify-between rounded-lg border border-border-custom px-4 py-3"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-custom px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-primary-blue/10 flex items-center justify-center text-primary-blue">

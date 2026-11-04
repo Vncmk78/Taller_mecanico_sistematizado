@@ -78,3 +78,45 @@ export interface ResultadoMovimiento {
     alerta: { activa: boolean; nueva: boolean };
     repetido: boolean;
 }
+
+export interface DisponibilidadRepuesto {
+    repuestoId: number;
+    nombre: string;
+    proveedorNombre: string;
+    requerido: number;
+    stock: number;
+    reservadoParaOrden: number;
+    comprometidoOtrasOrdenes: number;
+    disponible: number;
+    alcanza: boolean;
+    faltan: number;
+}
+
+export interface ResultadoDisponibilidad {
+    ordenId: number | null;
+    disponible: boolean;
+    repuestos: DisponibilidadRepuesto[];
+    presupuestoId: number | null;
+    version: number | null;
+}
+
+export interface FaltanteStock {
+    repuestoId: number;
+    nombre: string;
+    solicitado: number;
+    disponible: number;
+    faltan: number;
+}
+
+export interface ResultadoReserva {
+    ordenId: number;
+    reservado: boolean;
+    faltantes: FaltanteStock[];
+    movimientos: Movimiento[];
+}
+
+export interface ResultadoOperacionOrden {
+    ordenId: number;
+    movimientos: Movimiento[];
+    repetido: boolean;
+}

@@ -61,15 +61,15 @@ export function AdminLayout() {
       userSubtitle="Administrador"
       onLogout={handleLogout}
       headerLeft={
-        <div role="search" aria-label="Búsqueda global" className="flex items-center gap-3">
-          <Search className="text-text-muted w-5 h-5" aria-hidden />
+        <div role="search" aria-label="Búsqueda global" className="hidden min-w-0 items-center gap-3 md:flex">
+          <Search className="text-text-muted w-5 h-5 shrink-0" aria-hidden />
           <input
             type="search"
             name="busqueda-global"
             placeholder="Buscar patente, orden o cliente..."
             aria-label="Buscar patente, orden o cliente"
             autoComplete="off"
-            className="py-2.5 px-4 bg-bg-secondary border-none rounded-lg text-text-main text-sm outline-none w-[350px] placeholder:text-text-muted"
+            className="py-2.5 px-4 bg-bg-secondary border-none rounded-lg text-text-main text-sm outline-none w-[220px] lg:w-[350px] placeholder:text-text-muted"
           />
         </div>
       }

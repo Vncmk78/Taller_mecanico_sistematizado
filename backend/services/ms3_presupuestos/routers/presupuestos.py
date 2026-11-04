@@ -91,10 +91,11 @@ def _es_personal(principal: PrincipalAutenticado) -> bool:
 
 
 def _exigir_orden_del_cliente(
-    orden_id: int, presupuesto_id: int | None, token: str, verificador: VerificadorOrdenes,
-    *, solo_propietario: bool = False,
+    uow: UnidadDeTrabajo, orden_id: int, presupuesto_id: int | None, token: str,
+    verificador: VerificadorOrdenes, *, solo_propietario: bool = False,
 ) -> OrdenVisible | None:
     """404 si la orden no es del cliente: no se revela si el presupuesto existe."""
+    uow.liberar_conexion()  # sin transacción abierta mientras responde MS2
     try:
         if solo_propietario:
             return verificador.verificar_propiedad(orden_id, token)
@@ -122,7 +123,7 @@ def _orden_para_el_personal(
     verificador: VerificadorOrdenes, principal: PrincipalAutenticado,
 ) -> None:
     """La orden debe ser visible para el mecánico/administrador y seguir abierta."""
-    orden = _exigir_orden_del_cliente(orden_id, presupuesto_id, token, verificador)
+    orden = _exigir_orden_del_cliente(uow, orden_id, presupuesto_id, token, verificador)
     _exigir_orden_abierta(uow, orden, orden_id, principal.usuario_id)
 
 
@@ -192,7 +193,7 @@ def listar(
             status_code=422,
             detail="Indique orden_id para consultar el presupuesto de su orden",
         )
-    _exigir_orden_del_cliente(orden_id, None, token, verificador)
+    _exigir_orden_del_cliente(uow, orden_id, None, token, verificador)
     _, encontrados = casos.listar_presupuestos(uow, orden_id=orden_id, desde=0, limite=1)
     visibles = [casos.a_resumen(p, solo_enviadas=True)
                 for p in encontrados if any(v.enviada for v in p.versiones)]
@@ -249,7 +250,7 @@ def detalle(
     presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
     if _es_personal(principal):
         return casos.a_detalle(presupuesto)
-    _exigir_orden_del_cliente(presupuesto.orden_id, presupuesto_id, token, verificador)
+    _exigir_orden_del_cliente(uow, presupuesto.orden_id, presupuesto_id, token, verificador)
     return casos.a_detalle(presupuesto, solo_enviadas=True)
 
 
@@ -270,7 +271,7 @@ def version(
     if _es_personal(principal):
         return casos.a_version_detalle(casos.obtener_version(uow, presupuesto_id, numero))
     presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
-    _exigir_orden_del_cliente(presupuesto.orden_id, presupuesto_id, token, verificador)
+    _exigir_orden_del_cliente(uow, presupuesto.orden_id, presupuesto_id, token, verificador)
     return casos.a_version_detalle(
         casos.obtener_version(uow, presupuesto_id, numero, solo_enviadas=True)
     )
@@ -419,6 +420,7 @@ def enviar(
     _orden_para_el_personal(uow, presupuesto.orden_id, presupuesto_id, token, verificador, principal)
     resultado = casos.enviar_version(uow, presupuesto_id=presupuesto_id, numero=numero)
     if resultado.efecto_en_orden == "esperando_aprobacion":
+        uow.liberar_conexion()  # MS2 consulta de vuelta a MS3
         resultado.aplicacion_en_orden = coordinador.aplicar(
             resultado.presupuesto.orden_id, presupuesto_id, token,
         )
@@ -464,6 +466,7 @@ def reintentar_aplicacion_envio(
     coordinador: CoordinadorEnviosPresupuesto = Depends(obtener_coordinador_envios_presupuesto),
 ) -> AplicacionEnvioPresupuestoRespuesta:
     envio = casos.consultar_envio_inicial(uow, presupuesto_id=presupuesto_id)
+    uow.liberar_conexion()  # MS2 consulta de vuelta a MS3
     return coordinador.aplicar(envio.orden_id, presupuesto_id, token)
 
 
@@ -502,7 +505,7 @@ def decidir(
 ) -> ResultadoOperacion:
     presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
     orden = _exigir_orden_del_cliente(
-        presupuesto.orden_id, presupuesto_id, token, verificador, solo_propietario=True,
+        uow, presupuesto.orden_id, presupuesto_id, token, verificador, solo_propietario=True,
     )
     # Una versión en borrador no existe para el cliente.
     casos.obtener_version(uow, presupuesto_id, numero, solo_enviadas=True)
@@ -520,6 +523,7 @@ def decidir(
     )
     decision = casos.consultar_decision(uow, resultado.decision_id, principal.usuario_id)
     if decision.primera_decision:
+        uow.liberar_conexion()  # MS2 consulta de vuelta a MS3
         resultado.aplicacion_en_orden = coordinador.aplicar(
             decision.orden_id, decision.decision_id, token,
         )
@@ -559,4 +563,5 @@ def reintentar_aplicacion(
     decision = casos.consultar_decision(uow, decision_id, principal.usuario_id)
     if not decision.primera_decision:
         raise ConflictoDeDatos("Una modificación no produce la transición inicial")
+    uow.liberar_conexion()  # MS2 consulta de vuelta a MS3
     return coordinador.aplicar(decision.orden_id, decision.decision_id, token)

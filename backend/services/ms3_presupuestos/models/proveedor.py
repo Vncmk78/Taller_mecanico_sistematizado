@@ -79,9 +79,11 @@ class Proveedor(Base):
         String(10), nullable=False, default="generico", server_default="generico"
     )
 
+    # Carga perezosa: leer el proveedor de un repuesto no debe traer todos los
+    # repuestos de ese proveedor. Los listados la piden con selectinload.
     repuestos: Mapped[list["Repuesto"]] = relationship(
         back_populates="proveedor",
-        lazy="selectin",
+        lazy="select",
     )
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -124,7 +126,9 @@ class Repuesto(Base):
     )
     umbral_particular: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    proveedor: Mapped["Proveedor"] = relationship(back_populates="repuestos")
+    # selectin: un lote de repuestos trae sus proveedores en UNA consulta (antes
+    # una por repuesto al armar alertas, faltantes y el detalle del presupuesto).
+    proveedor: Mapped["Proveedor"] = relationship(back_populates="repuestos", lazy="selectin")
     # Movimientos del repuesto. Sin cascada de borrado: son auditoría.
     movimientos: Mapped[list["MovimientoInventario"]] = relationship(
         back_populates="repuesto",
@@ -141,6 +145,9 @@ class HistorialProveedorRepuesto(Base):
     """Quién abastecía cada repuesto y desde cuándo (alta y cada cambio)."""
 
     __tablename__ = "historial_proveedor_repuesto"
+    # Las fechas las pone la base (now()): RETURNING las trae en el mismo INSERT,
+    # sin un SELECT extra por fila al leerlas (revisión de consultas, semana 9).
+    __mapper_args__ = {"eager_defaults": True}
 
     __table_args__ = (
         CheckConstraint(

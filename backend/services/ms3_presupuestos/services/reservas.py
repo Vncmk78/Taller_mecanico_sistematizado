@@ -54,8 +54,7 @@ def _mover(uow: UnidadDeTrabajo, repuesto: Repuesto, tipo: str, cantidad: int, o
     movimiento = uow.movimientos.agregar(MovimientoInventario(
         clave_operacion=clave, repuesto=repuesto, tipo=tipo, cantidad=cantidad,
         orden_id=orden_id, registrado_por_id=usuario_id))
-    uow.sesion.refresh(movimiento, ["fecha_hora"])
-    return movimiento
+    return movimiento  # fecha_hora llega con RETURNING (eager_defaults)
 
 
 def _salida(movimientos: list[MovimientoInventario]) -> list[MovimientoSalida]:

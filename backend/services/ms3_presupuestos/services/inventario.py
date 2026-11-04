@@ -158,8 +158,7 @@ def registrar_movimiento(
             clave_operacion=datos.clave_operacion, repuesto=repuesto, tipo=datos.tipo,
             cantidad=datos.cantidad, orden_id=datos.orden_id, proveedor_id=proveedor_id,
             registrado_por_id=usuario_id,
-        ))
-        uow.sesion.refresh(movimiento)
+        ))  # fecha_hora llega con RETURNING (eager_defaults): sin refresh
         queda_bajo = esta_bajo_umbral(repuesto.stock, efectivo)
         resultado = ResultadoMovimiento(
             movimiento=MovimientoSalida.model_validate(movimiento),

@@ -540,6 +540,24 @@ PostgreSQL migrado; se omite si no hay base):
 Si se quita el `FOR UPDATE` de `RepositorioPresupuestos.obtener_para_actualizar`,
 fallan las tres pruebas de concurrencia.
 
+### Pruebas integrales de presupuesto, repuestos, proveedores e inventario
+
+Lo que hay que tener levantado para que **ninguna** prueba de MS3 se salte:
+
+| Variable | Para qué |
+|---|---|
+| `MS3_ORM_TEST_DATABASE_URL` | Base de MS3 migrada (`alembic upgrade head`): ORM, triggers, concurrencia, índices |
+| `SCRUM397438_MS2_TEST_URL` / `SCRUM397438_MS3_TEST_URL` | Dos bases locales `verificar_*`: flujo HTTP real MS2 ↔ MS3 en PostgreSQL |
+| `INTEGRIDAD_PG_ADMIN_URL` | PostgreSQL local donde crear bases: integridad referencial de los 4 servicios |
+
+```bash
+pytest services/ms3_presupuestos/tests \
+       tests/test_integracion_presupuesto_stock.py \
+       tests/test_decisiones_presupuesto_integracion.py \
+       tests/test_decisiones_presupuesto_postgresql.py \
+       tests/test_integridad_referencial_servicios.py -q
+```
+
 ### Aislamiento de la base de MS3
 
 MS3 solo conoce su base (`MS3_DATABASE_URL`). Las órdenes (MS2) y los usuarios
@@ -556,6 +574,31 @@ tablas o la misma base con otro servicio, hay tablas ajenas en su base, o está
 instalado `dblink`/`postgres_fdw`. Pruebas: `tests/test_ms3_aislamiento.py`
 (sin base; además verifica que el código de MS3 no importa `ms1_`/`ms2_`/`ms4_`)
 y `services/ms3_presupuestos/tests/test_aislamiento_bd.py` (PostgreSQL).
+
+### Integridad referencial, índices y mapeos ORM (MS1–MS4)
+
+`tests/test_integridad_referencial_servicios.py` migra cada servicio desde cero
+en una base descartable y comprueba que el modelo ORM coincide con las
+migraciones, que toda tabla tiene PK, que toda FK tiene índice (o una excepción
+documentada), que el ON DELETE es explícito e igual al del modelo, y que no hay
+FK entre servicios. Necesita `INTEGRIDAD_PG_ADMIN_URL` (PostgreSQL local);
+sin ella se salta. Revisión y hallazgos en
+[`docs/revision-integridad-referencial-orm.md`](docs/revision-integridad-referencial-orm.md).
+
+**Mapeos ORM y límites transaccionales** (`tests/test_mapeos_y_transacciones.py`):
+`Repuesto.proveedor` e `ItemPresupuesto.repuesto` cargan por lote (`selectin`)
+en vez de una consulta por fila; leer el proveedor de un repuesto ya no trae
+todos sus repuestos; los movimientos reciben su fecha con `RETURNING` (sin
+`refresh`). Antes de cada llamada a MS2 el router cierra la transacción de
+lectura con `uow.liberar_conexion()`, para no dejar la conexión
+*idle in transaction* mientras MS2 responde (y consulta de vuelta a MS3).
+
+**Consultas por endpoint e índices** (`tests/test_consultas_por_endpoint.py`):
+cada endpoint de lectura hace el mismo número de consultas con 2 o con 8 filas
+(sin N+1) y no supera su presupuesto medido. La migración `0010_ms3` agrega
+`ix_movimiento_inventario_fecha` para el historial general de movimientos
+(de ~120 ms a <1 ms con 500.000 movimientos). Mediciones y propuestas en
+[`docs/consultas-lentas-y-ajustes-indices.md`](docs/consultas-lentas-y-ajustes-indices.md).
 
 ## MS4 — Evidencia Multimedia
 

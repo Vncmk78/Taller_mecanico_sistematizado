@@ -225,7 +225,10 @@ def test_ms3_informa_aprobacion_inicial_persistida_a_ms2(flujo):
 
 
 def test_envio_inicial_coordina_estado_historial_y_actor_administrador(flujo):
-    respuesta = _enviar_presupuesto_inicial(flujo)
+    # El mismo token que usa la petición: generar otro después podía cambiar
+    # de segundo (iat/exp) y la comparación fallaba de forma intermitente.
+    cabecera = _headers(99, NombreRol.ADMINISTRADOR)
+    respuesta = _enviar_presupuesto_inicial(flujo, headers=cabecera)
     assert respuesta.status_code == 200, respuesta.text
     body = respuesta.json()
     aplicacion = body["aplicacion_en_orden"]
@@ -240,8 +243,7 @@ def test_envio_inicial_coordina_estado_historial_y_actor_administrador(flujo):
     assert registro.actor_usuario_id == 99 and registro.origen == "usuario"
     assert registro.decision_presupuesto_id is None
     assert registro.fecha_hora is not None
-    esperado = _headers(99, NombreRol.ADMINISTRADOR)["Authorization"]
-    assert all(headers["Authorization"] == esperado
+    assert all(headers["Authorization"] == cabecera["Authorization"]
                for _, _, headers in flujo.llamadas)
 
 

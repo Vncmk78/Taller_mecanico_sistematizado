@@ -540,6 +540,24 @@ PostgreSQL migrado; se omite si no hay base):
 Si se quita el `FOR UPDATE` de `RepositorioPresupuestos.obtener_para_actualizar`,
 fallan las tres pruebas de concurrencia.
 
+### Pruebas integrales de presupuesto, repuestos, proveedores e inventario
+
+Lo que hay que tener levantado para que **ninguna** prueba de MS3 se salte:
+
+| Variable | Para qué |
+|---|---|
+| `MS3_ORM_TEST_DATABASE_URL` | Base de MS3 migrada (`alembic upgrade head`): ORM, triggers, concurrencia, índices |
+| `SCRUM397438_MS2_TEST_URL` / `SCRUM397438_MS3_TEST_URL` | Dos bases locales `verificar_*`: flujo HTTP real MS2 ↔ MS3 en PostgreSQL |
+| `INTEGRIDAD_PG_ADMIN_URL` | PostgreSQL local donde crear bases: integridad referencial de los 4 servicios |
+
+```bash
+pytest services/ms3_presupuestos/tests \
+       tests/test_integracion_presupuesto_stock.py \
+       tests/test_decisiones_presupuesto_integracion.py \
+       tests/test_decisiones_presupuesto_postgresql.py \
+       tests/test_integridad_referencial_servicios.py -q
+```
+
 ### Aislamiento de la base de MS3
 
 MS3 solo conoce su base (`MS3_DATABASE_URL`). Las órdenes (MS2) y los usuarios

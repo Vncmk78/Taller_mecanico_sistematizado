@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
 import { AppBrand } from '@/presentation/components/layout/AppBrand';
 import { AppNavLink, type NavSection } from '@/presentation/components/layout/AppNavLink';
 import { SidebarNav } from '@/presentation/components/layout/SidebarNav';
@@ -27,6 +28,8 @@ export function RoleLayout({
   headerLeft,
   headerRightPrepend,
 }: RoleLayoutProps) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   if (variant === 'topnav') {
     return (
       <div className="min-h-screen flex flex-col animate-fade-in">
@@ -79,12 +82,45 @@ export function RoleLayout({
       >
         Saltar al contenido principal
       </a>
-      <SidebarNav sections={sections} />
+
+      {/* Sidebar de escritorio */}
+      <div className="hidden lg:block">
+        <SidebarNav sections={sections} />
+      </div>
+
+      {/* Botón hamburguesa móvil */}
+      <button
+        type="button"
+        aria-label={mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
+        aria-expanded={mobileMenuOpen}
+        aria-controls="menu-movil-sidebar"
+        onClick={() => setMobileMenuOpen((v) => !v)}
+        className="lg:hidden fixed top-3 left-3 z-[60] inline-flex items-center justify-center w-11 h-11 rounded-lg bg-primary-blue text-white shadow-lg border border-white/10"
+      >
+        {mobileMenuOpen ? <X className="w-5 h-5" aria-hidden /> : <Menu className="w-5 h-5" aria-hidden />}
+      </button>
+
+      {/* Drawer móvil */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden
+          />
+          <div
+            id="menu-movil-sidebar"
+            className="relative z-10 h-full shadow-xl animate-fade-in"
+          >
+            <SidebarNav sections={sections} />
+          </div>
+        </div>
+      )}
 
       <main
         id="contenido-principal"
         tabIndex={-1}
-        className="flex-grow flex flex-col bg-bg-secondary h-screen overflow-y-auto focus:outline-none"
+        className="flex-grow flex flex-col bg-bg-secondary min-h-screen lg:h-screen lg:overflow-y-auto focus:outline-none pt-14 lg:pt-0"
       >
         <TopBar
           left={headerLeft}

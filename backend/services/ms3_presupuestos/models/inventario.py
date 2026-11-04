@@ -53,6 +53,9 @@ TIPOS_CON_ORDEN = ("compromiso", "consumo", "liberacion")
 
 class MovimientoInventario(Base):
     __tablename__ = "movimiento_inventario"
+    # Las fechas las pone la base (now()): RETURNING las trae en el mismo INSERT,
+    # sin un SELECT extra por fila al leerlas (revisión de consultas, semana 9).
+    __mapper_args__ = {"eager_defaults": True}
 
     __table_args__ = (
         CheckConstraint(
@@ -115,6 +118,9 @@ class MovimientoInventario(Base):
 
 class ParametroInventario(Base):
     __tablename__ = "parametro_inventario"
+    # Las fechas las pone la base (now()): RETURNING las trae en el mismo INSERT,
+    # sin un SELECT extra por fila al leerlas (revisión de consultas, semana 9).
+    __mapper_args__ = {"eager_defaults": True}
 
     __table_args__ = (
         CheckConstraint("umbral_general >= 0", name="umbral_no_negativo"),
@@ -174,6 +180,8 @@ Index("ix_movimiento_inventario_proveedor_fecha",
       _M.proveedor_id, _M.fecha_hora.desc(), _M.movimiento_id.desc(),
       postgresql_include=["repuesto_id", "cantidad"],
       postgresql_where=text("proveedor_id is not null"))
+# Historial general (sin filtros), más reciente primero (0010_ms3).
+Index("ix_movimiento_inventario_fecha", _M.fecha_hora.desc(), _M.movimiento_id.desc())
 # Ingresos de un repuesto agrupados por proveedor (trazabilidad del repuesto).
 Index("ix_movimiento_inventario_ingresos", _M.repuesto_id, _M.proveedor_id,
       postgresql_include=["cantidad", "fecha_hora"],

@@ -18,7 +18,7 @@ from typing import Generic, Literal, TypeVar
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.sql import Select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload, selectinload
 
 from services.ms3_presupuestos.db import Base
 from services.ms3_presupuestos.models import (
@@ -139,7 +139,9 @@ class RepositorioProveedores(RepositorioBase[Proveedor]):
         # Orden = índice ix_proveedor_nombre_orden (lower(nombre), proveedor_id).
         consulta = (self._filtro(texto, con_repuestos, tipo_distribuidor)
                     .order_by(func.lower(Proveedor.nombre), Proveedor.proveedor_id)
-                    .offset(max(desde, 0)).limit(limite))
+                    .offset(max(desde, 0)).limit(limite)
+                    # El listado muestra cuántos repuestos tiene cada proveedor.
+                    .options(selectinload(Proveedor.repuestos)))
         return self.sesion.scalars(consulta).all()
 
     def contar_busqueda(self, *, texto: str | None = None, con_repuestos: bool | None = None,
@@ -433,6 +435,10 @@ class RepositorioPresupuestos(RepositorioBase[Presupuesto]):
             consulta.order_by(Presupuesto.presupuesto_id.desc())
             .offset(max(desde, 0))
             .limit(limite)
+            # El resumen solo suma ítems: no carga repuestos ni proveedores.
+            .options(selectinload(Presupuesto.versiones)
+                     .selectinload(VersionPresupuesto.items)
+                     .lazyload(ItemPresupuesto.repuesto))
         )
         return self.sesion.scalars(consulta).all()
 

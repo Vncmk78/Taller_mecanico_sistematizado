@@ -4,9 +4,13 @@ import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infr
 import type { Movimiento, TipoMovimiento } from '@/domain/entities/Inventario';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { FormActions } from '@/presentation/components/ui/FormActions';
+import { FormModal } from '@/presentation/components/ui/FormModal';
+import { Input } from '@/presentation/components/ui/Input';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { Select } from '@/presentation/components/ui/Select';
 import {
     Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow,
 } from '@/presentation/components/ui/Table';
@@ -100,7 +104,7 @@ export function AdminInventoryMovementsPage() {
     const isServerError = status === 'error' && !isOffline;
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
             <div className="mb-6 flex justify-between items-center gap-4 flex-wrap">
                 <div>
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Movimientos de inventario</h2>
@@ -117,26 +121,22 @@ export function AdminInventoryMovementsPage() {
             </div>
 
             <div className="card p-6 mb-6 flex flex-wrap gap-4 items-end">
-                <label className="flex flex-col gap-1 text-sm text-text-muted">
-                    Repuesto ID
-                    <input
-                        type="number"
-                        value={repuestoId}
-                        onChange={(e) => setRepuestoId(e.target.value)}
-                        className="bg-surface border border-border-custom rounded-lg px-3 py-2 text-text-main text-sm"
-                    />
-                </label>
-                <label className="flex flex-col gap-1 text-sm text-text-muted">
-                    Tipo
-                    <select
-                        value={tipo}
-                        onChange={(e) => setTipo(e.target.value)}
-                        className="bg-surface border border-border-custom rounded-lg px-3 py-2 text-text-main text-sm"
-                    >
-                        <option value="">Todos</option>
-                        {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                </label>
+                <Input
+                    label="Repuesto ID"
+                    type="number"
+                    value={repuestoId}
+                    onChange={(e) => setRepuestoId(e.target.value)}
+                    containerClassName="mb-0"
+                />
+                <Select
+                    label="Tipo"
+                    value={tipo}
+                    onChange={(e) => setTipo(e.target.value)}
+                    containerClassName="mb-0"
+                >
+                    <option value="">Todos</option>
+                    {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </Select>
                 <button
                     type="button"
                     onClick={handleRetry}
@@ -148,7 +148,7 @@ export function AdminInventoryMovementsPage() {
 
             {isOffline && <OfflineBanner message={error} onRetry={handleRetry} requestId={requestId} className="mb-6" />}
             {isServerError && movimientos.length > 0 && (
-                <div className="card p-6 mb-6 flex items-center justify-between gap-4">
+                <div className="card p-6 mb-6 flex flex-wrap items-center justify-between gap-4">
                     <p className="text-status-red text-sm">{error}</p>
                     <RetryButton tone="error" onClick={handleRetry} />
                 </div>
@@ -192,66 +192,57 @@ export function AdminInventoryMovementsPage() {
             )}
 
             {movementOpen && (
-                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                    <div className="card w-full max-w-[520px] p-6 relative">
-                        <h3 className="text-xl font-bold mb-4">Registrar movimiento</h3>
-                        <form onSubmit={handleRegister} className="space-y-4">
-                            <label className="block">
-                                <span className="block mb-2 text-sm text-text-muted">Repuesto ID</span>
-                                <input
-                                    type="number"
-                                    value={mRepuestoId}
-                                    onChange={(e) => setMRepuestoId(e.target.value)}
-                                    className="w-full bg-surface border border-border-custom rounded-lg px-3 py-2 text-text-main text-sm"
-                                />
-                            </label>
-                            <label className="block">
-                                <span className="block mb-2 text-sm text-text-muted">Tipo</span>
-                                <select
-                                    value={mTipo}
-                                    onChange={(e) => setMTipo(e.target.value as TipoMovimiento)}
-                                    className="w-full bg-surface border border-border-custom rounded-lg px-3 py-2 text-text-main text-sm"
-                                >
-                                    {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            </label>
-                            <label className="block">
-                                <span className="block mb-2 text-sm text-text-muted">Cantidad</span>
-                                <input
-                                    type="number"
-                                    value={mCantidad}
-                                    onChange={(e) => setMCantidad(e.target.value)}
-                                    className="w-full bg-surface border border-border-custom rounded-lg px-3 py-2 text-text-main text-sm"
-                                />
-                            </label>
-                            <label className="block">
-                                <span className="block mb-2 text-sm text-text-muted">Orden ID (opcional)</span>
-                                <input
-                                    type="number"
-                                    value={mOrdenId}
-                                    onChange={(e) => setMOrdenId(e.target.value)}
-                                    className="w-full bg-surface border border-border-custom rounded-lg px-3 py-2 text-text-main text-sm"
-                                />
-                            </label>
-                            <label className="block">
-                                <span className="block mb-2 text-sm text-text-muted">Proveedor ID (opcional)</span>
-                                <input
-                                    type="number"
-                                    value={mProveedorId}
-                                    onChange={(e) => setMProveedorId(e.target.value)}
-                                    className="w-full bg-surface border border-border-custom rounded-lg px-3 py-2 text-text-main text-sm"
-                                />
-                            </label>
-                            {movementError && <p className="text-status-red text-sm">{movementError}</p>}
-                            <div className="flex justify-end gap-3">
-                                <button type="button" onClick={() => setMovementOpen(false)} className="px-4 py-2 rounded-lg border border-border-custom text-sm">Cancelar</button>
-                                <button type="submit" disabled={movementSubmitting} className="px-4 py-2 rounded-lg bg-primary-blue text-white text-sm font-medium">
-                                    {movementSubmitting ? 'Guardando...' : 'Registrar'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
+                <FormModal
+                    open={movementOpen}
+                    title="Registrar movimiento"
+                    onClose={() => setMovementOpen(false)}
+                >
+                    <form onSubmit={handleRegister} className="space-y-4">
+                        <Input
+                            label="Repuesto ID"
+                            type="number"
+                            value={mRepuestoId}
+                            onChange={(e) => setMRepuestoId(e.target.value)}
+                            containerClassName="mb-0"
+                        />
+                        <Select
+                            label="Tipo"
+                            value={mTipo}
+                            onChange={(e) => setMTipo(e.target.value as TipoMovimiento)}
+                            containerClassName="mb-0"
+                        >
+                            {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
+                        </Select>
+                        <Input
+                            label="Cantidad"
+                            type="number"
+                            value={mCantidad}
+                            onChange={(e) => setMCantidad(e.target.value)}
+                            containerClassName="mb-0"
+                        />
+                        <Input
+                            label="Orden ID (opcional)"
+                            type="number"
+                            value={mOrdenId}
+                            onChange={(e) => setMOrdenId(e.target.value)}
+                            containerClassName="mb-0"
+                        />
+                        <Input
+                            label="Proveedor ID (opcional)"
+                            type="number"
+                            value={mProveedorId}
+                            onChange={(e) => setMProveedorId(e.target.value)}
+                            containerClassName="mb-0"
+                        />
+                        {movementError && <p className="text-status-red text-sm">{movementError}</p>}
+                        <FormActions>
+                            <button type="button" onClick={() => setMovementOpen(false)} className="px-4 py-2 rounded-lg border border-border-custom text-sm">Cancelar</button>
+                            <button type="submit" disabled={movementSubmitting} className="px-4 py-2 rounded-lg bg-primary-blue text-white text-sm font-medium">
+                                {movementSubmitting ? 'Guardando...' : 'Registrar'}
+                            </button>
+                        </FormActions>
+                    </form>
+                </FormModal>
             )}
         </div>
     );

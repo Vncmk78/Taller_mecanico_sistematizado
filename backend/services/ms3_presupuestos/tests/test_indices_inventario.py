@@ -87,6 +87,8 @@ def _listado(**filtros) -> Select:
      "ix_movimiento_inventario_saldo"),
     ("movimientos de un repuesto", lambda d: _listado(repuesto_id=d.repuestos[0]),
      "ix_movimiento_inventario_repuesto_fecha"),
+    ("historial general sin filtros (0010_ms3)", lambda d: _listado(),
+     "ix_movimiento_inventario_fecha"),
     ("movimientos de una orden", lambda d: _listado(orden_id=d.orden), "ix_movimiento_inventario_orden_fecha"),
     ("ingresos de un proveedor", lambda d: _listado(proveedor_id=d.proveedor),
      "ix_movimiento_inventario_proveedor_fecha"),
@@ -110,6 +112,7 @@ def test_la_consulta_usa_su_indice(db: Session, datos_indices, descripcion: str,
 
 @pytest.mark.parametrize("consulta", [
     lambda d: _listado(repuesto_id=d.repuestos[0]),
+    lambda d: _listado(),
     lambda d: _listado(orden_id=d.orden),
     lambda d: _listado(proveedor_id=d.proveedor),
     lambda d: _consulta_saldo([d.repuestos[0]]),
@@ -127,7 +130,7 @@ def test_existen_los_indices_y_no_quedan_los_reemplazados(db: Session) -> None:
         "select indexname from pg_indexes where tablename = 'movimiento_inventario'")).scalars())
     assert {"ix_movimiento_inventario_saldo", "ix_movimiento_inventario_repuesto_fecha",
             "ix_movimiento_inventario_orden_fecha", "ix_movimiento_inventario_proveedor_fecha",
-            "ix_movimiento_inventario_ingresos"} <= nombres
+            "ix_movimiento_inventario_ingresos", "ix_movimiento_inventario_fecha"} <= nombres
     assert not nombres & {"ix_movimiento_inventario_repuesto_id", "ix_movimiento_inventario_orden_id",
                           "ix_movimiento_inventario_proveedor_id"}
 

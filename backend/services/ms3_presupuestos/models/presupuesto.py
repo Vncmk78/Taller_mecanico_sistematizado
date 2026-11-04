@@ -58,6 +58,9 @@ if TYPE_CHECKING:
 
 class Presupuesto(Base):
     __tablename__ = "presupuesto"
+    # Las fechas las pone la base (now()): RETURNING las trae en el mismo INSERT,
+    # sin un SELECT extra por fila al leerlas (revisión de consultas, semana 9).
+    __mapper_args__ = {"eager_defaults": True}
 
     __table_args__ = (
         CheckConstraint("orden_id > 0", name="orden_positiva"),
@@ -99,6 +102,9 @@ class Presupuesto(Base):
 
 class VersionPresupuesto(Base):
     __tablename__ = "version_presupuesto"
+    # Las fechas las pone la base (now()): RETURNING las trae en el mismo INSERT,
+    # sin un SELECT extra por fila al leerlas (revisión de consultas, semana 9).
+    __mapper_args__ = {"eager_defaults": True}
 
     __table_args__ = (
         # No puede haber dos "versión 2" del mismo presupuesto.
@@ -213,7 +219,8 @@ class ItemPresupuesto(Base):
     precio_unitario: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
     version: Mapped["VersionPresupuesto"] = relationship(back_populates="items")
-    repuesto: Mapped["Repuesto | None"] = relationship()
+    # selectin: los ítems de una versión traen sus repuestos en una consulta.
+    repuesto: Mapped["Repuesto | None"] = relationship(lazy="selectin")
 
     @property
     def subtotal(self) -> Decimal:
@@ -238,6 +245,9 @@ class DecisionPresupuesto(Base):
     """
 
     __tablename__ = "decision_presupuesto"
+    # Las fechas las pone la base (now()): RETURNING las trae en el mismo INSERT,
+    # sin un SELECT extra por fila al leerlas (revisión de consultas, semana 9).
+    __mapper_args__ = {"eager_defaults": True}
 
     __table_args__ = (
         CheckConstraint(

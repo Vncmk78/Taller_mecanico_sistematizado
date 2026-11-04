@@ -324,6 +324,7 @@ def confirmar_disponibilidad(
     except ConflictoDeDatos as exc:
         raise HTTPException(status_code=exc.codigo_http, detail=exc.mensaje) from exc
 
+    uow.liberar_conexion()  # sin transacción abierta mientras responde MS2
     try:
         coordinador.aplicar(
             orden_id, str(reserva["clave_operacion"]), token

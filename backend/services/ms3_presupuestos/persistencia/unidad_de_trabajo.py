@@ -80,6 +80,27 @@ class UnidadDeTrabajo:
         except IntegrityError as exc:
             raise traducir_error_de_integridad(exc) from exc
 
+    def liberar_conexion(self) -> None:
+        """Cierra la transacción de LECTURA abierta antes de llamar a otro servicio.
+
+        SQLAlchemy abre una transacción con la primera consulta (autobegin). Si
+        después el router llama por HTTP a MS2, la conexión queda "idle in
+        transaction" todo lo que tarde MS2 (hasta MS2_TIMEOUT_SEGUNDOS) y, si MS2
+        consulta de vuelta a MS3 (verificación de una decisión o un envío), esa
+        consulta necesita OTRA conexión del pool. Con varias peticiones a la vez
+        el pool se agota esperando. Cerrarla aquí no pierde nada: la sesión no
+        expira objetos al confirmar (expire_on_commit=False).
+
+        Solo para lecturas: si hay cambios sin confirmar o se llama dentro de
+        `transaccion()`, es un error de programación.
+        """
+        if getattr(self, "_activa", False):
+            raise RuntimeError("liberar_conexion() no se usa dentro de transaccion()")
+        if self.sesion.new or self.sesion.dirty or self.sesion.deleted:
+            raise RuntimeError("Hay cambios sin confirmar; use transaccion()")
+        if self.sesion.in_transaction():
+            self.sesion.commit()
+
     # Atajos para casos simples fuera de `transaccion()` (p. ej. un script).
     def commit(self) -> None:
         with self._manejar_errores():

@@ -148,13 +148,13 @@ export function MechanicBudgetPage() {
         }
     };
 
-    if (loading) return <LoadingState message="Cargando presupuesto..." className="p-10" />;
-    if (error) return <ErrorState className="p-10" title="No se pudo cargar el presupuesto" message={error} onRetry={load} />;
+    if (loading) return <LoadingState message="Cargando presupuesto..." className="p-4 sm:p-6 lg:p-10" />;
+    if (error) return <ErrorState className="p-4 sm:p-6 lg:p-10" title="No se pudo cargar el presupuesto" message={error} onRetry={load} />;
 
     const version = presupuesto?.versiones?.[presupuesto.versiones.length - 1];
 
     return (
-        <div className="p-10 animate-fade-in">
+        <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
             <Link to="/mechanic/ordenes" className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline">
                 <ArrowLeft className="w-4 h-4" /> Volver a mis órdenes
             </Link>

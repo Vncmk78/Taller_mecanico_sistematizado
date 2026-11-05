@@ -48,7 +48,6 @@ from test_integracion_prefijos import (  # noqa: F401  (ecosistema es fixture)
     DATOS_VEHICULO,
     autorizacion,
     crear_administrador,
-    crear_perfil_cliente,
     ecosistema,
 )
 
@@ -303,8 +302,14 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
                json={"email": email, "password": "incorrecta"})
         cliente = llamar("POST", "/api/auth/login", "/api/auth/login",
                          json={"email": email, "password": clave}).json()["access_token"]
-        usuario_id = llamar("GET", "/api/auth/me", "/api/auth/me", cliente).json()["id"]
-        crear_perfil_cliente(sesion_ms2, usuario_id)
+        llamar("GET", "/api/auth/me", "/api/auth/me", cliente)
+        # Sin perfil MS2 todavía: vehículos responde 404 y la consulta no lo crea.
+        llamar("GET", "/api/vehiculos", "/api/vehiculos", cliente)
+        llamar("GET", "/api/clientes/perfil", "/api/clientes/perfil", cliente)
+        # La web prepara el perfil por la Gateway (antes se insertaba en la base).
+        llamar("POST", "/api/clientes/perfil", "/api/clientes/perfil", cliente, json={})
+        llamar("POST", "/api/clientes/perfil", "/api/clientes/perfil", cliente, json={})
+        llamar("GET", "/api/clientes/perfil", "/api/clientes/perfil", cliente)
 
         llamar("POST", "/api/vehiculos", "/api/vehiculos", cliente, json={})
         vehiculo_id = llamar("POST", "/api/vehiculos", "/api/vehiculos", cliente,
@@ -425,11 +430,20 @@ def test_el_recorrido_cubre_exitos_y_errores_del_consumo(respuestas_reales) -> N
     esperadas = {
         (c.metodo, c.ruta)
         for c in CONSUMO_WEB
-        if c.ruta.startswith(("/api/auth/login", "/api/auth/me", "/api/vehiculos", "/api/ordenes"))
+        if c.ruta.startswith((
+            "/api/auth/login", "/api/auth/register", "/api/auth/me", "/api/clientes",
+            "/api/vehiculos", "/api/ordenes",
+        ))
     }
     assert esperadas <= cubiertas, sorted(esperadas - cubiertas)
     for esperado in [
         ("post", "/api/auth/login", 401),
+        ("post", "/api/auth/register", 201),
+        ("get", "/api/vehiculos", 404),
+        ("get", "/api/clientes/perfil", 404),
+        ("post", "/api/clientes/perfil", 201),
+        ("post", "/api/clientes/perfil", 200),
+        ("get", "/api/clientes/perfil", 200),
         ("post", "/api/vehiculos", 422),
         ("get", "/api/vehiculos/{vehiculo_id}", 404),
         ("get", "/api/vehiculos", 403),

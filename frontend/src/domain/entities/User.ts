@@ -23,6 +23,16 @@ export interface UsuarioListado {
   is_active: boolean;
 }
 
+/**
+ * Datos del registro público (POST /api/auth/register). No incluye roles: MS1
+ * asigna Cliente en el servidor y rechaza campos extra.
+ */
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  full_name: string;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;

@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { User } from '@/domain/entities/User';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { usePerfilClienteStore } from '@/infrastructure/stores/usePerfilClienteStore';
+import { perfilClienteService } from '@/infrastructure/api/PerfilClienteService';
 import { AuthProvider } from '@/presentation/components/auth/AuthProvider';
 import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { AppRoutes } from '@/presentation/routes/AppRoutes';
@@ -12,6 +14,14 @@ vi.mock('@/infrastructure/api/AuthService', () => ({
     login: vi.fn(),
     getProfile: vi.fn(() => new Promise<never>(() => {})),
     listarUsuarios: vi.fn(() => Promise.resolve([])),
+  },
+}));
+
+vi.mock('@/infrastructure/api/PerfilClienteService', () => ({
+  perfilClienteService: {
+    preparar: vi.fn(() =>
+      Promise.resolve({ perfil: { clienteId: '7', usuarioId: '2', telefono: null }, creado: false })
+    ),
   },
 }));
 
@@ -41,6 +51,7 @@ const mechanicUser: User = {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.mocked(perfilClienteService.preparar).mockClear();
   useAuthStore.setState({
     user: null,
     token: null,
@@ -48,6 +59,10 @@ beforeEach(() => {
     isLoading: false,
     isInitializing: false,
   });
+  // Por defecto el perfil Cliente de MS2 ya está preparado en esta sesión; las
+  // pruebas del control de preparación lo reinician explícitamente.
+  usePerfilClienteStore.getState().reset();
+  usePerfilClienteStore.setState({ estado: 'listo', usuarioPreparado: clientUser.id });
 });
 
 function logueadoComo(user: User) {
@@ -84,6 +99,23 @@ describe('AppRoutes: navegación por los tres roles', () => {
         ).toBeInTheDocument();
       }
     );
+
+    it('/registro muestra el formulario público de registro', () => {
+      renderApp('/registro');
+
+      expect(
+        screen.getByRole('heading', { name: 'Crear cuenta de cliente' })
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText(/rol/i)).not.toBeInTheDocument();
+    });
+
+    it('el login y el home enlazan al registro', () => {
+      renderApp('/login');
+      expect(screen.getByRole('link', { name: 'Crear cuenta de cliente' })).toHaveAttribute(
+        'href',
+        '/registro'
+      );
+    });
 
     it('una ruta inexistente cae en el home', () => {
       renderApp('/ruta-inexistente');
@@ -273,6 +305,26 @@ describe('AppRoutes: navegación por los tres roles', () => {
         screen.getByRole('heading', { name: /Bienvenido/ })
       ).toBeInTheDocument();
       expect(screen.getAllByText('Mis Vehículos').length).toBeGreaterThan(0);
+    });
+
+    it('prepara el perfil Cliente de MS2 antes de mostrar el portal', async () => {
+      usePerfilClienteStore.getState().reset();
+      logueadoComo(clientUser);
+      renderApp('/client');
+
+      expect(
+        await screen.findByRole('heading', { name: /Bienvenido/ })
+      ).toBeInTheDocument();
+      expect(perfilClienteService.preparar).toHaveBeenCalledTimes(1);
+    });
+
+    it('un cliente con sesión que abre /registro vuelve a su portal', () => {
+      logueadoComo(clientUser);
+      renderApp('/registro');
+
+      expect(
+        screen.getByRole('heading', { name: /Bienvenido/ })
+      ).toBeInTheDocument();
     });
 
     it('navega con un clic del menú hacia /client/vehiculos', async () => {

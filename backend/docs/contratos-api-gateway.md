@@ -5,8 +5,8 @@ app móvil (Integración IV). La fuente de verdad interactiva está en el Swagge
 de la Gateway: <http://localhost:8000/docs> y su versión JSON en
 <http://localhost:8000/openapi.json>.
 
-**Versión estable del contrato: 2.0.0.** Copia congelada para integrar sin
-levantar la Gateway: [`docs/openapi/sgtm-gateway-2.0.0.json`](openapi/sgtm-gateway-2.0.0.json).
+**Versión estable del contrato: 2.2.0.** Copia congelada para integrar sin
+levantar la Gateway: [`docs/openapi/sgtm-gateway-2.2.0.json`](openapi/sgtm-gateway-2.2.0.json).
 Reglas de versionado e historial: [`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
 
 Reglas que se aplican a todos los endpoints:
@@ -392,7 +392,8 @@ La comprobación es puntual: no constituye una transacción distribuida con MS1.
 
 ### Flujo implementado hasta Semana 3
 
-1. Un Cliente autenticado registra uno o varios vehículos propios.
+1. Un Cliente autenticado (con su perfil preparado mediante
+   `POST /api/clientes/perfil`) registra uno o varios vehículos propios.
 2. Un Administrador confirma el ingreso físico al crear una orden para un
    vehículo registrado. Si ya hay un ingreso abierto, se reutiliza.
 3. La orden se crea en `Recibido`, sin mecánico obligatorio, junto con su
@@ -684,10 +685,49 @@ Esta primera entrega cubre almacenamiento y consulta web de avisos. No afirma
 que correo o push hayan sido enviados: requieren sus canales/proveedores y el
 registro de dispositivos de Integración IV.
 
+## Perfil Cliente (MS2)
+
+MS1 guarda la cuenta (nombre y correo oficiales) y MS2 guarda aparte el perfil
+`Cliente`: referencia lógica al usuario y teléfono opcional (sistematización
+§4.1). El registro público no crea ese perfil; la web y la app lo preparan con
+esta operación después del login de un Cliente y antes de usar vehículos u
+órdenes. Antes de 2.2.0 solo lo creaba `scripts/seed_usuarios_prueba.py`.
+
+### POST `/api/clientes/perfil`
+
+Prepara el perfil Cliente del usuario del JWT. Es idempotente: repetirlo o
+ejecutarlo en paralelo deja un único perfil (restricción única
+`uq_cliente_usuario_id`; la llamada que pierde la carrera recupera el perfil
+ganador). No modifica un perfil existente.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Cliente |
+| Body | `{}` o `{"telefono": string}` (1 a 30 caracteres, sin formato prescrito). No admite `usuario_id`, `cliente_id` ni roles (`422`) |
+| Respuesta OK | `201` si esta llamada creó el perfil · `200` si ya existía (sin cambios) · cuerpo `PerfilClienteRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `409` existe con otro teléfono (no se modificó) · `422` body inválido · `500` persistencia (se puede reintentar) · `502/503/504` de infraestructura |
+
+```json
+// Request
+{ "telefono": "+56 9 1234 5678" }
+// Response 201 (o 200 si ya existía)
+{ "cliente_id": 7, "usuario_id": 42, "telefono": "+56 9 1234 5678" }
+```
+
+Un teléfono ausente (`{}`) significa «no lo informo», no «bórralo». Si la
+preparación falla, la cuenta de MS1 ya existe: el cliente reintenta la
+preparación (también tras volver a iniciar sesión) y no se registra otra vez.
+
+### GET `/api/clientes/perfil`
+
+Consulta el perfil del usuario del JWT sin crearlo: `200` con
+`PerfilClienteRespuesta`, `404` si todavía no fue preparado, `403` sin rol
+Cliente. Igual que `GET /api/vehiculos`, una consulta nunca crea el perfil.
+
 ## Vehículos (MS2)
 
 Todas requieren `Authorization: Bearer <token>` con rol Cliente y un perfil
-`Cliente` local en MS2. Una cuenta multirol puede usarlas si incluye Cliente;
+`Cliente` local en MS2 (se prepara con `POST /api/clientes/perfil`). Una cuenta multirol puede usarlas si incluye Cliente;
 el propietario siempre se resuelve desde el JWT y nunca se recibe en el body.
 
 ### POST `/api/vehiculos`

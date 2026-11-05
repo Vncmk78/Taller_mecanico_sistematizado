@@ -185,6 +185,11 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         {"detail": "Vehículo no encontrado"},
         "Un vehículo de otro cliente y uno inexistente responden lo mismo.",
     ),
+    "detalle_perfil_cliente_conflicto": _ejemplo(
+        "409: el perfil Cliente ya existe con otro teléfono",
+        {"detail": "El perfil Cliente ya existe con otro teléfono; no se modificó"},
+        "Preparar el perfil nunca sobrescribe datos guardados.",
+    ),
     "detalle_perfil_cliente_ausente": _ejemplo(
         "404 sin perfil Cliente local en MS2",
         {"detail": "El usuario autenticado no tiene un perfil Cliente en MS2"},
@@ -361,6 +366,12 @@ _VEHICULO_EJEMPLO: dict[str, Any] = {
     "modelo": "Corolla",
     "anio": 2018,
     "kilometraje": 45000,
+}
+
+_PERFIL_CLIENTE_EJEMPLO: dict[str, Any] = {
+    "cliente_id": 7,
+    "usuario_id": 42,
+    "telefono": "+56 9 1234 5678",
 }
 
 _VEHICULO_ACTUALIZADO_EJEMPLO: dict[str, Any] = {
@@ -568,6 +579,52 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
                 }
             },
             "401": _EJEMPLOS_AUTENTICACION,
+        },
+    },
+    ("/api/clientes/perfil", "post"): {
+        "cuerpo": {
+            "con_telefono": {
+                "summary": "Preparar el perfil con teléfono de contacto",
+                "value": {"telefono": "+56 9 1234 5678"},
+            },
+            "sin_datos": {
+                "summary": "Preparar el perfil sin teléfono (reintento tras login)",
+                "value": {},
+            },
+        },
+        "respuestas": {
+            "201": {
+                "perfil_creado": {
+                    "summary": "Perfil creado por esta llamada",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
+                }
+            },
+            "200": {
+                "perfil_existente": {
+                    "summary": "El perfil ya existía; se devuelve sin cambios",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+            "409": {
+                "telefono_distinto": _ref_ejemplo("detalle_perfil_cliente_conflicto")
+            },
+        },
+    },
+    ("/api/clientes/perfil", "get"): {
+        "respuestas": {
+            "200": {
+                "perfil": {
+                    "summary": "Perfil Cliente del usuario autenticado",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+            "404": {
+                "perfil_cliente_ausente": _ref_ejemplo("detalle_perfil_cliente_ausente")
+            },
         },
     },
     ("/api/vehiculos", "post"): {

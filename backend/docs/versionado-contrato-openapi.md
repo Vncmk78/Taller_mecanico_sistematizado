@@ -8,8 +8,8 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 
 | | |
 |---|---|
-| Versión vigente | **2.1.0** |
-| Copia congelada | [`docs/openapi/sgtm-gateway-2.1.0.json`](openapi/sgtm-gateway-2.1.0.json) |
+| Versión vigente | **2.2.0** |
+| Copia congelada | [`docs/openapi/sgtm-gateway-2.2.0.json`](openapi/sgtm-gateway-2.2.0.json) |
 | Interactivo | `http://localhost:8000/docs` (Swagger) y `/openapi.json` |
 | Dónde se define | `gateway/openapi.py` (`_VERSION`), `gateway/openapi_ms3.py`, `gateway/openapi_ejemplos.py`, `shared/openapi_ordenes.py` |
 
@@ -20,7 +20,7 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 - **Sin levantar la Gateway:** usen el archivo congelado. Sirve para generar
   tipos o clientes (`openapi-typescript`, `openapi-generator`, Flutter/Dart,
   etc.) y mocks a partir de los ejemplos.
-- **Fijen la versión:** referencien `sgtm-gateway-2.1.0.json` para el comportamiento vigente, no «el último».
+- **Fijen la versión:** referencien `sgtm-gateway-2.2.0.json` para el comportamiento vigente, no «el último».
   Una versión nueva llega como un archivo nuevo; el anterior no se borra.
 - **Solo lo publicado es contrato.** Una ruta que la Gateway reenvía pero no
   aparece en el archivo puede cambiar sin aviso.
@@ -53,6 +53,19 @@ Si cambias el contrato y olvidas los pasos 2 y 3,
 mano: `python scripts/exportar_openapi.py --verificar`.
 
 ## 4. Historial
+
+### 2.2.0 — Perfil Cliente de MS2 para el registro público
+
+Se conserva la copia 2.1.0. MINOR: agrega operaciones sin cambiar las
+existentes. `POST /api/clientes/perfil` prepara, de forma idempotente, el perfil
+Cliente que MS2 exige para vehículos y órdenes (`201` creado, `200` ya existía,
+`409` si existe con otro teléfono, sin sobrescribirlo). `GET /api/clientes/perfil`
+lo consulta sin crearlo (`404` si falta). La identidad sale del JWT y el body
+no admite `usuario_id` ni roles. `clientes` pasa de alias a prefijo publicado de
+MS2 (ya se enrutaba a MS2). Antes de este cambio el perfil solo lo creaba el
+script de semilla: un Cliente registrado desde la web o la app recibía `404` en
+vehículos. Web e Integración IV deben llamar a `POST /api/clientes/perfil`
+después del login de un Cliente y antes de usar vehículos u órdenes.
 
 ### 2.1.0 — Modificación de un presupuesto aprobado
 

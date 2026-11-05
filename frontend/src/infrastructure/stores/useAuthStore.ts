@@ -3,6 +3,7 @@ import type { User } from '@/domain/entities/User';
 import { getToken, removeToken, setToken } from '../config/tokenStorage';
 import { authService } from '../api/AuthService';
 import { useOrderStore } from './useOrderStore';
+import { usePerfilClienteStore } from './usePerfilClienteStore';
 import { useVehicleStore } from './useVehicleStore';
 
 /**
@@ -14,6 +15,7 @@ import { useVehicleStore } from './useVehicleStore';
 function purgeSharedCaches(): void {
   useOrderStore.getState().reset();
   useVehicleStore.getState().reset();
+  usePerfilClienteStore.getState().reset();
 }
 
 interface AuthState {

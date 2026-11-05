@@ -46,6 +46,12 @@ class ConsumoWeb:
 
 # ── formas que lee el frontend (interfaces *Api de los servicios) ──────────
 
+PERFIL_CLIENTE: Campos = {  # PerfilClienteService.ts → PerfilClienteApi
+    "cliente_id": "integer",
+    "usuario_id": "integer",
+    "telefono": "?string",
+}
+
 USUARIO: Campos = {  # AuthService.ts → ApiUser
     "id": "integer",
     "email": "string",
@@ -156,7 +162,21 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
         {"access_token": "string", "token_type": "string", "user": USUARIO},
         cuerpo={"email": "string", "password": "string"},
     ),
+    ConsumoWeb(
+        "AuthService.register", "post", "/api/auth/register", "201", USUARIO,
+        cuerpo={"email": "string", "password": "string", "full_name": "string"},
+    ),
     ConsumoWeb("AuthService.getProfile", "get", "/api/auth/me", "200", USUARIO),
+    # ── PerfilClienteService ────────────────────────────────────────────
+    # Tras el login de un Cliente (ClientProfileGate). Sin teléfono envía {}.
+    ConsumoWeb(
+        "PerfilClienteService.preparar", "post", "/api/clientes/perfil", "201",
+        PERFIL_CLIENTE, cuerpo={"telefono": "~string"},
+    ),
+    ConsumoWeb(
+        "PerfilClienteService.preparar (existente)", "post", "/api/clientes/perfil",
+        "200", PERFIL_CLIENTE, cuerpo={"telefono": "~string"},
+    ),
     ConsumoWeb("AuthService.listarUsuarios", "get", "/api/auth/usuarios", "200", [USUARIO]),
     # ── VehicleService ──────────────────────────────────────────────────
     ConsumoWeb(

@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 from services.ms2_taller.config import settings
 from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import resolver_cliente_actual
-from services.ms2_taller.routers import crear_router_vehiculos, router_ordenes
+from services.ms2_taller.routers import (
+    crear_router_vehiculos,
+    router_clientes,
+    router_ordenes,
+)
 from services.ms2_taller.services.publicador_eventos import ejecutar_worker_eventos
 from shared.openapi_ordenes import agregar_ejemplos_ordenes
 
@@ -38,6 +42,7 @@ app = FastAPI(
 )
 app.include_router(crear_router_vehiculos(resolver_cliente_actual))
 app.include_router(router_ordenes)
+app.include_router(router_clientes)
 
 
 @app.get("/health", tags=["health"])

@@ -95,7 +95,7 @@ def gateway_integracion(
     monkeypatch.setitem(ms1_app.dependency_overrides, get_db_ms1, db_ms1)
     monkeypatch.setitem(ms2_app.dependency_overrides, get_db_ms2, db_ms2)
     monkeypatch.setitem(RUTAS, "auth", "http://ms1.test")
-    for prefijo in ("vehiculos", "ordenes"):
+    for prefijo in ("vehiculos", "ordenes", "clientes"):
         monkeypatch.setitem(RUTAS, prefijo, "http://ms2.test")
 
     async def ejecutar_ms1(request: httpx.Request) -> httpx.Response:
@@ -208,3 +208,63 @@ def test_jwt_real_ms1_llega_a_ms2_y_aplica_el_rol(
 
     assert ruta_ms2.call_count == 1
     assert ruta_ms2.calls.last.request.headers["authorization"] == authorization
+
+
+def test_visitante_registra_inicia_sesion_prepara_perfil_y_registra_vehiculo(
+    gateway_integracion: tuple[TestClient, respx.Route],
+    db_integracion_ms2: Session,
+) -> None:
+    """Recorrido completo del registro público solo con llamadas a la Gateway.
+
+    Nada se inserta a mano en la base: MS1 crea la cuenta, MS1 emite el JWT,
+    MS2 prepara el perfil Cliente con la identidad del token y luego acepta el
+    vehículo. También se comprueba que el registro no eleva privilegios.
+    """
+    gateway, ruta_ms2 = gateway_integracion
+    datos = {
+        "email": "visitante.registro@example.com",
+        "password": "ClaveSoloPruebas123!",
+        "full_name": "Visitante Registrado",
+    }
+    elevado = gateway.post("/api/auth/register", json={**datos, "roles": ["administrador"]})
+    assert elevado.status_code == 422
+
+    registro = gateway.post("/api/auth/register", json=datos)
+    assert registro.status_code == 201
+    assert registro.json()["roles"] == ["cliente"]
+    repetido = gateway.post("/api/auth/register", json=datos)
+    assert repetido.status_code == 409
+
+    login = gateway.post(
+        "/api/auth/login", json={"email": datos["email"], "password": datos["password"]}
+    )
+    assert login.status_code == 200
+    assert login.json()["user"]["roles"] == ["cliente"]
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    usuario_id = registro.json()["id"]
+
+    assert gateway.get("/api/vehiculos", headers=headers).status_code == 404
+    assert db_integracion_ms2.scalar(select(func.count()).select_from(Cliente)) == 0
+
+    perfil = gateway.post("/api/clientes/perfil", json={}, headers=headers)
+    assert perfil.status_code == 201
+    assert perfil.json()["usuario_id"] == usuario_id
+    assert ruta_ms2.calls.last.request.url.path == "/clientes/perfil"
+    repetido = gateway.post("/api/clientes/perfil", json={}, headers=headers)
+    assert repetido.status_code == 200
+    assert repetido.json() == perfil.json()
+    ajeno = gateway.post(
+        "/api/clientes/perfil", json={"usuario_id": usuario_id + 1}, headers=headers
+    )
+    assert ajeno.status_code == 422
+
+    vehiculo = gateway.post(
+        "/api/vehiculos",
+        json={"patente": "REG001", "marca": "Toyota", "modelo": "Yaris"},
+        headers=headers,
+    )
+    assert vehiculo.status_code == 201
+    assert vehiculo.json()["cliente_id"] == perfil.json()["cliente_id"]
+    listado = gateway.get("/api/vehiculos", headers=headers)
+    assert [v["patente"] for v in listado.json()] == ["REG001"]
+    assert db_integracion_ms2.scalar(select(func.count()).select_from(Cliente)) == 1

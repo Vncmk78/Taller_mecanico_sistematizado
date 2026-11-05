@@ -14,6 +14,9 @@ from sqlalchemy.pool import StaticPool
 
 from services.ms2_taller.config import settings
 from services.ms2_taller.db import get_db
+from services.ms2_taller.integracion_ms1 import (
+    obtener_verificador_usuarios,
+)
 from services.ms2_taller.main import app
 from services.ms2_taller.models import (
     Base,
@@ -78,6 +81,13 @@ def db_asignaciones() -> Generator[Session, None, None]:
         engine.dispose()
 
 
+class VerificacionPermeable:
+    """Doble del verificador de MS1: acepta cualquier destino como mecánico."""
+
+    def verificar_mecanico(self, usuario_id: int, token: str) -> None:
+        return None
+
+
 @pytest.fixture
 def api_asignaciones(
     db_asignaciones: Session,
@@ -86,6 +96,7 @@ def api_asignaciones(
         yield db_asignaciones
 
     app.dependency_overrides[get_db] = reemplazar_db
+    app.dependency_overrides[obtener_verificador_usuarios] = lambda: VerificacionPermeable()
     with TestClient(app) as cliente_http:
         yield cliente_http
     app.dependency_overrides.clear()

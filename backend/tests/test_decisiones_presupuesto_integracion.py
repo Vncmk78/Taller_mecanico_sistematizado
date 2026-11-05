@@ -100,6 +100,7 @@ def preparar_flujo(monkeypatch, base2, base3):
         presupuesto_id, repuesto_id = presupuesto.presupuesto_id, repuesto.repuesto_id
 
     monkeypatch.setattr(settings_ms3, "JWT_SECRET_KEY", settings_ms2.JWT_SECRET_KEY)
+    monkeypatch.setattr(settings_ms2, "MS1_URL", "http://ms1-prueba")
     monkeypatch.setattr(settings_ms2, "MS3_URL", "http://ms3-prueba")
     monkeypatch.setattr(settings_ms3, "MS2_URL", "http://ms2-prueba")
     app_ms2.dependency_overrides[get_db_ms2] = _sesion_por_peticion(fabrica2)
@@ -109,6 +110,13 @@ def preparar_flujo(monkeypatch, base2, base3):
     with TestClient(app_ms2) as ms2, TestClient(app_ms3) as ms3:
         def get(url, *, headers, timeout):
             llamadas.append(("GET", url, headers))
+            if url.startswith("http://ms1-prueba"):
+                return httpx.Response(
+                    200,
+                    json={"id": 50, "email": "mecanico@prueba.cl", "full_name": "Mecánico 50",
+                          "roles": ["mecanico"], "is_active": True},
+                    request=httpx.Request("GET", url),
+                )
             if url.startswith("http://ms3-prueba"):
                 if fallo["modo"] == "verificacion":
                     raise httpx.ConnectError("MS3 no disponible")

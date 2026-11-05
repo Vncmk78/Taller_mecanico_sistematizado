@@ -144,9 +144,13 @@ Detalles que condicionan la matriz:
   `Esperando diagnóstico` y quedan registrados `HistorialAsignacion` e
   `HistorialEstado` en la misma transacción. `Entregado` y `Cancelado` rechazan
   asignaciones con `409`.
-- `mecanico_id` es hoy una **referencia lógica** a MS1: **no** se valida en el
-  servidor que exista, esté activo ni tenga el rol `mecanico`, ni se aplica un
-  máximo de órdenes activas.
+- `mecanico_id` es una **referencia a MS1 que el servidor valida** (matriz
+  §4.3): antes de guardar, MS2 consulta `GET {MS1_URL}/auth/usuarios/{id}`
+  reenviando el JWT del administrador que asigna. El destino debe existir
+  (`404` si no), estar **activo** y tener el rol `mecanico` (`409` si no); si
+  MS1 no responde, `503` y la asignación **no** ocurre (fail-closed).
+  Implementación: `services/ms2_taller/integracion_ms1.py`. El máximo de
+  órdenes activas sigue sin aplicarse.
 - **Cambio general de estado** (`PATCH /api/ordenes/{id}/estado`): solo el
   Administrador, o el Mecánico asignado a esa orden, con `403` en otro caso. Los
   pares `1 → 2`, `3 → 4/5` y `6 → 7` están reservados a sus operaciones
@@ -163,7 +167,7 @@ Detalles que condicionan la matriz:
 
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
-| Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ | ✅ |
+| Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ solo órdenes asignadas | ✅ |
 | Listar / buscar por orden (`GET /presupuestos?orden_id=`) | ✅ solo su orden y con `orden_id` | ✅ | ✅ |
 | Detalle y versión (`GET /presupuestos/{id}`, `/versiones/{n}`) | ✅ solo sus órdenes, sin borradores | ✅ | ✅ |
 | Crear la versión siguiente (`POST /presupuestos/{id}/versiones`) | ❌ 403 | ✅ | ✅ |
@@ -183,7 +187,12 @@ Detalles que condicionan la matriz:
   muestra, MS3 responde `404` (sin revelar si el presupuesto existe); si MS2 no
   responde, `503`. Implementación: `services/ms3_presupuestos/integracion_ms2.py`.
 - El cliente no ve versiones en borrador: para él no existen (`404`).
-- Pendiente: limitar al mecánico a las órdenes que tiene asignadas (dato de MS2).
+- **Alcance del mecánico (§4.4):** al crear la versión 1, si no interviene el
+  Administrador, MS3 confirma la visibilidad de la orden con MS2
+  (`GET {MS2}/ordenes/{orden_id}` reenviando el JWT del mecánico, que solo ve
+  las asignadas): orden ajena o inexistente → `404` (sin revelar existencia) y
+  MS2 no disponible → `503`. Implementación:
+  `services/ms3_presupuestos/routers/presupuestos.py::crear`.
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).
 - El cliente no ve el catálogo: ve el repuesto y su proveedor dentro de su presupuesto (§4.3).

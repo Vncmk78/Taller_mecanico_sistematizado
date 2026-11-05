@@ -10,8 +10,9 @@
     POST /presupuestos/{presupuesto_id}/versiones/{n}/decision aprobar / rechazar (Cliente dueño)
 
 Acceso (§4.3):
-- Mecánico y Administrador: crean, consultan y editan borradores.
-- Administrador: revisa precios y envía.
+- Mecánico: crea, consulta y edita borradores SOLO de las órdenes que tiene
+  asignadas (MS3 lo confirma con MS2 reenviando su JWT, §4.4).
+- Administrador: crea, consulta, edita y revisa precios de todas las órdenes.
 - Cliente: solo presupuestos de SUS órdenes (MS3 lo confirma con MS2
   reenviando su JWT) y solo versiones ya enviadas; decide sobre la última.
 
@@ -79,7 +80,11 @@ def _exigir_orden_del_cliente(
     orden_id: int, presupuesto_id: int | None, token: str, verificador: VerificadorOrdenes,
     *, solo_propietario: bool = False,
 ) -> None:
-    """404 si la orden no es del cliente: no se revela si el presupuesto existe."""
+    """404 si la orden no es visible para quien llama: no revela si existe.
+
+    Para el cliente exige ser el dueño; para el mecánico, MS2 (§4.4) solo
+    tiene por visible la orden que tiene asignada.
+    """
     try:
         if solo_propietario:
             verificador.verificar_propiedad(orden_id, token)
@@ -99,7 +104,11 @@ def _exigir_orden_del_cliente(
     summary="Crear el presupuesto de una orden (versión 1 en borrador)",
     responses={
         **_ERRORES_COMUNES,
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Orden inexistente o no visible para mecánicos (§4.4)"
+        },
         status.HTTP_409_CONFLICT: {"description": "La orden ya tiene presupuesto"},
+        **_503,
         422: {"description": "Ítems inválidos o repuesto inexistente"},
     },
 )
@@ -107,7 +116,13 @@ def crear(
     body: PresupuestoCrear,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> PresupuestoDetalle:
+    # §4.4: el mecánico solo puede presupuestar órdenes que tiene asignadas.
+    # El administrador ve todas las órdenes en MS2, así que no consulta.
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        _exigir_orden_del_cliente(body.orden_id, None, token, verificador)
     presupuesto = casos.crear_presupuesto(
         uow, orden_id=body.orden_id, items=body.items, creado_por_id=principal.usuario_id
     )

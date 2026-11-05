@@ -7,6 +7,13 @@ from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import obtener_principal_actual, obtener_token_bearer
+from services.ms2_taller.integracion_ms1 import (
+    ServicioUsuariosNoDisponible,
+    UsuarioMecanicoInvalido,
+    UsuarioNoEncontrado,
+    VerificadorUsuarios,
+    obtener_verificador_usuarios,
+)
 from services.ms2_taller.integracion_ms3 import (
     DecisionNoAplicableError, DecisionNoVisibleError, ServicioPresupuestosNoDisponibleError,
     VerificadorDecisiones, obtener_verificador_decisiones,
@@ -409,15 +416,24 @@ def cambiar_estado(
     "/{orden_id}/mecanico",
     response_model=OrdenRespuesta,
     summary="Asignar o reasignar el mecánico responsable",
+    description=(
+        "El destino se valida contra MS1 antes de guardar: debe existir, estar "
+        "activo y tener el rol `mecanico` (matriz §4.3)."
+    ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
-        status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Orden no encontrada o el mecánico indicado no existe"
+        },
         status.HTTP_409_CONFLICT: {
             "description": (
-                "Un administrador-mecánico no puede autoasignarse o la orden "
-                "se encuentra en un estado terminal"
+                "Un administrador-mecánico no puede autoasignarse, la orden "
+                "está en estado terminal o el destino no es un mecánico disponible"
             )
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "No fue posible validar el mecánico contra MS1"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
@@ -429,6 +445,8 @@ def actualizar_mecanico_responsable(
     body: AsignacionMecanicoActualizar,
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorUsuarios = Depends(obtener_verificador_usuarios),
 ) -> OrdenTrabajo:
     if NombreRol.ADMINISTRADOR not in principal.roles:
         raise error_sin_permiso()
@@ -440,6 +458,27 @@ def actualizar_mecanico_responsable(
             status_code=status.HTTP_409_CONFLICT,
             detail="Un mecánico no puede autoasignarse una orden",
         )
+
+    # Validación del destino contra MS1 (§4.3): la referencia lógica se fija
+    # solo si apunta a un mecánico real. Rechazos de MS2 reportan 503 porque
+    # el bloqueo es transitorio; los fallos del destino son datos del cuerpo.
+    try:
+        verificador.verificar_mecanico(body.mecanico_id, token)
+    except UsuarioNoEncontrado as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="El mecánico indicado no existe",
+        ) from exc
+    except UsuarioMecanicoInvalido as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El usuario indicado no es un mecánico disponible",
+        ) from exc
+    except ServicioUsuariosNoDisponible as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No fue posible validar el mecánico con el servicio de usuarios",
+        ) from exc
 
     try:
         return asignar_mecanico(

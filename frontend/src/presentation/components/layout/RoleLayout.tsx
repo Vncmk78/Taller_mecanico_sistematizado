@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { AppBrand } from '@/presentation/components/layout/AppBrand';
@@ -30,6 +30,40 @@ export function RoleLayout({
   headerRightPrepend,
 }: RoleLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileDrawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const drawer = mobileDrawerRef.current;
+    const focusable = drawer?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    focusable?.[0]?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      mobileMenuButtonRef.current?.focus();
+    };
+  }, [mobileMenuOpen]);
 
   if (variant === 'topnav') {
     return (
@@ -51,7 +85,7 @@ export function RoleLayout({
           </div>
 
           <nav
-            aria-label="Navegaci+�n principal"
+            aria-label="Navegación principal"
             className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 justify-start xl:justify-center overflow-x-auto"
           >
             {sections.flatMap((section) => section.items).map((item) => (
@@ -91,10 +125,11 @@ export function RoleLayout({
         <SidebarNav sections={sections} />
       </div>
 
-      {/* Bot+�n hamburguesa m+�vil */}
+      {/* Bot?n hamburguesa m?vil */}
       <button
+        ref={mobileMenuButtonRef}
         type="button"
-        aria-label={mobileMenuOpen ? 'Cerrar men+�' : 'Abrir men+�'}
+        aria-label={mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
         aria-expanded={mobileMenuOpen}
         aria-controls="menu-movil-sidebar"
         onClick={() => setMobileMenuOpen((v) => !v)}
@@ -103,7 +138,7 @@ export function RoleLayout({
         {mobileMenuOpen ? <X className="w-5 h-5" aria-hidden /> : <Menu className="w-5 h-5" aria-hidden />}
       </button>
 
-      {/* Drawer m+�vil */}
+      {/* Drawer m?vil */}
       {mobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div
@@ -112,7 +147,11 @@ export function RoleLayout({
             aria-hidden
           />
           <div
+            ref={mobileDrawerRef}
             id="menu-movil-sidebar"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menú de navegación"
             className="relative z-10 h-full shadow-xl animate-fade-in"
           >
             <SidebarNav sections={sections} />
@@ -141,3 +180,4 @@ export function RoleLayout({
     </div>
   );
 }
+

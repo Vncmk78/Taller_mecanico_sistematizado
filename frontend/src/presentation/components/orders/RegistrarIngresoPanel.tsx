@@ -14,6 +14,7 @@ import {
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
+import { formatDateTime } from '@/presentation/utils/orderDisplay';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
@@ -34,7 +35,19 @@ interface Instantanea {
     ultimoId: string | null;
 }
 
-type EstadoIncierto = 'verificando' | 'sin_confirmar' | 'no_encontrada';
+/**
+ * - verificando: consultando el historial del vehículo.
+ * - sin_confirmar: no se pudo consultar (o no hay instantánea previa).
+ * - no_encontrada: aún no aparece una orden nueva; MS2 podría seguir procesando.
+ * - por_revisar: aparecieron órdenes nuevas, pero nada prueba que sean las de
+ *   esta petición (otra pestaña u otro administrador pudo crearlas).
+ * En todos los casos la creación queda bloqueada hasta que el administrador
+ * revise y lo indique.
+ */
+type EstadoIncierto = 'verificando' | 'sin_confirmar' | 'no_encontrada' | 'por_revisar';
+
+/** Máximo de órdenes nuevas que se listan para revisión. */
+const MAX_ORDENES_REVISION = 10;
 
 /**
  * true cuando el error no prueba que MS2 haya descartado la operación: no
@@ -83,8 +96,8 @@ export function RegistrarIngresoPanel({ vehiculo, className = '' }: RegistrarIng
         vehiculo: Vehicle;
         instantanea: Instantanea | null;
         estado: EstadoIncierto;
+        nuevas: Order[];
     } | null>(null);
-    const [recuperada, setRecuperada] = useState<{ orden: Order; patente: string } | null>(null);
 
     useEffect(() => {
         let activo = true;
@@ -109,29 +122,34 @@ export function RegistrarIngresoPanel({ vehiculo, className = '' }: RegistrarIng
     const elegido = vehiculo ?? vehiculos.find((v) => v.id === vehiculoId);
 
     /**
-     * Tras un resultado incierto, consulta si apareció una orden nueva del
-     * vehículo respecto de la instantánea previa. No reintenta la creación.
+     * Tras un resultado incierto, consulta si aparecieron órdenes nuevas del
+     * vehículo respecto de la instantánea previa. No reintenta la creación ni
+     * atribuye esas órdenes a la petición fallida: solo las muestra.
      */
     const verificar = async (vehiculoAfectado: Vehicle, instantanea: Instantanea | null) => {
-        setIncierto({ vehiculo: vehiculoAfectado, instantanea, estado: 'verificando' });
+        const estado = (e: EstadoIncierto, nuevas: Order[] = []) =>
+            setIncierto({ vehiculo: vehiculoAfectado, instantanea, estado: e, nuevas });
+        estado('verificando');
+        if (!instantanea) {
+            estado('sin_confirmar');
+            return;
+        }
         try {
-            const pagina = await orderService.getVehicleOrderHistory(vehiculoAfectado.id, { limit: 1, offset: 0 });
-            const ultima = pagina.items[0];
-            if (!instantanea) {
-                setIncierto({ vehiculo: vehiculoAfectado, instantanea, estado: 'sin_confirmar' });
+            const pagina = await orderService.getVehicleOrderHistory(vehiculoAfectado.id, {
+                limit: MAX_ORDENES_REVISION,
+                offset: 0,
+            });
+            const cantidadNuevas = pagina.total - instantanea.total;
+            if (cantidadNuevas <= 0) {
+                estado('no_encontrada');
                 return;
             }
-            if (ultima && pagina.total > instantanea.total && ultima.id !== instantanea.ultimoId) {
-                updateOrder(ultima);
-                setIncierto(null);
-                setRecuperada({ orden: ultima, patente: vehiculoAfectado.patent });
-                // El ingreso pudo consumir cupo: se actualiza el uso mostrado.
-                configuracionTallerService.obtenerCupoDiario().then(setCupo, () => undefined);
-                return;
-            }
-            setIncierto({ vehiculo: vehiculoAfectado, instantanea, estado: 'no_encontrada' });
+            // El historial viene de la más reciente a la más antigua.
+            estado('por_revisar', pagina.items.slice(0, cantidadNuevas));
+            // Un ingreso nuevo pudo consumir cupo: se actualiza el uso mostrado.
+            configuracionTallerService.obtenerCupoDiario().then(setCupo, () => undefined);
         } catch {
-            setIncierto({ vehiculo: vehiculoAfectado, instantanea, estado: 'sin_confirmar' });
+            estado('sin_confirmar');
         }
     };
 
@@ -140,7 +158,6 @@ export function RegistrarIngresoPanel({ vehiculo, className = '' }: RegistrarIng
         enviando.current = true;
         setCreando(true);
         setError(null);
-        setRecuperada(null);
         setIncierto(null);
         const instantanea = await tomarInstantanea(elegido.id);
         try {
@@ -223,15 +240,51 @@ export function RegistrarIngresoPanel({ vehiculo, className = '' }: RegistrarIng
 
             {incierto?.estado === 'verificando' && (
                 <Alert tone="info" className="mb-4">
-                    No llegó la respuesta del servidor. Comprobando si la orden de{' '}
-                    {incierto.vehiculo.patent} se creó...
+                    No llegó la respuesta del servidor. Revisando las órdenes de{' '}
+                    {incierto.vehiculo.patent}...
                 </Alert>
             )}
             {incierto && incierto.estado !== 'verificando' && (
-                <Alert
-                    tone="warning"
-                    className="mb-4"
-                    action={
+                <Alert tone="warning" className="mb-4">
+                    <p className="font-semibold">
+                        No se pudo confirmar si se creó la orden de {incierto.vehiculo.patent}.
+                    </p>
+                    {incierto.estado === 'sin_confirmar' && (
+                        <p className="mt-1">
+                            Tampoco fue posible revisar sus órdenes. Revise las{' '}
+                            <Link to={`/admin/vehiculos/${incierto.vehiculo.id}`} className="font-medium">
+                                órdenes del vehículo
+                            </Link>{' '}
+                            antes de registrar otra vez.
+                        </p>
+                    )}
+                    {incierto.estado === 'no_encontrada' && (
+                        <p className="mt-1">
+                            Todavía no aparece una orden nueva, pero el servidor podría seguir
+                            procesándola. Compruebe de nuevo en unos segundos.
+                        </p>
+                    )}
+                    {incierto.estado === 'por_revisar' && (
+                        <>
+                            <p className="mt-1">
+                                Después del intento aparecieron estas órdenes del vehículo. No se puede
+                                comprobar que alguna corresponda a esta solicitud: pudo crearlas otra
+                                pestaña u otro administrador. Revíselas antes de registrar otra vez.
+                            </p>
+                            <ul className="list-disc ml-5 mt-1" aria-label="Órdenes nuevas para revisar">
+                                {incierto.nuevas.map((o) => (
+                                    <li key={o.id}>
+                                        <Link to={`/admin/ordenes/${o.id}`} className="font-medium">
+                                            Orden n° {o.id}
+                                        </Link>
+                                        , registrada por el usuario n° {o.creadoPorId} el{' '}
+                                        {formatDateTime(o.creadoEn)}
+                                    </li>
+                                ))}
+                            </ul>
+                        </>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-3">
                         <Button
                             variant="secondary"
                             className="px-3 py-1.5 text-sm"
@@ -239,33 +292,14 @@ export function RegistrarIngresoPanel({ vehiculo, className = '' }: RegistrarIng
                         >
                             Comprobar de nuevo
                         </Button>
-                    }
-                >
-                    {incierto.estado === 'sin_confirmar' ? (
-                        <>
-                            No se pudo confirmar si la orden de {incierto.vehiculo.patent} se creó.
-                            No la registre otra vez hasta comprobarlo: revise las{' '}
-                            <Link to={`/admin/vehiculos/${incierto.vehiculo.id}`} className="font-medium">
-                                órdenes del vehículo
-                            </Link>{' '}
-                            o use «Comprobar de nuevo».
-                        </>
-                    ) : (
-                        <>
-                            No llegó la respuesta del servidor y todavía no aparece una orden nueva de{' '}
-                            {incierto.vehiculo.patent}. Si el servidor tardó, podría aparecer en unos
-                            segundos: compruebe de nuevo antes de volver a registrarla.
-                        </>
-                    )}
-                </Alert>
-            )}
-            {recuperada && (
-                <Alert tone="success" className="mb-4">
-                    No llegó la respuesta del servidor, pero la orden n° {recuperada.orden.id} sí se
-                    creó para {recuperada.patente}.{' '}
-                    <Link to={`/admin/ordenes/${recuperada.orden.id}`} className="font-medium">
-                        Abrir la orden
-                    </Link>
+                        <Button
+                            variant="secondary"
+                            className="px-3 py-1.5 text-sm"
+                            onClick={() => setIncierto(null)}
+                        >
+                            Ya lo revisé: permitir registrar otra vez
+                        </Button>
+                    </div>
                 </Alert>
             )}
 
@@ -280,13 +314,9 @@ export function RegistrarIngresoPanel({ vehiculo, className = '' }: RegistrarIng
 
             <Button
                 variant="accent"
-                // Con un resultado sin confirmar, crear otra vez podría duplicar la orden.
-                disabled={
-                    !elegido ||
-                    creando ||
-                    incierto?.estado === 'verificando' ||
-                    incierto?.estado === 'sin_confirmar'
-                }
+                // Mientras el resultado anterior siga incierto, crear otra vez podría
+                // duplicar la orden: se exige que el administrador lo revise.
+                disabled={!elegido || creando || incierto !== null}
                 onClick={() => {
                     setError(null);
                     setConfirmando(true);

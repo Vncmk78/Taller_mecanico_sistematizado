@@ -176,28 +176,37 @@ describe('RegistrarIngresoPanel: ingreso físico y creación de orden', () => {
             fireEvent.click(botonCrear());
             fireEvent.click(await screen.findByRole('button', { name: 'Crear orden' }));
         };
+        const comprobar = () => fireEvent.click(screen.getByRole('button', { name: 'Comprobar de nuevo' }));
+        const historial = (items: Order[], total = items.length) => ({ items, total, limit: 10, offset: 0 });
+        const otraOrden = (id: string, creadoPorId: string): Order => ({ ...ordenCreada, id, creadoPorId });
 
-        it('si MS2 la guardó pero la respuesta se perdió, informa que sí se creó y no reintenta', async () => {
+        it('muestra la orden que aparece para revisión, sin atribuirla ni desbloquear', async () => {
             vi.mocked(orderService.getVehicleOrderHistory)
-                .mockResolvedValueOnce(pagina([]))               // instantánea previa
-                .mockResolvedValueOnce(pagina([ordenCreada]));  // comprobación
+                .mockResolvedValueOnce(pagina([]))                    // instantánea previa
+                .mockResolvedValueOnce(historial([ordenCreada]));    // comprobación
             vi.mocked(orderService.crearOrden).mockRejectedValue(sinRespuesta());
             renderPanel(VEHICULOS[1]);
 
             await confirmar();
 
-            expect(await screen.findByText(/pero la orden n° 55 sí se creó para WXYZ34/)).toBeInTheDocument();
-            expect(screen.getByRole('link', { name: 'Abrir la orden' })).toHaveAttribute('href', '/admin/ordenes/55');
-            expect(screen.queryByText(/no se creó/i)).not.toBeInTheDocument();
+            const lista = await screen.findByRole('list', { name: 'Órdenes nuevas para revisar' });
+            expect(within(lista).getByRole('link', { name: 'Orden n° 55' })).toHaveAttribute('href', '/admin/ordenes/55');
+            expect(lista).toHaveTextContent('registrada por el usuario n° 1');
+            expect(screen.getByText(/No se pudo confirmar si se creó la orden de WXYZ34/)).toBeInTheDocument();
+            expect(screen.getByText(/pudo crearlas otra pestaña u otro administrador/)).toBeInTheDocument();
+            expect(screen.queryByText(/sí se creó/)).not.toBeInTheDocument();
+            expect(screen.queryByText('Detalle de la orden')).not.toBeInTheDocument();
+            expect(useOrderStore.getState().orders).toEqual([]);
+            expect(botonCrear()).toBeDisabled();
             expect(orderService.crearOrden).toHaveBeenCalledTimes(1);
-            expect(useOrderStore.getState().orders.map((o) => o.id)).toEqual(['55']);
-            // El uso del cupo se vuelve a consultar tras recuperar la orden.
             await waitFor(() => expect(configuracionTallerService.obtenerCupoDiario).toHaveBeenCalledTimes(2));
         });
 
-        it('si no aparece una orden nueva, no lo da por fallido y permite comprobar de nuevo', async () => {
-            const anterior = { ...ordenCreada, id: '40' };
-            vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue(pagina([anterior]));
+        it('procesamiento tardío: sin orden nueva sigue bloqueado y la muestra al comprobar de nuevo', async () => {
+            const anterior = otraOrden('40', '1');
+            vi.mocked(orderService.getVehicleOrderHistory)
+                .mockResolvedValueOnce(pagina([anterior]))        // instantánea: 1 orden
+                .mockResolvedValueOnce(historial([anterior]));   // aún no aparece
             vi.mocked(orderService.crearOrden).mockRejectedValue(errorHttp(504, {
                 detail: 'Tiempo agotado', error: { codigo: 'TIEMPO_AGOTADO', estado: 504 },
             }));
@@ -205,20 +214,54 @@ describe('RegistrarIngresoPanel: ingreso físico y creación de orden', () => {
 
             await confirmar();
 
-            expect(await screen.findByText(/todavía no aparece una orden nueva de WXYZ34/)).toBeInTheDocument();
+            expect(await screen.findByText(/el servidor podría seguir procesándola/)).toBeInTheDocument();
+            expect(botonCrear()).toBeDisabled();
             expect(screen.queryByText(/no se creó/i)).not.toBeInTheDocument();
-            expect(useOrderStore.getState().orders).toEqual([]);
 
-            // Si el servidor tardó, la siguiente comprobación la encuentra.
-            vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
-                items: [ordenCreada], total: 2, limit: 1, offset: 0,
-            });
-            fireEvent.click(screen.getByRole('button', { name: 'Comprobar de nuevo' }));
-            expect(await screen.findByText(/la orden n° 55 sí se creó/)).toBeInTheDocument();
+            // MS2 confirma más tarde: la siguiente comprobación la lista, sin atribuirla.
+            vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue(historial([ordenCreada, anterior]));
+            comprobar();
+            const lista = await screen.findByRole('list', { name: 'Órdenes nuevas para revisar' });
+            expect(within(lista).getAllByRole('listitem')).toHaveLength(1);
+            expect(within(lista).getByRole('link', { name: 'Orden n° 55' })).toBeInTheDocument();
+            expect(botonCrear()).toBeDisabled();
             expect(orderService.crearOrden).toHaveBeenCalledTimes(1);
         });
 
-        it('si tampoco se puede comprobar, bloquea crear otra vez hasta confirmarlo', async () => {
+        it('una orden creada por otro administrador se muestra para revisión, no como propia', async () => {
+            vi.mocked(orderService.getVehicleOrderHistory)
+                .mockResolvedValueOnce(pagina([]))
+                .mockResolvedValueOnce(historial([otraOrden('77', '9')]));
+            vi.mocked(orderService.crearOrden).mockRejectedValue(sinRespuesta());
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+
+            const lista = await screen.findByRole('list', { name: 'Órdenes nuevas para revisar' });
+            expect(lista).toHaveTextContent('Orden n° 77, registrada por el usuario n° 9');
+            expect(screen.queryByText(/sí se creó/)).not.toBeInTheDocument();
+            expect(botonCrear()).toBeDisabled();
+        });
+
+        it('si aparecen varias (otra pestaña y la propia tardía) lista todas sin elegir una', async () => {
+            const previa = otraOrden('40', '1');
+            vi.mocked(orderService.getVehicleOrderHistory)
+                .mockResolvedValueOnce(pagina([previa]))
+                .mockResolvedValueOnce(historial([otraOrden('57', '1'), otraOrden('56', '1'), previa]));
+            vi.mocked(orderService.crearOrden).mockRejectedValue(sinRespuesta());
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+
+            const lista = await screen.findByRole('list', { name: 'Órdenes nuevas para revisar' });
+            expect(within(lista).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+                expect.stringContaining('Orden n° 57'),
+                expect.stringContaining('Orden n° 56'),
+            ]);
+            expect(within(lista).queryByText(/Orden n° 40/)).not.toBeInTheDocument();
+        });
+
+        it('si no se puede revisar, queda bloqueado y enlaza a las órdenes del vehículo', async () => {
             vi.mocked(orderService.getVehicleOrderHistory)
                 .mockResolvedValueOnce(pagina([]))
                 .mockRejectedValueOnce(sinRespuesta());
@@ -227,35 +270,41 @@ describe('RegistrarIngresoPanel: ingreso físico y creación de orden', () => {
 
             await confirmar();
 
-            expect(await screen.findByText(/No se pudo confirmar si la orden de WXYZ34 se creó/)).toBeInTheDocument();
-            expect(botonCrear()).toBeDisabled();
+            expect(await screen.findByText(/Tampoco fue posible revisar sus órdenes/)).toBeInTheDocument();
             expect(screen.getByRole('link', { name: 'órdenes del vehículo' })).toHaveAttribute(
                 'href', '/admin/vehiculos/2'
             );
-
-            vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue(pagina([]));
-            fireEvent.click(screen.getByRole('button', { name: 'Comprobar de nuevo' }));
-            expect(await screen.findByText(/todavía no aparece una orden nueva/)).toBeInTheDocument();
-            expect(botonCrear()).toBeEnabled();
+            expect(botonCrear()).toBeDisabled();
         });
 
-        it('sin instantánea previa no saca conclusiones y deja el resultado sin confirmar', async () => {
-            vi.mocked(orderService.getVehicleOrderHistory)
-                .mockRejectedValueOnce(sinRespuesta())
-                .mockResolvedValueOnce(pagina([ordenCreada]));
+        it('sin instantánea previa no compara y deja el resultado sin confirmar', async () => {
+            vi.mocked(orderService.getVehicleOrderHistory).mockRejectedValueOnce(sinRespuesta());
             vi.mocked(orderService.crearOrden).mockRejectedValue(sinRespuesta());
             renderPanel(VEHICULOS[1]);
 
             await confirmar();
 
-            expect(await screen.findByText(/No se pudo confirmar si la orden de WXYZ34 se creó/)).toBeInTheDocument();
+            expect(await screen.findByText(/Tampoco fue posible revisar sus órdenes/)).toBeInTheDocument();
+            // Solo se intentó la instantánea: sin ella no hay contra qué comparar.
+            expect(orderService.getVehicleOrderHistory).toHaveBeenCalledTimes(1);
             expect(botonCrear()).toBeDisabled();
         });
 
+        it('solo la confirmación explícita del administrador vuelve a habilitar la creación', async () => {
+            vi.mocked(orderService.crearOrden).mockRejectedValueOnce(sinRespuesta());
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+            expect(await screen.findByText(/el servidor podría seguir procesándola/)).toBeInTheDocument();
+            expect(botonCrear()).toBeDisabled();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Ya lo revisé: permitir registrar otra vez' }));
+
+            expect(botonCrear()).toBeEnabled();
+            expect(screen.queryByText(/No se pudo confirmar/)).not.toBeInTheDocument();
+        });
+
         it('un 500 de la Gateway también es incierto', async () => {
-            vi.mocked(orderService.getVehicleOrderHistory)
-                .mockResolvedValueOnce(pagina([]))
-                .mockResolvedValueOnce(pagina([ordenCreada]));
             vi.mocked(orderService.crearOrden).mockRejectedValue(errorHttp(500, {
                 detail: 'Error interno', error: { codigo: 'ERROR_INTERNO', estado: 500 },
             }));
@@ -263,10 +312,11 @@ describe('RegistrarIngresoPanel: ingreso físico y creación de orden', () => {
 
             await confirmar();
 
-            expect(await screen.findByText(/la orden n° 55 sí se creó/)).toBeInTheDocument();
+            expect(await screen.findByText(/No se pudo confirmar si se creó la orden de WXYZ34/)).toBeInTheDocument();
+            expect(screen.queryByText('Error interno')).not.toBeInTheDocument();
         });
 
-        it('el 500 propio de MS2 (transacción deshecha) es definitivo y no se verifica', async () => {
+        it('el 500 propio de MS2 (transacción deshecha) es definitivo y no se revisa', async () => {
             vi.mocked(orderService.crearOrden).mockRejectedValue(
                 errorHttp(500, { detail: 'No fue posible crear la orden' })
             );

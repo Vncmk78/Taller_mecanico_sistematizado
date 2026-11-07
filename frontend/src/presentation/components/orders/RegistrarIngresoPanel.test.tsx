@@ -12,7 +12,9 @@ import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { RegistrarIngresoPanel } from './RegistrarIngresoPanel';
 
-vi.mock('@/infrastructure/api/OrderService', () => ({ orderService: { crearOrden: vi.fn() } }));
+vi.mock('@/infrastructure/api/OrderService', () => ({
+    orderService: { crearOrden: vi.fn(), getVehicleOrderHistory: vi.fn() },
+}));
 vi.mock('@/infrastructure/api/VehicleService', () => ({ vehicleService: { getAllVehicles: vi.fn() } }));
 vi.mock('@/infrastructure/api/ConfiguracionTallerService', () => ({
     configuracionTallerService: { obtenerCupoDiario: vi.fn() },
@@ -45,6 +47,21 @@ function error409(detail: string): AxiosError {
     });
 }
 
+function sinRespuesta(): AxiosError {
+    // Error de transporte: la petición salió, pero no llegó ninguna respuesta.
+    const config = { headers: new AxiosHeaders() } as InternalAxiosRequestConfig;
+    return new AxiosError('Network Error', 'ERR_NETWORK', config);
+}
+
+function errorHttp(status: number, data: unknown): AxiosError {
+    const config = { headers: new AxiosHeaders() } as InternalAxiosRequestConfig;
+    return new AxiosError(String(status), String(status), config, undefined, {
+        status, statusText: '', headers: {}, config, data,
+    });
+}
+
+const pagina = (items: Order[]) => ({ items, total: items.length, limit: 1, offset: 0 });
+
 function renderPanel(vehiculo?: Vehicle) {
     return render(
         <MemoryRouter initialEntries={['/admin/ordenes']}>
@@ -70,6 +87,7 @@ beforeEach(() => {
     useOrderStore.getState().reset();
     vi.mocked(vehicleService.getAllVehicles).mockResolvedValue(VEHICULOS);
     vi.mocked(configuracionTallerService.obtenerCupoDiario).mockResolvedValue(cupo());
+    vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue(pagina([]));
 });
 
 describe('RegistrarIngresoPanel: ingreso físico y creación de orden', () => {
@@ -144,9 +162,122 @@ describe('RegistrarIngresoPanel: ingreso físico y creación de orden', () => {
         const confirmar = await screen.findByRole('button', { name: 'Crear orden' });
         fireEvent.click(confirmar);
         fireEvent.click(confirmar);
+        await waitFor(() => expect(orderService.crearOrden).toHaveBeenCalledTimes(1));
+        fireEvent.click(confirmar);
         resolver(ordenCreada);
 
         expect(await screen.findByText('Detalle de la orden')).toBeInTheDocument();
         expect(orderService.crearOrden).toHaveBeenCalledTimes(1);
+    });
+
+    describe('resultado incierto: la respuesta no llega', () => {
+        const botonCrear = () => screen.getByRole('button', { name: 'Registrar ingreso y crear orden' });
+        const confirmar = async () => {
+            fireEvent.click(botonCrear());
+            fireEvent.click(await screen.findByRole('button', { name: 'Crear orden' }));
+        };
+
+        it('si MS2 la guardó pero la respuesta se perdió, informa que sí se creó y no reintenta', async () => {
+            vi.mocked(orderService.getVehicleOrderHistory)
+                .mockResolvedValueOnce(pagina([]))               // instantánea previa
+                .mockResolvedValueOnce(pagina([ordenCreada]));  // comprobación
+            vi.mocked(orderService.crearOrden).mockRejectedValue(sinRespuesta());
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+
+            expect(await screen.findByText(/pero la orden n° 55 sí se creó para WXYZ34/)).toBeInTheDocument();
+            expect(screen.getByRole('link', { name: 'Abrir la orden' })).toHaveAttribute('href', '/admin/ordenes/55');
+            expect(screen.queryByText(/no se creó/i)).not.toBeInTheDocument();
+            expect(orderService.crearOrden).toHaveBeenCalledTimes(1);
+            expect(useOrderStore.getState().orders.map((o) => o.id)).toEqual(['55']);
+            // El uso del cupo se vuelve a consultar tras recuperar la orden.
+            await waitFor(() => expect(configuracionTallerService.obtenerCupoDiario).toHaveBeenCalledTimes(2));
+        });
+
+        it('si no aparece una orden nueva, no lo da por fallido y permite comprobar de nuevo', async () => {
+            const anterior = { ...ordenCreada, id: '40' };
+            vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue(pagina([anterior]));
+            vi.mocked(orderService.crearOrden).mockRejectedValue(errorHttp(504, {
+                detail: 'Tiempo agotado', error: { codigo: 'TIEMPO_AGOTADO', estado: 504 },
+            }));
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+
+            expect(await screen.findByText(/todavía no aparece una orden nueva de WXYZ34/)).toBeInTheDocument();
+            expect(screen.queryByText(/no se creó/i)).not.toBeInTheDocument();
+            expect(useOrderStore.getState().orders).toEqual([]);
+
+            // Si el servidor tardó, la siguiente comprobación la encuentra.
+            vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+                items: [ordenCreada], total: 2, limit: 1, offset: 0,
+            });
+            fireEvent.click(screen.getByRole('button', { name: 'Comprobar de nuevo' }));
+            expect(await screen.findByText(/la orden n° 55 sí se creó/)).toBeInTheDocument();
+            expect(orderService.crearOrden).toHaveBeenCalledTimes(1);
+        });
+
+        it('si tampoco se puede comprobar, bloquea crear otra vez hasta confirmarlo', async () => {
+            vi.mocked(orderService.getVehicleOrderHistory)
+                .mockResolvedValueOnce(pagina([]))
+                .mockRejectedValueOnce(sinRespuesta());
+            vi.mocked(orderService.crearOrden).mockRejectedValue(sinRespuesta());
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+
+            expect(await screen.findByText(/No se pudo confirmar si la orden de WXYZ34 se creó/)).toBeInTheDocument();
+            expect(botonCrear()).toBeDisabled();
+            expect(screen.getByRole('link', { name: 'órdenes del vehículo' })).toHaveAttribute(
+                'href', '/admin/vehiculos/2'
+            );
+
+            vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue(pagina([]));
+            fireEvent.click(screen.getByRole('button', { name: 'Comprobar de nuevo' }));
+            expect(await screen.findByText(/todavía no aparece una orden nueva/)).toBeInTheDocument();
+            expect(botonCrear()).toBeEnabled();
+        });
+
+        it('sin instantánea previa no saca conclusiones y deja el resultado sin confirmar', async () => {
+            vi.mocked(orderService.getVehicleOrderHistory)
+                .mockRejectedValueOnce(sinRespuesta())
+                .mockResolvedValueOnce(pagina([ordenCreada]));
+            vi.mocked(orderService.crearOrden).mockRejectedValue(sinRespuesta());
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+
+            expect(await screen.findByText(/No se pudo confirmar si la orden de WXYZ34 se creó/)).toBeInTheDocument();
+            expect(botonCrear()).toBeDisabled();
+        });
+
+        it('un 500 de la Gateway también es incierto', async () => {
+            vi.mocked(orderService.getVehicleOrderHistory)
+                .mockResolvedValueOnce(pagina([]))
+                .mockResolvedValueOnce(pagina([ordenCreada]));
+            vi.mocked(orderService.crearOrden).mockRejectedValue(errorHttp(500, {
+                detail: 'Error interno', error: { codigo: 'ERROR_INTERNO', estado: 500 },
+            }));
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+
+            expect(await screen.findByText(/la orden n° 55 sí se creó/)).toBeInTheDocument();
+        });
+
+        it('el 500 propio de MS2 (transacción deshecha) es definitivo y no se verifica', async () => {
+            vi.mocked(orderService.crearOrden).mockRejectedValue(
+                errorHttp(500, { detail: 'No fue posible crear la orden' })
+            );
+            renderPanel(VEHICULOS[1]);
+
+            await confirmar();
+
+            expect(await screen.findByText('No fue posible crear la orden')).toBeInTheDocument();
+            // Solo la instantánea previa: no hubo comprobación posterior.
+            expect(orderService.getVehicleOrderHistory).toHaveBeenCalledTimes(1);
+            expect(botonCrear()).toBeEnabled();
+        });
     });
 });

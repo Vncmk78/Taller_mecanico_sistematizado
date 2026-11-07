@@ -43,6 +43,7 @@ _CABECERAS_GATEWAY = {"X-Request-ID"}
 _APP_POR_PREFIJO = {
     "auth": app_ms1,
     "vehiculos": app_ms2,
+    "clientes": app_ms2,
     "ordenes": app_ms2,
     "presupuestos": app_ms3,
     "evidencias": app_ms4,

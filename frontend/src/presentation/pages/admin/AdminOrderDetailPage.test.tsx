@@ -163,7 +163,11 @@ describe('AdminOrderDetailPage: detalle con panel e historial', () => {
             isAuthenticated: true,
         });
         vi.mocked(authService.listarUsuarios).mockResolvedValue([]);
-        vi.mocked(orderService.getOrderById).mockResolvedValue({ ...orden, estadoCodigo: 1 });
+        vi.mocked(orderService.getOrderById).mockResolvedValue({
+            ...orden,
+            estadoCodigo: 1,
+            mecanicoActualId: null,
+        });
         vi.mocked(orderService.getOrderHistory).mockResolvedValue(hist101);
 
         renderPage();

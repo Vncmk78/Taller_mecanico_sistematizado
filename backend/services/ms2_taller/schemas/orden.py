@@ -33,6 +33,13 @@ class CapacidadMecanicoActualizar(BaseModel):
     max_ordenes_activas: int = Field(gt=0, strict=True)
 
 
+class MecanicoSobreLimite(BaseModel):
+    """Mecánico cuya carga activa supera el máximo configurado."""
+
+    mecanico_id: int
+    ordenes_activas: int
+
+
 class CapacidadMecanicoRespuesta(BaseModel):
     """Límite vigente y carga que supera el valor recién configurado."""
 
@@ -41,7 +48,7 @@ class CapacidadMecanicoRespuesta(BaseModel):
     max_ordenes_activas: int | None
     actualizado_por_id: int | None
     actualizado_en: datetime
-    mecanicos_sobre_limite: list[dict[str, int]]
+    mecanicos_sobre_limite: list[MecanicoSobreLimite]
 
 
 class CupoDiarioIngresosActualizar(BaseModel):

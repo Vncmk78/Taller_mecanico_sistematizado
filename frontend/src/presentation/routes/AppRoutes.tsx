@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { LoginPage } from '@/presentation/pages/auth/LoginPage';
+import { RegisterPage } from '@/presentation/pages/auth/RegisterPage';
 import { HomePage } from '@/presentation/pages/HomePage';
 import { AccessDeniedPage } from '@/presentation/pages/errors/AccessDeniedPage';
 import { AdminLayout } from '@/presentation/components/layout/AdminLayout';
@@ -11,6 +12,7 @@ import { AdminVehicleDetailPage } from '@/presentation/pages/admin/AdminVehicleD
 import { AdminOrdersPage } from '@/presentation/pages/admin/AdminOrdersPage';
 import { AdminOrderDetailPage } from '@/presentation/pages/admin/AdminOrderDetailPage';
 import { AdminClientsPage } from '@/presentation/pages/admin/AdminClientsPage';
+import { AdminConfigurationPage } from '@/presentation/pages/admin/AdminConfigurationPage';
 import { AdminInventoryPage } from '@/presentation/pages/admin/AdminInventoryPage';
 import { AdminInventoryAlertsPage } from '@/presentation/pages/admin/AdminInventoryAlertsPage';
 import { AdminInventoryMovementsPage } from '@/presentation/pages/admin/AdminInventoryMovementsPage';
@@ -38,6 +40,7 @@ import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage
 import { NotificationsPage } from '@/presentation/pages/shared/NotificationsPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
 import { PublicOnlyRoute } from '@/presentation/components/auth/PublicOnlyRoute';
+import { ClientProfileGate } from '@/presentation/components/auth/ClientProfileGate';
 
 export function AppRoutes() {
   return (
@@ -48,6 +51,14 @@ export function AppRoutes() {
         element={
           <PublicOnlyRoute>
             <LoginPage />
+          </PublicOnlyRoute>
+        }
+      />
+      <Route
+        path="/registro"
+        element={
+          <PublicOnlyRoute>
+            <RegisterPage />
           </PublicOnlyRoute>
         }
       />
@@ -69,6 +80,7 @@ export function AppRoutes() {
           element={<OrderEvidencePage backTo="/admin/ordenes" backLabel="Volver a la gestión de órdenes" canUpload />}
         />
         <Route path="clientes" element={<AdminClientsPage />} />
+        <Route path="configuracion" element={<AdminConfigurationPage />} />
         <Route path="vehiculos" element={<AdminVehiclesPage />} />
         <Route path="vehiculos/:id" element={<AdminVehicleDetailPage />} />
         <Route path="inventario" element={<AdminInventoryPage />} />
@@ -84,7 +96,10 @@ export function AppRoutes() {
         path="/client"
         element={
           <ProtectedRoute allowedRoles={['cliente']}>
-            <ClientLayout />
+            {/* El portal Cliente usa vehículos y órdenes de MS2: exige su perfil. */}
+            <ClientProfileGate>
+              <ClientLayout />
+            </ClientProfileGate>
           </ProtectedRoute>
         }
       >

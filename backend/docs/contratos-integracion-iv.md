@@ -23,13 +23,15 @@ fuera de este catálogo.
 | Cliente | Se registra, entra, ve sus vehículos y órdenes, sigue el historial, revisa evidencias, aprueba o rechaza presupuestos y solicita cancelaciones |
 | Mecánico | Entra, ve sus órdenes y vehículos asignados, cambia estados, registra bitácora y sube evidencias |
 
-## 2. Catálogo de operaciones (25)
+## 2. Catálogo de operaciones (27)
 
 | Flujo | Operación | Cliente | Mecánico |
 |---|---|:-:|:-:|
 | Acceso | `POST /api/auth/register` | ✅ | — |
 | Acceso | `POST /api/auth/login` | ✅ | ✅ |
 | Acceso | `GET /api/auth/me` | ✅ | ✅ |
+| Acceso | `POST /api/clientes/perfil` ⁴ | ✅ | 403 |
+| Acceso | `GET /api/clientes/perfil` | ✅ | 403 |
 | Vehículos | `GET /api/vehiculos` | ✅ | 403 |
 | Vehículos | `POST /api/vehiculos` | ✅ | 403 |
 | Vehículos | `GET /api/vehiculos/{vehiculo_id}` | ✅ | ✅ ³ |
@@ -58,6 +60,27 @@ esquema porque Mecánico y Administrador pueden listar sin él.
 ² Solo para reintentar cuando la decisión responde `503` con
 `decision_registrada=true` (nunca se decide dos veces).
 ³ Solo los vehículos de sus órdenes asignadas; cualquier otro responde `404`.
+⁴ Paso obligatorio del Cliente (contrato 2.2.0); ver «Registro y perfil Cliente».
+
+### Registro y perfil Cliente (desde 2.2.0)
+
+MS1 guarda la cuenta y MS2 guarda aparte el perfil Cliente que exigen
+vehículos y órdenes (sistematización §4.1). Registrarse **no** crea ese perfil:
+hasta 2.1.0 solo lo creaba el script de semilla, y un Cliente nuevo recibía
+`404` en `/api/vehiculos`. La app debe seguir esta secuencia:
+
+1. `POST /api/auth/register` (`email`, `password`, `full_name`; sin roles).
+2. `POST /api/auth/login`.
+3. Si `user.roles` incluye `cliente`: `POST /api/clientes/perfil` con `{}` o
+   `{"telefono": "..."}` **en cada inicio de sesión**, antes de vehículos u
+   órdenes. Es idempotente: `201` si lo creó, `200` si ya existía.
+4. Si responde `500`, `502`, `503` o `504`, la cuenta ya existe: mostrar
+   reintentar sin volver a registrarse. Un `409` significa que el perfil existe
+   con otro teléfono (no se sobrescribe): se puede continuar.
+5. `GET /api/clientes/perfil` solo consulta (`404` si aún no se preparó).
+
+La identidad sale del JWT: el body rechaza `usuario_id`, `cliente_id` o roles
+con `422`. El Mecánico recibe `403`.
 
 ## 3. Qué se validó
 

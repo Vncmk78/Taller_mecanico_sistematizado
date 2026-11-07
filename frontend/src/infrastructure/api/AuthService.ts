@@ -1,6 +1,7 @@
 import type {
   AuthResponse,
   LoginRequest,
+  RegisterRequest,
   User,
   UserRole,
   UsuarioListado,
@@ -45,6 +46,17 @@ function toDomainUser(apiUser: ApiUser): User {
 }
 
 class AuthService implements AuthPort {
+  async register(data: RegisterRequest): Promise<User> {
+    // Solo se envían los tres campos del contrato: MS1 asigna el rol Cliente y
+    // responde 422 ante cualquier campo extra (por ejemplo, un rol).
+    const { data: usuario } = await apiClient.post<ApiUser>('/auth/register', {
+      email: data.email,
+      password: data.password,
+      full_name: data.full_name,
+    });
+    return toDomainUser(usuario);
+  }
+
   async login(credentials: LoginRequest): Promise<AuthResponse> {
     const { data } = await apiClient.post<ApiAuthResponse>('/auth/login', credentials);
     return {

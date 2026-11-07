@@ -11,11 +11,12 @@ from pydantic import Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
+from shared.entorno import archivo_entorno
 
 
 class Settings(ServiceSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=archivo_entorno(),
         env_file_encoding="utf-8",
         env_prefix="MS3_",
         extra="ignore",

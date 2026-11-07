@@ -11,6 +11,7 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
+from shared.entorno import archivo_entorno
 
 # Formatos cuya firma (magic bytes) MS4 sabe reconocer. La lista blanca
 # configurable (TIPOS_PERMITIDOS) solo puede usar valores de aquí: habilitar un
@@ -25,7 +26,7 @@ MIB = 1024 * 1024
 
 class Settings(ServiceSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=archivo_entorno(),
         env_file_encoding="utf-8",
         env_prefix="MS4_",
         extra="ignore",

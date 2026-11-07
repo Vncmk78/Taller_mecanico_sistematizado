@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import clientes as contratos_clientes
 from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
@@ -33,7 +34,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "2.1.0"
+_VERSION = "2.2.1"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -42,7 +43,7 @@ microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS
 | Prefijo | Microservicio |
 |---|---|
 | `/api/auth` | MS1 — Autenticación y Usuarios |
-| `/api/vehiculos`, `/api/ordenes` | MS2 — Vehículos y Órdenes de Trabajo |
+| `/api/vehiculos`, `/api/ordenes`, `/api/clientes` | MS2 — Vehículos y Órdenes de Trabajo |
 | `/api/presupuestos`, `/api/repuestos`, `/api/proveedores`, `/api/inventario` | MS3 — Presupuestos e Inventario |
 | `/api/evidencias` | MS4 — Evidencia Multimedia |
 
@@ -58,6 +59,9 @@ body, el query string ni la cabecera `Authorization`.
 servidor, nunca el body).
 2. `POST /api/auth/login` devuelve `access_token` y `token_type: bearer`.
 3. Se envía en cada llamada protegida: `Authorization: Bearer <access_token>`.
+4. Con rol Cliente, `POST /api/clientes/perfil` prepara el perfil Cliente de MS2 \
+antes de usar vehículos u órdenes. Es idempotente: se puede llamar tras cada login \
+y reintentar si falla, sin registrar la cuenta otra vez.
 
 El botón **Authorize** de Swagger completa esa cabecera por ti. La Gateway no \
 valida el JWT: lo reenvía al microservicio, que responde `401` si falta o expira \
@@ -133,6 +137,13 @@ _TAGS = [
         ),
     },
     {
+        "name": "Clientes",
+        "description": (
+            "Preparación idempotente y consulta del perfil Cliente local que "
+            "MS2 necesita para vehículos y órdenes (MS2)."
+        ),
+    },
+    {
         "name": "Vehículos",
         "description": (
             "Registro, consulta por rol y actualización de vehículos (MS2)."
@@ -201,6 +212,8 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         contratos_inventario.DisponibilidadRepuestosRespuesta,
     ),
     ("RolAsignarSolicitud", contratos_auth.RolAsignarSolicitud),
+    ("PerfilClientePreparar", contratos_clientes.PerfilClientePreparar),
+    ("PerfilClienteRespuesta", contratos_clientes.PerfilClienteRespuesta),
     ("VehiculoCrear", contratos_vehiculos.VehiculoCrear),
     ("VehiculoActualizar", contratos_vehiculos.VehiculoActualizar),
     ("VehiculoRespuesta", contratos_vehiculos.VehiculoRespuesta),
@@ -237,6 +250,7 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
     ("RepuestoBitacoraEntrada", contratos_ordenes.RepuestoBitacoraEntrada),
+    ("MecanicoSobreLimite", contratos_ordenes.MecanicoSobreLimite),
     ("RepuestoBitacoraRespuesta", contratos_ordenes.RepuestoBitacoraRespuesta),
     ("BitacoraCrear", contratos_ordenes.BitacoraCrear),
     ("BitacoraRespuesta", contratos_ordenes.BitacoraRespuesta),
@@ -778,6 +792,63 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 },
             )
         },
+        "/api/clientes/perfil": {
+            "post": _operacion(
+                tag="Clientes",
+                resumen="Preparar mi perfil Cliente",
+                descripcion=(
+                    "Crea el perfil Cliente de MS2 del usuario autenticado si "
+                    "todavía no existe. Es el paso que sigue al registro "
+                    "público y al login: sin él, vehículos responde 404. Es "
+                    "idempotente: repetirlo o hacerlo en paralelo deja un único "
+                    "perfil (`201` si esta llamada lo creó, `200` si ya existía). "
+                    "La identidad sale del JWT; el body no admite `usuario_id` "
+                    "ni roles. Nunca sobrescribe el teléfono guardado."
+                ),
+                operation_id="preparar_perfil_cliente",
+                cuerpo="PerfilClientePreparar",
+                respuestas_ok={
+                    "201": _respuesta(
+                        "Perfil creado por esta llamada.",
+                        _ref("PerfilClienteRespuesta"),
+                    ),
+                    "200": _respuesta(
+                        "El perfil ya existía; se devuelve sin cambios.",
+                        _ref("PerfilClienteRespuesta"),
+                    ),
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Cliente",
+                    "409": "El perfil ya existe con otro teléfono; no se modificó",
+                    "422": "Body inválido (campos no permitidos o teléfono vacío o largo)",
+                },
+                requiere_auth=True,
+            ),
+            "get": _operacion(
+                tag="Clientes",
+                resumen="Consultar mi perfil Cliente",
+                descripcion=(
+                    "Devuelve el perfil Cliente de MS2 del usuario autenticado. "
+                    "Solo consulta: si aún no fue preparado responde 404 y no "
+                    "lo crea."
+                ),
+                operation_id="consultar_perfil_cliente",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Perfil Cliente del usuario.", _ref("PerfilClienteRespuesta")
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Cliente",
+                },
+                requiere_auth=True,
+                descripcion_404="El perfil Cliente todavía no fue preparado en MS2.",
+                esquema_404=error_404_recurso,
+            ),
+        },
         "/api/vehiculos": {
             "post": _operacion(
                 tag="Vehículos",
@@ -799,7 +870,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
-                descripcion_404="No existe el perfil Cliente local en MS2.",
+                descripcion_404=(
+                    "No existe el perfil Cliente local en MS2; se prepara con "
+                    "POST /api/clientes/perfil."
+                ),
                 esquema_404=error_404_recurso,
             ),
             "get": _operacion(
@@ -823,7 +897,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "403": "Se requiere rol Cliente o Administrador",
                 },
                 requiere_auth=True,
-                descripcion_404="No existe el perfil Cliente local en MS2.",
+                descripcion_404=(
+                    "No existe el perfil Cliente local en MS2; se prepara con "
+                    "POST /api/clientes/perfil."
+                ),
                 esquema_404=error_404_recurso,
             ),
         },

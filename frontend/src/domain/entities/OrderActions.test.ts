@@ -82,28 +82,40 @@ describe('OrderActions: catálogo centralizado de acciones por estado y rol', ()
     });
 
     describe('administrador', () => {
-        it('en estado 1 ofrece asignar mecánico y cancelar', () => {
-            const acciones = accionesDisponibles(orden(1), ADMIN);
+        it('en estado 1 sin mecánico ofrece asignar mecánico y cancelar', () => {
+            const acciones = accionesDisponibles(orden(1, null), ADMIN);
 
             expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'cancelar']);
-            expect(acciones[0].destinos).toEqual([]);
+            expect(acciones[0]).toMatchObject({ etiqueta: 'Asignar mecánico', destinos: [] });
             expect(acciones[1]).toMatchObject({ destinos: [8], requiereMotivo: false });
         });
 
-        it.each([2, 3])('en estado %i ofrece solo cancelar', (estado) => {
+        it.each([2, 3])('en estado %i ofrece reasignar y cancelar', (estado) => {
             const acciones = accionesDisponibles(orden(estado), ADMIN);
 
-            expect(acciones.map((a) => a.id)).toEqual(['cancelar']);
+            expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'cancelar']);
+            expect(acciones[0]).toMatchObject({ etiqueta: 'Reasignar mecánico', destinos: [] });
         });
 
-        it('en estado 6 ofrece registrar entrega', () => {
+        it('en estado 6 ofrece reasignar y registrar entrega', () => {
             const acciones = accionesDisponibles(orden(6), ADMIN);
 
-            expect(acciones).toHaveLength(1);
-            expect(acciones[0]).toMatchObject({ id: 'registrar_entrega', destinos: [7] });
+            expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'registrar_entrega']);
+            expect(acciones[1]).toMatchObject({ id: 'registrar_entrega', destinos: [7] });
         });
 
-        it.each([4, 5, 7, 8])('no ofrece acciones en estado %i', (estado) => {
+        it.each([4, 5])('en estado %i solo ofrece reasignar (sin cambiar el estado)', (estado) => {
+            const acciones = accionesDisponibles(orden(estado), ADMIN);
+
+            expect(acciones).toHaveLength(1);
+            expect(acciones[0]).toMatchObject({
+                id: 'asignar_mecanico',
+                etiqueta: 'Reasignar mecánico',
+                destinos: [],
+            });
+        });
+
+        it.each([7, 8])('no ofrece acciones en el estado terminal %i', (estado) => {
             expect(accionesDisponibles(orden(estado), ADMIN)).toEqual([]);
         });
     });

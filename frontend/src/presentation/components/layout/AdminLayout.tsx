@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ListOrdered,
   Gauge,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { RoleLayout } from '@/presentation/components/layout/RoleLayout';
 import { useRoleAccess } from '@/presentation/hooks/useRoleAccess';
@@ -22,6 +23,7 @@ const sections = [
       { to: '/admin', icon: <LayoutDashboard className="w-5 h-5" />, label: 'Panel de Control', end: true, roles: ['administrador' as const] },
       { to: '/admin/ordenes', icon: <ClipboardList className="w-5 h-5" />, label: 'Gestión de Órdenes', roles: ['administrador' as const] },
       { to: '/admin/clientes', icon: <Users className="w-5 h-5" />, label: 'Clientes', roles: ['administrador' as const] },
+      { to: '/admin/configuracion', icon: <SlidersHorizontal className="w-5 h-5" />, label: 'Capacidad del taller', roles: ['administrador' as const] },
       { to: '/admin/notificaciones', icon: <Bell className="w-5 h-5" />, label: 'Centro de avisos', roles: ['administrador' as const] },
     ],
   },

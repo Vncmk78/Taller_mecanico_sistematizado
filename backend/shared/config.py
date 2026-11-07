@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from shared.entorno import archivo_entorno
+
 
 class ServiceSettings(BaseSettings):
     """Configuración mínima que necesita un servicio para hablar con su base."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=archivo_entorno(),
         env_file_encoding="utf-8",
         extra="ignore",
     )

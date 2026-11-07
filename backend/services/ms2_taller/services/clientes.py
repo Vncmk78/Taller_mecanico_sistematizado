@@ -2,8 +2,9 @@
 
 El ``usuario_id`` debe provenir de una identidad ya verificada por el contrato
 de autenticación. Este módulo no conoce JWT ni publica endpoints: ofrece
-operaciones explícitas para que el futuro flujo de registro/integración cree o
-resuelva el perfil local sin acoplarlo al registro de vehículos.
+operaciones explícitas para crear o resolver el perfil local sin acoplarlo al
+registro de vehículos. ``routers/clientes.py`` las expone como
+``POST/GET /clientes/perfil`` para completar el registro público.
 """
 
 from __future__ import annotations
@@ -23,6 +24,15 @@ class ClienteDuplicadoError(Exception):
 
 class PersistenciaClienteError(Exception):
     """La operación de persistencia del perfil no pudo completarse."""
+
+
+class PerfilClienteConflictoError(Exception):
+    """El perfil ya existe con un teléfono distinto al recibido.
+
+    Preparar el perfil nunca sobrescribe datos guardados: si el llamador envía
+    un teléfono diferente, se informa el conflicto en vez de ignorarlo en
+    silencio o reemplazar el valor existente.
+    """
 
 
 def buscar_cliente_por_usuario_id(db: Session, usuario_id: int) -> Cliente | None:
@@ -99,6 +109,43 @@ def asegurar_cliente(
         if cliente is not None:
             return cliente
         raise
+
+
+def preparar_perfil_cliente(
+    db: Session,
+    usuario_id: int,
+    telefono: str | None = None,
+) -> tuple[Cliente, bool]:
+    """Garantiza el perfil local del usuario y dice si esta llamada lo creó.
+
+    Reutiliza ``asegurar_cliente``: llamadas repetidas o concurrentes terminan
+    con un único perfil, porque la restricción única de ``usuario_id`` decide
+    el ganador. Devuelve ``(perfil, creado)``; ``creado`` es ``True`` cuando
+    el perfil no existía al comenzar la llamada. En una carrera exacta entre
+    dos preparaciones simultáneas ambas pueden informar ``creado=True``, pero
+    siempre sobre el mismo perfil.
+
+    ``telefono=None`` significa "no se envió teléfono" (no borra uno guardado).
+    Si se envía un teléfono distinto al del perfil existente se lanza
+    ``PerfilClienteConflictoError`` y no se modifica nada.
+    """
+
+    existente = buscar_cliente_por_usuario_id(db, usuario_id)
+    if existente is not None:
+        _verificar_telefono_compatible(existente, telefono)
+        return existente, False
+
+    cliente = asegurar_cliente(db, usuario_id, telefono)
+    # Si otra preparación concurrente ganó con otro teléfono, también se informa.
+    _verificar_telefono_compatible(cliente, telefono)
+    return cliente, True
+
+
+def _verificar_telefono_compatible(cliente: Cliente, telefono: str | None) -> None:
+    if telefono is not None and cliente.telefono != telefono:
+        raise PerfilClienteConflictoError(
+            "El perfil Cliente ya existe con otro teléfono; no se modificó"
+        )
 
 
 def _es_conflicto_usuario_id(exc: IntegrityError) -> bool:

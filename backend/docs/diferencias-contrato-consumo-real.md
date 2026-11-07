@@ -29,7 +29,7 @@ dueño de cada parte.
 |---|---:|---:|
 | Llamadas del frontend web que coinciden con el contrato | 18 de 23 | **25 de 25** |
 | Respuestas reales que cumplen el esquema publicado | 26 de 26 (17 operaciones) | **29 de 29 (19 operaciones)** |
-| Diferencias abiertas | 3 (D-01, D-02, D-03) | **0** |
+| Diferencias abiertas | 3 (D-01, D-02, D-03) | **0** (D-04, registrada el 7/11/2026, corregida en 2.2.1) |
 
 Las respuestas reales siempre cumplieron el contrato publicado: las
 diferencias estaban en cómo el frontend lo leía (D-01, D-03) y en un contrato
@@ -43,8 +43,11 @@ menos preciso que la respuesta real (D-02).
 | **D-02** | Baja | `token_type` (login), `repuestos` (bitácora), `decision_id` y `aplicacion_en_orden` (decisión de presupuesto) | Publicados como opcionales (tienen valor por defecto) | Siempre vienen en la respuesta (verificado en vivo) | **Corregida** en el contrato **2.0.1**: los modelos de respuesta marcan obligatorios sus campos con valor por defecto, en la Gateway y en MS1, MS2 y MS3. Ver `versionado-contrato-openapi.md` |
 | **D-03** | Media | `AuthService.toDomainUser` (`/api/auth/login`, `/api/auth/me`) | `roles` es una lista y los roles se acumulan (`matriz-autorizacion-roles.md` §3.1) | El frontend guardaba solo `roles[0]`: las guardas de ruta (`getUserRoles`, `hasAnyRole`), que ya soportaban varios roles, nunca los recibían, y un usuario `cliente` + `mecanico` (ingresa como Cliente) no podía entrar a las rutas de mecánico | **Corregida** en el frontend: `User.roles` conserva todos los roles válidos y las guardas los usan. El **portal de ingreso** sigue siendo el primero de la lista (MS1 los ordena alfabéticamente); cambiar esa preferencia es una decisión de producto, no de contrato |
 
-`_DIFERENCIAS_WEB` en `tests/test_contrato_consumo_real.py` queda vacío. Una
-diferencia nueva se registra ahí como `xfail` estricto con un ID nuevo (D-04, …).
+| **D-04** | Baja | `ConfiguracionTallerService` (`GET` y `PUT /api/ordenes/configuracion/capacidad/mecanicos`, página Capacidad del taller) | `mecanicos_sobre_limite` es `list[dict[str, int]]`: no nombra las claves de cada elemento | MS2 siempre devuelve `{"mecanico_id", "ordenes_activas"}` (`services/capacidad_mecanicos.py`) y la web lee ambas para avisar qué mecánicos superan el límite | **Corregida** en el contrato **2.2.1**: el elemento se tipa como `MecanicoSobreLimite` (`mecanico_id`, `ordenes_activas`) en MS2 y en la Gateway; el JSON no cambia |
+
+`_DIFERENCIAS_WEB` en `tests/test_contrato_consumo_real.py` vuelve a quedar
+vacío. Una diferencia nueva se registra ahí como `xfail` estricto con un ID
+nuevo (D-05, …).
 
 `test_d01_la_cancelacion_real_no_trae_los_campos_de_orden` se conserva como
 evidencia viva de que la cancelación responde una solicitud, no una orden.

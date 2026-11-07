@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { User } from '@/domain/entities/User';
+import { authService } from '@/infrastructure/api/AuthService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { usePerfilClienteStore } from '@/infrastructure/stores/usePerfilClienteStore';
+import { perfilClienteService } from '@/infrastructure/api/PerfilClienteService';
 import { AuthProvider } from '@/presentation/components/auth/AuthProvider';
 import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { AppRoutes } from '@/presentation/routes/AppRoutes';
@@ -12,6 +15,14 @@ vi.mock('@/infrastructure/api/AuthService', () => ({
     login: vi.fn(),
     getProfile: vi.fn(() => new Promise<never>(() => {})),
     listarUsuarios: vi.fn(() => Promise.resolve([])),
+  },
+}));
+
+vi.mock('@/infrastructure/api/PerfilClienteService', () => ({
+  perfilClienteService: {
+    preparar: vi.fn(() =>
+      Promise.resolve({ perfil: { clienteId: '7', usuarioId: '2', telefono: null }, creado: false })
+    ),
   },
 }));
 
@@ -41,6 +52,7 @@ const mechanicUser: User = {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.mocked(perfilClienteService.preparar).mockClear();
   useAuthStore.setState({
     user: null,
     token: null,
@@ -48,6 +60,10 @@ beforeEach(() => {
     isLoading: false,
     isInitializing: false,
   });
+  // Por defecto el perfil Cliente de MS2 ya está preparado en esta sesión; las
+  // pruebas del control de preparación lo reinician explícitamente.
+  usePerfilClienteStore.getState().reset();
+  usePerfilClienteStore.setState({ estado: 'listo', usuarioPreparado: clientUser.id });
 });
 
 function logueadoComo(user: User) {
@@ -84,6 +100,23 @@ describe('AppRoutes: navegación por los tres roles', () => {
         ).toBeInTheDocument();
       }
     );
+
+    it('/registro muestra el formulario público de registro', () => {
+      renderApp('/registro');
+
+      expect(
+        screen.getByRole('heading', { name: 'Crear cuenta de cliente' })
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText(/rol/i)).not.toBeInTheDocument();
+    });
+
+    it('el login y el home enlazan al registro', () => {
+      renderApp('/login');
+      expect(screen.getByRole('link', { name: 'Crear cuenta de cliente' })).toHaveAttribute(
+        'href',
+        '/registro'
+      );
+    });
 
     it('una ruta inexistente cae en el home', () => {
       renderApp('/ruta-inexistente');
@@ -275,6 +308,26 @@ describe('AppRoutes: navegación por los tres roles', () => {
       expect(screen.getAllByText('Mis Vehículos').length).toBeGreaterThan(0);
     });
 
+    it('prepara el perfil Cliente de MS2 antes de mostrar el portal', async () => {
+      usePerfilClienteStore.getState().reset();
+      logueadoComo(clientUser);
+      renderApp('/client');
+
+      expect(
+        await screen.findByRole('heading', { name: /Bienvenido/ })
+      ).toBeInTheDocument();
+      expect(perfilClienteService.preparar).toHaveBeenCalledTimes(1);
+    });
+
+    it('un cliente con sesión que abre /registro vuelve a su portal', () => {
+      logueadoComo(clientUser);
+      renderApp('/registro');
+
+      expect(
+        screen.getByRole('heading', { name: /Bienvenido/ })
+      ).toBeInTheDocument();
+    });
+
     it('navega con un clic del menú hacia /client/vehiculos', async () => {
       logueadoComo(clientUser);
       renderApp('/client');
@@ -349,6 +402,81 @@ describe('AppRoutes: navegación por los tres roles', () => {
         screen.getByRole('heading', { name: 'Acceso Denegado' })
       ).toBeInTheDocument();
       expect(screen.queryByText('Actualizar Estados')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('recarga o enlace directo con sesión guardada', () => {
+    // Estado real tras recargar el navegador: hay token, pero el usuario aún
+    // no se recuperó de GET /auth/me (useAuthStore arranca inicializando).
+    function recargaConToken() {
+      localStorage.setItem('token', 'token-guardado');
+      useAuthStore.setState({
+        user: null,
+        token: 'token-guardado',
+        isAuthenticated: true,
+        isLoading: false,
+        isInitializing: true,
+      });
+    }
+
+    it('conserva la subruta del administrador al restaurar la sesión', async () => {
+      vi.mocked(authService.getProfile).mockResolvedValueOnce(adminUser);
+      recargaConToken();
+      renderApp('/admin/configuracion');
+
+      expect(
+        await screen.findByRole('heading', { name: 'Capacidad del taller' })
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Iniciar Sesión' })).not.toBeInTheDocument();
+    });
+
+    it('conserva la subruta del cliente y prepara su perfil antes de mostrarla', async () => {
+      usePerfilClienteStore.getState().reset();
+      vi.mocked(authService.getProfile).mockResolvedValueOnce(clientUser);
+      recargaConToken();
+      renderApp('/client/vehiculos');
+
+      expect(
+        await screen.findByText('Consulte la ficha técnica y el historial de sus vehículos registrados')
+      ).toBeInTheDocument();
+      expect(perfilClienteService.preparar).toHaveBeenCalledTimes(1);
+    });
+
+    it('mientras restaura no muestra el login ni el portal', () => {
+      recargaConToken(); // getProfile queda pendiente (mock por defecto)
+      renderApp('/admin/ordenes');
+
+      expect(screen.queryByRole('heading', { name: 'Iniciar Sesión' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Gestión de Órdenes' })).not.toBeInTheDocument();
+      expect(screen.getByText('Verificando sesión...')).toBeInTheDocument();
+    });
+
+    it('con token vencido pide iniciar sesión y luego vuelve al enlace pedido', async () => {
+      vi.mocked(authService.getProfile).mockRejectedValueOnce(new Error('Token vencido'));
+      vi.mocked(authService.login).mockResolvedValueOnce({
+        access_token: 'token-nuevo', token_type: 'bearer', user: adminUser,
+      });
+      recargaConToken();
+      renderApp('/admin/configuracion');
+
+      expect(await screen.findByRole('heading', { name: 'Iniciar Sesión' })).toBeInTheDocument();
+      expect(localStorage.getItem('token')).toBeNull();
+
+      fireEvent.change(screen.getByLabelText('Correo Electrónico'), { target: { value: 'admin@taller.cl' } });
+      fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'AdminPrueba123!' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Ingresar a mi cuenta' }));
+
+      expect(
+        await screen.findByRole('heading', { name: 'Capacidad del taller' })
+      ).toBeInTheDocument();
+    });
+
+    it('un enlace de otro portal lleva a acceso denegado, no al login', async () => {
+      vi.mocked(authService.getProfile).mockResolvedValueOnce(clientUser);
+      recargaConToken();
+      renderApp('/admin/ordenes');
+
+      expect(await screen.findByRole('heading', { name: 'Acceso Denegado' })).toBeInTheDocument();
     });
   });
 });

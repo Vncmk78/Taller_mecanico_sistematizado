@@ -101,6 +101,16 @@ del `500` que daba hasta la corrección del hallazgo §8.3 de
 Todos los endpoints pasan por `resolver_cliente_actual`, que exige rol `cliente` y
 perfil local; sin perfil local responde `404`, no `403`.
 
+El perfil local se prepara con `POST /api/clientes/perfil` (contrato 2.2.0):
+exige rol `cliente` (`403` en otro caso) y toma la identidad del JWT; el body
+no admite `usuario_id` ni roles. `GET /api/clientes/perfil` usa el mismo
+`resolver_cliente_actual` y nunca crea el perfil.
+
+| Capacidad | Cliente | Mecánico | Administrador |
+|---|---|---|---|
+| `POST /api/clientes/perfil` | ✅ el propio | ❌ | ⚠️ * |
+| `GET /api/clientes/perfil` | ✅ el propio | ❌ | ⚠️ * |
+
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
 | `POST /api/vehiculos` | ✅ | ❌ | ⚠️ * |

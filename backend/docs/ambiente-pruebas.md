@@ -144,12 +144,22 @@ en `backend/` eso apunta al ambiente existente.
 volúmenes). Si se borra, crear uno nuevo con `configurar` solo después de
 `eliminar`.
 
-## Advertencia: pruebas automatizadas y MinIO
+## Pruebas reales de MS4 (MinIO)
 
-`tests/test_ms4_huerfanos.py::test_conciliacion_contra_minio_real` se ejecuta
-cuando el MinIO configurado está disponible y llama a la conciliación de
-huérfanos con `eliminar=True` sobre **todo el bucket**, comparándolo con una base
-de pruebas vacía: borra cualquier objeto que no haya creado la propia prueba.
-Mientras no se corrija, no ejecutar `pytest` con el MinIO del ambiente existente
-(`docker compose up` de `docker-compose.yml`) encendido, ni con
-`SGTM_ENV_FILE=.env.pruebas`.
+```bash
+python scripts/ambiente_pruebas.py pruebas-ms4      # admite argumentos de pytest, p. ej. -rs
+```
+
+Las pruebas de MS4 que usan MinIO real nunca operan sobre `evidencias` (ambiente
+existente) ni sobre `evidencias-pruebas` (demostración). Cada prueba crea
+buckets propios `sgtm-prueba-<ejecución>-<n>` que no existían, y al terminar —aun
+si la prueba falla— vacía y elimina solo esos buckets
+(`tests/almacenamiento_s3_desechable.py`). La conciliación de huérfanos, que
+recorre un bucket completo, recibe uno de esos buckets; la prueba comprueba que
+un objeto de otro bucket permanece intacto.
+
+`pruebas-ms4` verifica el destino y entrega a pytest solo `MS4_TEST_S3_*` con el
+MinIO de este ambiente (credencial de administración para crear y borrar los
+buckets de prueba, y el usuario de MS4 para comprobar que no los alcanza). Sin
+`MS4_TEST_S3_ENDPOINT`, un `pytest` normal omite estas pruebas indicando cómo
+configurarlas; ya no toman la configuración `MS4_S3_*` del `.env`.

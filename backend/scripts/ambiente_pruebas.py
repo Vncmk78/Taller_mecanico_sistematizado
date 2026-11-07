@@ -30,6 +30,7 @@ Uso, desde backend/:
     python scripts/ambiente_pruebas.py detener        # procesos + contenedores
     python scripts/ambiente_pruebas.py eliminar --confirmar sgtm_pruebas
     python scripts/ambiente_pruebas.py ejecutar -- python scripts/flujos_e2e_gateway.py ...
+    python scripts/ambiente_pruebas.py pruebas-ms4    # pruebas reales de MS4 con MinIO
 """
 from __future__ import annotations
 
@@ -533,6 +534,40 @@ def recorridos(entorno: dict[str, str], salida: Path | None) -> int:
     return ejecutar(entorno, comando)
 
 
+# Pruebas de MS4 que usan MinIO real (siempre en buckets exclusivos y desechables).
+PRUEBAS_MS4_REALES = (
+    "tests/test_ms4_almacenamiento_desechable.py",
+    "tests/test_ms4_huerfanos.py",
+    "tests/test_ms4_ciclo_archivos.py",
+    "tests/test_ms4_minio_integracion.py",
+    "tests/test_ms4_recepcion_minio.py",
+)
+
+
+def pruebas_ms4(entorno: dict[str, str], extra: list[str]) -> int:
+    """Pruebas reales de MS4 contra el MinIO de este ambiente.
+
+    Cada prueba crea buckets `sgtm-prueba-*` propios y los elimina al terminar;
+    nunca usa `evidencias-pruebas` (la demostración) ni el bucket existente. Se
+    pasan solo las variables MS4_TEST_*: pytest no recibe la configuración de
+    servicios de este ambiente.
+    """
+
+    exigir(entorno, destino=True)
+    hijo = {k: v for k, v in os.environ.items()
+            if not _variable_de_servicio(k) and not k.startswith("MS4_TEST_")}
+    hijo.update({
+        "MS4_TEST_S3_ENDPOINT": entorno["MS4_S3_ENDPOINT"],
+        "MS4_TEST_S3_ADMIN_ACCESS_KEY": entorno["PRUEBAS_MINIO_ROOT_USUARIO"],
+        "MS4_TEST_S3_ADMIN_SECRET_KEY": entorno["PRUEBAS_MINIO_ROOT_CLAVE"],
+        "MS4_TEST_S3_REGION": entorno.get("MS4_S3_REGION") or "us-east-1",
+        "MS4_TEST_S3_MS4_ACCESS_KEY": entorno["MS4_S3_ACCESS_KEY"],
+        "MS4_TEST_S3_MS4_SECRET_KEY": entorno["MS4_S3_SECRET_KEY"],
+    })
+    comando = [sys.executable, "-m", "pytest", "-q", "-rs", *PRUEBAS_MS4_REALES, *extra]
+    return subprocess.run(comando, cwd=BACKEND_DIR, env=hijo, check=False).returncode
+
+
 def eliminar(entorno: dict[str, str], confirmacion: str | None) -> int:
     if confirmacion != PROYECTO:
         print(f"Para eliminar los volúmenes del ambiente de pruebas: --confirmar {PROYECTO}")
@@ -556,12 +591,15 @@ def main() -> int:
     p_rec = sub.add_parser("recorridos")
     p_rec.add_argument("--salida", type=Path)
     sub.add_parser("estado")
+    sub.add_parser("pruebas-ms4", help="argumentos adicionales se pasan a pytest")
     sub.add_parser("detener")
     p_eli = sub.add_parser("eliminar")
     p_eli.add_argument("--confirmar")
     p_eje = sub.add_parser("ejecutar")
     p_eje.add_argument("comando", nargs=argparse.REMAINDER)
-    args = parser.parse_args()
+    args, adicionales = parser.parse_known_args()
+    if adicionales and args.accion != "pruebas-ms4":
+        parser.error("argumentos no reconocidos: " + " ".join(adicionales))
 
     try:
         if args.accion == "configurar":
@@ -578,6 +616,8 @@ def main() -> int:
             return iniciar(entorno, sin_frontend=args.sin_frontend)
         if args.accion == "sembrar":
             return sembrar(entorno)
+        if args.accion == "pruebas-ms4":
+            return pruebas_ms4(entorno, adicionales)
         if args.accion == "recorridos":
             return recorridos(entorno, args.salida)
         if args.accion == "estado":

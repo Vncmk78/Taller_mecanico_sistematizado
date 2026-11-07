@@ -228,3 +228,27 @@ def test_eliminar_exige_confirmacion_y_nombra_el_proyecto_de_pruebas(
                            str(amb.COMPOSE), "--env-file", str(amb.ARCHIVO), "down"]
     assert amb.COMPOSE.name == "docker-compose.pruebas.yml"
     assert "--volumes" in comando
+
+
+def test_pruebas_ms4_solo_entrega_el_minio_de_pruebas_a_pytest(
+    archivos: Path, monkeypatch: pytest.MonkeyPatch
+):
+    llamadas: list[tuple[list[str], dict[str, str]]] = []
+    monkeypatch.setattr(amb, "exigir", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        amb.subprocess, "run",
+        lambda comando, env, **_: llamadas.append((comando, env))
+        or subprocess.CompletedProcess(comando, 0),
+    )
+    monkeypatch.setenv("MS4_S3_BUCKET", "evidencias")
+    monkeypatch.setenv("MS4_TEST_S3_ENDPOINT", "http://localhost:9000")
+    entorno = amb.entorno_pruebas()
+
+    assert amb.pruebas_ms4(entorno, ["-x"]) == 0
+
+    ((comando, env),) = llamadas
+    assert comando[-1] == "-x" and set(amb.PRUEBAS_MS4_REALES) <= set(comando)
+    assert env["MS4_TEST_S3_ENDPOINT"] == "http://127.0.0.1:9010"
+    assert env["MS4_TEST_S3_ADMIN_ACCESS_KEY"] == entorno["PRUEBAS_MINIO_ROOT_USUARIO"]
+    assert env["MS4_TEST_S3_MS4_ACCESS_KEY"] == entorno["MS4_S3_ACCESS_KEY"]
+    assert not any(k.startswith(("MS4_S3_", "SGTM_", "PRUEBAS_")) for k in env)

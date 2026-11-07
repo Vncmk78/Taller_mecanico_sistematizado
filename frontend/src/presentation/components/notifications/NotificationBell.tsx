@@ -38,17 +38,23 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
   const containerRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const inflightRef = useRef(false);
+  const lastFetchAtRef = useRef(0);
 
   const cargar = useCallback(async (silencioso = false) => {
+    if (inflightRef.current) return;
+    inflightRef.current = true;
     if (!silencioso) setLoading(true);
     setError(null);
     try {
       const res = await notificationService.getMyNotifications({ limit: 15 });
       setItems(res.items);
       setNoLeidas(res.noLeidas);
+      lastFetchAtRef.current = Date.now();
     } catch {
       setError('No se pudieron cargar los avisos.');
     } finally {
+      inflightRef.current = false;
       if (!silencioso) setLoading(false);
     }
   }, []);
@@ -60,7 +66,10 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
   }, [cargar]);
 
   useEffect(() => {
-    if (open) void cargar();
+    if (!open) return;
+    // Evita solicitud redundante si la data se cargó recientemente (intervalo/mount).
+    if (Date.now() - lastFetchAtRef.current < 15000) return;
+    void cargar();
   }, [open, cargar]);
 
   useEffect(() => {

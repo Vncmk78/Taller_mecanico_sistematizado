@@ -85,15 +85,22 @@ function accionesMecanico(order: Order, actor: ActorOrden): AccionOrden[] {
 function accionesAdministrador(order: Order): AccionOrden[] {
     const acciones: AccionOrden[] = [];
 
-    // La primera asignación saca la orden de "Recibido" (1 -> 2).
-    if (order.estadoCodigo === 1) {
-        acciones.push({
-            id: 'asignar_mecanico',
-            etiqueta: 'Asignar mecánico',
-            destinos: [],
-            requiereMotivo: false,
-            habilitada: true,
-        });
+    // Mismo control y mismo endpoint (PUT /ordenes/{id}/mecanico) para asignar
+    // y reasignar. MS2 decide el efecto: la primera asignación de una orden
+    // Recibida pasa a Esperando diagnóstico; una reasignación conserva el
+    // estado. Las órdenes terminales no admiten cambios de responsable, y la
+    // capacidad la valida MS2 al registrar la operación.
+    if (order.estadoCodigo !== ENTREGADO && order.estadoCodigo !== CANCELADO) {
+        const reasignar = order.mecanicoActualId !== null;
+        if (reasignar || order.estadoCodigo === 1) {
+            acciones.push({
+                id: 'asignar_mecanico',
+                etiqueta: reasignar ? 'Reasignar mecánico' : 'Asignar mecánico',
+                destinos: [],
+                requiereMotivo: false,
+                habilitada: true,
+            });
+        }
     }
 
     if (ESTADOS_CANCELABLES.has(order.estadoCodigo)) {

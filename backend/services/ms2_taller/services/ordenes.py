@@ -63,6 +63,7 @@ from services.ms2_taller.services.cupo_ingresos import (
     CupoDiarioExcedidoError,
     CupoDiarioNoConfiguradoError,
     PersistenciaCupoIngresosError,
+    registrar_rechazo_cupo,
     registrar_validacion_cupo_aceptada,
     validar_cupo_para_nuevo_ingreso,
 )
@@ -364,6 +365,83 @@ def _consulta_vehiculo_para_actualizacion(
     )
 
 
+def registrar_orden_sin_confirmar(
+    db: Session,
+    vehiculo_id: int,
+    administrador_id: int,
+) -> OrdenTrabajo:
+    """Núcleo del registro de una orden, sin confirmar la transacción.
+
+    Bloquea el vehículo, reutiliza su ingreso abierto o valida el cupo y crea un
+    ingreso nuevo, y agrega la orden en `Recibido` con su historial inicial (y
+    el evento de outbox que agrega `registrar_historial_estado`). Solo hace
+    `flush`: quien lo llama confirma o deshace todo junto y puede sumar otros
+    cambios a la misma transacción. No hace commit ni rollback.
+
+    Los bloqueos de fila (vehículo y, si hay ingreso nuevo, la configuración
+    del cupo) se mantienen hasta que el llamador confirme o deshaga.
+    """
+
+    # PostgreSQL conserva este bloqueo de fila hasta el commit/rollback. Así
+    # dos altas del mismo vehículo no pueden decidir en paralelo que falta
+    # un ingreso abierto; vehículos distintos usan filas y locks distintos.
+    vehiculo = db.scalar(_consulta_vehiculo_para_actualizacion(vehiculo_id))
+    if vehiculo is None:
+        raise VehiculoNoEncontradoError("Vehículo no encontrado")
+
+    ingreso = db.scalar(
+        select(IngresoVehiculo)
+        .where(
+            IngresoVehiculo.vehiculo_id == vehiculo_id,
+            IngresoVehiculo.salida_en.is_(None),
+        )
+        .order_by(
+            IngresoVehiculo.fecha_hora.desc(),
+            IngresoVehiculo.ingreso_id.desc(),
+        )
+        .limit(1)
+    )
+    if ingreso is None:
+        validacion_cupo = validar_cupo_para_nuevo_ingreso(
+            db,
+            vehiculo_id=vehiculo_id,
+            administrador_id=administrador_id,
+        )
+        ingreso = IngresoVehiculo(
+            vehiculo_id=vehiculo_id,
+            registrado_por_id=administrador_id,
+        )
+        db.add(ingreso)
+        db.flush()
+        registrar_validacion_cupo_aceptada(
+            db,
+            validacion=validacion_cupo,
+            ingreso_id=ingreso.ingreso_id,
+        )
+
+    estado_inicial = resolver_transicion(None, EventoOrden.CREACION)
+    orden = OrdenTrabajo(
+        vehiculo_id=vehiculo_id,
+        ingreso_id=ingreso.ingreso_id,
+        estado_codigo=estado_inicial,
+        mecanico_actual_id=None,
+        creado_por_id=administrador_id,
+    )
+    db.add(orden)
+    db.flush()
+    registrar_historial_estado(
+        db,
+        orden_id=orden.orden_id,
+        estado_anterior=None,
+        estado_nuevo=estado_inicial,
+        actor_usuario_id=administrador_id,
+        origen="usuario",
+    )
+    db.flush()
+    db.refresh(orden)
+    return orden
+
+
 def crear_orden(
     db: Session,
     vehiculo_id: int,
@@ -373,76 +451,26 @@ def crear_orden(
 
     Si ya existe una estancia abierta para el vehículo, se reutiliza sin
     consumir otro cupo diario. Un nuevo ingreso valida y audita el límite antes
-    de registrarse.
+    de registrarse. Un rechazo de cupo deshace todo y después guarda, en una
+    transacción propia, la auditoría con los datos de la validación original.
     """
 
     try:
-        # PostgreSQL conserva este bloqueo de fila hasta el commit/rollback. Así
-        # dos altas del mismo vehículo no pueden decidir en paralelo que falta
-        # un ingreso abierto; vehículos distintos usan filas y locks distintos.
-        vehiculo = db.scalar(_consulta_vehiculo_para_actualizacion(vehiculo_id))
-        if vehiculo is None:
-            raise VehiculoNoEncontradoError("Vehículo no encontrado")
-
-        ingreso = db.scalar(
-            select(IngresoVehiculo)
-            .where(
-                IngresoVehiculo.vehiculo_id == vehiculo_id,
-                IngresoVehiculo.salida_en.is_(None),
-            )
-            .order_by(
-                IngresoVehiculo.fecha_hora.desc(),
-                IngresoVehiculo.ingreso_id.desc(),
-            )
-            .limit(1)
-        )
-        if ingreso is None:
-            validacion_cupo = validar_cupo_para_nuevo_ingreso(
-                db,
-                vehiculo_id=vehiculo_id,
-                administrador_id=administrador_id,
-            )
-            ingreso = IngresoVehiculo(
-                vehiculo_id=vehiculo_id,
-                registrado_por_id=administrador_id,
-            )
-            db.add(ingreso)
-            db.flush()
-            registrar_validacion_cupo_aceptada(
-                db,
-                validacion=validacion_cupo,
-                ingreso_id=ingreso.ingreso_id,
-            )
-
-        estado_inicial = resolver_transicion(None, EventoOrden.CREACION)
-        orden = OrdenTrabajo(
-            vehiculo_id=vehiculo_id,
-            ingreso_id=ingreso.ingreso_id,
-            estado_codigo=estado_inicial,
-            mecanico_actual_id=None,
-            creado_por_id=administrador_id,
-        )
-        db.add(orden)
-        db.flush()
-
-        registrar_historial_estado(
-            db,
-            orden_id=orden.orden_id,
-            estado_anterior=None,
-            estado_nuevo=estado_inicial,
-            actor_usuario_id=administrador_id,
-            origen="usuario",
-        )
-        db.flush()
-        db.refresh(orden)
+        orden = registrar_orden_sin_confirmar(db, vehiculo_id, administrador_id)
         db.commit()
         return orden
     except VehiculoNoEncontradoError:
         db.rollback()
         raise
-    except (CupoDiarioNoConfiguradoError, CupoDiarioExcedidoError):
-        # Los rechazos ya confirmaron su auditoría y no cambiaron ingreso/orden.
+    except (CupoDiarioNoConfiguradoError, CupoDiarioExcedidoError) as exc:
         db.rollback()
+        if exc.rechazo is not None:
+            try:
+                registrar_rechazo_cupo(db, exc.rechazo)
+            except PersistenciaCupoIngresosError as error_auditoria:
+                raise PersistenciaOrdenError(
+                    "No fue posible validar el cupo diario"
+                ) from error_auditoria
         raise
     except PersistenciaCupoIngresosError as exc:
         db.rollback()

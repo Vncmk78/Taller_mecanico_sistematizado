@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import clientes as contratos_clientes
 from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
@@ -35,6 +36,10 @@ from services.ms2_taller.config import settings as ms2_settings
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as ms2_app
 from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN
+from services.ms2_taller.schemas.cliente import (
+    PerfilClientePreparar as Ms2PerfilClientePreparar,
+    PerfilClienteRespuesta as Ms2PerfilClienteRespuesta,
+)
 from services.ms2_taller.schemas.vehiculo import (
     VehiculoActualizar as Ms2VehiculoActualizar,
     VehiculoCrear as Ms2VehiculoCrear,
@@ -44,6 +49,7 @@ from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
     CapacidadMecanicoActualizar as Ms2CapacidadMecanicoActualizar,
     CapacidadMecanicoRespuesta as Ms2CapacidadMecanicoRespuesta,
+    MecanicoSobreLimite as Ms2MecanicoSobreLimite,
     CupoDiarioIngresosActualizar as Ms2CupoDiarioIngresosActualizar,
     CupoDiarioIngresosRespuesta as Ms2CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
@@ -95,6 +101,8 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/auth/register", "post"),
     ("/api/auth/login", "post"),
     ("/api/auth/me", "get"),
+    ("/api/clientes/perfil", "post"),
+    ("/api/clientes/perfil", "get"),
     ("/api/notificaciones", "get"),
     ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
     ("/api/vehiculos", "post"),
@@ -178,6 +186,7 @@ _ENDPOINTS_ESPERADOS |= _ENDPOINTS_SEMANA_7
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
 _PROTEGIDOS = {
     "/api/auth/me",
+    "/api/clientes/perfil",
     "/api/notificaciones",
     "/api/inventario/ordenes/{orden_id}/disponibilidad",
     "/api/vehiculos",
@@ -230,7 +239,7 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
 
 def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["info"]["title"] == "SGTM — API Gateway"
-    assert esquema["info"]["version"] == "2.1.0"
+    assert esquema["info"]["version"] == "2.2.1"
     assert esquema["openapi"].startswith("3.")
 
 
@@ -326,6 +335,7 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
     # En estas operaciones el 404 también puede venir de MS2 (perfil o recurso
     # ausente): su esquema admite ErrorRespuesta y ErrorDetalle.
     operaciones_con_404_ms = {
+        ("/api/clientes/perfil", "get"),
         ("/api/vehiculos", "post"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
@@ -403,6 +413,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
     con_cuerpo = {
         ("/api/auth/register", "post"): "RegistroSolicitud",
         ("/api/auth/login", "post"): "LoginSolicitud",
+        ("/api/clientes/perfil", "post"): "PerfilClientePreparar",
         ("/api/vehiculos", "post"): "VehiculoCrear",
         ("/api/vehiculos/{vehiculo_id}", "patch"): "VehiculoActualizar",
         ("/api/ordenes", "post"): "OrdenCrear",
@@ -431,6 +442,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         assert esquema_cuerpo["$ref"] == f"#/components/schemas/{ref}"
     for (ruta, metodo) in (
         ("/api/auth/me", "get"),
+        ("/api/clientes/perfil", "get"),
         ("/api/notificaciones", "get"),
         ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/vehiculos", "get"),
@@ -476,6 +488,8 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
             contratos_inventario.DisponibilidadRepuestosRespuesta,
             Ms3DisponibilidadRepuestosRespuesta,
         ),
+        (contratos_clientes.PerfilClientePreparar, Ms2PerfilClientePreparar),
+        (contratos_clientes.PerfilClienteRespuesta, Ms2PerfilClienteRespuesta),
         (contratos_vehiculos.VehiculoCrear, Ms2VehiculoCrear),
         (contratos_vehiculos.VehiculoActualizar, Ms2VehiculoActualizar),
         (contratos_vehiculos.VehiculoRespuesta, Ms2VehiculoRespuesta),
@@ -491,6 +505,10 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (
             contratos_ordenes.CapacidadMecanicoRespuesta,
             Ms2CapacidadMecanicoRespuesta,
+        ),
+        (
+            contratos_ordenes.MecanicoSobreLimite,
+            Ms2MecanicoSobreLimite,
         ),
         (
             contratos_ordenes.CupoDiarioIngresosActualizar,
@@ -617,6 +635,7 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "BitacoraRespuesta",
         "RepuestoBitacoraEntrada",
         "RepuestoBitacoraRespuesta",
+        "MecanicoSobreLimite",
         "EvidenciaSubida",
         "EvidenciaRespuesta",
         "UrlDescargaRespuesta",

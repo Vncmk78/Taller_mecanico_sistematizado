@@ -96,3 +96,28 @@ def api(db: Session) -> Generator[TestClient, None, None]:
     with TestClient(app) as cliente:
         yield cliente
     app.dependency_overrides.clear()
+
+
+# ── Almacenamiento S3 exclusivo para las pruebas reales de MS4 ──────────────
+# Ver tests/almacenamiento_s3_desechable.py: nunca se usa el bucket configurado
+# de MS4; cada prueba crea sus buckets y al final elimina solo esos.
+
+
+@pytest.fixture
+def s3_prueba():
+    from almacenamiento_s3_desechable import MOTIVO_SIN_CONFIGURAR, config_desde_entorno
+
+    configuracion = config_desde_entorno()
+    if configuracion is None:
+        pytest.skip(MOTIVO_SIN_CONFIGURAR)
+    return configuracion
+
+
+@pytest.fixture
+def almacenamiento(s3_prueba):
+    from almacenamiento_s3_desechable import AlmacenamientoDesechable
+
+    propio = AlmacenamientoDesechable(s3_prueba.cliente())
+    yield propio
+    # Si la limpieza falla, la prueba termina con error (no se oculta).
+    propio.limpiar()

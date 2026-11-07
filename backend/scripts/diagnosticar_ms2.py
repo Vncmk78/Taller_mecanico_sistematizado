@@ -8,6 +8,7 @@ No ejecuta Alembic env.py, migraciones, seeds ni consultas de datos personales.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from alembic.config import Config
@@ -56,7 +57,7 @@ COLUMNAS = {
 
 class EntornoMS2(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="MS2_", env_file=BACKEND_DIR / ".env", extra="ignore",
+        env_prefix="MS2_", env_file=BACKEND_DIR / (os.environ.get("SGTM_ENV_FILE") or ".env"), extra="ignore",
         hide_input_in_errors=True,
     )
     database_url: SecretStr

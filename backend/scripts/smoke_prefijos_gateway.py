@@ -53,6 +53,7 @@ REPRESENTATIVOS: dict[str, str] = {
     "notificaciones": "/notificaciones",
     "vehiculos": "/vehiculos",
     "ordenes": "/ordenes",
+    "clientes": "/clientes/perfil",
     "presupuestos": "/presupuestos",
     "repuestos": "/repuestos",
     "proveedores": "/proveedores",

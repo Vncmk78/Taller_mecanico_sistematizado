@@ -199,3 +199,40 @@ describe('AuthService: listado administrativo de usuarios', () => {
     });
   });
 });
+
+describe('AuthService.register: registro público vía la Gateway', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('envía solo email, password y full_name, y adapta el usuario creado', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { id: 42, email: 'ana@correo.cl', full_name: 'Ana Pérez', roles: ['cliente'], is_active: true },
+    });
+
+    const usuario = await authService.register({
+      email: 'ana@correo.cl',
+      password: 'clave-segura-123',
+      full_name: 'Ana Pérez',
+    });
+
+    expect(apiClient.post).toHaveBeenCalledWith('/auth/register', {
+      email: 'ana@correo.cl',
+      password: 'clave-segura-123',
+      full_name: 'Ana Pérez',
+    });
+    expect(usuario).toMatchObject({ id: '42', role: 'cliente', roles: ['cliente'] });
+  });
+
+  it('no reenvía campos extra aunque lleguen en el objeto (p. ej. un rol)', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { id: 1, email: 'a@b.cl', full_name: 'Ab', roles: ['cliente'], is_active: true },
+    });
+    const datos = { email: 'a@b.cl', password: 'clave-segura-123', full_name: 'Ab', role: 'administrador' };
+
+    await authService.register(datos);
+
+    const body = vi.mocked(apiClient.post).mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(['email', 'full_name', 'password']);
+  });
+});

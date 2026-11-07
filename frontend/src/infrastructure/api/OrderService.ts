@@ -109,6 +109,15 @@ class OrderService implements OrderPort {
         return { ...data, items: data.items.map(mapOrdenApi) };
     }
 
+    async crearOrden(vehiculoId: string): Promise<Order> {
+        // El contrato OrdenCrear solo admite vehiculo_id: el creador, el estado
+        // inicial y el ingreso los decide MS2 a partir del JWT y de sus reglas.
+        const { data } = await apiClient.post<OrdenRespuesta>('/ordenes', {
+            vehiculo_id: Number(vehiculoId),
+        });
+        return mapOrdenApi(data);
+    }
+
     async getOrders(): Promise<Order[]> {
         const { data } = await apiClient.get<OrdenRespuesta[]>('/ordenes');
         return data.map(mapOrdenApi);

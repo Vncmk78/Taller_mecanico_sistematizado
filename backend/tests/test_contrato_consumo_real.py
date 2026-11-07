@@ -58,14 +58,7 @@ _JSON = "application/json"
 _DIFERENCIAS_WEB: dict[str, str] = {
     # D-01 se corrigió en el frontend (SCRUM-706), D-02 en el contrato 2.0.1 y
     # D-03 en el frontend. Una diferencia nueva se registra aquí con un ID nuevo.
-    "ConfiguracionTallerService.obtenerCapacidadMecanicos GET "
-    "/api/ordenes/configuracion/capacidad/mecanicos": (
-        "D-04: el contrato publica mecanicos_sobre_limite como list[dict[str, int]] sin nombrar mecanico_id ni ordenes_activas, que MS2 devuelve y la web lee"
-    ),
-    "ConfiguracionTallerService.configurarCapacidadMecanicos PUT "
-    "/api/ordenes/configuracion/capacidad/mecanicos": (
-        "D-04: el contrato publica mecanicos_sobre_limite como list[dict[str, int]] sin nombrar mecanico_id ni ordenes_activas, que MS2 devuelve y la web lee"
-    ),
+    # D-04 se corrigió en el contrato 2.2.1.
 }
 
 # Diferencias abiertas de las respuestas vivas: (MÉTODO ruta estado) -> ID.

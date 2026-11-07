@@ -34,7 +34,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "2.2.0"
+_VERSION = "2.2.1"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -250,6 +250,7 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
     ("RepuestoBitacoraEntrada", contratos_ordenes.RepuestoBitacoraEntrada),
+    ("MecanicoSobreLimite", contratos_ordenes.MecanicoSobreLimite),
     ("RepuestoBitacoraRespuesta", contratos_ordenes.RepuestoBitacoraRespuesta),
     ("BitacoraCrear", contratos_ordenes.BitacoraCrear),
     ("BitacoraRespuesta", contratos_ordenes.BitacoraRespuesta),

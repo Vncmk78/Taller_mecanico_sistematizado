@@ -8,8 +8,8 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 
 | | |
 |---|---|
-| Versión vigente | **2.2.0** |
-| Copia congelada | [`docs/openapi/sgtm-gateway-2.2.0.json`](openapi/sgtm-gateway-2.2.0.json) |
+| Versión vigente | **2.2.1** |
+| Copia congelada | [`docs/openapi/sgtm-gateway-2.2.1.json`](openapi/sgtm-gateway-2.2.1.json) |
 | Interactivo | `http://localhost:8000/docs` (Swagger) y `/openapi.json` |
 | Dónde se define | `gateway/openapi.py` (`_VERSION`), `gateway/openapi_ms3.py`, `gateway/openapi_ejemplos.py`, `shared/openapi_ordenes.py` |
 
@@ -20,7 +20,7 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 - **Sin levantar la Gateway:** usen el archivo congelado. Sirve para generar
   tipos o clientes (`openapi-typescript`, `openapi-generator`, Flutter/Dart,
   etc.) y mocks a partir de los ejemplos.
-- **Fijen la versión:** referencien `sgtm-gateway-2.2.0.json` para el comportamiento vigente, no «el último».
+- **Fijen la versión:** referencien `sgtm-gateway-2.2.1.json` para el comportamiento vigente, no «el último».
   Una versión nueva llega como un archivo nuevo; el anterior no se borra.
 - **Solo lo publicado es contrato.** Una ruta que la Gateway reenvía pero no
   aparece en el archivo puede cambiar sin aviso.
@@ -53,6 +53,15 @@ Si cambias el contrato y olvidas los pasos 2 y 3,
 mano: `python scripts/exportar_openapi.py --verificar`.
 
 ## 4. Historial
+
+### 2.2.1 — Elementos de `mecanicos_sobre_limite` documentados (D-04)
+
+PATCH: documenta lo que MS2 ya respondía. En `CapacidadMecanicoRespuesta`
+(`GET` y `PUT /api/ordenes/configuracion/capacidad/mecanicos`), cada elemento
+de `mecanicos_sobre_limite` pasa de un diccionario genérico a
+`MecanicoSobreLimite` con `mecanico_id` y `ordenes_activas`, ambos enteros y
+obligatorios. El JSON de la respuesta no cambia. Corrige D-04
+(`diferencias-contrato-consumo-real.md`).
 
 ### 2.2.0 — Perfil Cliente de MS2 para el registro público
 

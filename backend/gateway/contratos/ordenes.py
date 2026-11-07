@@ -108,6 +108,19 @@ class CapacidadMecanicoActualizar(BaseModel):
     )
 
 
+class MecanicoSobreLimite(BaseModel):
+    """Mecánico cuya carga activa supera el máximo configurado."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"mecanico_id": 12, "ordenes_activas": 6}]}
+    )
+
+    mecanico_id: int = Field(description="Referencia lógica al usuario Mecánico de MS1.")
+    ordenes_activas: int = Field(
+        description="Órdenes asignadas que no están Entregadas ni Canceladas."
+    )
+
+
 class CapacidadMecanicoRespuesta(BaseModel):
     """Configuración vigente e información de mecánicos sobre el nuevo límite."""
 
@@ -131,7 +144,7 @@ class CapacidadMecanicoRespuesta(BaseModel):
         description="Referencia lógica al Administrador que configuró el valor."
     )
     actualizado_en: datetime = Field(description="Fecha y hora de la configuración.")
-    mecanicos_sobre_limite: list[dict[str, int]] = Field(
+    mecanicos_sobre_limite: list[MecanicoSobreLimite] = Field(
         description="Mecánicos cuya carga actual supera el máximo recién configurado."
     )
 

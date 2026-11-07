@@ -49,6 +49,7 @@ from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
     CapacidadMecanicoActualizar as Ms2CapacidadMecanicoActualizar,
     CapacidadMecanicoRespuesta as Ms2CapacidadMecanicoRespuesta,
+    MecanicoSobreLimite as Ms2MecanicoSobreLimite,
     CupoDiarioIngresosActualizar as Ms2CupoDiarioIngresosActualizar,
     CupoDiarioIngresosRespuesta as Ms2CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
@@ -238,7 +239,7 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
 
 def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["info"]["title"] == "SGTM — API Gateway"
-    assert esquema["info"]["version"] == "2.2.0"
+    assert esquema["info"]["version"] == "2.2.1"
     assert esquema["openapi"].startswith("3.")
 
 
@@ -506,6 +507,10 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
             Ms2CapacidadMecanicoRespuesta,
         ),
         (
+            contratos_ordenes.MecanicoSobreLimite,
+            Ms2MecanicoSobreLimite,
+        ),
+        (
             contratos_ordenes.CupoDiarioIngresosActualizar,
             Ms2CupoDiarioIngresosActualizar,
         ),
@@ -630,6 +635,7 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "BitacoraRespuesta",
         "RepuestoBitacoraEntrada",
         "RepuestoBitacoraRespuesta",
+        "MecanicoSobreLimite",
         "EvidenciaSubida",
         "EvidenciaRespuesta",
         "UrlDescargaRespuesta",

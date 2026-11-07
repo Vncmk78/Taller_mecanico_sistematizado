@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import {
+  Bell,
   LayoutDashboard,
   ClipboardList,
   Users,
@@ -7,7 +8,6 @@ import {
   Package,
   Truck,
   Search,
-  Bell,
 } from 'lucide-react';
 import { useAuth } from '@/presentation/components/auth/authContext';
 import { RoleLayout } from '@/presentation/components/layout/RoleLayout';
@@ -19,6 +19,7 @@ const sections = [
       { to: '/admin', icon: <LayoutDashboard className="w-5 h-5" />, label: 'Panel de Control', end: true },
       { to: '/admin/ordenes', icon: <ClipboardList className="w-5 h-5" />, label: 'Gestión de Órdenes' },
       { to: '/admin/clientes', icon: <Users className="w-5 h-5" />, label: 'Clientes' },
+      { to: '/admin/notificaciones', icon: <Bell className="w-5 h-5" />, label: 'Centro de avisos' },
     ],
   },
   {
@@ -57,15 +58,6 @@ export function AdminLayout() {
             className="py-2.5 px-4 bg-bg-secondary border-none rounded-lg text-text-main text-sm outline-none w-[350px] placeholder:text-text-muted"
           />
         </div>
-      }
-      headerRightPrepend={
-        <button
-          type="button"
-          aria-label="Notificaciones"
-          className="text-text-muted hover:text-primary-blue transition-colors cursor-pointer bg-transparent border-none p-1"
-        >
-          <Bell className="w-5 h-5" />
-        </button>
       }
     />
   );

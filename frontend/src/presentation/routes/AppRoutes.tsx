@@ -30,6 +30,7 @@ import { MechanicOrdersPage } from '@/presentation/pages/mechanic/MechanicOrders
 import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicOrderDetailPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
 import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage';
+import { NotificationsPage } from '@/presentation/pages/shared/NotificationsPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
 import { PublicOnlyRoute } from '@/presentation/components/auth/PublicOnlyRoute';
 
@@ -67,6 +68,7 @@ export function AppRoutes() {
         <Route path="vehiculos/:id" element={<AdminVehicleDetailPage />} />
         <Route path="inventario" element={<AdminInventoryPage />} />
         <Route path="distribuidores" element={<AdminDistributorsPage />} />
+        <Route path="notificaciones" element={<NotificationsPage />} />
       </Route>
 
       <Route
@@ -88,6 +90,7 @@ export function AppRoutes() {
         <Route path="ordenes/:id/evidencias" element={<ClientOrderEvidencePage />} />
         <Route path="presupuestos" element={<ClientBudgetsPage />} />
         <Route path="presupuestos/:ordenId" element={<ClientBudgetDetailPage />} />
+        <Route path="notificaciones" element={<NotificationsPage />} />
       </Route>
 
       <Route
@@ -108,6 +111,7 @@ export function AppRoutes() {
           element={<OrderEvidencePage backTo="/mechanic/ordenes" backLabel="Volver a mis órdenes" canUpload />}
         />
         <Route path="estados" element={<MechanicStatusPage />} />
+        <Route path="notificaciones" element={<NotificationsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

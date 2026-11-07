@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Car, CalendarPlus, ClipboardList, FileText } from 'lucide-react';
+import { Bell, LayoutDashboard, Car, CalendarPlus, ClipboardList, FileText } from 'lucide-react';
 import { useAuth } from '@/presentation/components/auth/authContext';
 import { RoleLayout } from '@/presentation/components/layout/RoleLayout';
 
@@ -12,6 +12,7 @@ const sections = [
       { to: '/client/servicios', icon: <ClipboardList className="w-5 h-5" />, label: 'Estado del Servicio' },
       { to: '/client/ordenes', icon: <ClipboardList className="w-5 h-5" />, label: 'Mis Órdenes' },
       { to: '/client/presupuestos', icon: <FileText className="w-5 h-5" />, label: 'Presupuestos' },
+      { to: '/client/notificaciones', icon: <Bell className="w-5 h-5" />, label: 'Avisos' },
     ],
   },
 ];

@@ -12,12 +12,13 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
+from shared.entorno import archivo_entorno
 from services.ms2_taller.direccion_ms3 import url_ms3_por_defecto
 
 
 class Settings(ServiceSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=archivo_entorno(),
         env_file_encoding="utf-8",
         env_prefix="MS2_",
         extra="ignore",

@@ -1,0 +1,160 @@
+# AMBIENTE DE PRUEBAS SEPARADO (no reemplaza a docker-compose.yml).
+#
+# Proyecto, contenedores, puertos, volúmenes, red y bucket propios: puede correr
+# al mismo tiempo que el ambiente local existente sin tocar sus datos.
+#   - Proyecto Compose: sgtm_pruebas (fijado con `name:`)
+#   - PostgreSQL MS1..MS4: 127.0.0.1:5443..5446, bases taller_msN_pruebas
+#   - MinIO: 127.0.0.1:9010 (API) y 9011 (consola), bucket evidencias-pruebas
+#   - Volúmenes: sgtm_pruebas_pg_ms1..4 y sgtm_pruebas_minio
+#
+# No usar directamente: `python scripts/ambiente_pruebas.py` verifica el destino
+# y siempre invoca Compose con -p sgtm_pruebas -f docker-compose.pruebas.yml
+# --env-file .env.pruebas (sin --env-file, Compose interpolaría desde .env).
+# Las credenciales no tienen valores por defecto: si falta una, Compose falla.
+name: sgtm_pruebas
+
+services:
+  db_ms1:
+    image: postgres:16
+    container_name: sgtm_pruebas_db_ms1
+    environment:
+      POSTGRES_USER: ${PRUEBAS_PG_USUARIO:?Falta PRUEBAS_PG_USUARIO en .env.pruebas}
+      POSTGRES_PASSWORD: ${PRUEBAS_PG_CLAVE:?Falta PRUEBAS_PG_CLAVE en .env.pruebas}
+      POSTGRES_DB: taller_ms1_pruebas
+    ports: ["127.0.0.1:5443:5432"]
+    volumes:
+      - pg_ms1:/var/lib/postgresql/data
+      - ./pruebas/initdb:/docker-entrypoint-initdb.d:ro
+    labels: {sgtm.ambiente: pruebas}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d taller_ms1_pruebas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  db_ms2:
+    image: postgres:16
+    container_name: sgtm_pruebas_db_ms2
+    environment:
+      POSTGRES_USER: ${PRUEBAS_PG_USUARIO:?Falta PRUEBAS_PG_USUARIO en .env.pruebas}
+      POSTGRES_PASSWORD: ${PRUEBAS_PG_CLAVE:?Falta PRUEBAS_PG_CLAVE en .env.pruebas}
+      POSTGRES_DB: taller_ms2_pruebas
+    ports: ["127.0.0.1:5444:5432"]
+    volumes:
+      - pg_ms2:/var/lib/postgresql/data
+      - ./pruebas/initdb:/docker-entrypoint-initdb.d:ro
+    labels: {sgtm.ambiente: pruebas}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d taller_ms2_pruebas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  db_ms3:
+    image: postgres:16
+    container_name: sgtm_pruebas_db_ms3
+    environment:
+      POSTGRES_USER: ${PRUEBAS_PG_USUARIO:?Falta PRUEBAS_PG_USUARIO en .env.pruebas}
+      POSTGRES_PASSWORD: ${PRUEBAS_PG_CLAVE:?Falta PRUEBAS_PG_CLAVE en .env.pruebas}
+      POSTGRES_DB: taller_ms3_pruebas
+    ports: ["127.0.0.1:5445:5432"]
+    volumes:
+      - pg_ms3:/var/lib/postgresql/data
+      - ./pruebas/initdb:/docker-entrypoint-initdb.d:ro
+    labels: {sgtm.ambiente: pruebas}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d taller_ms3_pruebas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  db_ms4:
+    image: postgres:16
+    container_name: sgtm_pruebas_db_ms4
+    environment:
+      POSTGRES_USER: ${PRUEBAS_PG_USUARIO:?Falta PRUEBAS_PG_USUARIO en .env.pruebas}
+      POSTGRES_PASSWORD: ${PRUEBAS_PG_CLAVE:?Falta PRUEBAS_PG_CLAVE en .env.pruebas}
+      POSTGRES_DB: taller_ms4_pruebas
+    ports: ["127.0.0.1:5446:5432"]
+    volumes:
+      - pg_ms4:/var/lib/postgresql/data
+      - ./pruebas/initdb:/docker-entrypoint-initdb.d:ro
+    labels: {sgtm.ambiente: pruebas}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d taller_ms4_pruebas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:999718c09ef5d2ac888aa97ffd628a67ba8be2d64d6eea9e719d1f58cd59e204
+    container_name: sgtm_pruebas_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${PRUEBAS_MINIO_ROOT_USUARIO:?Falta PRUEBAS_MINIO_ROOT_USUARIO en .env.pruebas}
+      MINIO_ROOT_PASSWORD: ${PRUEBAS_MINIO_ROOT_CLAVE:?Falta PRUEBAS_MINIO_ROOT_CLAVE en .env.pruebas}
+    ports:
+      - "127.0.0.1:9010:9000" # API S3
+      - "127.0.0.1:9011:9001" # Consola web
+    volumes:
+      - minio:/data
+    labels: {sgtm.ambiente: pruebas}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - '/usr/bin/mc --config-dir /tmp/mc-live alias set local http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 && /usr/bin/mc --config-dir /tmp/mc-live ready local >/dev/null 2>&1'
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Bucket privado evidencias-pruebas con la etiqueta ambiente=sgtm-pruebas
+  # (la verificación del destino la exige) y el usuario de MS4 de este ambiente,
+  # con permisos solo sobre ese bucket. Idempotente.
+  minio_init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: sgtm_pruebas_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        /usr/bin/mc alias set sgtm http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        /usr/bin/mc mb --ignore-existing sgtm/evidencias-pruebas
+        /usr/bin/mc anonymous set none sgtm/evidencias-pruebas
+        /usr/bin/mc tag set sgtm/evidencias-pruebas "ambiente=sgtm-pruebas"
+        /usr/bin/mc admin user add sgtm "$${MS4_S3_ACCESS_KEY}" "$${MS4_S3_SECRET_KEY}" || true
+        /usr/bin/mc admin policy create sgtm politica-ms4-pruebas /config/politica-ms4-pruebas.json || true
+        /usr/bin/mc admin policy attach sgtm politica-ms4-pruebas --user "$${MS4_S3_ACCESS_KEY}" || true
+        INFO_USUARIO=$(/usr/bin/mc admin user info sgtm "$${MS4_S3_ACCESS_KEY}")
+        case "$$INFO_USUARIO" in
+          *politica-ms4-pruebas*) ;;
+          *) echo "Política no asignada al usuario MS4 de pruebas"; exit 1 ;;
+        esac
+    volumes:
+      - ./minio:/config:ro
+    environment:
+      MINIO_ROOT_USER: ${PRUEBAS_MINIO_ROOT_USUARIO:?Falta PRUEBAS_MINIO_ROOT_USUARIO en .env.pruebas}
+      MINIO_ROOT_PASSWORD: ${PRUEBAS_MINIO_ROOT_CLAVE:?Falta PRUEBAS_MINIO_ROOT_CLAVE en .env.pruebas}
+      MS4_S3_ACCESS_KEY: ${MS4_S3_ACCESS_KEY:?Falta MS4_S3_ACCESS_KEY en .env.pruebas}
+      MS4_S3_SECRET_KEY: ${MS4_S3_SECRET_KEY:?Falta MS4_S3_SECRET_KEY en .env.pruebas}
+    labels: {sgtm.ambiente: pruebas}
+    restart: "no"
+
+volumes:
+  pg_ms1:
+    name: sgtm_pruebas_pg_ms1
+  pg_ms2:
+    name: sgtm_pruebas_pg_ms2
+  pg_ms3:
+    name: sgtm_pruebas_pg_ms3
+  pg_ms4:
+    name: sgtm_pruebas_pg_ms4
+  minio:
+    name: sgtm_pruebas_minio
+
+networks:
+  default:
+    name: sgtm_pruebas_red

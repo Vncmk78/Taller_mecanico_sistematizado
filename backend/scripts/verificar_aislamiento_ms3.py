@@ -28,7 +28,7 @@ from services.ms3_presupuestos.db import Base, engine  # noqa: E402
 
 def _urls_de_otros_servicios() -> dict[str, str]:
     # Se leen como texto: no hace falta configurar los otros servicios completos.
-    entorno = {**dotenv_values(".env"), **os.environ}
+    entorno = {**dotenv_values((os.environ.get("SGTM_ENV_FILE") or ".env")), **os.environ}
     return {s: entorno.get(f"{s}_DATABASE_URL") or ""
             for s in ("MS1", "MS2", "MS4")}
 

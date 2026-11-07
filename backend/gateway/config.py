@@ -13,13 +13,15 @@ from typing import Annotated
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from shared.entorno import archivo_entorno
+
 
 class GatewaySettings(BaseSettings):
     """Configuración del API Gateway."""
 
     model_config = SettingsConfigDict(
         env_prefix="GATEWAY_",
-        env_file=".env",
+        env_file=archivo_entorno(),
         env_file_encoding="utf-8",
         extra="ignore",
     )

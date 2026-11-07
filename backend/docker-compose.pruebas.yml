@@ -111,7 +111,9 @@ services:
   # (la verificación del destino la exige) y el usuario de MS4 de este ambiente,
   # con permisos solo sobre ese bucket. Idempotente.
   minio_init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    # La imagen del servidor ya incluye /bin/sh y /usr/bin/mc. Reutilizarla
+    # evita descargar otro cliente desde un registro distinto.
+    image: cgr.dev/chainguard/minio@sha256:999718c09ef5d2ac888aa97ffd628a67ba8be2d64d6eea9e719d1f58cd59e204
     container_name: sgtm_pruebas_minio_init
     depends_on:
       minio:

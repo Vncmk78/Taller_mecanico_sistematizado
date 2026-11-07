@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CheckCheck, RefreshCw } from 'lucide-react';
 import type { Notification } from '@/domain/entities/Notification';
 import { notificationService } from '@/infrastructure/api/NotificationService';
@@ -34,8 +34,10 @@ export function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const requestSeqRef = useRef(0);
 
   const cargar = useCallback(async (modo: 'initial' | 'refresh' = 'initial') => {
+    const seq = ++requestSeqRef.current;
     if (modo === 'initial') setLoading(true);
     else setRefreshing(true);
     setError(null);
@@ -44,14 +46,18 @@ export function NotificationsPage() {
         soloNoLeidas: filtro === 'no-leidas',
         limit: 100,
       });
+      if (seq !== requestSeqRef.current) return; // respuesta obsoleta (cambio de filtro/refresco)
       setItems(res.items);
       setTotal(res.total);
       setNoLeidas(res.noLeidas);
     } catch {
+      if (seq !== requestSeqRef.current) return;
       setError('No se pudieron cargar las notificaciones.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (seq === requestSeqRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [filtro]);
 

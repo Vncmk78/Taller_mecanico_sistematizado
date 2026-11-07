@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+﻿import type { ReactNode } from 'react';
 import { Menu } from 'lucide-react';
+import { NotificationBell } from '@/presentation/components/notifications/NotificationBell';
 import { UserMenu } from '@/presentation/components/layout/UserMenu';
 
 interface TopBarProps {
@@ -48,7 +49,12 @@ export function TopBar({
           userName={userName}
           subtitle={userSubtitle}
           onLogout={onLogout}
-          prepend={rightPrepend}
+          prepend={
+            <>
+              <NotificationBell />
+              {rightPrepend}
+            </>
+          }
         />
       </div>
     </header>

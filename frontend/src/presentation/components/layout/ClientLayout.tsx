@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Car, CalendarPlus, ClipboardList, FileText } from 'lucide-react';
+import { Bell, LayoutDashboard, Car, CalendarPlus, ClipboardList, FileText } from 'lucide-react';
 import { RoleLayout } from '@/presentation/components/layout/RoleLayout';
 import { useRoleAccess } from '@/presentation/hooks/useRoleAccess';
 
@@ -12,6 +12,7 @@ const sections = [
       { to: '/client/servicios', icon: <ClipboardList className="w-5 h-5" />, label: 'Estado del Servicio', roles: ['cliente' as const] },
       { to: '/client/ordenes', icon: <ClipboardList className="w-5 h-5" />, label: 'Mis Órdenes', roles: ['cliente' as const] },
       { to: '/client/presupuestos', icon: <FileText className="w-5 h-5" />, label: 'Presupuestos', roles: ['cliente' as const] },
+      { to: '/client/notificaciones', icon: <Bell className="w-5 h-5" />, label: 'Avisos', roles: ['cliente' as const] },
     ],
   },
 ];

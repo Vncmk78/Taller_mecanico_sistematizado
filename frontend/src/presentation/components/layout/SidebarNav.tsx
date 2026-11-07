@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { AppBrand } from '@/presentation/components/layout/AppBrand';
 import { AppNavLink, type NavSection } from '@/presentation/components/layout/AppNavLink';
@@ -10,6 +11,41 @@ interface SidebarNavProps {
 }
 
 export function SidebarNav({ sections, open = false, onClose }: SidebarNavProps) {
+  const asideRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const aside = asideRef.current;
+    const focusable = aside?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    focusable?.[0]?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose?.();
+        return;
+      }
+      if (event.key !== 'Tab' || !focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      const trigger = document.querySelector<HTMLElement>('[aria-controls="navegacion-lateral"]');
+      trigger?.focus();
+    };
+  }, [open, onClose]);
+
   return (
     <>
       {open && (
@@ -21,8 +57,11 @@ export function SidebarNav({ sections, open = false, onClose }: SidebarNavProps)
         />
       )}
       <aside
+        ref={asideRef}
         id="navegacion-lateral"
         aria-label="Menú lateral"
+        aria-modal={open ? true : undefined}
+        role={open ? 'dialog' : undefined}
         className={`fixed inset-y-0 left-0 z-40 flex w-[280px] max-w-[85vw] flex-col border-r border-[#0B1017] bg-primary-blue transition-transform duration-300 lg:sticky lg:top-0 lg:z-10 lg:h-screen lg:translate-x-0 lg:shrink-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}

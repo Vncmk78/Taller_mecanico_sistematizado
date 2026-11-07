@@ -78,6 +78,22 @@ ORDEN: Campos = {  # OrderService.ts → OrdenRespuesta
     "creado_en": "string",
     "actualizado_en": "string",
 }
+CUPO_DIARIO: Campos = {  # ConfiguracionTallerService.ts → CupoDiarioApi
+    "max_ingresos_diarios": "?integer",
+    "actualizado_por_id": "?integer",
+    "actualizado_en": "string",
+    "jornada_local": "string",
+    "ingresos_registrados": "integer",
+    "sobre_limite": "boolean",
+}
+
+CAPACIDAD_MECANICOS: Campos = {  # ConfiguracionTallerService.ts → CapacidadMecanicosApi
+    "max_ordenes_activas": "?integer",
+    "actualizado_por_id": "?integer",
+    "actualizado_en": "string",
+    "mecanicos_sobre_limite": [{"mecanico_id": "integer", "ordenes_activas": "integer"}],
+}
+
 HISTORIAL: Campos = {  # OrderService.ts → HistorialEstadoApi
     "historial_id": "integer",
     "orden_id": "integer",
@@ -203,6 +219,29 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
     ),
     # ── OrderService ────────────────────────────────────────────────────
     ConsumoWeb("OrderService.getOrders", "get", "/api/ordenes", "200", [ORDEN]),
+    ConsumoWeb(
+        "OrderService.crearOrden", "post", "/api/ordenes", "201", ORDEN,
+        cuerpo={"vehiculo_id": "integer"},
+    ),
+    # ── ConfiguracionTallerService (portal Administrador) ───────────────
+    ConsumoWeb(
+        "ConfiguracionTallerService.obtenerCupoDiario", "get",
+        "/api/ordenes/configuracion/capacidad/ingresos-diarios", "200", CUPO_DIARIO,
+    ),
+    ConsumoWeb(
+        "ConfiguracionTallerService.configurarCupoDiario", "put",
+        "/api/ordenes/configuracion/capacidad/ingresos-diarios", "200", CUPO_DIARIO,
+        cuerpo={"max_ingresos_diarios": "integer"},
+    ),
+    ConsumoWeb(
+        "ConfiguracionTallerService.obtenerCapacidadMecanicos", "get",
+        "/api/ordenes/configuracion/capacidad/mecanicos", "200", CAPACIDAD_MECANICOS,
+    ),
+    ConsumoWeb(
+        "ConfiguracionTallerService.configurarCapacidadMecanicos", "put",
+        "/api/ordenes/configuracion/capacidad/mecanicos", "200", CAPACIDAD_MECANICOS,
+        cuerpo={"max_ordenes_activas": "integer"},
+    ),
     ConsumoWeb("OrderService.getOrderById", "get", "/api/ordenes/{orden_id}", "200", ORDEN),
     ConsumoWeb(
         "OrderService.getOrderHistory", "get", "/api/ordenes/{orden_id}/historial", "200",

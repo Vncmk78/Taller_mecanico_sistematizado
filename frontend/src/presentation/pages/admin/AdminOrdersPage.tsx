@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
-import { ClipboardList } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ClipboardList, ClipboardPlus } from 'lucide-react';
 import { ordenStatusLabel } from '@/domain/entities/Order';
 import { OrderCard } from '@/presentation/components/orders/OrderCard';
+import { RegistrarIngresoPanel } from '@/presentation/components/orders/RegistrarIngresoPanel';
+import { Button } from '@/presentation/components/ui/Button';
 import { OrderListSkeleton } from '@/presentation/components/orders/OrderListSkeleton';
 import { OrderListToolbar } from '@/presentation/components/orders/OrderListToolbar';
 import { OrderPagination } from '@/presentation/components/orders/OrderPagination';
@@ -19,6 +21,7 @@ import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 export function AdminOrdersPage() {
     const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
+    const [registrando, setRegistrando] = useState(false);
 
     const loadOrders = () => fetchOrders(() => orderService.getOrders());
 
@@ -67,7 +70,21 @@ export function AdminOrdersPage() {
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Gestión de Órdenes</h2>
                     <p className="text-text-muted text-lg">Administración de órdenes de trabajo del taller</p>
                 </div>
+                <Button
+                    variant={registrando ? 'secondary' : 'accent'}
+                    onClick={() => setRegistrando((v) => !v)}
+                    aria-expanded={registrando}
+                    className="flex items-center gap-2"
+                >
+                    <ClipboardPlus className="w-5 h-5" aria-hidden />
+                    {registrando ? 'Cerrar registro de ingreso' : 'Registrar ingreso'}
+                </Button>
             </div>
+            {registrando && (
+                <div className="px-4 sm:px-6 lg:px-10 pb-6">
+                    <RegistrarIngresoPanel />
+                </div>
+            )}
 
             <div className="px-4 sm:px-6 lg:px-10 pb-6">
                 <OrderListToolbar

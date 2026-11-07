@@ -10,6 +10,12 @@ export interface OrderPort {
     ): Promise<{ items: Order[]; total: number; limit: number; offset: number }>;
     /** Lista de órdenes visibles para el rol autenticado (el servidor filtra por rol). */
     getOrders(): Promise<Order[]>;
+    /**
+     * Registra el ingreso físico y crea la orden en Recibido, sin mecánico
+     * (POST /ordenes, solo Administrador). MS2 valida el cupo diario y reutiliza
+     * el ingreso abierto del vehículo si existe, sin contarlo dos veces.
+     */
+    crearOrden(vehiculoId: string): Promise<Order>;
     /** Detalle de una orden por id (404 si no está en el alcance del rol). */
     getOrderById(id: string): Promise<Order>;
     /** Historial de cambios de estado de una orden (el servidor filtra por rol). */

@@ -12,6 +12,7 @@ import { AdminVehicleDetailPage } from '@/presentation/pages/admin/AdminVehicleD
 import { AdminOrdersPage } from '@/presentation/pages/admin/AdminOrdersPage';
 import { AdminOrderDetailPage } from '@/presentation/pages/admin/AdminOrderDetailPage';
 import { AdminClientsPage } from '@/presentation/pages/admin/AdminClientsPage';
+import { AdminConfigurationPage } from '@/presentation/pages/admin/AdminConfigurationPage';
 import { AdminInventoryPage } from '@/presentation/pages/admin/AdminInventoryPage';
 import { AdminInventoryAlertsPage } from '@/presentation/pages/admin/AdminInventoryAlertsPage';
 import { AdminInventoryMovementsPage } from '@/presentation/pages/admin/AdminInventoryMovementsPage';
@@ -79,6 +80,7 @@ export function AppRoutes() {
           element={<OrderEvidencePage backTo="/admin/ordenes" backLabel="Volver a la gestión de órdenes" canUpload />}
         />
         <Route path="clientes" element={<AdminClientsPage />} />
+        <Route path="configuracion" element={<AdminConfigurationPage />} />
         <Route path="vehiculos" element={<AdminVehiclesPage />} />
         <Route path="vehiculos/:id" element={<AdminVehicleDetailPage />} />
         <Route path="inventario" element={<AdminInventoryPage />} />

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import type { User, UsuarioListado } from '@/domain/entities/User';
@@ -250,5 +251,59 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         expect(screen.getByRole('button', { name: 'Asignar mecánico' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Confirmar cancelación' })).toBeDisabled();
         expect(screen.getByText(/para modificar el estado de la orden necesita estar conectado/)).toBeInTheDocument();
+    });
+
+    it('el administrador reasigna sin ofrecer al responsable actual y conserva el estado', async () => {
+        useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
+        vi.mocked(orderService.asignarMecanico).mockResolvedValue(
+            orden({ estadoCodigo: 3, mecanicoActualId: '51' })
+        );
+
+        renderPanel(orden({ estadoCodigo: 3, mecanicoActualId: '50' }));
+
+        const boton = screen.getByRole('button', { name: 'Reasignar mecánico' });
+        await screen.findByRole('option', { name: 'Jefe Taller' });
+        expect(screen.queryByRole('option', { name: 'Martín Herrera' })).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Nuevo mecánico responsable')).toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText('Mecánico para la orden 101'), {
+            target: { value: '51' },
+        });
+        fireEvent.click(boton);
+
+        const dialog = await screen.findByRole('dialog', { name: '¿Confirmar la reasignación?' });
+        expect(screen.getByText(/pasará a Jefe Taller y conservará su estado/)).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Reasignar mecánico' }));
+
+        await waitFor(() =>
+            expect(orderService.asignarMecanico).toHaveBeenCalledWith('101', '51', '')
+        );
+        expect(await screen.findByText(/reasignada. Conserva el estado/)).toBeInTheDocument();
+    });
+
+    it('muestra el rechazo por capacidad de MS2 sin cambiar la orden', async () => {
+        useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
+        const config = { headers: new AxiosHeaders() } as InternalAxiosRequestConfig;
+        vi.mocked(orderService.asignarMecanico).mockRejectedValue(
+            new AxiosError('409', '409', config, undefined, {
+                status: 409, statusText: '', headers: {}, config,
+                data: { detail: 'El mecánico alcanzó el máximo de órdenes activas' },
+            })
+        );
+        const actualizar = vi.spyOn(useOrderStore.getState(), 'updateOrder');
+
+        renderPanel(orden({ estadoCodigo: 1 }));
+        await screen.findByRole('option', { name: 'Martín Herrera' });
+        fireEvent.change(screen.getByLabelText('Mecánico para la orden 101'), {
+            target: { value: '50' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Asignar mecánico' }));
+        const dialog = await screen.findByRole('dialog');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Asignar mecánico' }));
+
+        expect(
+            await screen.findByText('El mecánico alcanzó el máximo de órdenes activas')
+        ).toBeInTheDocument();
+        expect(actualizar).not.toHaveBeenCalled();
     });
 });

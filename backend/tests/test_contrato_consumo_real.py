@@ -37,7 +37,7 @@ from services.ms1_auth.models.usuario import Usuario
 from services.ms1_auth.security.passwords import hash_contrasena
 from services.ms2_taller.integracion_ms3 import obtener_verificador_aprobacion_inicial
 from services.ms2_taller.main import app as app_ms2
-from services.ms2_taller.models import ConfiguracionCapacidadMecanico, OrdenTrabajo
+from services.ms2_taller.models import OrdenTrabajo
 from services.ms2_taller.models.estado_orden import EN_REPARACION
 from shared.auth import NombreRol
 from shared.contratos_decisiones import AprobacionInicialOrdenVerificada
@@ -56,8 +56,16 @@ _JSON = "application/json"
 
 # Diferencias abiertas del consumo web: clave de ConsumoWeb -> ID del documento.
 _DIFERENCIAS_WEB: dict[str, str] = {
-    # Vacío: D-01 se corrigió en el frontend (SCRUM-706) y D-02 en el contrato
-    # 2.0.1. Una diferencia nueva se registra aquí con un ID nuevo (D-04, …).
+    # D-01 se corrigió en el frontend (SCRUM-706), D-02 en el contrato 2.0.1 y
+    # D-03 en el frontend. Una diferencia nueva se registra aquí con un ID nuevo.
+    "ConfiguracionTallerService.obtenerCapacidadMecanicos GET "
+    "/api/ordenes/configuracion/capacidad/mecanicos": (
+        "D-04: el contrato publica mecanicos_sobre_limite como list[dict[str, int]] sin nombrar mecanico_id ni ordenes_activas, que MS2 devuelve y la web lee"
+    ),
+    "ConfiguracionTallerService.configurarCapacidadMecanicos PUT "
+    "/api/ordenes/configuracion/capacidad/mecanicos": (
+        "D-04: el contrato publica mecanicos_sobre_limite como list[dict[str, int]] sin nombrar mecanico_id ni ordenes_activas, que MS2 devuelve y la web lee"
+    ),
 }
 
 # Diferencias abiertas de las respuestas vivas: (MÉTODO ruta estado) -> ID.
@@ -279,12 +287,6 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
     app_ms2.dependency_overrides[obtener_verificador_aprobacion_inicial] = (
         lambda: _SinAprobacionInicial()
     )
-    sesion_ms2.add(
-        ConfiguracionCapacidadMecanico(
-            configuracion_id=1, max_ordenes_activas=5, actualizado_por_id=99
-        )
-    )
-    sesion_ms2.commit()
     registro: list[tuple[str, str, int, Any]] = []
 
     def llamar(metodo: str, ruta: str, url: str, token: str | None = None, **kwargs):
@@ -321,6 +323,15 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
         administrador = crear_administrador(sesion_ms1, gw, *ADMINISTRADOR)
         mecanico = _crear_mecanico(sesion_ms1, gw)
         mecanico_id = gw.get("/api/auth/me", headers=autorizacion(mecanico)).json()["id"]
+        # El Administrador configura los límites desde la web (antes la
+        # capacidad se insertaba directamente en la base de MS2).
+        cupo = "/api/ordenes/configuracion/capacidad/ingresos-diarios"
+        capacidad = "/api/ordenes/configuracion/capacidad/mecanicos"
+        llamar("GET", cupo, cupo, administrador)
+        llamar("PUT", cupo, cupo, administrador, json={"max_ingresos_diarios": 50})
+        llamar("GET", capacidad, capacidad, administrador)
+        llamar("PUT", capacidad, capacidad, administrador, json={"max_ordenes_activas": 5})
+        llamar("PUT", capacidad, capacidad, administrador, json={"max_ordenes_activas": 0})
         orden_id = llamar("POST", "/api/ordenes", "/api/ordenes", administrador,
                           json={"vehiculo_id": vehiculo_id}).json()["orden_id"]
         base = f"/api/ordenes/{orden_id}"
@@ -438,6 +449,10 @@ def test_el_recorrido_cubre_exitos_y_errores_del_consumo(respuestas_reales) -> N
     assert esperadas <= cubiertas, sorted(esperadas - cubiertas)
     for esperado in [
         ("post", "/api/auth/login", 401),
+        ("put", "/api/ordenes/configuracion/capacidad/mecanicos", 200),
+        ("put", "/api/ordenes/configuracion/capacidad/mecanicos", 422),
+        ("put", "/api/ordenes/configuracion/capacidad/ingresos-diarios", 200),
+        ("post", "/api/ordenes", 201),
         ("post", "/api/auth/register", 201),
         ("get", "/api/vehiculos", 404),
         ("get", "/api/clientes/perfil", 404),

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import {
+  Bell,
   LayoutDashboard,
   ClipboardList,
   Users,
@@ -7,7 +8,6 @@ import {
   Package,
   Truck,
   Search,
-  Bell,
   AlertTriangle,
   ListOrdered,
   Gauge,
@@ -22,6 +22,7 @@ const sections = [
       { to: '/admin', icon: <LayoutDashboard className="w-5 h-5" />, label: 'Panel de Control', end: true, roles: ['administrador' as const] },
       { to: '/admin/ordenes', icon: <ClipboardList className="w-5 h-5" />, label: 'Gestión de Órdenes', roles: ['administrador' as const] },
       { to: '/admin/clientes', icon: <Users className="w-5 h-5" />, label: 'Clientes', roles: ['administrador' as const] },
+      { to: '/admin/notificaciones', icon: <Bell className="w-5 h-5" />, label: 'Centro de avisos', roles: ['administrador' as const] },
     ],
   },
   {
@@ -72,15 +73,6 @@ export function AdminLayout() {
             className="py-2.5 px-4 bg-bg-secondary border-none rounded-lg text-text-main text-sm outline-none w-[220px] lg:w-[350px] placeholder:text-text-muted"
           />
         </div>
-      }
-      headerRightPrepend={
-        <button
-          type="button"
-          aria-label="Notificaciones"
-          className="text-text-muted hover:text-primary-blue transition-colors cursor-pointer bg-transparent border-none p-1"
-        >
-          <Bell className="w-5 h-5" />
-        </button>
       }
     />
   );

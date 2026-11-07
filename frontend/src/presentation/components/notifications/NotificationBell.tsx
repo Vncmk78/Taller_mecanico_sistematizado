@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, CheckCheck, X } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Bell, CheckCheck, ExternalLink, X } from 'lucide-react';
 import type { Notification } from '@/domain/entities/Notification';
 import { notificationService } from '@/infrastructure/api/NotificationService';
 
@@ -19,7 +20,16 @@ interface NotificationBellProps {
   tone?: 'light' | 'dark';
 }
 
+function getCenterPath(pathname: string): string | null {
+  if (pathname.startsWith('/admin')) return '/admin/notificaciones';
+  if (pathname.startsWith('/client')) return '/client/notificaciones';
+  if (pathname.startsWith('/mechanic')) return '/mechanic/notificaciones';
+  return null;
+}
+
 export function NotificationBell({ className = '', tone = 'light' }: NotificationBellProps) {
+  const { pathname } = useLocation();
+  const centerPath = getCenterPath(pathname);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Notification[]>([]);
@@ -188,6 +198,17 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
               </ul>
             )}
           </div>
+          {centerPath && (
+            <div className="border-t border-border-custom bg-surface-elevated px-3 py-2">
+              <Link
+                to={centerPath}
+                onClick={() => setOpen(false)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-primary-blue hover:bg-primary-blue/10">
+                <ExternalLink className="w-4 h-4" aria-hidden />
+                Ver centro de avisos
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </div>

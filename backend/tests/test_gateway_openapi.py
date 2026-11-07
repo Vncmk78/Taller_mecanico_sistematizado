@@ -239,7 +239,7 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
 
 def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["info"]["title"] == "SGTM — API Gateway"
-    assert esquema["info"]["version"] == "2.2.1"
+    assert esquema["info"]["version"] == "3.0.0"
     assert esquema["openapi"].startswith("3.")
 
 

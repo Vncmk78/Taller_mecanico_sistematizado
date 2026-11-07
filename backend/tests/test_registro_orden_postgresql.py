@@ -6,9 +6,8 @@ un esquema propio, aplica las migraciones reales de MS2 y lo elimina al final.
 
 Comprueba que el bloqueo de la configuración del cupo serializa las altas
 simultáneas, que los rechazos quedan auditados con los datos leídos bajo ese
-bloqueo, que un ingreso abierto se reutiliza aun con altas simultáneas del
-mismo vehículo y que una falla deshace ingreso, orden, historial y evento.
-No agrega ninguna regla sobre varias órdenes activas por vehículo.
+bloqueo, que altas simultáneas del mismo vehículo crean una sola orden activa
+y que una falla deshace ingreso, orden, historial y evento.
 """
 
 from __future__ import annotations
@@ -22,7 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, func, select, text, update
+from sqlalchemy import create_engine, func, inspect, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import sessionmaker
 
@@ -43,7 +43,9 @@ from services.ms2_taller.services.cupo_ingresos import (
     CupoDiarioExcedidoError,
     CupoDiarioNoConfiguradoError,
 )
-from services.ms2_taller.services.ordenes import PersistenciaOrdenError, crear_orden
+from services.ms2_taller.services.ordenes import (
+    PersistenciaOrdenError, VehiculoConOrdenActivaError, crear_orden,
+)
 
 _VARIABLE = "REGISTRO_ORDEN_MS2_TEST_URL"
 ADMIN = 99
@@ -159,18 +161,22 @@ def test_altas_simultaneas_nunca_superan_el_cupo_y_auditan_cada_rechazo(
             for v in rechazadas} == {("cupo_excedido", maximo, maximo, None)}
 
 
-def test_altas_simultaneas_del_mismo_vehiculo_comparten_un_ingreso(motor_pg: Engine) -> None:
-    """Comportamiento vigente: se reutiliza el ingreso abierto (sin regla nueva)."""
+def test_altas_simultaneas_del_mismo_vehiculo_crean_una_sola_orden(motor_pg: Engine) -> None:
+    """El lock del vehículo serializa la consulta y los tres rechazos."""
 
     _fijar_cupo(motor_pg, 5)
     (vehiculo_id,) = _vehiculos(motor_pg, 1)
 
     resultados = _crear_en_paralelo(motor_pg, [vehiculo_id] * 4)
 
-    assert all(isinstance(r, OrdenTrabajo) for r in resultados)
-    assert len({r.ingreso_id for r in resultados}) == 1
+    exitos = [r for r in resultados if isinstance(r, OrdenTrabajo)]
+    rechazos = [r for r in resultados if isinstance(r, VehiculoConOrdenActivaError)]
+    assert len(exitos) == 1 and len(rechazos) == 3
+    assert {r.orden_id for r in rechazos} == {exitos[0].orden_id}
     assert _contar(motor_pg, IngresoVehiculo) == 1
-    assert _contar(motor_pg, OrdenTrabajo) == 4
+    assert _contar(motor_pg, OrdenTrabajo) == 1
+    assert _contar(motor_pg, HistorialEstado) == 1
+    assert _contar(motor_pg, EventoOutbox) == 1
     with _sesion(motor_pg) as db:
         assert db.scalar(
             select(func.count()).select_from(HistorialValidacionCupoIngreso)
@@ -217,3 +223,54 @@ def test_falla_despues_del_ingreso_deshace_todo_y_libera_los_bloqueos(
         orden = crear_orden(db, segundo, ADMIN)
     assert orden.estado_codigo == 1
     assert _contar(motor_pg, IngresoVehiculo) == 1
+
+
+def test_migracion_aborta_con_diagnostico_y_conserva_los_duplicados(motor_pg: Engine):
+    def migrar(destino, *, bajar=False):
+        with motor_pg.begin() as conexion:
+            config = Config()
+            config.set_main_option("script_location", "services/ms2_taller/alembic")
+            config.attributes["connection"] = conexion
+            (command.downgrade if bajar else command.upgrade)(config, destino)
+
+    # Reconstruye el esquema anterior exclusivamente dentro de la base
+    # desechable de esta prueba; no toca el ambiente de demostración.
+    migrar("0012_integracion_ms2", bajar=True)
+    _fijar_cupo(motor_pg, 5)
+    (vehiculo_id,) = _vehiculos(motor_pg, 1)
+    with _sesion(motor_pg) as db:
+        primera = crear_orden(db, vehiculo_id, ADMIN)
+        primera_id, ingreso_id = primera.orden_id, primera.ingreso_id
+        segunda = OrdenTrabajo(vehiculo_id=vehiculo_id, ingreso_id=ingreso_id,
+                               estado_codigo=1, creado_por_id=ADMIN)
+        db.add(segunda)
+        db.commit()
+        segunda_id = segunda.orden_id
+
+    with pytest.raises(RuntimeError) as error:
+        migrar("head")
+    assert f"vehículo {vehiculo_id}: órdenes {primera_id}, {segunda_id}" in str(error.value)
+    with motor_pg.connect() as conexion:
+        assert conexion.scalar(text("select version_num from alembic_version")) == "0012_integracion_ms2"
+        assert conexion.execute(text(
+            "select orden_id, estado_codigo from orden_trabajo order by orden_id"
+        )).all() == [(primera_id, 1), (segunda_id, 1)]
+    assert "uq_orden_activa_por_vehiculo" not in {
+        i["name"] for i in inspect(motor_pg).get_indexes("orden_trabajo")
+    }
+
+    # Simula una resolución explícita del caso, solo en datos sintéticos.
+    with _sesion(motor_pg) as db:
+        db.get(OrdenTrabajo, segunda_id).estado_codigo = 8
+        db.commit()
+    migrar("head")
+    assert "uq_orden_activa_por_vehiculo" in {
+        i["name"] for i in inspect(motor_pg).get_indexes("orden_trabajo")
+    }
+    with _sesion(motor_pg) as db:
+        db.add(OrdenTrabajo(vehiculo_id=vehiculo_id, ingreso_id=ingreso_id,
+                            estado_codigo=1, creado_por_id=ADMIN))
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+    assert _contar(motor_pg, OrdenTrabajo) == 2

@@ -65,6 +65,7 @@ from services.ms2_taller.services.ordenes import (
     OrdenTransicionNoPermitidaError,
     PersistenciaOrdenError,
     VehiculoNoEncontradoError,
+    VehiculoConOrdenActivaError,
     asignar_mecanico,
     aplicar_decision_presupuesto,
     aplicar_disponibilidad_repuestos,
@@ -406,14 +407,16 @@ def aplicar_disponibilidad(
     description=(
         "Solo Administrador. Si el vehículo no tiene un ingreso físico abierto, "
         "se valida el cupo de la jornada local antes de registrar el nuevo ingreso. "
-        "Una orden nueva que reutiliza un ingreso abierto no consume otro cupo."
+        "Una orden nueva que reutiliza un ingreso abierto no consume otro cupo. "
+        "Solo se permite una orden activa por vehículo: cualquier estado salvo "
+        "Entregado o Cancelado. Si existe otra, responde 409 sin crear registros."
     ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "Vehículo no encontrado"},
         status.HTTP_409_CONFLICT: {
-            "description": "Cupo diario agotado o aún no configurado"
+            "description": "Vehículo con orden activa, cupo diario agotado o aún no configurado"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
@@ -430,6 +433,8 @@ def registrar_orden(
 
     try:
         return crear_orden(db, body.vehiculo_id, principal.usuario_id)
+    except VehiculoConOrdenActivaError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except CupoDiarioNoConfiguradoError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

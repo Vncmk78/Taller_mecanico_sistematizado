@@ -102,11 +102,18 @@ Informa por separado:
 1. **Recorridos implementados**: `flujos_e2e_gateway.py` (registro y acceso,
    configuración, orden completa hasta la entrega, rechazo, cancelación,
    seguridad), validados contra el contrato congelado.
-2. **Problemas conocidos reproducidos** por la API con vehículos nuevos: varias
-   órdenes activas por vehículo; la entrega no registra la salida y la orden
-   siguiente reutiliza ese ingreso. No cuentan como recorridos funcionales.
-3. **Pendientes**: devolución, solicitud de nueva atención, regla de una orden
-   activa y registro de salida. Solo se comprueba que no existen; no se simulan.
+2. **Regresión y problemas conocidos**, con vehículos nuevos: desde 3.0.0, P1
+   debe rechazar la segunda orden activa con `409`; si no lo confirma, el
+   comando falla. P2 sigue reproduciendo que la entrega no registra la salida
+   y la orden siguiente reutiliza ese ingreso; ese problema no está corregido.
+3. **Estado del alcance**: devolución, solicitud de nueva atención y registro
+   de salida siguen pendientes. La regla de una orden activa está implementada
+   desde 3.0.0 y se comprueba en P1; los flujos pendientes no se simulan.
+
+Un ambiente anterior puede conservar duplicados creados al reproducir P1.
+La migración a 3.0.0 aborta y los lista; no los cancela automáticamente. Revisar
+el diagnóstico antes de decidir una reconstrucción o una resolución explícita:
+[una orden activa por vehículo](orden-activa-por-vehiculo.md).
 
 `recorridos` crea datos nuevos (vehículos `E2E*`, `PVA*`, `PSE*`). Para una
 demostración limpia, reconstruir y ejecutar solo `sembrar`.

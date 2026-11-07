@@ -105,6 +105,14 @@ class VehiculoNoEncontradoError(Exception):
     """El vehículo indicado para la nueva orden no existe."""
 
 
+class VehiculoConOrdenActivaError(Exception):
+    """El vehículo ya tiene una atención no terminal."""
+
+    def __init__(self, orden_id: int) -> None:
+        self.orden_id = orden_id
+        super().__init__(f"El vehículo ya tiene una orden activa (n° {orden_id})")
+
+
 class OrdenNoEncontradaError(Exception):
     """La orden no existe o no es visible para la identidad autenticada."""
 
@@ -372,8 +380,9 @@ def registrar_orden_sin_confirmar(
 ) -> OrdenTrabajo:
     """Núcleo del registro de una orden, sin confirmar la transacción.
 
-    Bloquea el vehículo, reutiliza su ingreso abierto o valida el cupo y crea un
-    ingreso nuevo, y agrega la orden en `Recibido` con su historial inicial (y
+    Bloquea el vehículo y rechaza otra orden activa antes de escribir. Reutiliza
+    su ingreso abierto o valida el cupo y crea un ingreso nuevo, y agrega la
+    orden en `Recibido` con su historial inicial (y
     el evento de outbox que agrega `registrar_historial_estado`). Solo hace
     `flush`: quien lo llama confirma o deshace todo junto y puede sumar otros
     cambios a la misma transacción. No hace commit ni rollback.
@@ -388,6 +397,21 @@ def registrar_orden_sin_confirmar(
     vehiculo = db.scalar(_consulta_vehiculo_para_actualizacion(vehiculo_id))
     if vehiculo is None:
         raise VehiculoNoEncontradoError("Vehículo no encontrado")
+
+    # Se consulta después de bloquear el vehículo: dos altas concurrentes no
+    # pueden comprobar a la vez que está libre. El índice parcial respalda la
+    # regla también frente a escrituras que no pasen por este servicio.
+    activa = db.scalar(
+        select(OrdenTrabajo.orden_id)
+        .where(
+            OrdenTrabajo.vehiculo_id == vehiculo_id,
+            OrdenTrabajo.estado_codigo.not_in((ENTREGADO, CANCELADO)),
+        )
+        .order_by(OrdenTrabajo.orden_id)
+        .limit(1)
+    )
+    if activa is not None:
+        raise VehiculoConOrdenActivaError(activa)
 
     ingreso = db.scalar(
         select(IngresoVehiculo)
@@ -449,7 +473,8 @@ def crear_orden(
 ) -> OrdenTrabajo:
     """Crea ingreso, orden e historial inicial dentro de una transacción.
 
-    Si ya existe una estancia abierta para el vehículo, se reutiliza sin
+    Rechaza una atención activa existente sin efectos. Si ya existe una
+    estancia abierta para el vehículo, se reutiliza sin
     consumir otro cupo diario. Un nuevo ingreso valida y audita el límite antes
     de registrarse. Un rechazo de cupo deshace todo y después guarda, en una
     transacción propia, la auditoría con los datos de la validación original.
@@ -459,7 +484,7 @@ def crear_orden(
         orden = registrar_orden_sin_confirmar(db, vehiculo_id, administrador_id)
         db.commit()
         return orden
-    except VehiculoNoEncontradoError:
+    except (VehiculoNoEncontradoError, VehiculoConOrdenActivaError):
         db.rollback()
         raise
     except (CupoDiarioNoConfiguradoError, CupoDiarioExcedidoError) as exc:

@@ -34,7 +34,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "2.2.1"
+_VERSION = "3.0.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -990,7 +990,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "registrado. Si no hay un ingreso abierto, valida el cupo "
                     "diario antes de crearlo; reutilizar un ingreso abierto no "
                     "consume otro cupo. La orden comienza en Recibido y puede "
-                    "quedar sin mecánico."
+                    "quedar sin mecánico. Solo se permite una orden activa por "
+                    "vehículo (estado distinto de Entregado o Cancelado). Si ya "
+                    "existe una, responde 409 con su número sin crear ingreso, "
+                    "orden, historial ni validación de cupo."
                 ),
                 operation_id="crear_orden",
                 cuerpo="OrdenCrear",
@@ -1000,7 +1003,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "409": "Cupo diario agotado o aún no configurado",
+                    "409": "Vehículo con orden activa, cupo diario agotado o aún no configurado",
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,

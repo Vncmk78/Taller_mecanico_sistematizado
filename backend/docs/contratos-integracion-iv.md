@@ -15,6 +15,11 @@ validó de cada una** y **qué brechas quedan** en el contrato publicado.
 
 ## 1. Alcance
 
+El contrato 3.0.0 agrega una restricción a la creación administrativa de órdenes:
+solo una activa por vehículo. `POST /api/ordenes` no pertenece al catálogo móvil,
+pero debe coordinarse la actualización de versión y verificar los recorridos
+de consulta. No se modifican los ocho estados ni las respuestas de éxito.
+
 La app móvil atiende a dos roles. El Administrador trabaja desde la web y queda
 fuera de este catálogo.
 

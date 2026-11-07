@@ -5,9 +5,15 @@ app móvil (Integración IV). La fuente de verdad interactiva está en el Swagge
 de la Gateway: <http://localhost:8000/docs> y su versión JSON en
 <http://localhost:8000/openapi.json>.
 
-**Versión estable del contrato: 2.2.0.** Copia congelada para integrar sin
-levantar la Gateway: [`docs/openapi/sgtm-gateway-2.2.0.json`](openapi/sgtm-gateway-2.2.0.json).
+**Versión estable del contrato: 3.0.0.** Copia congelada para integrar sin
+levantar la Gateway: [`docs/openapi/sgtm-gateway-3.0.0.json`](openapi/sgtm-gateway-3.0.0.json).
 Reglas de versionado e historial: [`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
+
+En 3.0.0, `POST /api/ordenes` responde `409` si el vehículo ya tiene una orden
+activa (cualquier estado salvo Entregado o Cancelado), indicando su número.
+Este rechazo no genera registros. La actualización del despliegue requiere
+coordinar consumidores y aplicar la migración con diagnóstico previo:
+[una orden activa por vehículo](orden-activa-por-vehiculo.md).
 
 Reglas que se aplican a todos los endpoints:
 

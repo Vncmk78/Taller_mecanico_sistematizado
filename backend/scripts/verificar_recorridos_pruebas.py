@@ -71,6 +71,9 @@ def problemas(r: Recorrido, tokens: dict[str, str]) -> list[tuple[str, str, str]
                                "REPRODUCIDO",
                                (f"POST /api/ordenes respondió 201 (orden {segunda['orden_id']}, "
                                 f"ingreso {segunda['ingreso_id']} compartido)")))
+        elif r.pasos[-1].estado == 409 and "orden activa" in segunda.get("detail", ""):
+            resultados.append(("P1 Se acepta una segunda orden activa para el mismo vehículo",
+                               "CORREGIDO", segunda["detail"]))
         else:
             resultados.append(("P1 Se acepta una segunda orden activa para el mismo vehículo",
                                "NO REPRODUCIDO", f"respondió {r.pasos[-1].estado}"))
@@ -113,7 +116,9 @@ def pendientes(contrato: dict) -> list[tuple[str, str]]:
         ("Solicitud de nueva atención y su revisión (Bloque 3)",
          "presente en el contrato" if "nueva-atencion" in rutas or "solicitudes" in rutas
          else "no implementada"),
-        ("Regla de una sola orden activa por vehículo y contrato 3.0.0", "no implementada"),
+        ("Regla de una sola orden activa por vehículo y contrato 3.0.0",
+         "implementada; verificar P1" if int(contrato["info"]["version"].split(".")[0]) >= 3
+         else "no implementada"),
         ("Registro de salida al entregar o devolver (salida_en)", "no implementado"),
     ]
 
@@ -142,6 +147,7 @@ def main() -> int:
               "administrador": r.login(ADMINISTRADOR)}
     encontrados = problemas(r, tokens)
     fallas_preparacion = [p for p in r.pasos if not p.ok and p.estado not in (409,)]
+    falla_orden_unica = int(version.split(".")[0]) >= 3 and encontrados[0][1] != "CORREGIDO"
 
     lineas = [
         f"# Recorridos del ambiente de pruebas — contrato {version}",
@@ -167,11 +173,13 @@ def main() -> int:
     if fallas_preparacion:
         lineas += ["Fallas al preparar las reproducciones:", ""]
         lineas += [f"- {p.flujo} / {p.nombre}: {'; '.join(p.errores)}" for p in fallas_preparacion]
+    if falla_orden_unica:
+        lineas += ["FALLA: el contrato 3.0.0 exige rechazar la segunda orden activa; P1 no lo confirmó."]
     texto = "\n".join(lineas) + "\n"
     print(texto)
     if args.salida:
         args.salida.write_text(texto, encoding="utf-8")
-    return 0 if codigo_flujos == 0 and not fallas_preparacion else 1
+    return 0 if codigo_flujos == 0 and not fallas_preparacion and not falla_orden_unica else 1
 
 
 if __name__ == "__main__":

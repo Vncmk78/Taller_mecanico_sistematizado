@@ -135,6 +135,11 @@ demuestran por sí solos que existan endpoints de devolución o nueva atención.
 
 ## Persistencia, errores y reintentos
 
+- Desde el contrato 3.0.0 solo se permite una orden activa por vehículo:
+  cualquier estado salvo Entregado o Cancelado. Crear otra devuelve `409`
+  indicando la orden existente, sin efectos. Se conserva el ingreso abierto
+  cuando una atención posterior sucede después de cancelar sin salida física.
+  [Regla, migración y despliegue](orden-activa-por-vehiculo.md).
 - MS2 bloquea la orden al cambiar su estado y confirma estado e historial en
   una transacción local. El historial conserva estado anterior/nuevo, actor,
   origen, fecha y observación cuando corresponde. Un fallo revierte el conjunto.

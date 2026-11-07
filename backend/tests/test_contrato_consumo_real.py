@@ -274,7 +274,7 @@ def _crear_mecanico(sesion_ms1, gw) -> str:
 
 
 @pytest.fixture
-def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F811
+def respuestas_reales(ecosistema, mecanicos_validos) -> list[tuple[str, str, int, Any]]:  # noqa: F811
     """Recorre los flujos de cliente y mecánico; devuelve (método, ruta, estado, body)."""
     gw, sesion_ms1, sesion_ms2 = ecosistema
     app_ms2.dependency_overrides[obtener_verificador_aprobacion_inicial] = (
@@ -330,6 +330,15 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
         base = f"/api/ordenes/{orden_id}"
         llamar("PUT", "/api/ordenes/{orden_id}/mecanico", f"{base}/mecanico", administrador,
                json={"mecanico_id": mecanico_id})
+        # Se conserva el rechazo de capacidad y luego se prepara la asignación
+        # válida: la atención debe terminar antes de abrir otra del vehículo.
+        llamar("PUT", capacidad, capacidad, administrador, json={"max_ordenes_activas": 5})
+        asignacion = llamar("PUT", "/api/ordenes/{orden_id}/mecanico", f"{base}/mecanico",
+                            administrador, json={"mecanico_id": mecanico_id})
+        assert asignacion.status_code == 200
+        duplicada = llamar("POST", "/api/ordenes", "/api/ordenes", administrador,
+                           json={"vehiculo_id": vehiculo_id})
+        assert duplicada.status_code == 409
 
         llamar("GET", "/api/ordenes", "/api/ordenes")
         llamar("GET", "/api/ordenes", "/api/ordenes", cliente)
@@ -353,8 +362,9 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
                json={"estado_destino": 6})
         llamar("PATCH", "/api/ordenes/{orden_id}/estado", f"{base}/estado", mecanico,
                json={"estado_destino": 6})
-        llamar("POST", "/api/ordenes/{orden_id}/entrega", f"{base}/entrega", administrador,
-               json={})
+        entregada = llamar("POST", "/api/ordenes/{orden_id}/entrega", f"{base}/entrega",
+                           administrador, json={})
+        assert entregada.status_code == 200
 
         # Segunda orden del mismo vehículo: solicitud y confirmación de cancelación.
         segunda = llamar("POST", "/api/ordenes", "/api/ordenes", administrador,

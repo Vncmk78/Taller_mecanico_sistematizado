@@ -54,6 +54,21 @@ mano: `python scripts/exportar_openapi.py --verificar`.
 
 ## 4. Historial
 
+### 3.0.0 — Una sola orden activa por vehículo
+
+MAJOR: restringe `POST /api/ordenes`, que antes permitía varias atenciones
+activas para el mismo vehículo. Cualquier estado salvo Entregado (7) o
+Cancelado (8) es activo. Si existe una orden activa, responde `409` con su
+número, sin crear ingreso, orden, historial, outbox ni auditoría de cupo.
+El body y la respuesta de éxito no cambian. Se conservan todas las copias
+anteriores, incluida 2.2.1.
+
+Decisión aprobada para el Bloque 3. La validación está en el núcleo común y
+se respalda con un índice único parcial. La migración
+`0013_orden_activa_ms2` aborta y lista los duplicados sin corregirlos.
+Antes de desplegar hay que coordinar la versión con web e Integración IV y
+diagnosticar la base de destino. Detalles: [orden-activa-por-vehiculo.md](orden-activa-por-vehiculo.md).
+
 ### 2.2.1 — Elementos de `mecanicos_sobre_limite` documentados (D-04)
 
 PATCH: documenta lo que MS2 ya respondía. En `CapacidadMecanicoRespuesta`

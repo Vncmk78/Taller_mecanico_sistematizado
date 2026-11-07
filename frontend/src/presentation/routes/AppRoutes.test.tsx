@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { User } from '@/domain/entities/User';
+import { authService } from '@/infrastructure/api/AuthService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { usePerfilClienteStore } from '@/infrastructure/stores/usePerfilClienteStore';
 import { perfilClienteService } from '@/infrastructure/api/PerfilClienteService';
@@ -401,6 +402,81 @@ describe('AppRoutes: navegación por los tres roles', () => {
         screen.getByRole('heading', { name: 'Acceso Denegado' })
       ).toBeInTheDocument();
       expect(screen.queryByText('Actualizar Estados')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('recarga o enlace directo con sesión guardada', () => {
+    // Estado real tras recargar el navegador: hay token, pero el usuario aún
+    // no se recuperó de GET /auth/me (useAuthStore arranca inicializando).
+    function recargaConToken() {
+      localStorage.setItem('token', 'token-guardado');
+      useAuthStore.setState({
+        user: null,
+        token: 'token-guardado',
+        isAuthenticated: true,
+        isLoading: false,
+        isInitializing: true,
+      });
+    }
+
+    it('conserva la subruta del administrador al restaurar la sesión', async () => {
+      vi.mocked(authService.getProfile).mockResolvedValueOnce(adminUser);
+      recargaConToken();
+      renderApp('/admin/configuracion');
+
+      expect(
+        await screen.findByRole('heading', { name: 'Capacidad del taller' })
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Iniciar Sesión' })).not.toBeInTheDocument();
+    });
+
+    it('conserva la subruta del cliente y prepara su perfil antes de mostrarla', async () => {
+      usePerfilClienteStore.getState().reset();
+      vi.mocked(authService.getProfile).mockResolvedValueOnce(clientUser);
+      recargaConToken();
+      renderApp('/client/vehiculos');
+
+      expect(
+        await screen.findByText('Consulte la ficha técnica y el historial de sus vehículos registrados')
+      ).toBeInTheDocument();
+      expect(perfilClienteService.preparar).toHaveBeenCalledTimes(1);
+    });
+
+    it('mientras restaura no muestra el login ni el portal', () => {
+      recargaConToken(); // getProfile queda pendiente (mock por defecto)
+      renderApp('/admin/ordenes');
+
+      expect(screen.queryByRole('heading', { name: 'Iniciar Sesión' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Gestión de Órdenes' })).not.toBeInTheDocument();
+      expect(screen.getByText('Verificando sesión...')).toBeInTheDocument();
+    });
+
+    it('con token vencido pide iniciar sesión y luego vuelve al enlace pedido', async () => {
+      vi.mocked(authService.getProfile).mockRejectedValueOnce(new Error('Token vencido'));
+      vi.mocked(authService.login).mockResolvedValueOnce({
+        access_token: 'token-nuevo', token_type: 'bearer', user: adminUser,
+      });
+      recargaConToken();
+      renderApp('/admin/configuracion');
+
+      expect(await screen.findByRole('heading', { name: 'Iniciar Sesión' })).toBeInTheDocument();
+      expect(localStorage.getItem('token')).toBeNull();
+
+      fireEvent.change(screen.getByLabelText('Correo Electrónico'), { target: { value: 'admin@taller.cl' } });
+      fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'AdminPrueba123!' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Ingresar a mi cuenta' }));
+
+      expect(
+        await screen.findByRole('heading', { name: 'Capacidad del taller' })
+      ).toBeInTheDocument();
+    });
+
+    it('un enlace de otro portal lleva a acceso denegado, no al login', async () => {
+      vi.mocked(authService.getProfile).mockResolvedValueOnce(clientUser);
+      recargaConToken();
+      renderApp('/admin/ordenes');
+
+      expect(await screen.findByRole('heading', { name: 'Acceso Denegado' })).toBeInTheDocument();
     });
   });
 });

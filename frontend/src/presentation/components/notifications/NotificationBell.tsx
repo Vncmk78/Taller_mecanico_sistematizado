@@ -36,6 +36,8 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
   const [noLeidas, setNoLeidas] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const cargar = useCallback(async (silencioso = false) => {
     if (!silencioso) setLoading(true);
@@ -63,13 +65,18 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
 
   useEffect(() => {
     if (!open) return;
+    const closeButton = dialogRef.current?.querySelector<HTMLElement>('button[aria-label="Cerrar avisos"]');
+    closeButton?.focus();
     const onPointerDown = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
         setOpen(false);
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener('mousedown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
@@ -108,6 +115,7 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <button
+        ref={triggerRef}
         type="button"
         aria-label={noLeidas > 0 ? `Notificaciones, ${noLeidas} sin leer` : 'Notificaciones'}
         aria-expanded={open}
@@ -125,7 +133,9 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
 
       {open && (
         <div
+          ref={dialogRef}
           role="dialog"
+          aria-modal="false"
           aria-label="Avisos y notificaciones"
           className="absolute right-0 mt-2 w-[min(92vw,360px)] max-h-[70vh] overflow-hidden rounded-xl border border-border-custom bg-surface text-text-main shadow-xl z-[70] flex flex-col"
         >

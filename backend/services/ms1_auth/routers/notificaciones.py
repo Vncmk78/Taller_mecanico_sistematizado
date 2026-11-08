@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hmac
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from services.ms1_auth.config import settings
@@ -19,6 +19,8 @@ from services.ms1_auth.services.notificaciones import (
     DestinatarioNotificacionInvalidoError,
     PersistenciaNotificacionError,
     listar_notificaciones,
+    marcar_leida,
+    contar_notificaciones,
     recibir_evento_estado_orden,
     recibir_evento_revision_nueva_atencion,
 )
@@ -98,20 +100,50 @@ def recibir_revision_nueva_atencion(
     summary="Consultar las notificaciones del usuario autenticado",
 )
 def consultar_notificaciones(
+    response: Response,
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     limite: int = Query(default=50, ge=1, le=100),
+    solo_no_leidas: bool = Query(default=False),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> list[NotificacionRespuesta]:
     try:
+        total, no_leidas = contar_notificaciones(db, destinatario_id=principal.usuario_id)
+        response.headers["X-Notificaciones-Total"] = str(no_leidas if solo_no_leidas else total)
+        response.headers["X-Notificaciones-No-Leidas"] = str(no_leidas)
         return listar_notificaciones(
             db,
             destinatario_id=principal.usuario_id,
             limite=limite,
             offset=offset,
+            solo_no_leidas=solo_no_leidas,
         )
     except PersistenciaNotificacionError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible consultar las notificaciones",
         ) from exc
+
+
+@router_notificaciones.patch("/notificaciones/leer-todas", status_code=204,
+                             summary="Marcar como leídos los avisos propios")
+def leer_todas(principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+               db: Session = Depends(get_db)) -> None:
+    try:
+        marcar_leida(db, destinatario_id=principal.usuario_id)
+    except PersistenciaNotificacionError as exc:
+        raise HTTPException(status_code=500, detail="No fue posible marcar las notificaciones") from exc
+
+
+@router_notificaciones.patch("/notificaciones/{notificacion_id}/leer", status_code=204,
+                             summary="Marcar un aviso propio como leído", responses={404: {"description": "Aviso inexistente o ajeno"}})
+def leer_notificacion(notificacion_id: int,
+                      principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+                      db: Session = Depends(get_db)) -> None:
+    if notificacion_id <= 0:
+        raise HTTPException(status_code=422, detail="Identificador inválido")
+    try:
+        if not marcar_leida(db, destinatario_id=principal.usuario_id, notificacion_id=notificacion_id):
+            raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    except PersistenciaNotificacionError as exc:
+        raise HTTPException(status_code=500, detail="No fue posible marcar la notificación") from exc

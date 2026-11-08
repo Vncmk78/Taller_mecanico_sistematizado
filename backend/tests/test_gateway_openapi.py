@@ -108,6 +108,8 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/clientes/perfil", "post"),
     ("/api/clientes/perfil", "get"),
     ("/api/notificaciones", "get"),
+    ("/api/notificaciones/leer-todas", "patch"),
+    ("/api/notificaciones/{notificacion_id}/leer", "patch"),
     ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
     ("/api/vehiculos", "post"),
     ("/api/vehiculos", "get"),
@@ -198,6 +200,8 @@ _PROTEGIDOS = {
     "/api/auth/me",
     "/api/clientes/perfil",
     "/api/notificaciones",
+    "/api/notificaciones/{notificacion_id}/leer",
+    "/api/notificaciones/leer-todas",
     "/api/inventario/ordenes/{orden_id}/disponibilidad",
     "/api/vehiculos",
     "/api/vehiculos/asignados",
@@ -351,6 +355,7 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
     # En estas operaciones el 404 también puede venir de MS2 (perfil o recurso
     # ausente): su esquema admite ErrorRespuesta y ErrorDetalle.
     operaciones_con_404_ms = {
+        ("/api/notificaciones/{notificacion_id}/leer", "patch"),
         ("/api/clientes/perfil", "get"),
         ("/api/vehiculos", "post"),
         ("/api/vehiculos", "get"),
@@ -469,6 +474,8 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/auth/me", "get"),
         ("/api/clientes/perfil", "get"),
         ("/api/notificaciones", "get"),
+    ("/api/notificaciones/leer-todas", "patch"),
+    ("/api/notificaciones/{notificacion_id}/leer", "patch"),
         ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos/asignados", "get"),

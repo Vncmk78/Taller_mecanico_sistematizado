@@ -450,6 +450,13 @@ _SOLICITUD_CANCELACION_EJEMPLO: dict[str, Any] = {
     "confirmada_en": None,
 }
 
+_SOLICITUD_NUEVA_EJEMPLO = {
+    "solicitud_id": 9, "orden_cancelada_id": 31, "vehiculo_id": 12,
+    "cliente_usuario_id": 7, "descripcion": "Revisar frenos nuevamente",
+    "solicitada_en": "2026-11-08T10:00:00Z", "situacion": "pendiente",
+    "respuesta": None, "revisor_id": None, "revisada_en": None, "orden_generada_id": None,
+}
+
 _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
     ("/api/ordenes/{orden_id}/bitacora", "get"): {
         "respuestas": {
@@ -729,6 +736,17 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
         },
     },
 }
+
+_EJEMPLOS_OPERACIONES.update({
+    ("/api/ordenes/{orden_id}/nueva-atencion", "post"): {
+        "cuerpo": {"solicitud": _ejemplo("Nueva atención", {"descripcion": "Revisar frenos nuevamente"})},
+        "respuestas": {str(c): {"pendiente": _ejemplo("Solicitud pendiente", _SOLICITUD_NUEVA_EJEMPLO)} for c in (200, 201)},
+    },
+    ("/api/ordenes/nuevas-atenciones", "get"): {"respuestas": {
+        "200": {"pagina": _ejemplo("Solicitudes visibles", {"items": [_SOLICITUD_NUEVA_EJEMPLO], "total": 1, "limit": 20, "offset": 0})}}},
+    ("/api/ordenes/nuevas-atenciones/{solicitud_id}", "get"): {"respuestas": {
+        "200": {"solicitud": _ejemplo("Solicitud visible", _SOLICITUD_NUEVA_EJEMPLO)}}},
+})
 
 _EJEMPLOS_503_EVIDENCIAS: dict[str, Any] = {
     "almacenamiento_no_disponible": _ref_ejemplo("detalle_almacenamiento_no_disponible"),

@@ -67,6 +67,14 @@ OPERACIONES_INTEGRACION_IV: tuple[OperacionMovil, ...] = (
         "get", "/api/clientes/perfil", "Acceso", (CLIENTE,),
         roles_rechazados=(MECANICO,),
     ),
+    # Nuevas atenciones: solo Cliente; una cuenta multirrol puede ver todas por su rol Administrador.
+    OperacionMovil("post", "/api/ordenes/{orden_id}/nueva-atencion", "Nuevas atenciones", (CLIENTE,),
+                   roles_rechazados=(MECANICO,), estados_requeridos=("200", "409", "422")),
+    OperacionMovil("get", "/api/ordenes/nuevas-atenciones", "Nuevas atenciones", (CLIENTE,), roles_rechazados=(MECANICO,)),
+    OperacionMovil("get", "/api/ordenes/nuevas-atenciones/{solicitud_id}", "Nuevas atenciones", (CLIENTE,), roles_rechazados=(MECANICO,)),
+    OperacionMovil("get", "/api/notificaciones", "Avisos", (CLIENTE, MECANICO)),
+    OperacionMovil("patch", "/api/notificaciones/{notificacion_id}/leer", "Avisos", (CLIENTE, MECANICO)),
+    OperacionMovil("patch", "/api/notificaciones/leer-todas", "Avisos", (CLIENTE, MECANICO)),
     # ── Vehículos del cliente ───────────────────────────────────────────
     OperacionMovil(
         "get", "/api/vehiculos", "Vehículos", (CLIENTE,),

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from services.ms1_auth.db import Base
@@ -37,4 +37,6 @@ class Notificacion(Base):
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    leida: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
+    leida_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     destinatario: Mapped["Usuario"] = relationship()

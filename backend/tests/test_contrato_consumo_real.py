@@ -217,6 +217,8 @@ def diferencias_consumo(contrato: dict, consumo: ConsumoWeb) -> list[str]:
     if respuesta is None:
         return diferencias + [f"el estado {consumo.estado} no está publicado"]
     esquema = respuesta.get("content", {}).get(_JSON, {}).get("schema")
+    if consumo.estado == "204" and not consumo.respuesta and not respuesta.get("content"):
+        return diferencias
     return diferencias + _comparar_respuesta(contrato, consumo.respuesta, esquema, "")
 
 
@@ -399,6 +401,12 @@ def respuestas_reales(ecosistema, mecanicos_validos) -> list[tuple[str, str, int
         llamar("GET", ruta_lista, ruta_lista, mecanico)
         llamar("GET", "/api/ordenes/nuevas-atenciones/{solicitud_id}",
                f"{ruta_lista}/{solicitud.json()['solicitud_id']}", cliente)
+        sid = solicitud.json()["solicitud_id"]
+        ruta_revision = "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision"
+        assert llamar("POST", ruta_revision, f"{ruta_lista}/{sid}/revision", administrador,
+                      json={"decision": "aceptada", "respuesta": "Atención autorizada"}).status_code == 200
+        ruta_generar = "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden"
+        assert llamar("POST", ruta_generar, f"{ruta_lista}/{sid}/orden", administrador, json={}).status_code == 201
         llamar("GET", "/api/ordenes/vehiculo/{vehiculo_id}/historial",
                f"/api/ordenes/vehiculo/{vehiculo_id}/historial", cliente,
                params={"limit": 10, "offset": 0})

@@ -294,6 +294,15 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
         "NuevaAtencionService.obtener", "get", "/api/ordenes/nuevas-atenciones/{solicitud_id}", "200",
         SOLICITUD_NUEVA_ATENCION,
     ),
+    ConsumoWeb("NuevaAtencionService.revisar", "post", "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision", "200",
+               SOLICITUD_NUEVA_ATENCION, cuerpo={"decision": ("aceptada", "rechazada"), "respuesta": "string"}),
+    ConsumoWeb("NuevaAtencionService.generarOrden", "post", "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden", "201",
+               {"solicitud": SOLICITUD_NUEVA_ATENCION, "orden": ORDEN}, cuerpo={}),
+    ConsumoWeb("NotificationService.getMyNotifications", "get", "/api/notificaciones", "200",
+               [{"notificacion_id": "integer", "tipo": "string", "titulo": "string", "mensaje": "string",
+                 "leida": "boolean", "creado_en": "string", "orden_id": "integer"}]),
+    ConsumoWeb("NotificationService.markAsRead", "patch", "/api/notificaciones/{notificacion_id}/leer", "204", {}),
+    ConsumoWeb("NotificationService.markAllAsRead", "patch", "/api/notificaciones/leer-todas", "204", {}),
     # No lee la respuesta (es una solicitud pendiente, no una orden): después
     # vuelve a pedir la orden con getOrderById. Corregido en SCRUM-706 (D-01).
     ConsumoWeb(

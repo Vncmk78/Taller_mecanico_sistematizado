@@ -153,3 +153,5 @@ class NotificacionRespuesta(BaseModel):
     mensaje: str
     ocurrido_en: datetime
     creado_en: datetime
+    leida: bool
+    leida_en: datetime | None

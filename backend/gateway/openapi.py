@@ -328,6 +328,9 @@ _PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
 }
 
 _PARAMETROS_NOTIFICACIONES: list[dict[str, object]] = [
+    {"name": "solo_no_leidas", "in": "query", "required": False,
+     "schema": {"type": "boolean", "default": False},
+     "description": "Filtrar solo avisos sin leer del usuario autenticado."},
     {
         "name": "limite",
         "in": "query",
@@ -701,6 +704,23 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 requiere_auth=True,
             )
         },
+        "/api/notificaciones/leer-todas": {
+            "patch": _operacion(tag="Notificaciones", resumen="Marcar todos mis avisos como leídos",
+                descripcion="Solo la bandeja propia. Conserva la fecha de la primera lectura ante reintentos.",
+                operation_id="leer_todas", cuerpo=None, requiere_auth=True,
+                respuestas_ok={"204": {"description": "Avisos propios marcados como leídos."}},
+                errores_ms={"401": "JWT ausente o inválido"}),
+        },
+        "/api/notificaciones/{notificacion_id}/leer": {
+            "patch": _operacion(tag="Notificaciones", resumen="Marcar un aviso propio como leído",
+                descripcion="Idempotente. Un aviso inexistente o ajeno devuelve 404.",
+                operation_id="leer_notificacion", cuerpo=None, requiere_auth=True,
+                parametros_extra=[{"name": "notificacion_id", "in": "path", "required": True,
+                                   "schema": {"type": "integer", "minimum": 1}}],
+                respuestas_ok={"204": {"description": "Aviso marcado como leído."}},
+                errores_ms={"401": "JWT ausente o inválido", "422": "Identificador inválido"},
+                descripcion_404="Notificación no encontrada", esquema_404=error_404_recurso),
+        },
         "/api/notificaciones": {
             "get": _operacion(
                 tag="Notificaciones",
@@ -718,6 +738,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                         "Notificaciones del usuario.",
                         {"type": "array", "items": _ref("NotificacionRespuesta")},
                     ) | {
+                        "headers": {
+                            "X-Notificaciones-Total": {"description": "Total de avisos propios que cumplen el filtro, antes de paginar.", "schema": {"type": "integer", "minimum": 0}},
+                            "X-Notificaciones-No-Leidas": {"description": "Total de avisos propios sin leer, antes de paginar.", "schema": {"type": "integer", "minimum": 0}},
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {

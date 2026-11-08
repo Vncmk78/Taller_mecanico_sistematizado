@@ -42,6 +42,7 @@ _JSON = "application/json"
 _CABECERAS_GATEWAY = {"X-Request-ID"}
 _APP_POR_PREFIJO = {
     "auth": app_ms1,
+    "notificaciones": app_ms1,
     "vehiculos": app_ms2,
     "clientes": app_ms2,
     "ordenes": app_ms2,
@@ -173,13 +174,15 @@ def _comprobar(
     exitos = _exitos(operacion)
     if nombre == "respuesta_exito":
         con_esquema = [
-            c for c, r in exitos.items() if r.get("content", {}).get(_JSON, {}).get("schema")
+            c for c, r in exitos.items() if (c == "204" and not r.get("content")) or r.get("content", {}).get(_JSON, {}).get("schema")
         ]
         return [] if con_esquema else ["sin respuesta 2xx application/json con esquema"]
 
     if nombre == "ejemplo_exito":
         faltan = []
         for codigo, respuesta in exitos.items():
+            if codigo == "204" and not respuesta.get("content"):
+                continue  # No Content no lleva JSON ni ejemplo de cuerpo.
             contenido = respuesta.get("content", {}).get(_JSON, {})
             if not (contenido.get("example") is not None or contenido.get("examples")):
                 faltan.append(f"{codigo} sin ejemplo")

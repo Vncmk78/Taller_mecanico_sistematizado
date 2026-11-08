@@ -139,3 +139,37 @@ def test_bandeja_solo_devuelve_avisos_del_usuario_autenticado(
     assert len(respuesta_cliente.json()) == 1
     assert respuesta_cliente.json()[0]["orden_id"] == 123
     assert respuesta_ajena.json() == []
+
+
+def test_lectura_propia_persistente_idempotente_y_filtrada(api, db, monkeypatch):
+    _crear_cliente(db, 7)
+    _crear_cliente(db, 8)
+    monkeypatch.setattr(settings, 'EVENT_SHARED_SECRET', SecretStr(SECRETO_SERVICIO))
+    ids = [api.post('/interno/eventos/ordenes/estado', json=_evento(), headers={'X-Service-Token': SECRETO_SERVICIO}).json()['notificacion_id'] for _ in range(2)]
+    propio = {'Authorization': f'Bearer {_jwt(7)}'}
+    ajeno = {'Authorization': f'Bearer {_jwt(8)}'}
+    assert api.patch(f'/notificaciones/{ids[0]}/leer', headers=ajeno).status_code == 404
+    assert api.patch(f'/notificaciones/{ids[0]}/leer').status_code == 401
+    assert api.get('/notificaciones', headers=propio, params={'solo_no_leidas': True}).json()[0]['leida'] is False
+    assert api.patch(f'/notificaciones/{ids[0]}/leer', headers=propio).status_code == 204
+    primera = next(n for n in api.get('/notificaciones', headers=propio).json() if n['notificacion_id'] == ids[0])
+    assert primera['leida'] is True and primera['leida_en'] is not None
+    assert api.patch(f'/notificaciones/{ids[0]}/leer', headers=propio).status_code == 204
+    segunda = next(n for n in api.get('/notificaciones', headers=propio).json() if n['notificacion_id'] == ids[0])
+    assert segunda['leida_en'] == primera['leida_en']
+    assert len(api.get('/notificaciones', headers=propio, params={'solo_no_leidas': True}).json()) == 1
+    assert api.patch('/notificaciones/leer-todas', headers=ajeno).status_code == 204
+    assert len(api.get('/notificaciones', headers=propio, params={'solo_no_leidas': True}).json()) == 1
+    assert api.patch('/notificaciones/leer-todas', headers=propio).status_code == 204
+    assert api.get('/notificaciones', headers=propio, params={'solo_no_leidas': True}).json() == []
+
+
+def test_totales_propios_no_se_truncan_por_paginacion(api, db, monkeypatch):
+    _crear_cliente(db, 7)
+    monkeypatch.setattr(settings, 'EVENT_SHARED_SECRET', SecretStr(SECRETO_SERVICIO))
+    for _ in range(3):
+        api.post('/interno/eventos/ordenes/estado', json=_evento(), headers={'X-Service-Token': SECRETO_SERVICIO})
+    r = api.get('/notificaciones?limite=1', headers={'Authorization': f'Bearer {_jwt(7)}'})
+    assert len(r.json()) == 1
+    assert r.headers['X-Notificaciones-Total'] == '3'
+    assert r.headers['X-Notificaciones-No-Leidas'] == '3'

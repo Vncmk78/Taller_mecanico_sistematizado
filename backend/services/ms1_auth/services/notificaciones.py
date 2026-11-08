@@ -1,7 +1,7 @@
 """Creación idempotente y consulta de notificaciones en MS1."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -96,17 +96,46 @@ def _recibir_aviso(
 
 
 def listar_notificaciones(
-    db: Session, *, destinatario_id: int, limite: int, offset: int
+    db: Session, *, destinatario_id: int, limite: int, offset: int, solo_no_leidas: bool = False
 ) -> list[Notificacion]:
     try:
         return list(
             db.scalars(
                 select(Notificacion)
-                .where(Notificacion.destinatario_id == destinatario_id)
+                .where(Notificacion.destinatario_id == destinatario_id,
+                       *([Notificacion.leida.is_(False)] if solo_no_leidas else []))
                 .order_by(Notificacion.creado_en.desc(), Notificacion.notificacion_id.desc())
                 .limit(limite)
                 .offset(offset)
             )
         )
+    except SQLAlchemyError as exc:
+        raise PersistenciaNotificacionError from exc
+
+
+def marcar_leida(db: Session, *, destinatario_id: int, notificacion_id: int | None = None) -> bool:
+    """Actualización propia e idempotente: conserva la fecha del primer marcado."""
+    try:
+        condiciones = [Notificacion.destinatario_id == destinatario_id]
+        if notificacion_id is not None:
+            condiciones.append(Notificacion.notificacion_id == notificacion_id)
+            if db.scalar(select(Notificacion.notificacion_id).where(*condiciones)) is None:
+                return False
+        db.execute(update(Notificacion).where(*condiciones, Notificacion.leida.is_(False))
+                   .values(leida=True, leida_en=func.now()))
+        db.commit()
+        return True
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaNotificacionError from exc
+
+
+def contar_notificaciones(db: Session, *, destinatario_id: int) -> tuple[int, int]:
+    try:
+        total, no_leidas = db.execute(select(
+            func.count(Notificacion.notificacion_id),
+            func.count(Notificacion.notificacion_id).filter(Notificacion.leida.is_(False)),
+        ).where(Notificacion.destinatario_id == destinatario_id)).one()
+        return total, no_leidas
     except SQLAlchemyError as exc:
         raise PersistenciaNotificacionError from exc

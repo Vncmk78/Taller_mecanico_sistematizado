@@ -9,6 +9,7 @@ interface NotificacionApi {
   titulo: string;
   mensaje: string;
   leida: boolean;
+  creado_en?: string;
   creada_en?: string;
   created_at?: string;
   orden_id?: number | string | null;
@@ -30,7 +31,7 @@ function mapNotificacion(n: NotificacionApi): Notification {
     titulo: n.titulo,
     mensaje: n.mensaje,
     leida: Boolean(n.leida),
-    creadaEn: n.creada_en ?? n.created_at ?? new Date().toISOString(),
+    creadaEn: n.creado_en ?? n.creada_en ?? n.created_at ?? '',
     ordenId: n.orden_id != null ? String(n.orden_id) : null,
     presupuestoId: n.presupuesto_id != null ? String(n.presupuesto_id) : null,
   };
@@ -38,11 +39,10 @@ function mapNotificacion(n: NotificacionApi): Notification {
 
 class NotificationService implements NotificationPort {
   async getMyNotifications(params?: { soloNoLeidas?: boolean; limit?: number }): Promise<NotificationListResponse> {
-    try {
-      const response = await apiClient.get<NotificacionesRespuestaApi | NotificacionApi[]>('/notificaciones', {
+    const response = await apiClient.get<NotificacionesRespuestaApi | NotificacionApi[]>('/notificaciones', {
         params: {
           solo_no_leidas: params?.soloNoLeidas ?? undefined,
-          limit: params?.limit ?? 20,
+          limite: params?.limit ?? 20,
         },
       });
       const data = response.data;
@@ -50,8 +50,8 @@ class NotificationService implements NotificationPort {
         const items = data.map(mapNotificacion);
         return {
           items,
-          total: items.length,
-          noLeidas: items.filter((i) => !i.leida).length,
+          total: Number(response.headers?.['x-notificaciones-total'] ?? items.length),
+          noLeidas: Number(response.headers?.['x-notificaciones-no-leidas'] ?? items.filter((i) => !i.leida).length),
         };
       }
       const items = (data.items ?? []).map(mapNotificacion);
@@ -60,34 +60,14 @@ class NotificationService implements NotificationPort {
         total: data.total ?? items.length,
         noLeidas: data.no_leidas ?? data.unread_count ?? items.filter((i) => !i.leida).length,
       };
-    } catch (error: unknown) {
-      // Endpoint puede no estar disponible en todos los entornos; degradar con lista vacía.
-      const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status === 404 || status === 501 || status === 405) {
-        return { items: [], total: 0, noLeidas: 0 };
-      }
-      throw error;
-    }
   }
 
   async markAsRead(id: string): Promise<void> {
-    try {
-      await apiClient.patch(`/notificaciones/${id}/leer`);
-    } catch (error: unknown) {
-      const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status === 404 || status === 501 || status === 405) return;
-      throw error;
-    }
+    await apiClient.patch(`/notificaciones/${id}/leer`);
   }
 
   async markAllAsRead(): Promise<void> {
-    try {
-      await apiClient.patch('/notificaciones/leer-todas');
-    } catch (error: unknown) {
-      const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status === 404 || status === 501 || status === 405) return;
-      throw error;
-    }
+    await apiClient.patch('/notificaciones/leer-todas');
   }
 }
 

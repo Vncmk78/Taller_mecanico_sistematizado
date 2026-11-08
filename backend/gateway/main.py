@@ -52,7 +52,7 @@ app.add_middleware(
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
+    expose_headers=["X-Request-ID", "X-Notificaciones-Total", "X-Notificaciones-No-Leidas"],
 )
 app.add_middleware(RequestIdMiddleware)
 

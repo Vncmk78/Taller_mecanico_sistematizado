@@ -1118,6 +1118,385 @@
         ]
       }
     },
+    "/api/notificaciones/leer-todas": {
+      "patch": {
+        "tags": [
+          "Notificaciones"
+        ],
+        "summary": "Marcar todos mis avisos como leídos",
+        "description": "Solo la bandeja propia. Conserva la fecha de la primera lectura ante reintentos.",
+        "operationId": "leer_todas",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Avisos propios marcados como leídos.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/notificaciones/{notificacion_id}/leer": {
+      "patch": {
+        "tags": [
+          "Notificaciones"
+        ],
+        "summary": "Marcar un aviso propio como leído",
+        "description": "Idempotente. Un aviso inexistente o ajeno devuelve 404.",
+        "operationId": "leer_notificacion",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          },
+          {
+            "name": "notificacion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Aviso marcado como leído.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Identificador inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "404": {
+            "description": "Notificación no encontrada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/notificaciones": {
       "get": {
         "tags": [
@@ -1138,6 +1517,16 @@
               "pattern": "^[A-Za-z0-9-]{1,128}$",
               "example": "abc-123"
             }
+          },
+          {
+            "name": "solo_no_leidas",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "Filtrar solo avisos sin leer del usuario autenticado."
           },
           {
             "name": "limite",
@@ -1190,6 +1579,20 @@
                   "type": "string"
                 },
                 "example": "abc-123"
+              },
+              "X-Notificaciones-Total": {
+                "description": "Total de avisos propios que cumplen el filtro, antes de paginar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "X-Notificaciones-No-Leidas": {
+                "description": "Total de avisos propios sin leer, antes de paginar.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
               }
             }
           },
@@ -3771,6 +4174,31 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SolicitudesNuevaAtencionRespuesta"
+                },
+                "examples": {
+                  "pagina": {
+                    "summary": "Solicitudes visibles",
+                    "value": {
+                      "items": [
+                        {
+                          "solicitud_id": 9,
+                          "orden_cancelada_id": 31,
+                          "vehiculo_id": 12,
+                          "cliente_usuario_id": 7,
+                          "descripcion": "Revisar frenos nuevamente",
+                          "solicitada_en": "2026-11-08T10:00:00Z",
+                          "situacion": "pendiente",
+                          "respuesta": null,
+                          "revisor_id": null,
+                          "revisada_en": null,
+                          "orden_generada_id": null
+                        }
+                      ],
+                      "total": 1,
+                      "limit": 20,
+                      "offset": 0
+                    }
+                  }
                 }
               }
             },
@@ -3997,6 +4425,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SolicitudNuevaAtencionRespuesta"
+                },
+                "examples": {
+                  "solicitud": {
+                    "summary": "Solicitud visible",
+                    "value": {
+                      "solicitud_id": 9,
+                      "orden_cancelada_id": 31,
+                      "vehiculo_id": 12,
+                      "cliente_usuario_id": 7,
+                      "descripcion": "Revisar frenos nuevamente",
+                      "solicitada_en": "2026-11-08T10:00:00Z",
+                      "situacion": "pendiente",
+                      "respuesta": null,
+                      "revisor_id": null,
+                      "revisada_en": null,
+                      "orden_generada_id": null
+                    }
+                  }
                 }
               }
             },
@@ -4775,6 +5221,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SolicitudNuevaAtencionRespuesta"
+                },
+                "examples": {
+                  "pendiente": {
+                    "summary": "Solicitud pendiente",
+                    "value": {
+                      "solicitud_id": 9,
+                      "orden_cancelada_id": 31,
+                      "vehiculo_id": 12,
+                      "cliente_usuario_id": 7,
+                      "descripcion": "Revisar frenos nuevamente",
+                      "solicitada_en": "2026-11-08T10:00:00Z",
+                      "situacion": "pendiente",
+                      "respuesta": null,
+                      "revisor_id": null,
+                      "revisada_en": null,
+                      "orden_generada_id": null
+                    }
+                  }
                 }
               }
             },
@@ -4794,6 +5258,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SolicitudNuevaAtencionRespuesta"
+                },
+                "examples": {
+                  "pendiente": {
+                    "summary": "Solicitud pendiente",
+                    "value": {
+                      "solicitud_id": 9,
+                      "orden_cancelada_id": 31,
+                      "vehiculo_id": 12,
+                      "cliente_usuario_id": 7,
+                      "descripcion": "Revisar frenos nuevamente",
+                      "solicitada_en": "2026-11-08T10:00:00Z",
+                      "situacion": "pendiente",
+                      "respuesta": null,
+                      "revisor_id": null,
+                      "revisada_en": null,
+                      "orden_generada_id": null
+                    }
+                  }
                 }
               }
             },
@@ -5012,6 +5494,14 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/NuevaAtencionSolicitud"
+              },
+              "examples": {
+                "solicitud": {
+                  "summary": "Nueva atención",
+                  "value": {
+                    "descripcion": "Revisar frenos nuevamente"
+                  }
+                }
               }
             }
           }
@@ -23593,6 +24083,22 @@
             "format": "date-time",
             "title": "Creado En",
             "type": "string"
+          },
+          "leida": {
+            "title": "Leida",
+            "type": "boolean"
+          },
+          "leida_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leida En"
           }
         },
         "required": [
@@ -23603,7 +24109,9 @@
           "titulo",
           "mensaje",
           "ocurrido_en",
-          "creado_en"
+          "creado_en",
+          "leida",
+          "leida_en"
         ],
         "title": "NotificacionRespuesta",
         "type": "object"

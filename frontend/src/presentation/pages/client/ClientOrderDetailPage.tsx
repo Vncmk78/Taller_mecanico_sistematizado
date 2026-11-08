@@ -3,6 +3,7 @@ import { ArrowLeft, ClipboardX } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
+import { NuevaAtencionSection } from '@/presentation/components/nuevaAtencion/NuevaAtencionSection';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -89,6 +90,9 @@ export function ClientOrderDetailPage() {
             <OrderStatusAndHistory order={order} />
 
             <OrderActionsPanel order={order} className="mt-6" />
+
+            {/* Solo en órdenes Canceladas; la orden ya pasó el control de acceso de MS2. */}
+            <NuevaAtencionSection key={order.id} order={order} className="mt-6" />
         </div>
     );
 }

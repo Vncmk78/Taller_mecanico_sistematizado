@@ -29,6 +29,8 @@ import { ClientBudgetDetailPage } from '@/presentation/pages/client/ClientBudget
 import { ClientOrdersPage } from '@/presentation/pages/client/ClientOrdersPage';
 import { ClientOrderDetailPage } from '@/presentation/pages/client/ClientOrderDetailPage';
 import { ClientOrderEvidencePage } from '@/presentation/pages/client/ClientOrderEvidencePage';
+import { ClientNuevasAtencionesPage } from '@/presentation/pages/client/ClientNuevasAtencionesPage';
+import { ClientNuevaAtencionDetailPage } from '@/presentation/pages/client/ClientNuevaAtencionDetailPage';
 import { MechanicDashboardPage } from '@/presentation/pages/mechanic/MechanicDashboardPage';
 import { MechanicVehiclesPage } from '@/presentation/pages/mechanic/MechanicVehiclesPage';
 import { MechanicVehicleDetailPage } from '@/presentation/pages/mechanic/MechanicVehicleDetailPage';
@@ -112,6 +114,8 @@ export function AppRoutes() {
         <Route path="ordenes" element={<ClientOrdersPage />} />
         <Route path="ordenes/:id" element={<ClientOrderDetailPage />} />
         <Route path="ordenes/:id/evidencias" element={<ClientOrderEvidencePage />} />
+        <Route path="nuevas-atenciones" element={<ClientNuevasAtencionesPage />} />
+        <Route path="nuevas-atenciones/:id" element={<ClientNuevaAtencionDetailPage />} />
         <Route path="presupuestos" element={<ClientBudgetsPage />} />
         <Route path="presupuestos/:ordenId" element={<ClientBudgetDetailPage />} />
         <Route path="notificaciones" element={<NotificationsPage />} />

@@ -53,7 +53,9 @@ completados por crear el contrato local.
 
 ## Pendientes distintos de esta entrega
 
-Registrar `salida_en` al entregar, devolución física, solicitudes de nueva
-atención y creación vinculada siguen pendientes. Una orden Entregada o
-Cancelada deja de ocupar la unicidad, pero esta restricción por sí sola no
-cierra el ingreso físico. No declara completos los bloques 3 y 4.
+Esta restricción por sí sola no cierra el ingreso físico. El cierre al entregar
+y la devolución se incorporaron posteriormente en la Entrega A, integrada
+localmente con la web y pendiente de publicación; ver
+[contrato-web-bloques-3-4.md](contrato-web-bloques-3-4.md).
+Solicitudes de nueva atención y creación vinculada siguen pendientes. Una orden
+Entregada o Cancelada deja de ocupar la unicidad; cancelar no cierra el ingreso.

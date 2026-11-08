@@ -77,6 +77,8 @@ ORDEN: Campos = {  # OrderService.ts → OrdenRespuesta
     "creado_por_id": "integer",
     "creado_en": "string",
     "actualizado_en": "string",
+    "devuelto_en": "?string",
+    "devuelto_por_id": "?integer",
 }
 CUPO_DIARIO: Campos = {  # ConfiguracionTallerService.ts → CupoDiarioApi
     "max_ingresos_diarios": "?integer",
@@ -268,6 +270,11 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
     ConsumoWeb(
         "OrderService.registrarEntrega", "post", "/api/ordenes/{orden_id}/entrega", "200",
         ORDEN, cuerpo={"observacion": "~string"},
+    ),
+    ConsumoWeb(
+        "OrderService.registrarDevolucion", "post", "/api/ordenes/{orden_id}/devolucion",
+        "200", {**ORDEN, "devuelto_en": "string", "devuelto_por_id": "integer"},
+        cuerpo={},
     ),
     # No lee la respuesta (es una solicitud pendiente, no una orden): después
     # vuelve a pedir la orden con getOrderById. Corregido en SCRUM-706 (D-01).

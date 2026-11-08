@@ -3,8 +3,8 @@
 Fecha: 8 de noviembre de 2026. Base funcional: commit `66f694d`.
 
 Este archivo fija la interfaz para trabajar en paralelo. Es un acuerdo de
-implementación: la Entrega A tiene backend y OpenAPI locales, pendientes de
-integración web y publicación. Las entregas B y C todavía no están implementadas.
+implementación: la Entrega A tiene backend y web integrados localmente en
+MartinH, pendientes de publicación. Las entregas B y C todavía no están implementadas.
 Ninguna operación se considera publicada por aparecer aquí. Codex mantiene el backend y OpenAPI;
 Claude implementa el frontend por entregas. La integración final debe probarse
 contra servicios reales. El contrato 3.0.0 está pendiente de publicación y
@@ -43,6 +43,19 @@ estados a las órdenes ni se implementa reserva de horas.
   simulaciones se limitan a pruebas automatizadas.
 
 ## Entrega A: salida y devolución
+
+Integración local verificada el 8 de noviembre: frontend de Claude incorporado
+desde `5244ec2` como `18f58e5`, sobre el backend `a43deb1`. Las 906 pruebas web,
+lint y build pasan (dos avisos de lint previos y aviso de tamaño de chunk).
+Además, un navegador Chromium contra Gateway, los cuatro servicios y PostgreSQL
+descartables comprobó 18 casos, sin simular respuestas de negocio: devolución,
+confirmación cancelada, recarga, reintento por otro administrador, GET con ambos
+campos, 409 por ingreso compartido, cuenta multirrol y rechazo del Cliente.
+Para probar la respuesta perdida se descartó únicamente la respuesta de una
+petición real ya procesada; el GET recuperó la auditoría y no hubo otro POST.
+Las bases y procesos de esa ejecución se retiraron; la demostración no se migró.
+El catálogo `gateway/contratos/consumo_web.py` y su recorrido de pruebas incluyen
+la devolución. No implica publicación ni validación de las entregas B y C.
 
 ### Operación existente de entrega
 

@@ -377,6 +377,13 @@ def respuestas_reales(ecosistema, mecanicos_validos) -> list[tuple[str, str, int
                cliente, json=motivo)
         llamar("POST", "/api/ordenes/{orden_id}/cancelacion/confirmacion",
                f"{base}/cancelacion/confirmacion", administrador)
+        devolucion = "/api/ordenes/{orden_id}/devolucion"
+        llamar("POST", devolucion, f"{base}/devolucion", cliente, json={})
+        primera = llamar("POST", devolucion, f"{base}/devolucion", administrador, json={})
+        segunda_devolucion = llamar("POST", devolucion, f"{base}/devolucion", administrador, json={})
+        assert primera.status_code == segunda_devolucion.status_code == 200
+        assert primera.json() == segunda_devolucion.json()
+        assert primera.json()["estado_codigo"] == 8
         llamar("GET", "/api/ordenes/vehiculo/{vehiculo_id}/historial",
                f"/api/ordenes/vehiculo/{vehiculo_id}/historial", cliente,
                params={"limit": 10, "offset": 0})

@@ -384,6 +384,21 @@ def respuestas_reales(ecosistema, mecanicos_validos) -> list[tuple[str, str, int
         assert primera.status_code == segunda_devolucion.status_code == 200
         assert primera.json() == segunda_devolucion.json()
         assert primera.json()["estado_codigo"] == 8
+        ruta_solicitar = "/api/ordenes/{orden_id}/nueva-atencion"
+        solicitud = llamar("POST", ruta_solicitar, f"{base}/nueva-atencion", cliente,
+                           json={"descripcion": "Revisar nuevamente los frenos"})
+        assert solicitud.status_code == 201
+        repetida = llamar("POST", ruta_solicitar, f"{base}/nueva-atencion", cliente,
+                          json={"descripcion": "Revisar nuevamente los frenos"})
+        assert repetida.status_code == 200 and repetida.json() == solicitud.json()
+        llamar("POST", ruta_solicitar, f"{base}/nueva-atencion", cliente,
+               json={"descripcion": "Otra descripción"})
+        ruta_lista = "/api/ordenes/nuevas-atenciones"
+        llamar("GET", ruta_lista, ruta_lista, cliente, params={"orden_cancelada_id": segunda})
+        llamar("GET", ruta_lista, ruta_lista, administrador)
+        llamar("GET", ruta_lista, ruta_lista, mecanico)
+        llamar("GET", "/api/ordenes/nuevas-atenciones/{solicitud_id}",
+               f"{ruta_lista}/{solicitud.json()['solicitud_id']}", cliente)
         llamar("GET", "/api/ordenes/vehiculo/{vehiculo_id}/historial",
                f"/api/ordenes/vehiculo/{vehiculo_id}/historial", cliente,
                params={"limit": 10, "offset": 0})
@@ -463,6 +478,10 @@ def test_el_recorrido_cubre_exitos_y_errores_del_consumo(respuestas_reales) -> N
         ("put", "/api/ordenes/configuracion/capacidad/mecanicos", 422),
         ("put", "/api/ordenes/configuracion/capacidad/ingresos-diarios", 200),
         ("post", "/api/ordenes", 201),
+        ("post", "/api/ordenes/{orden_id}/nueva-atencion", 201),
+        ("post", "/api/ordenes/{orden_id}/nueva-atencion", 200),
+        ("post", "/api/ordenes/{orden_id}/nueva-atencion", 409),
+        ("get", "/api/ordenes/nuevas-atenciones", 403),
         ("post", "/api/auth/register", 201),
         ("get", "/api/vehiculos", 404),
         ("get", "/api/clientes/perfil", 404),

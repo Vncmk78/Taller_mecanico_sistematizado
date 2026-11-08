@@ -80,6 +80,12 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
     });
   });
 
+  it('el detalle del Cliente exige propiedad aunque la cuenta tenga otros roles', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: ordenApi });
+    await orderService.getOrderById('3', { soloPropietario: true });
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/3', { params: { solo_propietario: true } });
+  });
+
   it('getOrderById interpola el id en GET /ordenes/{id}', async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ data: ordenApi });
 

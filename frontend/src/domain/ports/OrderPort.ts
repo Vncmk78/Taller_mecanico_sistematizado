@@ -16,8 +16,8 @@ export interface OrderPort {
      * el ingreso abierto del vehículo si existe, sin contarlo dos veces.
      */
     crearOrden(vehiculoId: string): Promise<Order>;
-    /** Detalle de una orden por id (404 si no está en el alcance del rol). */
-    getOrderById(id: string): Promise<Order>;
+    /** Detalle visible; soloPropietario exige propiedad incluso en cuentas multirrol. */
+    getOrderById(id: string, options?: { soloPropietario?: boolean }): Promise<Order>;
     /** Historial de cambios de estado de una orden (el servidor filtra por rol). */
     getOrderHistory(ordenId: string): Promise<OrderHistoryEntry[]>;
     /** Bitácora de trabajo del mecánico de una orden (GET /ordenes/{id}/bitacora). */

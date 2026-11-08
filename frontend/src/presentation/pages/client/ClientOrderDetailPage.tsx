@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardX } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
@@ -18,9 +19,12 @@ import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 export function ClientOrderDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const { order, loading, notFound, failed, refetch } = useOrderDetail(id, (oid) =>
-        orderService.getOrderById(oid)
-    );
+    const [ordenPropiaVerificada, setOrdenPropiaVerificada] = useState<string | null>(null);
+    const { order, loading, notFound, failed, refetch } = useOrderDetail(id, async (oid) => {
+        const propia = await orderService.getOrderById(oid, { soloPropietario: true });
+        setOrdenPropiaVerificada(oid);
+        return propia;
+    });
     const { isOffline, error, requestId } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
 
@@ -91,8 +95,10 @@ export function ClientOrderDetailPage() {
 
             <OrderActionsPanel order={order} className="mt-6" />
 
-            {/* Solo en órdenes Canceladas; la orden ya pasó el control de acceso de MS2. */}
-            <NuevaAtencionSection key={order.id} order={order} className="mt-6" />
+            {/* Una copia administrativa en caché no acredita propiedad para solicitar. */}
+            {ordenPropiaVerificada === order.id && (
+                <NuevaAtencionSection key={order.id} order={order} className="mt-6" />
+            )}
         </div>
     );
 }

@@ -151,8 +151,10 @@ class OrderService implements OrderPort {
         return data.map(mapOrdenApi);
     }
 
-    async getOrderById(id: string): Promise<Order> {
-        const { data } = await apiClient.get<OrdenRespuesta>(`/ordenes/${id}`);
+    async getOrderById(id: string, options?: { soloPropietario?: boolean }): Promise<Order> {
+        const { data } = options?.soloPropietario
+            ? await apiClient.get<OrdenRespuesta>(`/ordenes/${id}`, { params: { solo_propietario: true } })
+            : await apiClient.get<OrdenRespuesta>(`/ordenes/${id}`);
         return mapOrdenApi(data);
     }
 

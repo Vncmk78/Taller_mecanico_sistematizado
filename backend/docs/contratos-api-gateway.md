@@ -980,7 +980,10 @@ Cada validación aceptada o rechazada queda registrada en el historial de MS2.
 La solicitud es una entidad propia de MS2, distinta de los ocho estados de una
 orden. No reserva hora ni crea una orden o ingreso, no ocupa capacidad de un
 mecánico y no consume cupo diario. Puede solicitarse antes o después de devolver
-el vehículo. Backend local en 3.0.0, pendiente de publicación e integración web.
+el vehículo. Backend y web integrados localmente en 3.0.0, pendientes de publicación.
+
+El portal Cliente exige `solo_propietario=true` al cargar el antecedente, incluso
+en cuentas multirrol. No ofrece el formulario basándose solo en una copia en caché.
 
 | Operación | Contrato |
 |---|---|

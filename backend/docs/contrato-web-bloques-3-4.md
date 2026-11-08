@@ -4,8 +4,8 @@ Fecha: 8 de noviembre de 2026. Base funcional: commit `66f694d`.
 
 Este archivo fija la interfaz para trabajar en paralelo. Es un acuerdo de
 implementación: la Entrega A tiene backend y web integrados localmente en
-MartinH, pendientes de publicación. La Entrega B tiene backend local, pendiente
-de integración con la web de Claude. La Entrega C todavía no está implementada.
+MartinH, pendientes de publicación. La Entrega B también está integrada localmente
+con la web de Claude. La Entrega C todavía no está implementada.
 Ninguna operación se considera publicada por aparecer aquí. Codex mantiene el backend y OpenAPI;
 Claude implementa el frontend por entregas. La integración final debe probarse
 contra servicios reales. El contrato 3.0.0 está pendiente de publicación y
@@ -123,8 +123,9 @@ Frontend A:
 
 ## Entrega B: solicitud del Cliente
 
-Backend local implementado en MS2: alta idempotente, listado y detalle con el
-contrato siguiente. Migración `0014_nueva_atencion_ms2`, posterior a
+Backend local implementado en MS2 y web integrada desde `ab8c0dc` como `9365559`:
+alta idempotente, listado y detalle con el contrato siguiente. Migración
+`0014_nueva_atencion_ms2`, posterior a
 `0013_orden_activa_ms2`: crea solo `solicitud_nueva_atencion`, sus restricciones
 e índices, sin modificar filas existentes. No se ejecuta en ambientes compartidos
 ni en la demostración sin diagnóstico previo. El esquema incluye los campos de
@@ -138,6 +139,19 @@ El índice A protege también frente a escrituras que omitan el servicio.
 No exige devolución previa, no crea ingreso/orden/historial/outbox, ni consulta
 otros microservicios para registrar una solicitud. El aviso de revisión sigue
 pendiente de C. El contrato 3.0.0 continúa sin publicar.
+
+Integración comprobada: 957 pruebas web, lint/build y 101 pruebas de contrato/API
+aprobadas; 31 comprobaciones en Chromium contra Gateway, los cuatro servicios y
+PostgreSQL descartables, incluidos 201/200/409, respuesta perdida, paginación,
+filtros, multirrol y vista móvil. Los casos de revisión y vínculo usan datos
+precargados de prueba: no acreditan que C esté implementada. Las bases y procesos
+se retiraron, sin migrar la demostración.
+
+El detalle del portal Cliente consulta `solo_propietario=true` y solo ofrece la
+sección tras confirmación de propiedad. Una copia administrativa en caché no la
+acredita. Esto también se aplica a Cliente+Administrador o Cliente+Mecánico;
+para consultar órdenes ajenas como Administrador, los enlaces usan su portal.
+El catálogo de consumo web incluye las tres operaciones de B.
 
 La entidad `SolicitudNuevaAtencion` tiene estos campos JSON:
 

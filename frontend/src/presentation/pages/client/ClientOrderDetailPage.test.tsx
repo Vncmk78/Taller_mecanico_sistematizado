@@ -134,6 +134,7 @@ describe('ClientOrderDetailPage: nueva atención de una orden cancelada', () => 
 
         expect(await screen.findByRole('heading', { name: 'Nueva atención' })).toBeInTheDocument();
         expect(await screen.findByRole('button', { name: 'Enviar solicitud' })).toBeInTheDocument();
+        expect(orderService.getOrderById).toHaveBeenCalledWith('101', { soloPropietario: true });
         expect(nuevaAtencionService.listar).toHaveBeenCalledWith({ ordenCanceladaId: '101' }, { limit: 20, offset: 0 });
     });
 
@@ -154,6 +155,25 @@ describe('ClientOrderDetailPage: nueva atención de una orden cancelada', () => 
 
         expect(await screen.findByText(/Orden no encontrada/)).toBeInTheDocument();
         expect(screen.queryByRole('heading', { name: 'Nueva atención' })).not.toBeInTheDocument();
+    });
+
+    it('Cliente+Administrador no ofrece solicitar sobre una orden administrativa ajena en caché', async () => {
+        useAuthStore.setState({ user: { ...cliente, roles: ['cliente', 'administrador'] } });
+        useOrderStore.setState({ orders: [{ ...orden, estadoCodigo: 8 }] });
+        vi.mocked(orderService.getOrderById).mockRejectedValue(axios404);
+        renderPage();
+        expect(await screen.findByText(/Orden no encontrada/)).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Nueva atención' })).not.toBeInTheDocument();
+        expect(nuevaAtencionService.listar).not.toHaveBeenCalled();
+    });
+
+    it('una copia en caché con fallo de red no acredita propiedad para solicitar', async () => {
+        useOrderStore.setState({ orders: [{ ...orden, estadoCodigo: 8 }] });
+        vi.mocked(orderService.getOrderById).mockRejectedValue(axios500);
+        renderPage();
+        expect(await screen.findByText('Orden de trabajo n° 101')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Nueva atención' })).not.toBeInTheDocument();
+        expect(nuevaAtencionService.listar).not.toHaveBeenCalled();
     });
 });
 

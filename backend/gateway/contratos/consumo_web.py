@@ -80,6 +80,12 @@ ORDEN: Campos = {  # OrderService.ts → OrdenRespuesta
     "devuelto_en": "?string",
     "devuelto_por_id": "?integer",
 }
+SOLICITUD_NUEVA_ATENCION: Campos = {  # NuevaAtencionService.ts → SolicitudNuevaAtencionApi
+    "solicitud_id": "integer", "orden_cancelada_id": "integer", "vehiculo_id": "integer",
+    "cliente_usuario_id": "integer", "descripcion": "string", "solicitada_en": "string",
+    "situacion": ("pendiente", "aceptada", "rechazada"), "respuesta": "?string",
+    "revisor_id": "?integer", "revisada_en": "?string", "orden_generada_id": "?integer",
+}
 CUPO_DIARIO: Campos = {  # ConfiguracionTallerService.ts → CupoDiarioApi
     "max_ingresos_diarios": "?integer",
     "actualizado_por_id": "?integer",
@@ -275,6 +281,18 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
         "OrderService.registrarDevolucion", "post", "/api/ordenes/{orden_id}/devolucion",
         "200", {**ORDEN, "devuelto_en": "string", "devuelto_por_id": "integer"},
         cuerpo={},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.solicitar", "post", "/api/ordenes/{orden_id}/nueva-atencion", "201",
+        SOLICITUD_NUEVA_ATENCION, cuerpo={"descripcion": "string"},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.listar", "get", "/api/ordenes/nuevas-atenciones", "200",
+        {"items": [SOLICITUD_NUEVA_ATENCION], "total": "integer", "limit": "integer", "offset": "integer"},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.obtener", "get", "/api/ordenes/nuevas-atenciones/{solicitud_id}", "200",
+        SOLICITUD_NUEVA_ATENCION,
     ),
     # No lee la respuesta (es una solicitud pendiente, no una orden): después
     # vuelve a pedir la orden con getOrderById. Corregido en SCRUM-706 (D-01).

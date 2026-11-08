@@ -99,8 +99,11 @@ def problemas(r: Recorrido, tokens: dict[str, str]) -> list[tuple[str, str, str]
                                 "reutiliza sin validar cupo"), "REPRODUCIDO",
                                (f"orden {nueva['orden_id']} usa el ingreso {nueva['ingreso_id']} "
                                 f"de la orden entregada {entregada['orden_id']}")))
+        elif r.pasos[-1].estado == 201:
+            resultados.append(("P2 La entrega no cierra el ingreso", "CORREGIDO",
+                               f"La orden siguiente usa un ingreso nuevo ({nueva['ingreso_id']}); el anterior era {entregada['ingreso_id']}"))
         else:
-            resultados.append(("P2 La entrega no cierra el ingreso", "NO REPRODUCIDO",
+            resultados.append(("P2 La entrega no cierra el ingreso", "SIN CONFIRMAR",
                                f"respondió {r.pasos[-1].estado}"))
     except (FalloDePaso, StopIteration, KeyError):
         resultados.append(("P2 La entrega no cierra el ingreso", "SIN DATOS",
@@ -119,7 +122,7 @@ def pendientes(contrato: dict) -> list[tuple[str, str]]:
         ("Regla de una sola orden activa por vehículo y contrato 3.0.0",
          "implementada; verificar P1" if int(contrato["info"]["version"].split(".")[0]) >= 3
          else "no implementada"),
-        ("Registro de salida al entregar o devolver (salida_en)", "no implementado"),
+        ("Registro de salida al entregar o devolver (salida_en)", "verificar P2 y las pruebas de PostgreSQL; la fecha interna no se expone en esta respuesta"),
     ]
 
 
@@ -163,7 +166,7 @@ def main() -> int:
         "|---|---|---|",
         *[f"| {p} | {res} | {ev} |" for p, res, ev in encontrados],
         "",
-        "## 3. Pendientes (no se simulan)",
+        "## 3. Cobertura del contrato y verificaciones complementarias",
         "",
         "| Función | Estado |",
         "|---|---|",
@@ -179,7 +182,7 @@ def main() -> int:
     print(texto)
     if args.salida:
         args.salida.write_text(texto, encoding="utf-8")
-    return 0 if codigo_flujos == 0 and not fallas_preparacion and not falla_orden_unica else 1
+    return 0 if codigo_flujos == 0 and not fallas_preparacion and not falla_orden_unica and not any(p.startswith("P2") and res != "CORREGIDO" for p,res,_ in encontrados) else 1
 
 
 if __name__ == "__main__":

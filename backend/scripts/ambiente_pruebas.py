@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import os
 import secrets
+import shlex
 import shutil
 import signal
 import subprocess
@@ -114,7 +115,7 @@ def leer_archivo(ruta: Path) -> dict[str, str]:
 
 def configurar() -> int:
     if ARCHIVO.exists():
-        print(".env.pruebas ya existe; no se sobrescribe (los volúmenes usan sus credenciales).")
+        print(f"{ARCHIVO} ya existe; se conservan sus credenciales.")
         return 0
     texto = PLANTILLA.read_text(encoding="utf-8")
     clave_pg = secrets.token_urlsafe(24)
@@ -129,7 +130,7 @@ def configurar() -> int:
         ARCHIVO.chmod(0o600)
     except OSError:
         pass
-    print("Se creó backend/.env.pruebas con secretos propios (no se muestran).")
+    print(f"Se creó backend/{ARCHIVO} con secretos propios (no se muestran).")
     return 0
 
 
@@ -350,8 +351,7 @@ def exigir(entorno: dict[str, str], *, destino: bool) -> None:
 def compose(*argumentos: str, entorno: dict[str, str]) -> int:
     comando = ["docker", "compose", "-p", PROYECTO, "-f", str(COMPOSE),
                "--env-file", str(ARCHIVO), *argumentos]
-    print("$ docker compose -p sgtm_pruebas -f docker-compose.pruebas.yml --env-file .env.pruebas "
-          + " ".join(argumentos))
+    print("$ " + shlex.join(comando))
     return subprocess.run(comando, cwd=BACKEND_DIR, env=entorno, check=False).returncode
 
 
@@ -429,7 +429,7 @@ def iniciar(entorno: dict[str, str], *, sin_frontend: bool) -> int:
         proceso = subprocess.Popen(comando, cwd=directorios[nombre], env=entorno_hijo,
                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         _pid(nombre).write_text(str(proceso.pid))
-        print(f"{nombre}: iniciado en 127.0.0.1:{puerto} (log en backend/.pruebas/logs/{nombre}.log)")
+        print(f"{nombre}: iniciado en 127.0.0.1:{puerto} (log en {EJECUCION / "logs" / f"{nombre}.log"})")
     return _esperar_salud()
 
 

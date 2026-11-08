@@ -86,8 +86,14 @@ También incorpora el backend C: revisión administrativa inmutable e idempotent
 generación atómica de orden y vínculo (`201`/`200`), y aviso de revisión por
 outbox a la bandeja de MS1. No hay migraciones nuevas en C ni cambios al JSON
 público de notificaciones. Se agrega un receptor interno autenticado por
-servicio, documentado en el acuerdo de coordinación. La integración web C,
-publicación y activación permanecen pendientes; correo y push no se implementan.
+servicio, documentado en el acuerdo de coordinación. La integración web C ya está verificada contra servicios reales; la publicación
+y activación se confirman con las verificaciones de la entrega. Correo y push
+requieren proveedor, configuración y validación de entrega, todavía pendientes.
+
+Antes de publicar 3.0.0 se agregan `leida` y `leida_en` a la bandeja de MS1,
+el filtro `solo_no_leidas` y los PATCH de lectura propia (204 sin cuerpo). La
+migración `0006_lectura_notificaciones_ms1` agrega columnas, sin borrar avisos
+ni cambiar su fecha original. MS1 debe migrarse antes de activar los servicios.
 
 ### 2.2.1 — Elementos de `mecanicos_sobre_limite` documentados (D-04)
 

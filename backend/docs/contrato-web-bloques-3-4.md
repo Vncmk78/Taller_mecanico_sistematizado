@@ -5,8 +5,10 @@ Fecha: 8 de noviembre de 2026. Base funcional: commit `66f694d`.
 Este archivo fija la interfaz para trabajar en paralelo. Es un acuerdo de
 implementación: la Entrega A tiene backend y web integrados localmente en
 MartinH, pendientes de publicación. La Entrega B también está integrada localmente
-con la web de Claude. C tiene backend local, pendiente de integrar con la web
-administrativa. El aviso de revisión llega a la bandeja de MS1; correo y push
+con la web de Claude. C también está integrada localmente con la web administrativa (commit de Claude
+`f3181b1`, incorporado como `70d1380`). Se verificó contra Gateway y servicios reales:
+31 comprobaciones del portal Cliente y 13 del portal Administrador, con PostgreSQL
+y respuestas perdidas, además de la suite automatizada. El aviso de revisión llega a la bandeja de MS1; correo y push
 siguen pendientes del módulo transversal de notificaciones.
 Ninguna operación se considera publicada por aparecer aquí. Codex mantiene el backend y OpenAPI;
 Claude implementa el frontend por entregas. La integración final debe probarse
@@ -211,8 +213,9 @@ el cupo ni forzarla a Recibido.
 La revisión guarda auditoría y un evento `nueva_atencion.revisada` juntos.
 Repetir el mismo contenido no agrega otro evento. Verificaciones: 2625 pruebas
 aprobadas sin omisiones y 63 comprobaciones HTTP con procesos y PostgreSQL
-reales, incluida caída/recuperación de MS1. La integración de la web C de Claude
-todavía está pendiente; no se modificó su copia aislada.
+reales, incluida caída/recuperación de MS1. La web C de Claude está incorporada
+en MartinH y pasó 13 comprobaciones reales adicionales en navegador; su copia
+aislada se conserva intacta.
 
 - `POST /api/ordenes/nuevas-atenciones/{solicitud_id}/revision`: Administrador.
   Body `{"decision": "aceptada" | "rechazada", "respuesta": "..."}`; texto
@@ -243,9 +246,11 @@ existente (`MS1_EVENT_SHARED_SECRET`/`MS2_EVENT_SHARED_SECRET`). Evento:
 No incluye estados ni finge una transición de orden.
 
 MS1 comprueba destinatario Cliente activo y deduplica por UUID; responde
-`{notificacion_id,evento_id,duplicado}`. La bandeja conserva su esquema público:
+`{notificacion_id,evento_id,duplicado}`. La bandeja conserva los campos de negocio:
 tipo nuevo, título y mensaje con el número de solicitud; `orden_id` es el
-antecedente cancelado. Claude mantiene su adaptador actual. La respuesta y la
+antecedente cancelado. El adaptador web usa `creado_en` y `limite`. La versión 3.0.0 agrega además
+`leida` y `leida_en`, con `PATCH /api/notificaciones/{id}/leer` y
+`PATCH /api/notificaciones/leer-todas` (204), siempre solo sobre la bandeja propia. La respuesta y la
 auditoría completas se consultan en el detalle de la solicitud.
 
 Para entregar avisos se requiere el worker habilitado en MS2 y el receptor

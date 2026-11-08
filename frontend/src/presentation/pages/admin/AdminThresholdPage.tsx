@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
 import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import type { CambioUmbral, UmbralGeneral } from '@/domain/entities/Inventario';
@@ -25,6 +25,9 @@ export function AdminThresholdPage() {
     const [observacion, setObservacion] = useState('');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    // El estado `saving` no alcanza para frenar dos envíos en el mismo tick:
+    // se aplica en el siguiente render. La referencia bloquea de inmediato.
+    const savingRef = useRef(false);
 
     const load = useCallback(async () => {
         setStatus('loading');
@@ -57,11 +60,15 @@ export function AdminThresholdPage() {
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (savingRef.current) return;
         const numero = Number(valor);
-        if (!Number.isInteger(numero) || numero < 0) {
+        // Un campo vacío no puede interpretarse como umbral 0: se exige que el
+        // administrador escriba explícitamente el valor que quiere guardar.
+        if (valor.trim() === '' || !Number.isInteger(numero) || numero < 0) {
             setSaveError('Ingrese un entero mayor o igual a 0.');
             return;
         }
+        savingRef.current = true;
         setSaving(true);
         setSaveError(null);
         try {
@@ -75,6 +82,7 @@ export function AdminThresholdPage() {
         } catch (err) {
             setSaveError(getApiErrorMessage(err, 'No se pudo actualizar el umbral general.'));
         } finally {
+            savingRef.current = false;
             setSaving(false);
         }
     };

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { CapacidadMecanicos, CupoDiarioIngresos } from '@/domain/entities/ConfiguracionTaller';
 import { authService } from '@/infrastructure/api/AuthService';
@@ -150,6 +150,44 @@ describe('AdminConfigurationPage: límites independientes del taller', () => {
 
         expect(await screen.findByText(/no se pueden registrar ingresos ni crear órdenes/)).toBeInTheDocument();
         expect(screen.getAllByText('Sin configurar')).toHaveLength(1);
+    });
+
+    it.each(['0', '-1', '2.5', ''])('rechaza el cupo diario "%s" sin llamar a la API', async (valor) => {
+        renderPage();
+
+        const ingresos = await screen.findByRole('region', { name: 'Ingresos físicos por jornada' });
+        const campo = await within(ingresos).findByLabelText('Nuevo máximo de ingresos por jornada');
+        fireEvent.change(campo, { target: { value: valor } });
+        fireEvent.click(within(ingresos).getByRole('button', { name: 'Guardar' }));
+
+        expect(await within(ingresos).findByText('Ingrese un número entero mayor que 0.')).toBeInTheDocument();
+        expect(configuracionTallerService.configurarCupoDiario).not.toHaveBeenCalled();
+    });
+
+    it('acepta el valor límite 1 en cualquiera de los dos límites', async () => {
+        vi.mocked(configuracionTallerService.configurarCupoDiario).mockResolvedValue(
+            cupo({ maxIngresosDiarios: 1, sobreLimite: true })
+        );
+        vi.mocked(configuracionTallerService.configurarCapacidadMecanicos).mockResolvedValue(
+            capacidad({ maxOrdenesActivas: 1 })
+        );
+        renderPage();
+
+        const ingresos = await screen.findByRole('region', { name: 'Ingresos físicos por jornada' });
+        fireEvent.change(within(ingresos).getByLabelText(/Nuevo máximo/), { target: { value: '1' } });
+        fireEvent.click(within(ingresos).getByRole('button', { name: 'Guardar' }));
+
+        await waitFor(() =>
+            expect(configuracionTallerService.configurarCupoDiario).toHaveBeenCalledWith(1)
+        );
+
+        const capacidadTarjeta = tarjeta('Órdenes activas por mecánico');
+        fireEvent.change(within(capacidadTarjeta).getByLabelText(/Nuevo máximo/), { target: { value: '1' } });
+        fireEvent.click(within(capacidadTarjeta).getByRole('button', { name: 'Guardar' }));
+
+        await waitFor(() =>
+            expect(configuracionTallerService.configurarCapacidadMecanicos).toHaveBeenCalledWith(1)
+        );
     });
 
     it('un error de consulta se puede reintentar sin afectar al otro límite', async () => {

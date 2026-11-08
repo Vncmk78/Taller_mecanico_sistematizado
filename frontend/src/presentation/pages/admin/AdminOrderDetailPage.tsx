@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardX, Images } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
+import { DevolucionVehiculoPanel } from '@/presentation/components/orders/DevolucionVehiculoPanel';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -245,6 +246,8 @@ export function AdminOrderDetailPage() {
                     </div>
                 )}
             </section>
+
+            <DevolucionVehiculoPanel key={order.id} order={order} className="mt-6" />
 
             <OrderActionsPanel order={order} className="mt-6" />
         </div>

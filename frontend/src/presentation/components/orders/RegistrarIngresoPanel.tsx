@@ -4,10 +4,9 @@ import { ClipboardPlus } from 'lucide-react';
 import type { CupoDiarioIngresos } from '@/domain/entities/ConfiguracionTaller';
 import type { Vehicle } from '@/domain/entities/Vehicle';
 import { configuracionTallerService } from '@/infrastructure/api/ConfiguracionTallerService';
-import axios from 'axios';
 import type { Order } from '@/domain/entities/Order';
 import {
-    getApiErrorCode,
+    esResultadoIncierto,
     getApiErrorMessage,
     getApiErrorRequestId,
 } from '@/infrastructure/api/errors';
@@ -48,20 +47,6 @@ type EstadoIncierto = 'verificando' | 'sin_confirmar' | 'no_encontrada' | 'por_r
 
 /** Máximo de órdenes nuevas que se listan para revisión. */
 const MAX_ORDENES_REVISION = 10;
-
-/**
- * true cuando el error no prueba que MS2 haya descartado la operación: no
- * llegó respuesta, la Gateway no obtuvo la del servicio (502/503/504) o falló
- * ella misma (500 con código de la Gateway). MS2 pudo haber confirmado la
- * orden igual. Un rechazo propio de MS2 (409, 404, 422 o su 500 tras
- * deshacer la transacción) sí es definitivo.
- */
-function esResultadoIncierto(error: unknown): boolean {
-    if (!axios.isAxiosError(error) || !error.response) return true;
-    const estado = error.response.status;
-    if ([502, 503, 504].includes(estado)) return true;
-    return estado === 500 && getApiErrorCode(error) !== null;
-}
 
 async function tomarInstantanea(vehiculoId: string): Promise<Instantanea | null> {
     try {

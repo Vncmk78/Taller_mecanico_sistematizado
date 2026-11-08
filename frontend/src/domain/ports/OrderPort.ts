@@ -38,6 +38,13 @@ export interface OrderPort {
     ): Promise<Order>;
     /** Registra la entrega física de la orden (POST /ordenes/{id}/entrega). */
     registrarEntrega(ordenId: string, observacion?: string): Promise<Order>;
+    /**
+     * Registra la devolución física del vehículo de una orden Cancelada
+     * (POST /ordenes/{id}/devolucion, solo Administrador). La orden sigue
+     * Cancelada; MS2 decide fecha y responsable, cierra el ingreso y, si se
+     * repite, devuelve los datos originales.
+     */
+    registrarDevolucion(ordenId: string): Promise<Order>;
     /** Cancelación iniciada por el cliente propietario (POST /ordenes/{id}/cancelacion). */
     cancelarComoCliente(ordenId: string, motivo: string): Promise<Order>;
     /** Administrador confirma una solicitud pendiente; MS2 verifica la aprobación en MS3. */

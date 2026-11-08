@@ -43,6 +43,14 @@ export interface Order {
     creadoPorId: string;
     creadoEn: string;
     actualizadoEn: string;
+    /**
+     * Devolución física del vehículo de una orden Cancelada (fecha ISO con
+     * zona y usuario responsable, decididos por MS2). `null` en ambos cuando no
+     * hay devolución. `undefined` cuando la respuesta no informó estos campos:
+     * entonces no se sabe si hubo devolución y no se ofrece registrarla.
+     */
+    devueltoEn?: string | null;
+    devueltoPorId?: string | null;
     patente?: string;
     vehiculo?: string;
     mecanicoNombre?: string;

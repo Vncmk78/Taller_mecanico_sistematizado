@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import { authService } from '@/infrastructure/api/AuthService';
@@ -22,6 +22,7 @@ vi.mock('@/infrastructure/api/OrderService', () => ({
         asignarMecanico: vi.fn(),
         registrarEntrega: vi.fn(),
         cancelarComoCliente: vi.fn(),
+        registrarDevolucion: vi.fn(),
     },
 }));
 
@@ -176,3 +177,64 @@ describe('AdminOrderDetailPage: detalle con panel e historial', () => {
         expect(screen.getByRole('button', { name: 'Confirmar cancelación' })).toBeInTheDocument();
     });
 });
+
+describe('AdminOrderDetailPage: devolución del vehículo restaurada desde el GET', () => {
+    const cancelada: Order = {
+        ...orden,
+        estadoCodigo: 8,
+        mecanicoActualId: null,
+        mecanicoNombre: undefined,
+        devueltoEn: null,
+        devueltoPorId: null,
+    };
+    const admin = {
+        id: '3', email: 'admin@taller.cl', full_name: 'Admin', role: 'administrador' as const,
+        roles: ['administrador' as const], is_active: true,
+    };
+
+    beforeEach(() => {
+        useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
+        useOrderHistoryStore.setState({ entries: [], status: 'idle', error: null, isOffline: false });
+        useAuthStore.setState({ user: admin, token: 't', isAuthenticated: true });
+        useEvidenceStore.getState().reset();
+        vi.clearAllMocks();
+        vi.mocked(evidenciaService.getByOrder).mockResolvedValue([]);
+        vi.mocked(orderService.getOrderHistory).mockResolvedValue([]);
+    });
+
+    it('tras recargar, una devolución ya registrada se muestra sin ofrecer otra', async () => {
+        vi.mocked(orderService.getOrderById).mockResolvedValue({
+            ...cancelada,
+            devueltoEn: '2026-11-08T13:00:00-03:00',
+            devueltoPorId: '7',
+        });
+
+        renderPage();
+
+        expect(await screen.findByText(/Vehículo devuelto el/)).toHaveTextContent('usuario n° 7');
+        expect(screen.getByText(/· usuario n° 7$/)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Registrar devolución' })).not.toBeInTheDocument();
+        expect(orderService.getOrderById).toHaveBeenCalledWith('101');
+    });
+
+    it('una orden Cancelada sin devolución ofrece registrarla y actualiza el detalle', async () => {
+        vi.mocked(orderService.getOrderById).mockResolvedValue(cancelada);
+        vi.mocked(orderService.registrarDevolucion).mockResolvedValue({
+            ...cancelada,
+            devueltoEn: '2026-11-08T13:00:00-03:00',
+            devueltoPorId: '3',
+        });
+
+        renderPage();
+
+        expect(await screen.findByText('Pendiente')).toBeInTheDocument();
+        fireEvent.click(await screen.findByRole('button', { name: 'Registrar devolución' }));
+        const dialogo = await screen.findByRole('dialog');
+        fireEvent.click(within(dialogo).getByRole('button', { name: 'Registrar devolución' }));
+
+        expect(await screen.findByText(/· usuario n° 3$/)).toBeInTheDocument();
+        expect(screen.queryByText('Pendiente')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Cancelado').length).toBeGreaterThan(0);
+    });
+});
+

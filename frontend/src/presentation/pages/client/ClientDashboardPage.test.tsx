@@ -43,7 +43,7 @@ describe('ClientDashboardPage: resumen del portal según el cliente autenticado'
         expect(screen.getByRole('heading', { name: 'Bienvenido' })).toBeInTheDocument();
     });
 
-    it('enlaza a mis vehículos y a agendar mantención desde la sesión actual', () => {
+    it('enlaza a mis vehículos y a nuevas atenciones desde la sesión actual', () => {
         useAuthStore.setState({ user: cliente, token: 'token', isAuthenticated: true, isLoading: false, isInitializing: false });
 
         renderPage();
@@ -52,7 +52,7 @@ describe('ClientDashboardPage: resumen del portal según el cliente autenticado'
             screen.getByRole('link', { name: /Mis Vehículos/ })
         ).toHaveAttribute('href', '/client/vehiculos');
         expect(
-            screen.getByRole('link', { name: /Agendar Mantención/ })
-        ).toHaveAttribute('href', '/client/agendar');
+            screen.getByRole('link', { name: /Nuevas Atenciones/ })
+        ).toHaveAttribute('href', '/client/nuevas-atenciones');
     });
 });

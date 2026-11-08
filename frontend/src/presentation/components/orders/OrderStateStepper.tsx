@@ -1,21 +1,25 @@
 import { Map } from 'lucide-react';
+import type { OrderHistoryEntry } from '@/domain/entities/OrderHistory';
 import { ESTADOS_ORDEN } from '@/domain/entities/Order';
 
 interface OrderStateStepperProps {
     /** Código del estado actual de la orden (catálogo fijo 1-8). */
     estadoCodigo: number;
+    historial?: OrderHistoryEntry[];
 }
 
 /**
  * Representación visual inicial del ciclo de estados de una orden: una línea
- * de tiempo horizontal con las 8 etapas, marcando las alcanzadas, la actual
+ * de estados con las 8 posibilidades, marcando solo las registradas y la actual
  * (aria-current) y las futuras; con scroll horizontal en pantallas angostas.
  */
-export function OrderStateStepper({ estadoCodigo }: OrderStateStepperProps) {
+export function OrderStateStepper({ estadoCodigo, historial = [] }: OrderStateStepperProps) {
     const codigos = Object.keys(ESTADOS_ORDEN)
         .map(Number)
         .sort((a, b) => a - b);
 
+    const alcanzados = new Set([estadoCodigo, ...historial.flatMap((entry) =>
+        entry.estadoAnteriorCodigo === null ? [entry.estadoNuevoCodigo] : [entry.estadoAnteriorCodigo, entry.estadoNuevoCodigo])]);
     return (
         <section aria-labelledby="order-state-stepper-title" className="card p-6">
             <h3
@@ -28,7 +32,7 @@ export function OrderStateStepper({ estadoCodigo }: OrderStateStepperProps) {
 
             <ol className="flex items-start overflow-x-auto pb-2" aria-label="Ciclo de estados de la orden">
                 {codigos.map((codigo, index) => {
-                    const reached = codigo <= estadoCodigo;
+                    const reached = alcanzados.has(codigo);
                     const current = codigo === estadoCodigo;
 
                     return (
@@ -36,6 +40,7 @@ export function OrderStateStepper({ estadoCodigo }: OrderStateStepperProps) {
                             key={codigo}
                             aria-current={current ? 'step' : undefined}
                             aria-label={`Estado ${codigo}: ${ESTADOS_ORDEN[codigo]}`}
+                            data-alcanzado={reached}
                             className="relative flex flex-col items-center flex-1 min-w-24 px-1 text-center"
                         >
                             <div className="flex items-center w-full">

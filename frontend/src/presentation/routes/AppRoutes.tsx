@@ -115,7 +115,7 @@ export function AppRoutes() {
         <Route path="vehiculos" element={<ClientVehiclesPage />} />
         <Route path="vehiculos/nuevo" element={<ClientVehicleFormPage />} />
         <Route path="vehiculos/:id" element={<ClientVehicleDetailPage />} />
-        <Route path="agendar" element={<div className="text-text-muted">Agendar Mantención - Próximamente</div>} />
+        <Route path="agendar" element={<Navigate to="/client/ordenes" replace />} />
         <Route path="servicios" element={<ClientServicesPage />} />
         <Route path="ordenes" element={<ClientOrdersPage />} />
         <Route path="ordenes/:id" element={<ClientOrderDetailPage />} />

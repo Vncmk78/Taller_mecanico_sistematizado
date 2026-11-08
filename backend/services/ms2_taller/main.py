@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from services.ms2_taller.config import settings
 from services.ms2_taller.db import get_db
 from services.ms2_taller.dependencies import resolver_cliente_actual
+from services.ms2_taller.routers.nuevas_atenciones import router_nuevas_atenciones
 from services.ms2_taller.routers import (
     crear_router_vehiculos,
     router_clientes,
@@ -41,6 +42,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(crear_router_vehiculos(resolver_cliente_actual))
+# Las rutas estáticas de solicitudes deben preceder al GET /ordenes/{orden_id}.
+app.include_router(router_nuevas_atenciones)
 app.include_router(router_ordenes)
 app.include_router(router_clientes)
 

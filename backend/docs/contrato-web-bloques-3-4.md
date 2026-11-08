@@ -4,7 +4,8 @@ Fecha: 8 de noviembre de 2026. Base funcional: commit `66f694d`.
 
 Este archivo fija la interfaz para trabajar en paralelo. Es un acuerdo de
 implementación: la Entrega A tiene backend y web integrados localmente en
-MartinH, pendientes de publicación. Las entregas B y C todavía no están implementadas.
+MartinH, pendientes de publicación. La Entrega B tiene backend local, pendiente
+de integración con la web de Claude. La Entrega C todavía no está implementada.
 Ninguna operación se considera publicada por aparecer aquí. Codex mantiene el backend y OpenAPI;
 Claude implementa el frontend por entregas. La integración final debe probarse
 contra servicios reales. El contrato 3.0.0 está pendiente de publicación y
@@ -121,6 +122,22 @@ Frontend A:
    patrones existentes. No cambiar cupos, estados ni fechas desde la web.
 
 ## Entrega B: solicitud del Cliente
+
+Backend local implementado en MS2: alta idempotente, listado y detalle con el
+contrato siguiente. Migración `0014_nueva_atencion_ms2`, posterior a
+`0013_orden_activa_ms2`: crea solo `solicitud_nueva_atencion`, sus restricciones
+e índices, sin modificar filas existentes. No se ejecuta en ambientes compartidos
+ni en la demostración sin diagnóstico previo. El esquema incluye los campos de
+revisión y vínculo necesarios para consultar la entidad completa, pero B no
+expone operaciones para revisarla o generar órdenes: esas siguen en C.
+
+El alta bloquea vehículo, orden cancelada y luego solicitud vigente, en ese
+orden, compatible con entrega/devolución y creación de órdenes. La revisión y
+la generación de C deberán respetar ese orden si necesitan esos mismos bloqueos.
+El índice A protege también frente a escrituras que omitan el servicio.
+No exige devolución previa, no crea ingreso/orden/historial/outbox, ni consulta
+otros microservicios para registrar una solicitud. El aviso de revisión sigue
+pendiente de C. El contrato 3.0.0 continúa sin publicar.
 
 La entidad `SolicitudNuevaAtencion` tiene estos campos JSON:
 

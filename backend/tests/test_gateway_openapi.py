@@ -17,6 +17,7 @@ from gateway.contratos import clientes as contratos_clientes
 from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
+from gateway.contratos import nuevas_atenciones as contratos_nuevas_atenciones
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.main import app
 from gateway.contratos import catalogo as contratos_catalogo
@@ -77,6 +78,7 @@ from services.ms3_presupuestos.schemas.inventario import (
     RepuestoReservado as Ms3RepuestoReservado,
     DisponibilidadRepuestosRespuesta as Ms3DisponibilidadRepuestosRespuesta,
 )
+from services.ms2_taller.schemas import nueva_atencion as ms2_nuevas_atenciones
 from shared.auth import NombreRol, crear_token_acceso
 from shared.openapi_ordenes import ESTADOS_DOCUMENTADOS
 
@@ -127,6 +129,9 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes/{orden_id}/estado", "patch"),
     ("/api/ordenes/{orden_id}/entrega", "post"),
     ("/api/ordenes/{orden_id}/devolucion", "post"),
+    ("/api/ordenes/{orden_id}/nueva-atencion", "post"),
+    ("/api/ordenes/nuevas-atenciones", "get"),
+    ("/api/ordenes/nuevas-atenciones/{solicitud_id}", "get"),
     ("/api/ordenes/{orden_id}/cancelacion", "post"),
     ("/api/ordenes/cancelaciones/pendientes", "get"),
     ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
@@ -206,6 +211,9 @@ _PROTEGIDOS = {
     "/api/ordenes/{orden_id}/estado",
     "/api/ordenes/{orden_id}/entrega",
     "/api/ordenes/{orden_id}/devolucion",
+    "/api/ordenes/{orden_id}/nueva-atencion",
+    "/api/ordenes/nuevas-atenciones",
+    "/api/ordenes/nuevas-atenciones/{solicitud_id}",
     "/api/ordenes/{orden_id}/cancelacion",
     "/api/ordenes/cancelaciones/pendientes",
     "/api/ordenes/{orden_id}/cancelacion/confirmacion",
@@ -354,6 +362,8 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}/estado", "patch"),
         ("/api/ordenes/{orden_id}/entrega", "post"),
         ("/api/ordenes/{orden_id}/devolucion", "post"),
+        ("/api/ordenes/{orden_id}/nueva-atencion", "post"),
+        ("/api/ordenes/nuevas-atenciones/{solicitud_id}", "get"),
         ("/api/ordenes/{orden_id}/cancelacion", "post"),
         ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
         ("/api/evidencias", "post"),
@@ -437,6 +447,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
         ("/api/ordenes/{orden_id}/entrega", "post"): "EntregaSolicitud",
         ("/api/ordenes/{orden_id}/devolucion", "post"): "DevolucionSolicitud",
+        ("/api/ordenes/{orden_id}/nueva-atencion", "post"): "NuevaAtencionSolicitud",
         ("/api/ordenes/{orden_id}/cancelacion", "post"): "CancelacionClienteSolicitud",
         ("/api/ordenes/{orden_id}/bitacora", "post"): "BitacoraCrear",
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"): "DecisionOrdenSolicitud",
@@ -500,6 +511,7 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (contratos_vehiculos.VehiculoActualizar, Ms2VehiculoActualizar),
         (contratos_vehiculos.VehiculoRespuesta, Ms2VehiculoRespuesta),
         (contratos_ordenes.OrdenCrear, Ms2OrdenCrear),
+        *[(getattr(contratos_nuevas_atenciones, nombre), getattr(ms2_nuevas_atenciones, nombre)) for nombre in ("NuevaAtencionSolicitud", "SolicitudNuevaAtencionRespuesta", "SolicitudesNuevaAtencionRespuesta")],
         (contratos_ordenes.DevolucionSolicitud, Ms2DevolucionSolicitud),
         (contratos_ordenes.DevolucionOrdenRespuesta, Ms2DevolucionOrdenRespuesta),
         (

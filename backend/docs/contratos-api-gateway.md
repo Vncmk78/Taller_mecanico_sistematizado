@@ -5,7 +5,8 @@ app móvil (Integración IV). La fuente de verdad interactiva está en el Swagge
 de la Gateway: <http://localhost:8000/docs> y su versión JSON en
 <http://localhost:8000/openapi.json>.
 
-**Versión estable del contrato: 3.0.0.** Copia congelada para integrar sin
+**Contrato local preparado: 3.0.0, pendiente de publicación.** La última versión
+publicada es 2.2.1. Copia 3.0.0 para preparar la integración sin
 levantar la Gateway: [`docs/openapi/sgtm-gateway-3.0.0.json`](openapi/sgtm-gateway-3.0.0.json).
 Reglas de versionado e historial: [`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
 
@@ -973,6 +974,41 @@ sea `Entregado` ni `Cancelado`; una orden `Recibido` sin asignar no consume
 capacidad. La reasignación solo se confirma si el destino tiene cupo y el cambio
 se serializa junto con las demás asignaciones mediante la fila de configuración.
 Cada validación aceptada o rechazada queda registrada en el historial de MS2.
+
+### Solicitudes de nueva atención (Entrega B)
+
+La solicitud es una entidad propia de MS2, distinta de los ocho estados de una
+orden. No reserva hora ni crea una orden o ingreso, no ocupa capacidad de un
+mecánico y no consume cupo diario. Puede solicitarse antes o después de devolver
+el vehículo. Backend local en 3.0.0, pendiente de publicación e integración web.
+
+| Operación | Contrato |
+|---|---|
+| `POST /api/ordenes/{orden_id}/nueva-atencion` | Cliente propietario, incluso multirrol. Body `{"descripcion":"..."}`, recortado, no vacío, máximo 2000 caracteres, sin extras. `201` nueva; `200` pendiente con idéntica descripción; `403` sin Cliente; `404` inexistente/ajena; `409` antecedente no Cancelado u otra pendiente/aceptada; `422` datos inválidos. |
+| `GET /api/ordenes/nuevas-atenciones` | Cliente propias; Administrador todas, incluso multirrol; Mecánico sin esos roles recibe `403`. Filtros opcionales `situacion`, `orden_cancelada_id`, `orden_generada_id`. `limit` 1–100 (20 por defecto), `offset` no negativo (0). `200` con `{items,total,limit,offset}`, fecha e ID descendentes. Lista vacía válida; filtros inválidos `422`. |
+| `GET /api/ordenes/nuevas-atenciones/{solicitud_id}` | Cliente propietario o Administrador. `200` entidad; `403` sin esos roles; `404` inexistente/ajena; ID inválido `422`. |
+
+Todas requieren JWT (`401` inválido) y pueden responder `500` de persistencia,
+con rollback completo en el alta. Errores de Gateway conservan su formato.
+Las referencias de usuario y las fechas no se aceptan en el body.
+
+La entidad siempre serializa: `solicitud_id`, `orden_cancelada_id`, `vehiculo_id`,
+`cliente_usuario_id`, `descripcion`, `solicitada_en`, `situacion`, `respuesta`,
+`revisor_id`, `revisada_en`, `orden_generada_id`. Situaciones: `pendiente`,
+`aceptada`, `rechazada`. Los últimos cuatro campos son nulos al crear.
+
+Una pendiente o aceptada bloquea otra sobre el mismo antecedente, aunque la
+aceptada ya tenga orden generada (índice A). Tras un rechazo se permite una
+nueva conservando la anterior. Si una orden generada se cancela, la siguiente
+solicitud corresponde a esa orden, sin reabrir la anterior. La revisión y la
+generación no se implementan en B; siguen en la Entrega C.
+
+Tabla nueva: `solicitud_nueva_atencion`, migración `0014_nueva_atencion_ms2`.
+FK físicas solo a orden/vehículo de MS2, `ON DELETE RESTRICT`, con índices.
+Cliente y revisor son IDs lógicos de MS1. Restricciones de descripción, situación,
+revisión y vínculo coherentes; índice único parcial para no rechazadas. El alta
+bloquea vehículo antes que orden para coordinarse con devoluciones y altas.
+La migración no corrige datos existentes y se prueba en bases descartables.
 
 ### POST `/api/ordenes/{orden_id}/entrega`
 

@@ -23,6 +23,7 @@ from gateway.contratos import clientes as contratos_clientes
 from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
+from gateway.contratos import nuevas_atenciones as contratos_nuevas_atenciones
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
 from gateway.openapi_ejemplos import agregar_ejemplos_gateway
@@ -248,6 +249,9 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("EntregaOrdenRespuesta", contratos_ordenes.EntregaOrdenRespuesta),
     ("DevolucionSolicitud", contratos_ordenes.DevolucionSolicitud),
     ("DevolucionOrdenRespuesta", contratos_ordenes.DevolucionOrdenRespuesta),
+    ("NuevaAtencionSolicitud", contratos_nuevas_atenciones.NuevaAtencionSolicitud),
+    ("SolicitudNuevaAtencionRespuesta", contratos_nuevas_atenciones.SolicitudNuevaAtencionRespuesta),
+    ("SolicitudesNuevaAtencionRespuesta", contratos_nuevas_atenciones.SolicitudesNuevaAtencionRespuesta),
     ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
     ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
@@ -982,6 +986,62 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 ),
                 esquema_404=error_404_recurso,
             ),
+        },
+        "/api/ordenes/nuevas-atenciones": {
+            "get": _operacion(
+                tag="Órdenes", resumen="Listar solicitudes de nueva atención visibles",
+                descripcion=(
+                    "Cliente ve las propias; Administrador todas, incluso multirrol. "
+                    "Mecánico sin esos roles recibe 403. Orden descendente por fecha e ID. "
+                    "Una lista vacía devuelve 200. No crea órdenes ni consume cupo."
+                ),
+                operation_id="listar_nuevas_atenciones", cuerpo=None,
+                respuestas_ok={"200": _respuesta("Página de solicitudes visibles.", _ref("SolicitudesNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente o Administrador", "422": "Filtros o paginación inválidos"},
+                requiere_auth=True,
+                parametros_extra=[
+                    {"name": "situacion", "in": "query", "required": False,
+                     "schema": {"type": "string", "enum": ["pendiente", "aceptada", "rechazada"]}},
+                    *[{"name": campo, "in": "query", "required": False, "schema": {"type": "integer", "minimum": 1}}
+                      for campo in ("orden_cancelada_id", "orden_generada_id")],
+                    {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100}},
+                    {"name": "offset", "in": "query", "required": False, "schema": {"type": "integer", "default": 0, "minimum": 0}},
+                ],
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}": {
+            "get": _operacion(
+                tag="Órdenes", resumen="Consultar una solicitud de nueva atención visible",
+                descripcion="Cliente propietario o Administrador. Inexistente y ajena responden el mismo 404.",
+                operation_id="consultar_nueva_atencion", cuerpo=None,
+                respuestas_ok={"200": _respuesta("Solicitud visible.", _ref("SolicitudNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente o Administrador", "422": "Identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud de nueva atención inexistente o ajena.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/nueva-atencion": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Solicitar nueva atención de una orden cancelada propia",
+                descripcion=(
+                    "Cliente propietario, incluso multirrol. Descripción recortada, no vacía, "
+                    "máximo 2000 caracteres. 201 al crear; 200 si ya hay una pendiente con la "
+                    "misma descripción. 409 si el antecedente no está Cancelado o existe otra "
+                    "pendiente/aceptada, aunque ya haya generado orden. Un rechazo permite "
+                    "otra solicitud conservando la anterior. No exige devolución previa, "
+                    "no reserva hora y no crea orden, ingreso ni validación de cupo."
+                ),
+                operation_id="solicitar_nueva_atencion", cuerpo="NuevaAtencionSolicitud",
+                respuestas_ok={
+                    "201": _respuesta("Solicitud creada.", _ref("SolicitudNuevaAtencionRespuesta")),
+                    "200": _respuesta("Pendiente idéntica ya registrada.", _ref("SolicitudNuevaAtencionRespuesta")),
+                },
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente",
+                    "409": "Orden no cancelada o solicitud pendiente/aceptada existente", "422": "Body o identificador inválido"},
+                requiere_auth=True, con_orden_id=True,
+                descripcion_404="Orden inexistente o ajena.", esquema_404=error_404_recurso,
+            )
         },
         "/api/ordenes": {
             "post": _operacion(

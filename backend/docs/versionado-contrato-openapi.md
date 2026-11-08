@@ -77,6 +77,14 @@ No hay migración nueva para la salida: usa columnas existentes. No altera
 estados oficiales ni repara fechas históricas. La interfaz acordada con web
 está en [contrato-web-bloques-3-4.md](contrato-web-bloques-3-4.md).
 
+La misma versión todavía no publicada agrega el backend de la Entrega B:
+solicitud de nueva atención del Cliente propietario (`201`/`200` idempotente),
+listado y detalle visibles por Cliente/Administrador. Publica la entidad completa,
+sus filtros y situaciones sin cambiar estados de órdenes. La tabla y el índice A
+se crean mediante `0014_nueva_atencion_ms2`, sin reescribir datos anteriores.
+Las operaciones de revisión y generación de orden, y su aviso al Cliente,
+siguen pendientes de la Entrega C.
+
 ### 2.2.1 — Elementos de `mecanicos_sobre_limite` documentados (D-04)
 
 PATCH: documenta lo que MS2 ya respondía. En `CapacidadMecanicoRespuesta`

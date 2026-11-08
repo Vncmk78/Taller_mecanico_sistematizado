@@ -57,5 +57,6 @@ Esta restricción por sí sola no cierra el ingreso físico. El cierre al entreg
 y la devolución se incorporaron posteriormente en la Entrega A, integrada
 localmente con la web y pendiente de publicación; ver
 [contrato-web-bloques-3-4.md](contrato-web-bloques-3-4.md).
-Solicitudes de nueva atención y creación vinculada siguen pendientes. Una orden
+El alta y consulta de solicitudes tienen backend local en la Entrega B, pendiente
+de integrar con la web. La revisión y creación vinculada siguen en C. Una orden
 Entregada o Cancelada deja de ocupar la unicidad; cancelar no cierra el ingreso.

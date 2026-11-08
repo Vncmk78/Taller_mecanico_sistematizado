@@ -246,6 +246,8 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
     ("EntregaOrdenRespuesta", contratos_ordenes.EntregaOrdenRespuesta),
+    ("DevolucionSolicitud", contratos_ordenes.DevolucionSolicitud),
+    ("DevolucionOrdenRespuesta", contratos_ordenes.DevolucionOrdenRespuesta),
     ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
     ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
@@ -1378,11 +1380,13 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 resumen="Registrar la entrega física de una orden lista",
                 descripcion=(
                     "Cierra el ciclo normal (6 → 7): registra la fecha de entrega "
-                    "y la identidad que la autorizó. Solo el Administrador puede "
+                    "y la identidad que la autorizó, y cierra el ingreso físico "
+                    "en la misma transacción. Solo el Administrador puede "
                     "invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. "
                     "Repetir una entrega válida devuelve el registro original sin "
                     "duplicar historial. Otro estado responde 409; una entrega "
-                    "histórica sin auditoría completa responde 500."
+                    "histórica sin auditoría completa responde 500. No se corrigen "
+                    "automáticamente fechas de salida históricas desconocidas."
                 ),
                 operation_id="registrar_entrega_orden",
                 cuerpo="EntregaSolicitud",
@@ -1393,8 +1397,39 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "409": "La orden no está Lista o ya es terminal",
+                    "409": "La orden no está Lista o el ingreso no permite la salida",
                     "422": "Observación de entrega vacía",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/devolucion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar la devolución física de una orden cancelada",
+                descripcion=(
+                    "Solo Administrador. Body vacío obligatorio. Conserva Cancelado "
+                    "y registra fecha del servidor y responsable del JWT. Cierra el "
+                    "ingreso en la misma transacción sin agregar historial de estado. "
+                    "Repetir conserva los datos originales. Rechaza con 409 si otra "
+                    "orden del ingreso sigue activa o el ingreso ya está cerrado."
+                ),
+                operation_id="registrar_devolucion_orden",
+                cuerpo="DevolucionSolicitud",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Devolución registrada; un reintento conserva la original.",
+                        _ref("DevolucionOrdenRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "Estado o ingreso incompatible con la devolución",
+                    "422": "Body o identificador inválido",
                 },
                 requiere_auth=True,
                 con_orden_id=True,

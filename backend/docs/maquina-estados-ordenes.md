@@ -518,13 +518,21 @@ específica de implementación de esta operación, por lo que ese alcance debe a
 El `PATCH` genérico rechaza `6 → 7` con `409`. La operación específica
 `POST /api/ordenes/{orden_id}/entrega` exige rol Administrador y estado `Listo`,
 deriva `ENTREGA_FISICA`, obtiene el responsable del JWT y guarda estado, fecha,
-responsable e historial juntos. Repetir la operación conserva el registro
+responsable, cierre de `IngresoVehiculo.salida_en` e historial juntos. Repetir la operación conserva el registro
 original y no agrega otra fila de historial. La devolución física de un vehículo
 cancelado no lo convierte en `Entregado`. La operación se prueba en
 `test_admin_registra_entrega_desde_listo_con_historial_atomico`,
 `test_entrega_requiere_administrador_y_no_modifica_la_orden_si_no_autoriza`,
 `test_entrega_solo_desde_listo_y_rechazo_no_escribe_historial` y
 `test_repetir_entrega_devuelve_registro_original_sin_duplicar_historial`.
+
+La devolución usa `POST /api/ordenes/{orden_id}/devolucion`, Administrador,
+body `{}` obligatorio. Solo Cancelado; guarda fecha y responsable de devolución
+y cierra el ingreso atómicamente sin transición ni historial 8 → 8. Si otra
+orden del ingreso sigue activa, responde 409 con su número. El reintento conserva
+la auditoría inicial. Los ingresos históricos sin salida conocida no se reparan
+por estas operaciones. Pruebas adicionales: `test_salidas_vehiculo_api.py` y
+`test_salidas_vehiculo_postgresql.py` (bloqueos y concurrencia reales).
 
 #### Cancelación independiente (1/2/3 → 8)
 

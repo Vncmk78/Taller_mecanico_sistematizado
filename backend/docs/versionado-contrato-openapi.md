@@ -69,6 +69,14 @@ se respalda con un índice único parcial. La migración
 Antes de desplegar hay que coordinar la versión con web e Integración IV y
 diagnosticar la base de destino. Detalles: [orden-activa-por-vehiculo.md](orden-activa-por-vehiculo.md).
 
+Antes de su primera publicación, esta versión incorpora también la Entrega A:
+`POST /api/ordenes/{orden_id}/devolucion` (Administrador, body `{}`, 200
+idempotente), los campos aditivos y anulables `devuelto_en`/`devuelto_por_id`
+en las consultas de órdenes y el cierre atómico del ingreso al entregar.
+No hay migración nueva para la salida: usa columnas existentes. No altera
+estados oficiales ni repara fechas históricas. La interfaz acordada con web
+está en [contrato-web-bloques-3-4.md](contrato-web-bloques-3-4.md).
+
 ### 2.2.1 — Elementos de `mecanicos_sobre_limite` documentados (D-04)
 
 PATCH: documenta lo que MS2 ya respondía. En `CapacidadMecanicoRespuesta`

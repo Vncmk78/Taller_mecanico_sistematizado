@@ -3,8 +3,9 @@
 Fecha: 8 de noviembre de 2026. Base funcional: commit `66f694d`.
 
 Este archivo fija la interfaz para trabajar en paralelo. Es un acuerdo de
-implementación: los endpoints nuevos todavía no están disponibles ni se
-consideran publicados por aparecer aquí. Codex mantiene el backend y OpenAPI;
+implementación: la Entrega A tiene backend y OpenAPI locales, pendientes de
+integración web y publicación. Las entregas B y C todavía no están implementadas.
+Ninguna operación se considera publicada por aparecer aquí. Codex mantiene el backend y OpenAPI;
 Claude implementa el frontend por entregas. La integración final debe probarse
 contra servicios reales. El contrato 3.0.0 está pendiente de publicación y
 puede incluir estas operaciones antes de su primera publicación.
@@ -46,9 +47,14 @@ estados a las órdenes ni se implementa reserva de horas.
 ### Operación existente de entrega
 
 `POST /api/ordenes/{orden_id}/entrega`, Administrador. Conserva su body y su
-respuesta existentes. Codex agregará el cierre atómico del ingreso físico y
-conservará la fecha original ante reintentos. La web no cierra un ingreso por
+respuesta existentes (incluye los dos campos aditivos de consulta descritos abajo).
+El backend agrega el cierre atómico del ingreso físico y conserva la fecha
+original ante reintentos. La web no cierra un ingreso por
 su cuenta ni deduce la salida de una cancelación.
+
+Las entregas históricas con auditoría válida conservan su respuesta original.
+Si les falta la salida del ingreso, no se completa con una fecha inferida:
+la revisión histórica queda separada de esta entrega.
 
 ### Devolver el vehículo de una orden cancelada
 

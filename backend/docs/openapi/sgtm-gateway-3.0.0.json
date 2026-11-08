@@ -3731,7 +3731,9 @@
                       "mecanico_actual_id": null,
                       "creado_por_id": 99,
                       "creado_en": "2026-09-28T10:30:00-03:00",
-                      "actualizado_en": "2026-09-28T10:30:00-03:00"
+                      "actualizado_en": "2026-09-28T10:30:00-03:00",
+                      "devuelto_en": null,
+                      "devuelto_por_id": null
                     }
                   }
                 }
@@ -4045,7 +4047,9 @@
                         "mecanico_actual_id": null,
                         "creado_por_id": 99,
                         "creado_en": "2026-09-28T10:30:00-03:00",
-                        "actualizado_en": "2026-09-28T10:30:00-03:00"
+                        "actualizado_en": "2026-09-28T10:30:00-03:00",
+                        "devuelto_en": null,
+                        "devuelto_por_id": null
                       },
                       {
                         "orden_id": 32,
@@ -4055,7 +4059,9 @@
                         "mecanico_actual_id": 50,
                         "creado_por_id": 99,
                         "creado_en": "2026-09-28T10:30:00-03:00",
-                        "actualizado_en": "2026-09-28T11:00:00-03:00"
+                        "actualizado_en": "2026-09-28T11:00:00-03:00",
+                        "devuelto_en": null,
+                        "devuelto_por_id": null
                       }
                     ]
                   },
@@ -4284,7 +4290,9 @@
                       "mecanico_actual_id": null,
                       "creado_por_id": 99,
                       "creado_en": "2026-09-28T10:30:00-03:00",
-                      "actualizado_en": "2026-09-28T10:30:00-03:00"
+                      "actualizado_en": "2026-09-28T10:30:00-03:00",
+                      "devuelto_en": null,
+                      "devuelto_por_id": null
                     }
                   },
                   "esperando_diagnostico": {
@@ -4297,7 +4305,9 @@
                       "mecanico_actual_id": 50,
                       "creado_por_id": 99,
                       "creado_en": "2026-09-28T10:30:00-03:00",
-                      "actualizado_en": "2026-09-28T11:00:00-03:00"
+                      "actualizado_en": "2026-09-28T11:00:00-03:00",
+                      "devuelto_en": null,
+                      "devuelto_por_id": null
                     }
                   }
                 }
@@ -4570,7 +4580,9 @@
                       "mecanico_actual_id": 50,
                       "creado_por_id": 99,
                       "creado_en": "2026-09-28T10:30:00-03:00",
-                      "actualizado_en": "2026-09-28T11:00:00-03:00"
+                      "actualizado_en": "2026-09-28T11:00:00-03:00",
+                      "devuelto_en": null,
+                      "devuelto_por_id": null
                     }
                   },
                   "reasignacion": {
@@ -4583,7 +4595,9 @@
                       "mecanico_actual_id": 51,
                       "creado_por_id": 99,
                       "creado_en": "2026-09-28T10:30:00-03:00",
-                      "actualizado_en": "2026-09-28T11:00:00-03:00"
+                      "actualizado_en": "2026-09-28T11:00:00-03:00",
+                      "devuelto_en": null,
+                      "devuelto_por_id": null
                     }
                   }
                 }
@@ -6821,7 +6835,9 @@
                       "mecanico_actual_id": 50,
                       "creado_por_id": 99,
                       "creado_en": "2026-09-28T10:30:00-03:00",
-                      "actualizado_en": "2026-09-28T11:00:00-03:00"
+                      "actualizado_en": "2026-09-28T11:00:00-03:00",
+                      "devuelto_en": null,
+                      "devuelto_por_id": null
                     }
                   }
                 }
@@ -7109,7 +7125,7 @@
           "Órdenes"
         ],
         "summary": "Registrar la entrega física de una orden lista",
-        "description": "Cierra el ciclo normal (6 → 7): registra la fecha de entrega y la identidad que la autorizó. Solo el Administrador puede invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. Repetir una entrega válida devuelve el registro original sin duplicar historial. Otro estado responde 409; una entrega histórica sin auditoría completa responde 500.",
+        "description": "Cierra el ciclo normal (6 → 7): registra la fecha de entrega y la identidad que la autorizó, y cierra el ingreso físico en la misma transacción. Solo el Administrador puede invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. Repetir una entrega válida devuelve el registro original sin duplicar historial. Otro estado responde 409; una entrega histórica sin auditoría completa responde 500. No se corrigen automáticamente fechas de salida históricas desconocidas.",
         "operationId": "registrar_entrega_orden",
         "parameters": [
           {
@@ -7210,7 +7226,7 @@
             }
           },
           "409": {
-            "description": "La orden no está Lista o ya es terminal",
+            "description": "La orden no está Lista o el ingreso no permite la salida",
             "content": {
               "application/json": {
                 "schema": {
@@ -7361,6 +7377,270 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/EntregaSolicitud"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ordenes/{orden_id}/devolucion": {
+      "post": {
+        "tags": [
+          "Órdenes"
+        ],
+        "summary": "Registrar la devolución física de una orden cancelada",
+        "description": "Solo Administrador. Body vacío obligatorio. Conserva Cancelado y registra fecha del servidor y responsable del JWT. Cierra el ingreso en la misma transacción sin agregar historial de estado. Repetir conserva los datos originales. Rechaza con 409 si otra orden del ingreso sigue activa o el ingreso ya está cerrado.",
+        "operationId": "registrar_devolucion_orden",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          },
+          {
+            "name": "orden_id",
+            "in": "path",
+            "required": true,
+            "description": "Identificador de la orden de trabajo.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "example": 31
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Devolución registrada; un reintento conserva la original.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevolucionOrdenRespuesta"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Se requiere rol Administrador",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "409": {
+            "description": "Estado o ingreso incompatible con la devolución",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "422": {
+            "description": "Body o identificador inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "404": {
+            "description": "Orden no encontrada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevolucionSolicitud"
               }
             }
           }
@@ -22745,7 +23025,9 @@
             "mecanico_actual_id": null,
             "creado_por_id": 99,
             "creado_en": "2026-09-28T10:30:00-03:00",
-            "actualizado_en": "2026-09-28T10:30:00-03:00"
+            "actualizado_en": "2026-09-28T10:30:00-03:00",
+            "devuelto_en": null,
+            "devuelto_por_id": null
           },
           {
             "orden_id": 31,
@@ -22755,7 +23037,9 @@
             "mecanico_actual_id": 50,
             "creado_por_id": 99,
             "creado_en": "2026-09-28T10:30:00-03:00",
-            "actualizado_en": "2026-09-28T11:00:00-03:00"
+            "actualizado_en": "2026-09-28T11:00:00-03:00",
+            "devuelto_en": null,
+            "devuelto_por_id": null
           }
         ],
         "properties": {
@@ -22832,6 +23116,31 @@
             "format": "date-time",
             "title": "Actualizado En",
             "type": "string"
+          },
+          "devuelto_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fecha y hora de devolución física; nula si no se registró.",
+            "title": "Devuelto En"
+          },
+          "devuelto_por_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Responsable de la devolución en MS1; nulo si no se registró.",
+            "title": "Devuelto Por Id"
           }
         },
         "required": [
@@ -22842,7 +23151,9 @@
           "mecanico_actual_id",
           "creado_por_id",
           "creado_en",
-          "actualizado_en"
+          "actualizado_en",
+          "devuelto_en",
+          "devuelto_por_id"
         ],
         "title": "OrdenRespuesta",
         "type": "object"
@@ -22856,6 +23167,8 @@
                 "actualizado_en": "2026-09-28T10:30:00-03:00",
                 "creado_en": "2026-09-28T10:30:00-03:00",
                 "creado_por_id": 99,
+                "devuelto_en": null,
+                "devuelto_por_id": null,
                 "estado_codigo": 1,
                 "ingreso_id": 18,
                 "mecanico_actual_id": null,
@@ -22930,6 +23243,31 @@
                 "format": "date-time",
                 "title": "Actualizado En",
                 "type": "string"
+              },
+              "devuelto_en": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Fecha y hora de devolución física; nula si no se registró.",
+                "title": "Devuelto En"
+              },
+              "devuelto_por_id": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Responsable de la devolución en MS1; nulo si no se registró.",
+                "title": "Devuelto Por Id"
               }
             },
             "required": [
@@ -22940,7 +23278,9 @@
               "mecanico_actual_id",
               "creado_por_id",
               "creado_en",
-              "actualizado_en"
+              "actualizado_en",
+              "devuelto_en",
+              "devuelto_por_id"
             ],
             "title": "OrdenRespuesta",
             "type": "object"
@@ -22954,6 +23294,8 @@
                 "actualizado_en": "2026-09-28T10:30:00-03:00",
                 "creado_en": "2026-09-28T10:30:00-03:00",
                 "creado_por_id": 99,
+                "devuelto_en": null,
+                "devuelto_por_id": null,
                 "estado_codigo": 1,
                 "ingreso_id": 18,
                 "mecanico_actual_id": null,
@@ -23080,6 +23422,8 @@
             "actualizado_en": "2026-09-28T10:30:00-03:00",
             "creado_en": "2026-09-28T10:30:00-03:00",
             "creado_por_id": 99,
+            "devuelto_en": null,
+            "devuelto_por_id": null,
             "estado_codigo": 1,
             "ingreso_id": 18,
             "mecanico_actual_id": null,
@@ -23155,6 +23499,31 @@
             "title": "Actualizado En",
             "type": "string"
           },
+          "devuelto_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fecha y hora de devolución física; nula si no se registró.",
+            "title": "Devuelto En"
+          },
+          "devuelto_por_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Responsable de la devolución en MS1; nulo si no se registró.",
+            "title": "Devuelto Por Id"
+          },
           "entregado_en": {
             "format": "date-time",
             "title": "Entregado En",
@@ -23178,11 +23547,133 @@
           "creado_por_id",
           "creado_en",
           "actualizado_en",
+          "devuelto_en",
+          "devuelto_por_id",
           "entregado_en",
           "entregado_por_id",
           "historial_id"
         ],
         "title": "EntregaOrdenRespuesta",
+        "type": "object"
+      },
+      "DevolucionSolicitud": {
+        "additionalProperties": false,
+        "description": "Body vacío obligatorio: fecha y responsable los obtiene MS2.",
+        "examples": [
+          {}
+        ],
+        "properties": {},
+        "title": "DevolucionSolicitud",
+        "type": "object"
+      },
+      "DevolucionOrdenRespuesta": {
+        "description": "Conserva Cancelado y confirma la auditoría original de devolución.",
+        "examples": [
+          {
+            "actualizado_en": "2026-09-28T10:30:00-03:00",
+            "creado_en": "2026-09-28T10:30:00-03:00",
+            "creado_por_id": 99,
+            "devuelto_en": "2026-09-28T15:00:00-03:00",
+            "devuelto_por_id": 99,
+            "estado_codigo": 8,
+            "ingreso_id": 18,
+            "mecanico_actual_id": null,
+            "orden_id": 31,
+            "vehiculo_id": 12
+          }
+        ],
+        "properties": {
+          "orden_id": {
+            "description": "Identificador de la orden.",
+            "examples": [
+              31
+            ],
+            "title": "Orden Id",
+            "type": "integer"
+          },
+          "vehiculo_id": {
+            "description": "Vehículo atendido.",
+            "examples": [
+              12
+            ],
+            "title": "Vehiculo Id",
+            "type": "integer"
+          },
+          "ingreso_id": {
+            "description": "Ingreso físico asociado.",
+            "examples": [
+              18
+            ],
+            "title": "Ingreso Id",
+            "type": "integer"
+          },
+          "estado_codigo": {
+            "description": "Código del estado oficial actual (1 a 8).",
+            "examples": [
+              1
+            ],
+            "title": "Estado Codigo",
+            "type": "integer"
+          },
+          "mecanico_actual_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Referencia lógica al responsable actual en MS1; puede ser nula mientras la orden está recibida y sin asignación.",
+            "examples": [
+              50
+            ],
+            "title": "Mecanico Actual Id"
+          },
+          "creado_por_id": {
+            "description": "Referencia lógica al administrador de MS1 que creó la orden.",
+            "examples": [
+              99
+            ],
+            "title": "Creado Por Id",
+            "type": "integer"
+          },
+          "creado_en": {
+            "description": "Fecha y hora de creación de la orden.",
+            "format": "date-time",
+            "title": "Creado En",
+            "type": "string"
+          },
+          "actualizado_en": {
+            "description": "Fecha y hora de la última actualización de la orden.",
+            "format": "date-time",
+            "title": "Actualizado En",
+            "type": "string"
+          },
+          "devuelto_en": {
+            "format": "date-time",
+            "title": "Devuelto En",
+            "type": "string"
+          },
+          "devuelto_por_id": {
+            "exclusiveMinimum": 0,
+            "title": "Devuelto Por Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "orden_id",
+          "vehiculo_id",
+          "ingreso_id",
+          "estado_codigo",
+          "mecanico_actual_id",
+          "creado_por_id",
+          "creado_en",
+          "actualizado_en",
+          "devuelto_en",
+          "devuelto_por_id"
+        ],
+        "title": "DevolucionOrdenRespuesta",
         "type": "object"
       },
       "CancelacionClienteSolicitud": {

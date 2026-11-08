@@ -40,6 +40,8 @@ from services.ms2_taller.schemas.orden import (
     SolicitudCancelacionRespuesta,
     CambioEstadoSolicitud,
     EntregaOrdenRespuesta,
+    DevolucionOrdenRespuesta,
+    DevolucionSolicitud,
     DisponibilidadRepuestosRespuesta,
     HistorialOrdenesVehiculoRespuesta,
     CancelacionClienteSolicitud,
@@ -57,6 +59,7 @@ from services.ms2_taller.services.bitacora import (
 )
 from services.ms2_taller.services.ordenes import (
     EntregaOrdenInconsistenteError,
+    SalidaVehiculoNoPermitidaError,
     OrdenEstadoInvalidoError,
     OrdenEstadoNoAutorizadoError,
     OrdenNoEncontradaError,
@@ -78,6 +81,7 @@ from services.ms2_taller.services.ordenes import (
     obtener_historial_orden,
     obtener_orden_visible,
     registrar_entrega_fisica,
+    registrar_devolucion_fisica,
     listar_solicitudes_cancelacion_pendientes,
     solicitar_cancelacion_orden,
 )
@@ -800,7 +804,8 @@ def cambiar_estado(
         "Solo un Administrador puede confirmar la entrega de una orden en "
         "estado Listo. El responsable y la fecha/hora se obtienen del JWT y "
         "del servidor. Repetir una entrega ya registrada devuelve el mismo "
-        "registro, sin duplicar el historial."
+        "registro, sin duplicar el historial. La primera entrega cierra el "
+        "ingreso físico en la misma transacción; no corrige salidas históricas."
     ),
     responses={
         status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
@@ -843,7 +848,7 @@ def confirmar_entrega_orden(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Orden no encontrada",
         ) from exc
-    except OrdenTransicionNoPermitidaError as exc:
+    except (OrdenTransicionNoPermitidaError, SalidaVehiculoNoPermitidaError) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
@@ -857,6 +862,47 @@ def confirmar_entrega_orden(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible registrar la entrega física",
+        ) from exc
+
+
+@router_ordenes.post(
+    "/{orden_id}/devolucion",
+    response_model=DevolucionOrdenRespuesta,
+    summary="Registrar la devolución física de una orden cancelada",
+    description=(
+        "Solo Administrador. Conserva Cancelado, registra fecha del servidor y "
+        "responsable del JWT, y cierra el ingreso en una sola transacción. "
+        "Un reintento conserva la auditoría original. No crea un cambio de "
+        "estado ni permite salir mientras otra orden del ingreso siga activa."
+    ),
+    responses={
+        401: {"description": "JWT ausente o inválido"},
+        403: {"description": "Se requiere rol Administrador"},
+        404: {"description": "Orden no encontrada"},
+        409: {"description": "Estado o ingreso incompatible con la devolución"},
+        500: {"description": "No fue posible registrar la devolución física"},
+    },
+)
+def confirmar_devolucion_orden(
+    body: DevolucionSolicitud,
+    orden_id: int = Path(gt=0),
+    db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+) -> DevolucionOrdenRespuesta:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise HTTPException(status_code=403, detail="Se requiere rol Administrador")
+    try:
+        orden = registrar_devolucion_fisica(
+            db, orden_id=orden_id, administrador_id=principal.usuario_id,
+        )
+        return DevolucionOrdenRespuesta.model_validate(orden)
+    except OrdenNoEncontradaError as exc:
+        raise HTTPException(status_code=404, detail="Orden no encontrada") from exc
+    except SalidaVehiculoNoPermitidaError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PersistenciaOrdenError as exc:
+        raise HTTPException(
+            status_code=500, detail="No fue posible registrar la devolución física",
         ) from exc
 
 

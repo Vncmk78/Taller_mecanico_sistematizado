@@ -979,7 +979,8 @@ Cada validación aceptada o rechazada queda registrada en el historial de MS2.
 Registra la entrega física de una orden que se encuentra en `Listo`. Solo un
 Administrador puede confirmarla. MS2 obtiene el usuario responsable desde el
 JWT y la fecha/hora desde la base de datos; actualiza `OrdenTrabajo`, completa
-`entregado_en` y `entregado_por_id`, y agrega `HistorialEstado` en una sola
+`entregado_en` y `entregado_por_id`, cierra el ingreso con la misma fecha en
+`IngresoVehiculo.salida_en` y agrega `HistorialEstado` en una sola
 transacción. Si la respuesta se pierde y se repite la petición, devuelve el
 registro original sin cambiar la fecha ni duplicar el historial.
 
@@ -988,11 +989,43 @@ registro original sin cambiar la fecha ni duplicar el historial.
 | Auth | `Authorization: Bearer <token>` con rol Administrador |
 | Body | Opcional: `{ "observacion": "Entregado al cliente" }`; rechaza texto vacío |
 | Respuesta OK | `200` con los campos de `OrdenRespuesta`, `entregado_en`, `entregado_por_id` e `historial_id` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` estado distinto de `Listo` · `422` observación vacía · `500` persistencia o auditoría inconsistente |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` estado distinto de `Listo` o ingreso incompatible con la salida · `422` observación vacía · `500` persistencia o auditoría inconsistente |
 
 Una repetición válida devuelve la misma respuesta de entrega. El `PATCH`
 genérico sigue rechazando `Listo → Entregado`; tampoco permite registrar como
 entregada la devolución física de una orden cancelada.
+
+Una entrega histórica con auditoría válida se devuelve tal como está. Si le
+falta `salida_en`, el reintento no inventa una fecha ni repara ese dato: requiere
+un diagnóstico y una corrección histórica acordada por separado.
+
+### POST `/api/ordenes/{orden_id}/devolucion`
+
+Administrador, incluido multirrol; body obligatorio `{}` sin campos extra.
+La orden debe estar Cancelada (8) y su ingreso abierto sin otra orden activa.
+Guarda `devuelto_en`, `devuelto_por_id` y `IngresoVehiculo.salida_en` en una
+transacción, con la misma fecha de base de datos y la identidad del JWT.
+Conserva Cancelado: no escribe historial de transición ni publica un cambio
+de estado ficticio. Cancelar por sí solo no cierra el ingreso.
+
+`200` devuelve `DevolucionOrdenRespuesta`: todos los campos de `OrdenRespuesta`,
+con `devuelto_en` y `devuelto_por_id` no nulos. El reintento devuelve la fecha
+y responsable originales, incluso si después se creó otra atención en un
+ingreso nuevo. Los GET de detalle, listado e historial por vehículo siempre
+incluyen esos dos campos (nulos cuando no hay devolución).
+
+Errores: `401` JWT inválido; `403` sin Administrador; `404` orden inexistente;
+`409` estado/ingreso incompatible, ingreso cerrado o devolución histórica
+incompleta; `422` identificador no positivo o body inválido; `500` persistencia
+con rollback completo. Si otra orden del mismo ingreso sigue activa, el `409`
+indica su número. Su posterior entrega cierra el ingreso; no se atribuye una
+devolución a las órdenes canceladas que lo compartían.
+
+Alta y salida bloquean primero el vehículo. Así, si gana la salida, la siguiente
+alta crea otro ingreso y valida el cupo; si gana un alta sobre una cancelada,
+reutiliza el ingreso y la devolución queda impedida por la nueva orden activa.
+El cupo cuenta ingresos registrados por jornada: una salida no lo descuenta.
+No se corrigen datos históricos automáticamente.
 
 ### GET y PUT `/api/ordenes/configuracion/capacidad/mecanicos`
 

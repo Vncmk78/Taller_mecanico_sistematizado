@@ -101,7 +101,7 @@ describe('ClientNuevasAtencionesPage', () => {
         await waitFor(() =>
             expect(nuevaAtencionService.listar).toHaveBeenLastCalledWith({ situacion: 'rechazada' }, { limit: 20, offset: 0 })
         );
-        expect(await screen.findByText('No hay solicitudes con esa situación.')).toBeInTheDocument();
+        expect(await screen.findByText('No hay solicitudes con esos filtros.')).toBeInTheDocument();
     });
 
     it('una cuenta que incluye Administrador ve el alcance administrativo', async () => {

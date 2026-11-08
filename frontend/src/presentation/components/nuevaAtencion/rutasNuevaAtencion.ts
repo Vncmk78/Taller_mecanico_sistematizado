@@ -3,6 +3,13 @@ import type { User } from '@/domain/entities/User';
 import { hasAnyRole } from '@/presentation/utils/roleVisibility';
 
 export const RUTA_SOLICITUDES_CLIENTE = '/client/nuevas-atenciones';
+export const RUTA_SOLICITUDES_ADMIN = '/admin/nuevas-atenciones';
+
+/**
+ * Desde el portal administrativo las órdenes se abren siempre en /admin,
+ * también las propias de un Administrador multirrol.
+ */
+export const rutaOrdenAdmin = (ordenId: string) => `/admin/ordenes/${ordenId}`;
 
 /**
  * Detalle de una orden relacionada con la solicitud (antecedente o generada).
@@ -17,6 +24,6 @@ export function rutaOrdenDeSolicitud(
 ): string {
     const propia = user?.id === solicitud.clienteUsuarioId;
     return !propia && hasAnyRole(user, 'administrador')
-        ? `/admin/ordenes/${ordenId}`
+        ? rutaOrdenAdmin(ordenId)
         : `/client/ordenes/${ordenId}`;
 }

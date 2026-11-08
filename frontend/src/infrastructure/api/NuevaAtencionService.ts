@@ -1,11 +1,17 @@
 import type {
+    DecisionRevision,
     FiltrosSolicitudes,
     PaginaSolicitudes,
     SituacionSolicitud,
     SolicitudNuevaAtencion,
 } from '@/domain/entities/SolicitudNuevaAtencion';
-import type { NuevaAtencionPort, ResultadoSolicitud } from '@/domain/ports/NuevaAtencionPort';
+import type {
+    NuevaAtencionPort,
+    ResultadoGeneracion,
+    ResultadoSolicitud,
+} from '@/domain/ports/NuevaAtencionPort';
 import apiClient from '../config/apiClient';
+import { mapOrdenApi, type OrdenRespuesta } from './OrderService';
 
 // Contrato acordado de MS2 a través de la Gateway (contrato-web-bloques-3-4.md,
 // Entrega B). Todas las propiedades llegan siempre, incluidas las nulas.
@@ -28,6 +34,23 @@ interface PaginaSolicitudesApi {
     total: number;
     limit: number;
     offset: number;
+}
+
+interface GeneracionApi {
+    solicitud: SolicitudNuevaAtencionApi;
+    orden: OrdenRespuesta;
+}
+
+/**
+ * Una respuesta 200/201 que no trae lo que el contrato garantiza (la revisión
+ * con su auditoría, o la orden vinculada a la solicitud). No se presenta como
+ * éxito: la pantalla comprueba con el GET de la solicitud.
+ */
+export class RespuestaIncompletaError extends Error {
+    constructor(detalle: string) {
+        super(detalle);
+        this.name = 'RespuestaIncompletaError';
+    }
 }
 
 const idONulo = (valor: number | null) => (valor === null ? null : String(valor));
@@ -67,6 +90,43 @@ class NuevaAtencionService implements NuevaAtencionPort {
         if (filtros.ordenGeneradaId) params.orden_generada_id = Number(filtros.ordenGeneradaId);
         const { data } = await apiClient.get<PaginaSolicitudesApi>('/ordenes/nuevas-atenciones', { params });
         return { ...data, items: data.items.map(mapSolicitudApi) };
+    }
+
+    async revisar(
+        solicitudId: string,
+        decision: DecisionRevision,
+        respuesta: string
+    ): Promise<SolicitudNuevaAtencion> {
+        const { data } = await apiClient.post<SolicitudNuevaAtencionApi>(
+            `/ordenes/nuevas-atenciones/${solicitudId}/revision`,
+            { decision, respuesta: respuesta.trim() }
+        );
+        if (
+            !data ||
+            data.situacion === 'pendiente' ||
+            !data.respuesta ||
+            data.revisor_id === null ||
+            !data.revisada_en
+        ) {
+            throw new RespuestaIncompletaError('La respuesta no incluyó la revisión registrada.');
+        }
+        return mapSolicitudApi(data);
+    }
+
+    async generarOrden(solicitudId: string): Promise<ResultadoGeneracion> {
+        const respuesta = await apiClient.post<GeneracionApi>(
+            `/ordenes/nuevas-atenciones/${solicitudId}/orden`,
+            {}
+        );
+        const { solicitud, orden } = respuesta.data ?? ({} as Partial<GeneracionApi>);
+        if (!solicitud || !orden || solicitud.orden_generada_id !== orden.orden_id) {
+            throw new RespuestaIncompletaError('La respuesta no incluyó la orden vinculada a la solicitud.');
+        }
+        return {
+            solicitud: mapSolicitudApi(solicitud),
+            orden: mapOrdenApi(orden),
+            creada: respuesta.status === 201,
+        };
     }
 
     async obtener(solicitudId: string): Promise<SolicitudNuevaAtencion> {

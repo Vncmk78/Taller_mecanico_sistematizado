@@ -29,6 +29,8 @@ import { ClientBudgetDetailPage } from '@/presentation/pages/client/ClientBudget
 import { ClientOrdersPage } from '@/presentation/pages/client/ClientOrdersPage';
 import { ClientOrderDetailPage } from '@/presentation/pages/client/ClientOrderDetailPage';
 import { ClientOrderEvidencePage } from '@/presentation/pages/client/ClientOrderEvidencePage';
+import { AdminNuevasAtencionesPage } from '@/presentation/pages/admin/AdminNuevasAtencionesPage';
+import { AdminNuevaAtencionDetailPage } from '@/presentation/pages/admin/AdminNuevaAtencionDetailPage';
 import { ClientNuevasAtencionesPage } from '@/presentation/pages/client/ClientNuevasAtencionesPage';
 import { ClientNuevaAtencionDetailPage } from '@/presentation/pages/client/ClientNuevaAtencionDetailPage';
 import { MechanicDashboardPage } from '@/presentation/pages/mechanic/MechanicDashboardPage';
@@ -81,6 +83,8 @@ export function AppRoutes() {
           path="ordenes/:id/evidencias"
           element={<OrderEvidencePage backTo="/admin/ordenes" backLabel="Volver a la gestión de órdenes" canUpload />}
         />
+        <Route path="nuevas-atenciones" element={<AdminNuevasAtencionesPage />} />
+        <Route path="nuevas-atenciones/:id" element={<AdminNuevaAtencionDetailPage />} />
         <Route path="clientes" element={<AdminClientsPage />} />
         <Route path="configuracion" element={<AdminConfigurationPage />} />
         <Route path="vehiculos" element={<AdminVehiclesPage />} />

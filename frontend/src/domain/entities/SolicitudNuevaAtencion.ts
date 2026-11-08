@@ -66,3 +66,25 @@ export function validarDescripcionSolicitud(texto: string): string | null {
 export function bloqueaNuevaSolicitud(solicitud: SolicitudNuevaAtencion): boolean {
     return solicitud.situacion === 'pendiente' || solicitud.situacion === 'aceptada';
 }
+
+// ── Revisión administrativa y generación de la orden (Entrega C) ────────────
+
+export type DecisionRevision = Exclude<SituacionSolicitud, 'pendiente'>;
+
+/**
+ * La respuesta del Administrador es obligatoria para aceptar y para rechazar:
+ * se recorta y no puede quedar vacía. No hay un máximo acordado: lo decide MS2.
+ */
+export function validarRespuestaRevision(texto: string): string | null {
+    return texto.trim() === '' ? 'Escriba la respuesta que verá el cliente.' : null;
+}
+
+/** Solo una solicitud pendiente admite revisión; una revisión confirmada no se edita. */
+export function admiteRevision(solicitud: SolicitudNuevaAtencion): boolean {
+    return solicitud.situacion === 'pendiente';
+}
+
+/** Se ofrece generar la orden solo si la solicitud está aceptada y aún no la tiene. */
+export function admiteGenerarOrden(solicitud: SolicitudNuevaAtencion): boolean {
+    return solicitud.situacion === 'aceptada' && solicitud.ordenGeneradaId === null;
+}

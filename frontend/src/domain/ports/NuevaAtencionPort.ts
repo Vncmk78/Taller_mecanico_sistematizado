@@ -1,4 +1,6 @@
+import type { Order } from '../entities/Order';
 import type {
+    DecisionRevision,
     FiltrosSolicitudes,
     PaginaSolicitudes,
     SolicitudNuevaAtencion,
@@ -7,6 +9,13 @@ import type {
 export interface ResultadoSolicitud {
     solicitud: SolicitudNuevaAtencion;
     /** true con 201 (solicitud nueva); false con 200 (pendiente idéntica ya existente). */
+    creada: boolean;
+}
+
+export interface ResultadoGeneracion {
+    solicitud: SolicitudNuevaAtencion;
+    orden: Order;
+    /** true con 201 (orden y vínculo nuevos); false con 200 (vínculo ya existente). */
     creada: boolean;
 }
 
@@ -27,4 +36,17 @@ export interface NuevaAtencionPort {
     ): Promise<PaginaSolicitudes>;
     /** Detalle de una solicitud (GET /ordenes/nuevas-atenciones/{id}). */
     obtener(solicitudId: string): Promise<SolicitudNuevaAtencion>;
+    /**
+     * Revisión administrativa de una solicitud pendiente
+     * (POST /ordenes/nuevas-atenciones/{id}/revision). Solo envía decisión y
+     * respuesta recortada: responsable y fecha los registra MS2. Repetir la
+     * misma revisión devuelve la existente; otro contenido responde 409.
+     */
+    revisar(solicitudId: string, decision: DecisionRevision, respuesta: string): Promise<SolicitudNuevaAtencion>;
+    /**
+     * Genera la orden de una solicitud aceptada (POST
+     * /ordenes/nuevas-atenciones/{id}/orden, body {}). MS2 crea la orden y el
+     * vínculo en una transacción; si ya existía, devuelve la misma asociación.
+     */
+    generarOrden(solicitudId: string): Promise<ResultadoGeneracion>;
 }

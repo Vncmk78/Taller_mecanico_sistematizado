@@ -7,7 +7,7 @@ import apiClient from '../config/apiClient';
 // Contrato HTTP de MS2 (OrdenRespuesta) a través de la API Gateway (/api/ordenes).
 // Al igual que en vehículos, el backend usa nombres en español y el dominio del
 // frontend en inglés; este servicio traduce el sentido de la respuesta.
-interface OrdenRespuesta {
+export interface OrdenRespuesta {
     orden_id: number;
     vehiculo_id: number;
     ingreso_id: number;
@@ -39,7 +39,7 @@ export class DevolucionSinDatosError extends Error {
     }
 }
 
-function mapOrdenApi(o: OrdenRespuesta): Order {
+export function mapOrdenApi(o: OrdenRespuesta): Order {
     return {
         id: String(o.orden_id),
         vehicleId: String(o.vehiculo_id),

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+    admiteGenerarOrden,
+    admiteRevision,
     bloqueaNuevaSolicitud,
     DESCRIPCION_SOLICITUD_MAX,
     validarDescripcionSolicitud,
+    validarRespuestaRevision,
     type SolicitudNuevaAtencion,
 } from './SolicitudNuevaAtencion';
 
@@ -48,3 +51,25 @@ describe('bloqueaNuevaSolicitud', () => {
         expect(bloqueaNuevaSolicitud(solicitud({ situacion: 'rechazada', respuesta: 'No corresponde' }))).toBe(false);
     });
 });
+
+describe('revisión y generación', () => {
+    it('la respuesta de la revisión es obligatoria, sin máximo inventado', () => {
+        expect(validarRespuestaRevision('')).toMatch(/respuesta/);
+        expect(validarRespuestaRevision('  \n ')).toMatch(/respuesta/);
+        expect(validarRespuestaRevision('x'.repeat(5000))).toBeNull();
+    });
+
+    it('solo una pendiente admite revisión', () => {
+        expect(admiteRevision(solicitud())).toBe(true);
+        expect(admiteRevision(solicitud({ situacion: 'aceptada' }))).toBe(false);
+        expect(admiteRevision(solicitud({ situacion: 'rechazada' }))).toBe(false);
+    });
+
+    it('solo una aceptada sin orden admite generar la orden', () => {
+        expect(admiteGenerarOrden(solicitud({ situacion: 'aceptada' }))).toBe(true);
+        expect(admiteGenerarOrden(solicitud({ situacion: 'aceptada', ordenGeneradaId: '30' }))).toBe(false);
+        expect(admiteGenerarOrden(solicitud())).toBe(false);
+        expect(admiteGenerarOrden(solicitud({ situacion: 'rechazada' }))).toBe(false);
+    });
+});
+

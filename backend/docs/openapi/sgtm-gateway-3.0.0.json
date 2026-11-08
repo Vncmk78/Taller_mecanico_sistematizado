@@ -4192,6 +4192,549 @@
         ]
       }
     },
+    "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision": {
+      "post": {
+        "tags": [
+          "Órdenes"
+        ],
+        "summary": "Confirmar revisión administrativa de nueva atención",
+        "description": "Solo Administrador, incluida autorrevisión multirrol. Respuesta recortada y no vacía. Identidad del JWT, fecha del servidor. Una revisión confirmada no se edita; repetir exactamente decisión y respuesta devuelve la original. Guarda un evento de aviso junto con la revisión; un fallo de MS1 no la revierte.",
+        "operationId": "revisar_nueva_atencion",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          },
+          {
+            "name": "solicitud_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revisión confirmada o repetición idéntica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SolicitudNuevaAtencionRespuesta"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Se requiere rol Administrador",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "409": {
+            "description": "Revisión confirmada con otro contenido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "422": {
+            "description": "Body o identificador inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "404": {
+            "description": "Solicitud no encontrada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionNuevaAtencionSolicitud"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden": {
+      "post": {
+        "tags": [
+          "Órdenes"
+        ],
+        "summary": "Generar orden vinculada a solicitud aceptada",
+        "description": "Administrador, body vacío obligatorio. Crea una orden Recibido sin mecánico y su vínculo en una sola transacción. Aplica una orden activa por vehículo; reutiliza el ingreso abierto o valida cupo para uno nuevo. Repetir devuelve la asociación existente y la orden en su estado actual. No reabre el antecedente. El rechazo de cupo se audita aparte después del rollback.",
+        "operationId": "generar_orden_nueva_atencion",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          },
+          {
+            "name": "solicitud_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Orden y vínculo creados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneracionNuevaAtencionRespuesta"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "200": {
+            "description": "Asociación ya existente; no se crea otra orden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneracionNuevaAtencionRespuesta"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT ausente o inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Se requiere rol Administrador",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "409": {
+            "description": "Solicitud/antecedente incompatible, orden activa o rechazo de cupo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "422": {
+            "description": "Body o identificador inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "404": {
+            "description": "Solicitud no encontrada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneracionNuevaAtencionSolicitud"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ordenes/{orden_id}/nueva-atencion": {
       "post": {
         "tags": [
@@ -24739,6 +25282,295 @@
           "offset"
         ],
         "title": "SolicitudesNuevaAtencionRespuesta",
+        "type": "object"
+      },
+      "RevisionNuevaAtencionSolicitud": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "aceptada",
+              "rechazada"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "respuesta": {
+            "minLength": 1,
+            "title": "Respuesta",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "respuesta"
+        ],
+        "title": "RevisionNuevaAtencionSolicitud",
+        "type": "object"
+      },
+      "GeneracionNuevaAtencionSolicitud": {
+        "additionalProperties": false,
+        "examples": [
+          {}
+        ],
+        "properties": {},
+        "title": "GeneracionNuevaAtencionSolicitud",
+        "type": "object"
+      },
+      "GeneracionNuevaAtencionRespuesta": {
+        "$defs": {
+          "OrdenRespuesta": {
+            "description": "Representación inicial de una orden expuesta por MS2.",
+            "examples": [
+              {
+                "actualizado_en": "2026-09-28T10:30:00-03:00",
+                "creado_en": "2026-09-28T10:30:00-03:00",
+                "creado_por_id": 99,
+                "devuelto_en": null,
+                "devuelto_por_id": null,
+                "estado_codigo": 1,
+                "ingreso_id": 18,
+                "mecanico_actual_id": null,
+                "orden_id": 31,
+                "vehiculo_id": 12
+              }
+            ],
+            "properties": {
+              "orden_id": {
+                "description": "Identificador de la orden.",
+                "examples": [
+                  31
+                ],
+                "title": "Orden Id",
+                "type": "integer"
+              },
+              "vehiculo_id": {
+                "description": "Vehículo atendido.",
+                "examples": [
+                  12
+                ],
+                "title": "Vehiculo Id",
+                "type": "integer"
+              },
+              "ingreso_id": {
+                "description": "Ingreso físico asociado.",
+                "examples": [
+                  18
+                ],
+                "title": "Ingreso Id",
+                "type": "integer"
+              },
+              "estado_codigo": {
+                "description": "Código del estado oficial actual (1 a 8).",
+                "examples": [
+                  1
+                ],
+                "title": "Estado Codigo",
+                "type": "integer"
+              },
+              "mecanico_actual_id": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Referencia lógica al responsable actual en MS1; puede ser nula mientras la orden está recibida y sin asignación.",
+                "examples": [
+                  50
+                ],
+                "title": "Mecanico Actual Id"
+              },
+              "creado_por_id": {
+                "description": "Referencia lógica al administrador de MS1 que creó la orden.",
+                "examples": [
+                  99
+                ],
+                "title": "Creado Por Id",
+                "type": "integer"
+              },
+              "creado_en": {
+                "description": "Fecha y hora de creación de la orden.",
+                "format": "date-time",
+                "title": "Creado En",
+                "type": "string"
+              },
+              "actualizado_en": {
+                "description": "Fecha y hora de la última actualización de la orden.",
+                "format": "date-time",
+                "title": "Actualizado En",
+                "type": "string"
+              },
+              "devuelto_en": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Fecha y hora de devolución física; nula si no se registró.",
+                "title": "Devuelto En"
+              },
+              "devuelto_por_id": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Responsable de la devolución en MS1; nulo si no se registró.",
+                "title": "Devuelto Por Id"
+              }
+            },
+            "required": [
+              "orden_id",
+              "vehiculo_id",
+              "ingreso_id",
+              "estado_codigo",
+              "mecanico_actual_id",
+              "creado_por_id",
+              "creado_en",
+              "actualizado_en",
+              "devuelto_en",
+              "devuelto_por_id"
+            ],
+            "title": "OrdenRespuesta",
+            "type": "object"
+          },
+          "SolicitudNuevaAtencionRespuesta": {
+            "examples": [
+              {
+                "cliente_usuario_id": 10,
+                "descripcion": "Solicito revisar nuevamente los frenos.",
+                "orden_cancelada_id": 25,
+                "orden_generada_id": null,
+                "respuesta": null,
+                "revisada_en": null,
+                "revisor_id": null,
+                "situacion": "pendiente",
+                "solicitada_en": "2026-11-08T13:00:00Z",
+                "solicitud_id": 3,
+                "vehiculo_id": 9
+              }
+            ],
+            "properties": {
+              "solicitud_id": {
+                "title": "Solicitud Id",
+                "type": "integer"
+              },
+              "orden_cancelada_id": {
+                "title": "Orden Cancelada Id",
+                "type": "integer"
+              },
+              "vehiculo_id": {
+                "title": "Vehiculo Id",
+                "type": "integer"
+              },
+              "cliente_usuario_id": {
+                "title": "Cliente Usuario Id",
+                "type": "integer"
+              },
+              "descripcion": {
+                "title": "Descripcion",
+                "type": "string"
+              },
+              "solicitada_en": {
+                "format": "date-time",
+                "title": "Solicitada En",
+                "type": "string"
+              },
+              "situacion": {
+                "enum": [
+                  "pendiente",
+                  "aceptada",
+                  "rechazada"
+                ],
+                "title": "Situacion",
+                "type": "string"
+              },
+              "respuesta": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Respuesta"
+              },
+              "revisor_id": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Revisor Id"
+              },
+              "revisada_en": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Revisada En"
+              },
+              "orden_generada_id": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Orden Generada Id"
+              }
+            },
+            "required": [
+              "solicitud_id",
+              "orden_cancelada_id",
+              "vehiculo_id",
+              "cliente_usuario_id",
+              "descripcion",
+              "solicitada_en",
+              "situacion",
+              "respuesta",
+              "revisor_id",
+              "revisada_en",
+              "orden_generada_id"
+            ],
+            "title": "SolicitudNuevaAtencionRespuesta",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "solicitud": {
+            "$ref": "#/components/schemas/SolicitudNuevaAtencionRespuesta"
+          },
+          "orden": {
+            "$ref": "#/components/schemas/OrdenRespuesta"
+          }
+        },
+        "required": [
+          "solicitud",
+          "orden"
+        ],
+        "title": "GeneracionNuevaAtencionRespuesta",
         "type": "object"
       },
       "CancelacionClienteSolicitud": {

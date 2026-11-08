@@ -1004,7 +1004,7 @@ Una pendiente o aceptada bloquea otra sobre el mismo antecedente, aunque la
 aceptada ya tenga orden generada (índice A). Tras un rechazo se permite una
 nueva conservando la anterior. Si una orden generada se cancela, la siguiente
 solicitud corresponde a esa orden, sin reabrir la anterior. La revisión y la
-generación no se implementan en B; siguen en la Entrega C.
+generación se agregan en C, descrita a continuación.
 
 Tabla nueva: `solicitud_nueva_atencion`, migración `0014_nueva_atencion_ms2`.
 FK físicas solo a orden/vehículo de MS2, `ON DELETE RESTRICT`, con índices.
@@ -1012,6 +1012,36 @@ Cliente y revisor son IDs lógicos de MS1. Restricciones de descripción, situac
 revisión y vínculo coherentes; índice único parcial para no rechazadas. El alta
 bloquea vehículo antes que orden para coordinarse con devoluciones y altas.
 La migración no corrige datos existentes y se prueba en bases descartables.
+
+### Revisión y generación administrativa (Entrega C)
+
+Backend local en 3.0.0, pendiente de integración web y publicación. Ambas
+operaciones exigen Administrador, incluso multirrol, y un ID positivo. Admiten
+autorrevisión de Cliente+Administrador. Cliente/Mecánico sin Administrador
+reciben `403`; JWT inválido `401`; solicitud inexistente `404`; datos inválidos
+`422`; fallo de persistencia `500` con rollback.
+
+| Operación | Contrato |
+|---|---|
+| `POST /api/ordenes/nuevas-atenciones/{solicitud_id}/revision` | Body `{"decision":"aceptada","respuesta":"..."}`; también admite `decision: "rechazada"`. Respuesta recortada y no vacía, sin máximo adicional ni campos extra. `200` con la solicitud. Repetición idéntica conserva fecha y revisor; otro contenido confirmado responde `409`. |
+| `POST /api/ordenes/nuevas-atenciones/{solicitud_id}/orden` | Body `{}` obligatorio. `201` con `{solicitud,orden}` guardadas juntas. Reintento `200` con la misma asociación y estado actual de la orden. `409` sin aceptación, antecedente incompatible, otra orden activa o rechazo de cupo. |
+
+La orden nueva nace Recibido y sin mecánico. Se reutiliza el ingreso abierto o
+se valida el cupo para uno nuevo; no se exige devolución previa. Se guardan
+ingreso cuando corresponde, orden, historial inicial, outbox y vínculo en un
+commit. Un rechazo de cupo revierte todo y luego conserva su validación original
+en una transacción propia. No reabre la orden anterior ni asigna mecánico.
+El GET de la solicitud permite comprobar el vínculo ante una respuesta perdida.
+
+La revisión confirma su auditoría del JWT/servidor y un evento de outbox juntos.
+El worker envía `nueva_atencion.revisada` al receptor interno de MS1
+`/interno/eventos/nuevas-atenciones/revision`, con secreto de servicio y UUID de
+idempotencia. MS1 valida Cliente activo y guarda un aviso en su bandeja. La
+respuesta pública de `/api/notificaciones` no cambia; el título informa aceptada
+o rechazada y el mensaje indica la solicitud. No se publica una transición de
+estado ficticia. Si MS1 falla, el worker reintenta sin revertir la revisión ni
+duplicar el aviso lógico. Requiere worker habilitado y despliegue del receptor.
+Correo y push quedan fuera de esta entrega. No hay migraciones nuevas en C.
 
 ### POST `/api/ordenes/{orden_id}/entrega`
 

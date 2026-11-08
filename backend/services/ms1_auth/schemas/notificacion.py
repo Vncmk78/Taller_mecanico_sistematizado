@@ -45,6 +45,28 @@ class EventoRecibidoRespuesta(BaseModel):
     duplicado: bool
 
 
+class EventoRevisionNuevaAtencion(BaseModel):
+    """Hecho confirmado por MS2; no representa un cambio de estado de orden."""
+    model_config = ConfigDict(extra="forbid")
+
+    evento_id: UUID
+    tipo: Literal["nueva_atencion.revisada"]
+    ocurrido_en: datetime
+    solicitud_id: int = Field(gt=0)
+    orden_cancelada_id: int = Field(gt=0)
+    vehiculo_id: int = Field(gt=0)
+    cliente_usuario_id: int = Field(gt=0)
+    decision: Literal["aceptada", "rechazada"]
+    revisor_id: int = Field(gt=0)
+
+    @field_validator("ocurrido_en")
+    @classmethod
+    def exigir_zona_horaria(cls, valor: datetime) -> datetime:
+        if valor.tzinfo is None or valor.utcoffset() is None:
+            raise ValueError("ocurrido_en debe incluir una zona horaria")
+        return valor
+
+
 class NotificacionRespuesta(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

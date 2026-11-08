@@ -5,7 +5,9 @@ Fecha: 8 de noviembre de 2026. Base funcional: commit `66f694d`.
 Este archivo fija la interfaz para trabajar en paralelo. Es un acuerdo de
 implementación: la Entrega A tiene backend y web integrados localmente en
 MartinH, pendientes de publicación. La Entrega B también está integrada localmente
-con la web de Claude. La Entrega C todavía no está implementada.
+con la web de Claude. C tiene backend local, pendiente de integrar con la web
+administrativa. El aviso de revisión llega a la bandeja de MS1; correo y push
+siguen pendientes del módulo transversal de notificaciones.
 Ninguna operación se considera publicada por aparecer aquí. Codex mantiene el backend y OpenAPI;
 Claude implementa el frontend por entregas. La integración final debe probarse
 contra servicios reales. El contrato 3.0.0 está pendiente de publicación y
@@ -130,15 +132,15 @@ alta idempotente, listado y detalle con el contrato siguiente. Migración
 e índices, sin modificar filas existentes. No se ejecuta en ambientes compartidos
 ni en la demostración sin diagnóstico previo. El esquema incluye los campos de
 revisión y vínculo necesarios para consultar la entidad completa, pero B no
-expone operaciones para revisarla o generar órdenes: esas siguen en C.
+expone operaciones para revisarla o generar órdenes: se agregan en C.
 
 El alta bloquea vehículo, orden cancelada y luego solicitud vigente, en ese
 orden, compatible con entrega/devolución y creación de órdenes. La revisión y
 la generación de C deberán respetar ese orden si necesitan esos mismos bloqueos.
 El índice A protege también frente a escrituras que omitan el servicio.
 No exige devolución previa, no crea ingreso/orden/historial/outbox, ni consulta
-otros microservicios para registrar una solicitud. El aviso de revisión sigue
-pendiente de C. El contrato 3.0.0 continúa sin publicar.
+otros microservicios para registrar una solicitud. C incorpora el aviso de
+revisión mediante outbox. El contrato 3.0.0 continúa sin publicar.
 
 Integración comprobada: 957 pruebas web, lint/build y 101 pruebas de contrato/API
 aprobadas; 31 comprobaciones en Chromium contra Gateway, los cuatro servicios y
@@ -198,6 +200,20 @@ solicita sobre ella. No se agrega una situación «completada» por generar orde
 
 ## Entrega C: revisión y generación administrativa
 
+Backend local implementado y verificado. Usa las columnas existentes de 0014,
+sin migraciones nuevas ni reparaciones históricas. Bloquea vehículo → orden
+cancelada → solicitud. La generación usa el núcleo sin commit y confirma una
+sola vez orden, ingreso cuando corresponde, historial, outbox de estado y vínculo.
+El rechazo de cupo se audita aparte después del rollback. Una repetición de
+generación devuelve la orden asociada en su estado actual, sin validar de nuevo
+el cupo ni forzarla a Recibido.
+
+La revisión guarda auditoría y un evento `nueva_atencion.revisada` juntos.
+Repetir el mismo contenido no agrega otro evento. Verificaciones: 2625 pruebas
+aprobadas sin omisiones y 63 comprobaciones HTTP con procesos y PostgreSQL
+reales, incluida caída/recuperación de MS1. La integración de la web C de Claude
+todavía está pendiente; no se modificó su copia aislada.
+
 - `POST /api/ordenes/nuevas-atenciones/{solicitud_id}/revision`: Administrador.
   Body `{"decision": "aceptada" | "rechazada", "respuesta": "..."}`; texto
   recortado y no vacío, sin un máximo inventado por el frontend. 200 devuelve
@@ -216,9 +232,26 @@ responsable y fecha. La creación y el vínculo se guardan en una sola
 transacción. Ante respuesta perdida, el GET de la solicitud permite comprobar
 `orden_generada_id` sin atribuir otras órdenes del historial a esa petición.
 
-Los avisos de revisión requieren implementación de backend. Claude mantiene
-la bandeja actual y no inventa eventos o respuestas de MS1; Codex comunicará
-cualquier extensión de ese contrato antes de pedir cambios a la web.
+### Aviso de revisión MS2 → MS1
+
+Receptor interno: `POST /interno/eventos/nuevas-atenciones/revision` en MS1,
+fuera de la Gateway. Autentica con `X-Service-Token` y el secreto dedicado
+existente (`MS1_EVENT_SHARED_SECRET`/`MS2_EVENT_SHARED_SECRET`). Evento:
+`evento_id` UUID, `tipo: "nueva_atencion.revisada"`, `ocurrido_en` con zona,
+`solicitud_id`, `orden_cancelada_id`, `vehiculo_id`, `cliente_usuario_id`,
+`decision` aceptada/rechazada y `revisor_id`; IDs positivos y sin extras.
+No incluye estados ni finge una transición de orden.
+
+MS1 comprueba destinatario Cliente activo y deduplica por UUID; responde
+`{notificacion_id,evento_id,duplicado}`. La bandeja conserva su esquema público:
+tipo nuevo, título y mensaje con el número de solicitud; `orden_id` es el
+antecedente cancelado. Claude mantiene su adaptador actual. La respuesta y la
+auditoría completas se consultan en el detalle de la solicitud.
+
+Para entregar avisos se requiere el worker habilitado en MS2 y el receptor
+actualizado en MS1. Desplegar primero MS1 evita rechazos temporales; los eventos
+se conservan y reintentan si está caído. El fallo de MS1 no revierte la revisión.
+Correo, push y otras brechas de notificaciones no quedan resueltas por este aviso.
 
 ## Cierre y comunicación
 

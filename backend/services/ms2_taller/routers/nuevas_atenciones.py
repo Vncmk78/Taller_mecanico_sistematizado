@@ -7,12 +7,14 @@ from services.ms2_taller.dependencies import obtener_principal_actual
 from services.ms2_taller.schemas.nueva_atencion import (
     NuevaAtencionSolicitud, SituacionNuevaAtencion,
     SolicitudNuevaAtencionRespuesta, SolicitudesNuevaAtencionRespuesta,
+    RevisionNuevaAtencionSolicitud, GeneracionNuevaAtencionSolicitud, GeneracionNuevaAtencionRespuesta,
 )
 from services.ms2_taller.services.nuevas_atenciones import (
     NuevaAtencionConflictoError, NuevaAtencionInvalidaError,
     NuevaAtencionNoAutorizadaError, NuevaAtencionNoEncontradaError,
     PersistenciaNuevaAtencionError,
     listar_nuevas_atenciones, obtener_nueva_atencion, solicitar_nueva_atencion,
+    revisar_nueva_atencion, generar_orden_nueva_atencion,
 )
 from shared.auth import PrincipalAutenticado
 
@@ -108,4 +110,44 @@ def registrar_nueva_atencion(
     except (NuevaAtencionNoAutorizadaError, NuevaAtencionNoEncontradaError,
             NuevaAtencionConflictoError, NuevaAtencionInvalidaError,
             PersistenciaNuevaAtencionError) as exc:
+        raise _error_http(exc) from exc
+
+
+@router_nuevas_atenciones.post(
+    "/nuevas-atenciones/{solicitud_id}/revision", response_model=SolicitudNuevaAtencionRespuesta,
+    summary="Confirmar revisión administrativa de nueva atención",
+    description="Administrador, incluida autorrevisión multirrol. Una revisión confirmada no se edita; repetir el mismo contenido conserva fecha y revisor.",
+    responses={**_ERRORES, 404: {"description": "Solicitud no encontrada"}, 409: {"description": "Revisión ya confirmada con otro contenido"}},
+)
+def confirmar_revision_nueva_atencion(
+    body: RevisionNuevaAtencionSolicitud,
+    solicitud_id: int = Path(gt=0), db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+):
+    try:
+        return revisar_nueva_atencion(db, solicitud_id=solicitud_id, principal=principal,
+                                     decision=body.decision, respuesta=body.respuesta)
+    except (NuevaAtencionNoAutorizadaError, NuevaAtencionNoEncontradaError,
+            NuevaAtencionConflictoError, NuevaAtencionInvalidaError, PersistenciaNuevaAtencionError) as exc:
+        raise _error_http(exc) from exc
+
+
+@router_nuevas_atenciones.post(
+    "/nuevas-atenciones/{solicitud_id}/orden", response_model=GeneracionNuevaAtencionRespuesta, status_code=201,
+    summary="Generar la orden vinculada a una solicitud aceptada",
+    description="Administrador. Body vacío obligatorio. Orden y vínculo se guardan juntos. Repetir devuelve la misma asociación sin crear otra orden.",
+    responses={**_ERRORES, 200: {"model": GeneracionNuevaAtencionRespuesta, "description": "Orden ya generada"},
+               404: {"description": "Solicitud no encontrada"}, 409: {"description": "Solicitud/antecedente incompatible, orden activa o rechazo de cupo"}},
+)
+def confirmar_orden_nueva_atencion(
+    body: GeneracionNuevaAtencionSolicitud, response: Response,
+    solicitud_id: int = Path(gt=0), db: Session = Depends(get_db),
+    principal: PrincipalAutenticado = Depends(obtener_principal_actual),
+):
+    try:
+        solicitud, orden, creada = generar_orden_nueva_atencion(db, solicitud_id=solicitud_id, principal=principal)
+        response.status_code = 201 if creada else 200
+        return {"solicitud": solicitud, "orden": orden}
+    except (NuevaAtencionNoAutorizadaError, NuevaAtencionNoEncontradaError,
+            NuevaAtencionConflictoError, PersistenciaNuevaAtencionError) as exc:
         raise _error_http(exc) from exc

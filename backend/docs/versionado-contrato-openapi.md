@@ -82,8 +82,12 @@ solicitud de nueva atención del Cliente propietario (`201`/`200` idempotente),
 listado y detalle visibles por Cliente/Administrador. Publica la entidad completa,
 sus filtros y situaciones sin cambiar estados de órdenes. La tabla y el índice A
 se crean mediante `0014_nueva_atencion_ms2`, sin reescribir datos anteriores.
-Las operaciones de revisión y generación de orden, y su aviso al Cliente,
-siguen pendientes de la Entrega C.
+También incorpora el backend C: revisión administrativa inmutable e idempotente,
+generación atómica de orden y vínculo (`201`/`200`), y aviso de revisión por
+outbox a la bandeja de MS1. No hay migraciones nuevas en C ni cambios al JSON
+público de notificaciones. Se agrega un receptor interno autenticado por
+servicio, documentado en el acuerdo de coordinación. La integración web C,
+publicación y activación permanecen pendientes; correo y push no se implementan.
 
 ### 2.2.1 — Elementos de `mecanicos_sobre_limite` documentados (D-04)
 

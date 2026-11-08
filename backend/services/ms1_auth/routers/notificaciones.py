@@ -13,16 +13,26 @@ from services.ms1_auth.schemas.notificacion import (
     EventoEstadoOrden,
     EventoRecibidoRespuesta,
     NotificacionRespuesta,
+    EventoRevisionNuevaAtencion,
 )
 from services.ms1_auth.services.notificaciones import (
     DestinatarioNotificacionInvalidoError,
     PersistenciaNotificacionError,
     listar_notificaciones,
     recibir_evento_estado_orden,
+    recibir_evento_revision_nueva_atencion,
 )
 from shared.auth import PrincipalAutenticado
 
 router_notificaciones = APIRouter(tags=["notificaciones"])
+
+
+def _validar_credencial_servicio(x_service_token: str | None) -> None:
+    secreto = settings.EVENT_SHARED_SECRET
+    if secreto is None:
+        raise HTTPException(status_code=503, detail="La recepción interna de eventos no está configurada")
+    if x_service_token is None or not hmac.compare_digest(x_service_token, secreto.get_secret_value()):
+        raise HTTPException(status_code=401, detail="Credencial de servicio inválida", headers={"WWW-Authenticate": "Service"})
 
 
 @router_notificaciones.post(
@@ -40,20 +50,7 @@ def recibir_evento_estado(
     x_service_token: str | None = Header(default=None, alias="X-Service-Token"),
     db: Session = Depends(get_db),
 ) -> EventoRecibidoRespuesta:
-    secreto = settings.EVENT_SHARED_SECRET
-    if secreto is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="La recepción interna de eventos no está configurada",
-        )
-    if x_service_token is None or not hmac.compare_digest(
-        x_service_token, secreto.get_secret_value()
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credencial de servicio inválida",
-            headers={"WWW-Authenticate": "Service"},
-        )
+    _validar_credencial_servicio(x_service_token)
     try:
         notificacion, duplicado = recibir_evento_estado_orden(db, evento)
         return EventoRecibidoRespuesta(
@@ -71,6 +68,28 @@ def recibir_evento_estado(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="No fue posible registrar la notificación",
         ) from exc
+
+
+@router_notificaciones.post(
+    "/interno/eventos/nuevas-atenciones/revision", response_model=EventoRecibidoRespuesta,
+    summary="Recibir una revisión de nueva atención confirmada por MS2",
+    responses={401: {"description": "Credencial de servicio inválida"},
+               422: {"description": "Evento o destinatario inválido"},
+               503: {"description": "Recepción interna no configurada"}},
+)
+def recibir_revision_nueva_atencion(
+    evento: EventoRevisionNuevaAtencion,
+    x_service_token: str | None = Header(default=None, alias="X-Service-Token"),
+    db: Session = Depends(get_db),
+) -> EventoRecibidoRespuesta:
+    _validar_credencial_servicio(x_service_token)
+    try:
+        aviso, duplicado = recibir_evento_revision_nueva_atencion(db, evento)
+        return EventoRecibidoRespuesta(notificacion_id=aviso.notificacion_id, evento_id=aviso.evento_id, duplicado=duplicado)
+    except DestinatarioNotificacionInvalidoError as exc:
+        raise HTTPException(status_code=422, detail="El destinatario no es un cliente activo de MS1") from exc
+    except PersistenciaNotificacionError as exc:
+        raise HTTPException(status_code=500, detail="No fue posible registrar la notificación") from exc
 
 
 @router_notificaciones.get(

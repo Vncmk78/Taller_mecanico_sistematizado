@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from gateway.contratos.ordenes import OrdenRespuesta
 
 
 class NuevaAtencionSolicitud(BaseModel):
@@ -38,3 +39,18 @@ class SolicitudesNuevaAtencionRespuesta(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class RevisionNuevaAtencionSolicitud(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    decision: Literal["aceptada", "rechazada"]
+    respuesta: str = Field(min_length=1)
+
+
+class GeneracionNuevaAtencionSolicitud(BaseModel):
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{}]})
+
+
+class GeneracionNuevaAtencionRespuesta(BaseModel):
+    solicitud: SolicitudNuevaAtencionRespuesta
+    orden: OrdenRespuesta

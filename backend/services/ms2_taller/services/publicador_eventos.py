@@ -98,8 +98,15 @@ async def publicar_siguiente_evento(cliente_http: httpx.AsyncClient) -> bool:
     if evento is None:
         return False
 
-    url = f"{settings.MS1_URL.rstrip('/')}/interno/eventos/ordenes/estado"
     try:
+        rutas = {
+            "orden.estado_cambiado": "/interno/eventos/ordenes/estado",
+            "nueva_atencion.revisada": "/interno/eventos/nuevas-atenciones/revision",
+        }
+        ruta = rutas.get(evento.payload.get("tipo"))
+        if ruta is None:
+            raise ValueError("Tipo de evento MS2 sin receptor configurado")
+        url = f"{settings.MS1_URL.rstrip('/')}{ruta}"
         respuesta = await cliente_http.post(
             url,
             json=evento.payload,

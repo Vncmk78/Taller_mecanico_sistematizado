@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from services.ms1_auth.models.notificacion import Notificacion
 from services.ms1_auth.models.rol import Rol, UsuarioRol
 from services.ms1_auth.models.usuario import Usuario
-from services.ms1_auth.schemas.notificacion import EventoEstadoOrden
+from services.ms1_auth.schemas.notificacion import EventoEstadoOrden, EventoRevisionNuevaAtencion
 
 
 class DestinatarioNotificacionInvalidoError(Exception):
@@ -23,6 +23,26 @@ def recibir_evento_estado_orden(
     db: Session, evento: EventoEstadoOrden
 ) -> tuple[Notificacion, bool]:
     """Persiste un aviso una vez; reintentos con el mismo evento son inocuos."""
+    return _recibir_aviso(db, evento, orden_id=evento.orden_id,
+                         titulo="Actualización de tu orden",
+                         mensaje="El estado de tu orden de trabajo cambió. Consulta el detalle para ver su estado actual.")
+
+
+def recibir_evento_revision_nueva_atencion(
+    db: Session, evento: EventoRevisionNuevaAtencion,
+) -> tuple[Notificacion, bool]:
+    return _recibir_aviso(
+        db, evento, orden_id=evento.orden_cancelada_id,
+        titulo=f"Solicitud de nueva atención {evento.decision}",
+        mensaje=(f"El taller revisó la solicitud n° {evento.solicitud_id}: {evento.decision}. "
+                 f"Consulta la respuesta en Nuevas Atenciones o desde la orden cancelada n° {evento.orden_cancelada_id}."),
+    )
+
+
+def _recibir_aviso(
+    db: Session, evento: EventoEstadoOrden | EventoRevisionNuevaAtencion,
+    *, orden_id: int, titulo: str, mensaje: str,
+) -> tuple[Notificacion, bool]:
     try:
         existente = db.scalar(
             select(Notificacion).where(Notificacion.evento_id == evento.evento_id)
@@ -47,10 +67,10 @@ def recibir_evento_estado_orden(
             evento_id=evento.evento_id,
             destinatario_id=destinatario.usuario_id,
             tipo=evento.tipo,
-            orden_id=evento.orden_id,
+            orden_id=orden_id,
             vehiculo_id=evento.vehiculo_id,
-            titulo="Actualización de tu orden",
-            mensaje="El estado de tu orden de trabajo cambió. Consulta el detalle para ver su estado actual.",
+            titulo=titulo,
+            mensaje=mensaje,
             ocurrido_en=evento.ocurrido_en,
         )
         db.add(notificacion)

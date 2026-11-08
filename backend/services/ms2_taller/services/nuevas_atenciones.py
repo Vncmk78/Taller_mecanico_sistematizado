@@ -1,4 +1,7 @@
-"""Alta y consulta de solicitudes; no crea órdenes, ingresos ni notificaciones."""
+"""Solicitud, revisión y creación vinculada; transacciones locales de MS2."""
+from datetime import timezone
+from uuid import uuid4
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -8,6 +11,14 @@ from services.ms2_taller.models.estado_orden import CANCELADO
 from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.solicitud_nueva_atencion import SolicitudNuevaAtencion
 from services.ms2_taller.models.vehiculo import Vehiculo
+from services.ms2_taller.models.evento_outbox import EventoOutbox
+from services.ms2_taller.services.ordenes import (
+    registrar_orden_sin_confirmar, VehiculoConOrdenActivaError, VehiculoNoEncontradoError,
+)
+from services.ms2_taller.services.cupo_ingresos import (
+    CupoDiarioNoConfiguradoError, CupoDiarioExcedidoError,
+    PersistenciaCupoIngresosError, registrar_rechazo_cupo,
+)
 from shared.auth import NombreRol, PrincipalAutenticado
 
 
@@ -134,3 +145,118 @@ def obtener_nueva_atencion(
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaNuevaAtencionError("No fue posible consultar la solicitud de nueva atención") from exc
+
+
+def _exigir_administrador(principal: PrincipalAutenticado) -> None:
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        raise NuevaAtencionNoAutorizadaError("Se requiere rol Administrador")
+
+
+def _bloquear_solicitud_y_antecedente(db: Session, solicitud_id: int):
+    referencias = db.execute(select(
+        SolicitudNuevaAtencion.vehiculo_id, SolicitudNuevaAtencion.orden_cancelada_id,
+    ).where(SolicitudNuevaAtencion.solicitud_id == solicitud_id)).one_or_none()
+    if referencias is None:
+        raise NuevaAtencionNoEncontradaError("Solicitud de nueva atención no encontrada")
+    # Mismo protocolo que alta, solicitud y salida: vehículo → orden → solicitud.
+    db.scalar(select(Vehiculo.vehiculo_id).where(
+        Vehiculo.vehiculo_id == referencias.vehiculo_id,
+    ).with_for_update())
+    antecedente = db.scalar(select(OrdenTrabajo).where(
+        OrdenTrabajo.orden_id == referencias.orden_cancelada_id,
+    ).with_for_update(of=OrdenTrabajo).execution_options(populate_existing=True))
+    solicitud = db.scalar(select(SolicitudNuevaAtencion).where(
+        SolicitudNuevaAtencion.solicitud_id == solicitud_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if solicitud is None:
+        raise NuevaAtencionNoEncontradaError("Solicitud de nueva atención no encontrada")
+    if antecedente is None or antecedente.vehiculo_id != solicitud.vehiculo_id:
+        raise NuevaAtencionConflictoError("El antecedente no corresponde al vehículo de la solicitud")
+    return solicitud, antecedente
+
+
+def revisar_nueva_atencion(
+    db: Session, *, solicitud_id: int, principal: PrincipalAutenticado,
+    decision: str, respuesta: str,
+) -> SolicitudNuevaAtencion:
+    _exigir_administrador(principal)
+    respuesta = respuesta.strip()
+    if decision not in {"aceptada", "rechazada"} or not respuesta:
+        raise NuevaAtencionInvalidaError("La revisión requiere una decisión válida y una respuesta no vacía")
+    try:
+        solicitud, _ = _bloquear_solicitud_y_antecedente(db, solicitud_id)
+        if solicitud.situacion != "pendiente":
+            if solicitud.situacion == decision and solicitud.respuesta == respuesta:
+                db.commit()
+                return solicitud
+            raise NuevaAtencionConflictoError("La solicitud ya tiene una revisión confirmada con otro contenido")
+        fecha = db.scalar(select(func.now()))
+        solicitud.situacion = decision
+        solicitud.respuesta = respuesta
+        solicitud.revisor_id = principal.usuario_id
+        solicitud.revisada_en = fecha
+        evento_id = uuid4()
+        db.add(EventoOutbox(
+            evento_id=evento_id, tipo="nueva_atencion.revisada",
+            payload={
+                "evento_id": str(evento_id), "tipo": "nueva_atencion.revisada",
+                "ocurrido_en": (fecha if fecha.tzinfo else fecha.replace(tzinfo=timezone.utc)).isoformat(),
+                "solicitud_id": solicitud.solicitud_id,
+                "orden_cancelada_id": solicitud.orden_cancelada_id,
+                "vehiculo_id": solicitud.vehiculo_id, "cliente_usuario_id": solicitud.cliente_usuario_id,
+                "decision": decision, "revisor_id": principal.usuario_id,
+            },
+        ))
+        db.flush()
+        db.refresh(solicitud)
+        db.commit()
+        return solicitud
+    except (NuevaAtencionNoEncontradaError, NuevaAtencionConflictoError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaNuevaAtencionError("No fue posible registrar la revisión de nueva atención") from exc
+
+
+def generar_orden_nueva_atencion(
+    db: Session, *, solicitud_id: int, principal: PrincipalAutenticado,
+) -> tuple[SolicitudNuevaAtencion, OrdenTrabajo, bool]:
+    _exigir_administrador(principal)
+    try:
+        solicitud, antecedente = _bloquear_solicitud_y_antecedente(db, solicitud_id)
+        if solicitud.orden_generada_id is not None:
+            orden = db.get(OrdenTrabajo, solicitud.orden_generada_id, populate_existing=True)
+            if orden is None or orden.vehiculo_id != solicitud.vehiculo_id:
+                raise NuevaAtencionConflictoError("La asociación histórica de la solicitud requiere revisión")
+            db.commit()
+            return solicitud, orden, False
+        if solicitud.situacion != "aceptada":
+            raise NuevaAtencionConflictoError("La solicitud debe estar aceptada para generar una orden")
+        if antecedente.estado_codigo != CANCELADO:
+            raise NuevaAtencionConflictoError("La orden de referencia debe permanecer Cancelada")
+        orden = registrar_orden_sin_confirmar(db, solicitud.vehiculo_id, principal.usuario_id)
+        solicitud.orden_generada_id = orden.orden_id
+        db.flush()
+        db.commit()
+        return solicitud, orden, True
+    except (NuevaAtencionNoEncontradaError, NuevaAtencionConflictoError):
+        db.rollback()
+        raise
+    except (VehiculoConOrdenActivaError, VehiculoNoEncontradoError) as exc:
+        db.rollback()
+        raise NuevaAtencionConflictoError(str(exc)) from exc
+    except (CupoDiarioNoConfiguradoError, CupoDiarioExcedidoError) as exc:
+        db.rollback()
+        if exc.rechazo is not None:
+            try:
+                registrar_rechazo_cupo(db, exc.rechazo)
+            except PersistenciaCupoIngresosError as auditoria:
+                raise PersistenciaNuevaAtencionError("No fue posible guardar la auditoría del rechazo de cupo") from auditoria
+        raise NuevaAtencionConflictoError(str(exc)) from exc
+    except PersistenciaCupoIngresosError as exc:
+        db.rollback()
+        raise PersistenciaNuevaAtencionError("No fue posible validar el cupo diario") from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaNuevaAtencionError("No fue posible generar la orden de nueva atención") from exc

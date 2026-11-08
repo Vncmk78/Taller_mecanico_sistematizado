@@ -252,6 +252,9 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("NuevaAtencionSolicitud", contratos_nuevas_atenciones.NuevaAtencionSolicitud),
     ("SolicitudNuevaAtencionRespuesta", contratos_nuevas_atenciones.SolicitudNuevaAtencionRespuesta),
     ("SolicitudesNuevaAtencionRespuesta", contratos_nuevas_atenciones.SolicitudesNuevaAtencionRespuesta),
+    ("RevisionNuevaAtencionSolicitud", contratos_nuevas_atenciones.RevisionNuevaAtencionSolicitud),
+    ("GeneracionNuevaAtencionSolicitud", contratos_nuevas_atenciones.GeneracionNuevaAtencionSolicitud),
+    ("GeneracionNuevaAtencionRespuesta", contratos_nuevas_atenciones.GeneracionNuevaAtencionRespuesta),
     ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
     ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
@@ -1019,6 +1022,46 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 requiere_auth=True,
                 parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
                 descripcion_404="Solicitud de nueva atención inexistente o ajena.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Confirmar revisión administrativa de nueva atención",
+                descripcion=(
+                    "Solo Administrador, incluida autorrevisión multirrol. Respuesta recortada "
+                    "y no vacía. Identidad del JWT, fecha del servidor. Una revisión confirmada "
+                    "no se edita; repetir exactamente decisión y respuesta devuelve la original. "
+                    "Guarda un evento de aviso junto con la revisión; un fallo de MS1 no la revierte."
+                ),
+                operation_id="revisar_nueva_atencion", cuerpo="RevisionNuevaAtencionSolicitud",
+                respuestas_ok={"200": _respuesta("Revisión confirmada o repetición idéntica.", _ref("SolicitudNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                            "409": "Revisión confirmada con otro contenido", "422": "Body o identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud no encontrada.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Generar orden vinculada a solicitud aceptada",
+                descripcion=(
+                    "Administrador, body vacío obligatorio. Crea una orden Recibido sin mecánico "
+                    "y su vínculo en una sola transacción. Aplica una orden activa por vehículo; "
+                    "reutiliza el ingreso abierto o valida cupo para uno nuevo. Repetir devuelve "
+                    "la asociación existente y la orden en su estado actual. No reabre el antecedente. "
+                    "El rechazo de cupo se audita aparte después del rollback."
+                ),
+                operation_id="generar_orden_nueva_atencion", cuerpo="GeneracionNuevaAtencionSolicitud",
+                respuestas_ok={
+                    "201": _respuesta("Orden y vínculo creados.", _ref("GeneracionNuevaAtencionRespuesta")),
+                    "200": _respuesta("Asociación ya existente; no se crea otra orden.", _ref("GeneracionNuevaAtencionRespuesta")),
+                },
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                            "409": "Solicitud/antecedente incompatible, orden activa o rechazo de cupo", "422": "Body o identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud no encontrada.", esquema_404=error_404_recurso,
             )
         },
         "/api/ordenes/{orden_id}/nueva-atencion": {

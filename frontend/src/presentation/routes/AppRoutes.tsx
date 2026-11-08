@@ -38,6 +38,7 @@ import { MechanicVehiclesPage } from '@/presentation/pages/mechanic/MechanicVehi
 import { MechanicVehicleDetailPage } from '@/presentation/pages/mechanic/MechanicVehicleDetailPage';
 import { MechanicOrdersPage } from '@/presentation/pages/mechanic/MechanicOrdersPage';
 import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicOrderDetailPage';
+import { BudgetEditor } from '@/presentation/components/budgets/BudgetEditor';
 import { MechanicBudgetPage } from '@/presentation/pages/mechanic/MechanicBudgetPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
 import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage';
@@ -79,6 +80,7 @@ export function AppRoutes() {
         <Route index element={<AdminDashboardPage />} />
         <Route path="ordenes" element={<AdminOrdersPage />} />
         <Route path="ordenes/:id" element={<AdminOrderDetailPage />} />
+        <Route path="ordenes/:id/presupuesto" element={<BudgetEditor administrador />} />
         <Route
           path="ordenes/:id/evidencias"
           element={<OrderEvidencePage backTo="/admin/ordenes" backLabel="Volver a la gestión de órdenes" canUpload />}

@@ -165,6 +165,9 @@ export function AdminOrderDetailPage() {
             />
 
             <OrderStatusAndHistory order={order} />
+            <Link className="btn btn-primary inline-flex my-4" to={`/admin/ordenes/${order.id}/presupuesto`}>
+                Revisar presupuesto y precios
+            </Link>
 
             {presupuestoOrden && (presupuestoOrden.versiones?.length ?? 0) > 0 && (
                 <section className="card p-6 mt-6" aria-labelledby="admin-order-budget-title">

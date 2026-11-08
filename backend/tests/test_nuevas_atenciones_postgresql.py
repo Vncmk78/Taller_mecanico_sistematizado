@@ -64,8 +64,10 @@ def test_solicitudes_simultaneas_crean_una_y_clasifican_reintentos(motor_pg, ide
     assert sum(isinstance(r, NuevaAtencionConflictoError) for r in resultados) == (0 if identicas else 5)
     with _sesion(motor_pg) as db:
         assert db.scalar(select(func.count()).select_from(SolicitudNuevaAtencion)) == 1
-        for modelo in (OrdenTrabajo, IngresoVehiculo, HistorialEstado, EventoOutbox):
+        for modelo in (OrdenTrabajo, IngresoVehiculo, HistorialEstado):
             assert db.scalar(select(func.count()).select_from(modelo)) == 1
+        assert db.scalar(select(func.count()).select_from(EventoOutbox)) == 2
+        assert db.scalar(select(func.count()).select_from(EventoOutbox).where(EventoOutbox.tipo == "nueva_atencion.solicitada")) == 1
         assert db.get(IngresoVehiculo, ingreso_id).salida_en is None
 
 
@@ -185,6 +187,8 @@ def test_migracion_crea_tabla_sin_modificar_datos_existentes_y_es_reversible(mot
     assert {"uq_nueva_atencion_vigente_por_orden", "ix_nueva_atencion_cliente_fecha"} <= indices
     with _sesion(motor_pg) as db:
         assert _solicitar(db, orden_id)[1]
+        assert db.scalar(select(func.count()).select_from(EventoOutbox)) == 2
+        assert db.scalar(select(func.count()).select_from(EventoOutbox).where(EventoOutbox.tipo == "nueva_atencion.solicitada")) == 1
         assert db.get(IngresoVehiculo, ingreso_id).salida_en is None
 
 

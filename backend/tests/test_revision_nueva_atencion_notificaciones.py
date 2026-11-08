@@ -77,6 +77,10 @@ def test_receptor_rechaza_destinatario_invalido_y_revierte_fallo_de_persistencia
 def test_revision_y_aviso_sobreviven_recibo_perdido_sin_duplicar(api, db, api_ordenes, db_ordenes, monkeypatch):
     _crear_cliente(db, 10)
     _, sid = _nueva(api_ordenes, db_ordenes)
+    # Esta prueba aísla el recibo de revisión; el aviso al personal se prueba aparte.
+    for previo in db_ordenes.scalars(select(EventoOutbox).where(EventoOutbox.tipo == "nueva_atencion.solicitada")):
+        previo.publicado_en = datetime.now(timezone.utc)
+    db_ordenes.commit()
     assert _revisar(api_ordenes, sid).status_code == 200
     monkeypatch.setattr(ms1_settings, "EVENT_SHARED_SECRET", SecretStr(SECRETO))
     monkeypatch.setattr(ms2_settings, "EVENT_SHARED_SECRET", SecretStr(SECRETO))
@@ -100,7 +104,7 @@ def test_revision_y_aviso_sobreviven_recibo_perdido_sin_duplicar(api, db, api_or
             return await publicador.publicar_siguiente_evento(cliente)
     assert asyncio.run(publicar())
     db_ordenes.expire_all()
-    fila = db_ordenes.scalar(select(EventoOutbox))
+    fila = db_ordenes.scalar(select(EventoOutbox).where(EventoOutbox.tipo == "nueva_atencion.revisada"))
     assert fila.publicado_en is None and fila.intentos == 1
     assert db_ordenes.get(SolicitudNuevaAtencion, sid).situacion == "aceptada"
     assert db.scalar(select(func.count()).select_from(Notificacion)) == 1
@@ -108,6 +112,6 @@ def test_revision_y_aviso_sobreviven_recibo_perdido_sin_duplicar(api, db, api_or
     db_ordenes.commit()
     assert asyncio.run(publicar())
     db_ordenes.expire_all()
-    fila = db_ordenes.scalar(select(EventoOutbox))
+    fila = db_ordenes.scalar(select(EventoOutbox).where(EventoOutbox.tipo == "nueva_atencion.revisada"))
     assert fila.publicado_en is not None and fila.intentos == 2 and fila.ultimo_error is None
     assert db.scalar(select(func.count()).select_from(Notificacion)) == 1

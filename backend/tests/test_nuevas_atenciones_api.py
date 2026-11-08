@@ -40,7 +40,7 @@ def _revisada(db, solicitud_id, situacion, orden_generada_id=None):
 
 def test_crea_pendiente_desde_identidad_y_fecha_servidor_sin_efectos_laterales(api_ordenes, db_ordenes):
     orden = _crear_orden(db_ordenes, 10, estado_codigo=CANCELADO)
-    modelos = (OrdenTrabajo, IngresoVehiculo, HistorialEstado, EventoOutbox, HistorialValidacionCupoIngreso)
+    modelos = (OrdenTrabajo, IngresoVehiculo, HistorialEstado, HistorialValidacionCupoIngreso)
     antes = [db_ordenes.scalar(select(func.count()).select_from(m)) for m in modelos]
     # Solicitar no depende de tener cupo configurado.
     db_ordenes.get(ConfiguracionCupoIngresos, 1).max_ingresos_diarios = None
@@ -57,6 +57,10 @@ def test_crea_pendiente_desde_identidad_y_fecha_servidor_sin_efectos_laterales(a
     assert all(datos[c] is None for c in ("respuesta", "revisor_id", "revisada_en", "orden_generada_id"))
     assert datetime.fromisoformat(datos["solicitada_en"]).tzinfo is not None
     assert antes == [db_ordenes.scalar(select(func.count()).select_from(m)) for m in modelos]
+    evento = db_ordenes.scalar(select(EventoOutbox).where(EventoOutbox.tipo == "nueva_atencion.solicitada"))
+    assert evento.payload["solicitud_id"] == datos["solicitud_id"]
+    assert evento.payload["cliente_usuario_id"] == 10
+    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox).where(EventoOutbox.tipo == "orden.estado_cambiado")) == 0
     db_ordenes.expire_all()
     assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == CANCELADO
     assert db_ordenes.get(IngresoVehiculo, orden.ingreso_id).salida_en is None

@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from sqlalchemy import func, select, update
+from uuid import uuid5
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from services.ms1_auth.models.notificacion import Notificacion
 from services.ms1_auth.models.rol import Rol, UsuarioRol
 from services.ms1_auth.models.usuario import Usuario
-from services.ms1_auth.schemas.notificacion import EventoEstadoOrden, EventoRevisionNuevaAtencion
+from services.ms1_auth.schemas.notificacion import EventoEstadoOrden, EventoRevisionNuevaAtencion, EventoSolicitudNuevaAtencion
 
 
 class DestinatarioNotificacionInvalidoError(Exception):
@@ -138,4 +139,38 @@ def contar_notificaciones(db: Session, *, destinatario_id: int) -> tuple[int, in
         ).where(Notificacion.destinatario_id == destinatario_id)).one()
         return total, no_leidas
     except SQLAlchemyError as exc:
+        raise PersistenciaNotificacionError from exc
+
+
+def recibir_solicitud_nueva_atencion(db: Session, evento: EventoSolicitudNuevaAtencion) -> tuple[int, int]:
+    """Un aviso por administrador activo; UUID derivado estable por destinatario.
+
+    Las altas de personal no reenvían eventos históricos ya confirmados. Si una
+    entrega necesita repetirse, cada destinatario sigue teniendo un solo aviso.
+    Toda la distribución se confirma junta dentro de MS1.
+    """
+    try:
+        destinatarios = list(db.scalars(select(Usuario.usuario_id).join(UsuarioRol, UsuarioRol.usuario_id == Usuario.usuario_id).join(Rol, Rol.rol_id == UsuarioRol.rol_id)
+            .where(Usuario.activo.is_(True), Rol.nombre == "administrador").order_by(Usuario.usuario_id)))
+        creadas = existentes = 0
+        for uid in destinatarios:
+            clave = uuid5(evento.evento_id, f"administrador:{uid}")
+            if db.scalar(select(Notificacion.notificacion_id).where(Notificacion.evento_id == clave)) is not None:
+                existentes += 1
+                continue
+            db.add(Notificacion(evento_id=clave, destinatario_id=uid, tipo=evento.tipo,
+                orden_id=evento.orden_cancelada_id, vehiculo_id=evento.vehiculo_id,
+                titulo="Solicitud de nueva atención pendiente",
+                mensaje=f"El Cliente solicitó una nueva atención (solicitud n° {evento.solicitud_id}, orden cancelada n° {evento.orden_cancelada_id}). Revísela en Nuevas atenciones.",
+                ocurrido_en=evento.ocurrido_en))
+            creadas += 1
+        db.commit()
+        return creadas, existentes
+    except IntegrityError as exc:
+        db.rollback()
+        # Un recibo concurrente puede adelantarse. El productor reintenta el
+        # mismo UUID; no se confirma parcialmente ni se crean avisos nuevos.
+        raise PersistenciaNotificacionError from exc
+    except SQLAlchemyError as exc:
+        db.rollback()
         raise PersistenciaNotificacionError from exc

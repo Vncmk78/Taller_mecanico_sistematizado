@@ -140,9 +140,10 @@ El alta bloquea vehículo, orden cancelada y luego solicitud vigente, en ese
 orden, compatible con entrega/devolución y creación de órdenes. La revisión y
 la generación de C deberán respetar ese orden si necesitan esos mismos bloqueos.
 El índice A protege también frente a escrituras que omitan el servicio.
-No exige devolución previa, no crea ingreso/orden/historial/outbox, ni consulta
-otros microservicios para registrar una solicitud. C incorpora el aviso de
-revisión mediante outbox. El contrato 3.0.0 continúa sin publicar.
+No exige devolución previa, no crea ingreso, orden ni historial de estado. La solicitud y su aviso al
+personal administrador se conservan en una misma transacción mediante outbox,
+sin consultar otros microservicios durante el alta. C incorpora además el aviso
+de revisión al Cliente mediante outbox. El contrato 3.0.0 continúa sin publicar.
 
 Integración comprobada: 957 pruebas web, lint/build y 101 pruebas de contrato/API
 aprobadas; 31 comprobaciones en Chromium contra Gateway, los cuatro servicios y
@@ -264,3 +265,21 @@ Cada entrega de Claude termina en pruebas, revisión y commit local. Informar
 hash, archivos, verificaciones ejecutadas y lo pendiente de validar contra el
 backend real. No presentar una prueba con simulaciones como integración real.
 Sin push, merge, rebase, reset ni cambio de rama por cuenta de Claude.
+
+
+### Aviso de solicitud nueva al personal
+
+`POST /interno/eventos/nuevas-atenciones/solicitud`, solo MS1 con
+`X-Service-Token` dedicado, recibe `evento_id`, `tipo: nueva_atencion.solicitada`,
+`ocurrido_en` con zona, `solicitud_id`, `orden_cancelada_id`, `vehiculo_id` y
+`cliente_usuario_id`. No admite extras. MS2 lo conserva con el alta de la
+solicitud, y el worker publica fuera de esa transacción. Un alta idéntica 200
+no agrega otro evento. Un fallo de publicación se reintenta desde la outbox.
+
+MS1 selecciona únicamente administradores activos de su propia base, incluidas
+cuentas multirrol. Conserva un aviso por destinatario, con UUID determinista
+derivado del evento y usuario. El reintento devuelve `evento_id`, `creadas` y
+`existentes`, sin duplicar avisos. La distribución se confirma junta; si falla,
+no se guardan destinatarios parciales. Si no hay personal autorizado, el recibo
+es válido con cero avisos; una alta posterior de personal no reenvía el historial.
+La revisión administrativa sigue usando su evento separado para el Cliente.

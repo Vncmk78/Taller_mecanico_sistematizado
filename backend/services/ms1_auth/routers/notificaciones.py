@@ -14,6 +14,8 @@ from services.ms1_auth.schemas.notificacion import (
     EventoRecibidoRespuesta,
     NotificacionRespuesta,
     EventoRevisionNuevaAtencion,
+    EventoSolicitudNuevaAtencion,
+    EventoPersonalRecibidoRespuesta,
 )
 from services.ms1_auth.services.notificaciones import (
     DestinatarioNotificacionInvalidoError,
@@ -23,6 +25,7 @@ from services.ms1_auth.services.notificaciones import (
     contar_notificaciones,
     recibir_evento_estado_orden,
     recibir_evento_revision_nueva_atencion,
+    recibir_solicitud_nueva_atencion,
 )
 from shared.auth import PrincipalAutenticado
 
@@ -92,6 +95,19 @@ def recibir_revision_nueva_atencion(
         raise HTTPException(status_code=422, detail="El destinatario no es un cliente activo de MS1") from exc
     except PersistenciaNotificacionError as exc:
         raise HTTPException(status_code=500, detail="No fue posible registrar la notificación") from exc
+
+
+@router_notificaciones.post("/interno/eventos/nuevas-atenciones/solicitud",
+    response_model=EventoPersonalRecibidoRespuesta, summary="Avisar una solicitud nueva al personal administrador")
+def recibir_solicitud(evento: EventoSolicitudNuevaAtencion,
+    x_service_token: str | None = Header(default=None, alias="X-Service-Token"),
+    db: Session = Depends(get_db)) -> EventoPersonalRecibidoRespuesta:
+    _validar_credencial_servicio(x_service_token)
+    try:
+        nuevas, existentes = recibir_solicitud_nueva_atencion(db, evento)
+        return EventoPersonalRecibidoRespuesta(evento_id=evento.evento_id, creadas=nuevas, existentes=existentes)
+    except PersistenciaNotificacionError as exc:
+        raise HTTPException(status_code=500, detail="No fue posible registrar los avisos de la solicitud") from exc
 
 
 @router_notificaciones.get(

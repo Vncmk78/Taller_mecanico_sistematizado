@@ -42,7 +42,7 @@ def test_revision_guarda_auditoria_y_evento_juntos_sin_transicion_de_orden(api_o
     assert s["situacion"] == decision and s["respuesta"] == "Respuesta del taller"
     assert s["revisor_id"] == 99 and s["revisada_en"]
     assert s["orden_generada_id"] is None
-    e = db_ordenes.scalar(select(EventoOutbox))
+    e = db_ordenes.scalar(select(EventoOutbox).where(EventoOutbox.tipo == "nueva_atencion.revisada"))
     assert e.tipo == "nueva_atencion.revisada" and e.publicado_en is None
     evento = EventoRevisionNuevaAtencion.model_validate(e.payload)
     assert (evento.solicitud_id, evento.cliente_usuario_id, evento.revisor_id, evento.decision) == (sid, 10, 99, decision)
@@ -58,7 +58,7 @@ def test_revision_identica_por_otro_admin_conserva_actor_fecha_y_un_solo_evento(
     segunda = _revisar(api_ordenes, sid, respuesta="  Podemos atenderlo  ", headers=_headers_para(100, NombreRol.ADMINISTRADOR))
     assert primera.status_code == segunda.status_code == 200
     assert primera.json() == segunda.json()
-    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 1
+    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 2
     assert _revisar(api_ordenes, sid, "rechazada").status_code == 409
     assert _revisar(api_ordenes, sid, respuesta="Otro contenido").status_code == 409
     assert api_ordenes.get(f"{BASE}/{sid}", headers=ADMIN).json() == primera.json()
@@ -90,7 +90,7 @@ def test_generacion_guarda_orden_y_vinculo_y_respeta_ingreso_fisico(api_ordenes,
     assert historial.orden_id == o["orden_id"] and historial.estado_anterior is None and historial.estado_nuevo == 1
     assert historial.actor_usuario_id == 99
     assert db_ordenes.get(OrdenTrabajo, anterior.orden_id).estado_codigo == 8
-    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 2
+    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 3
 
 
 def test_generacion_reintenta_sin_duplicar_y_devuelve_estado_actual_de_orden(api_ordenes, db_ordenes):
@@ -234,7 +234,7 @@ def test_fallo_revision_revierte_auditoria_y_outbox(api_ordenes, db_ordenes, mon
     db_ordenes.expire_all()
     s = db_ordenes.get(SolicitudNuevaAtencion, sid)
     assert s.situacion == "pendiente" and s.revisor_id is s.revisada_en is s.respuesta is None
-    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 1
 
 
 @pytest.mark.parametrize("devuelta", [False, True])
@@ -266,7 +266,7 @@ def test_fallo_generacion_revierte_orden_ingreso_historial_outbox_y_vinculo(api_
         assert _generar(api_ordenes, sid).status_code == 500
     db_ordenes.expire_all()
     assert db_ordenes.get(SolicitudNuevaAtencion, sid).orden_generada_id is None
-    for modelo, cantidad in [(OrdenTrabajo, 1), (IngresoVehiculo, 1), (HistorialEstado, 0), (EventoOutbox, 1), (HistorialValidacionCupoIngreso, 0)]:
+    for modelo, cantidad in [(OrdenTrabajo, 1), (IngresoVehiculo, 1), (HistorialEstado, 0), (EventoOutbox, 2), (HistorialValidacionCupoIngreso, 0)]:
         assert db_ordenes.scalar(select(func.count()).select_from(modelo)) == cantidad
     # En producción el siguiente HTTP usa otra Session. SQLite reutiliza IDs
     # tras rollback; descartar las identidades de esta Session de prueba.

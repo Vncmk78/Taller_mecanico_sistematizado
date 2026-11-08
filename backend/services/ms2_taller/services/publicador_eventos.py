@@ -102,6 +102,7 @@ async def publicar_siguiente_evento(cliente_http: httpx.AsyncClient) -> bool:
         rutas = {
             "orden.estado_cambiado": "/interno/eventos/ordenes/estado",
             "nueva_atencion.revisada": "/interno/eventos/nuevas-atenciones/revision",
+            "nueva_atencion.solicitada": "/interno/eventos/nuevas-atenciones/solicitud",
         }
         ruta = rutas.get(evento.payload.get("tipo"))
         if ruta is None:

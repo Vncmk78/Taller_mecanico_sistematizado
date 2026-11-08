@@ -92,6 +92,13 @@ def solicitar_nueva_atencion(
         db.add(solicitud)
         db.flush()
         db.refresh(solicitud)
+        evento_id = uuid4()
+        db.add(EventoOutbox(evento_id=evento_id, tipo="nueva_atencion.solicitada", payload={
+            "evento_id": str(evento_id), "tipo": "nueva_atencion.solicitada",
+            "ocurrido_en": (solicitud.solicitada_en if solicitud.solicitada_en.tzinfo else solicitud.solicitada_en.replace(tzinfo=timezone.utc)).isoformat(),
+            "solicitud_id": solicitud.solicitud_id, "orden_cancelada_id": solicitud.orden_cancelada_id,
+            "vehiculo_id": solicitud.vehiculo_id, "cliente_usuario_id": principal.usuario_id,
+        }))
         db.commit()
         return solicitud, True
     except (NuevaAtencionNoEncontradaError, NuevaAtencionConflictoError):

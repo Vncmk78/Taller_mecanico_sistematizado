@@ -66,7 +66,7 @@ def test_generaciones_simultaneas_crean_una_orden_y_un_vinculo(motor_pg):
     assert sum(r[3] for r in resultados) == 1
     assert len({r[:3] for r in resultados}) == 1
     with _sesion(motor_pg) as db:
-        for modelo, cantidad in [(OrdenTrabajo, 2), (IngresoVehiculo, 1), (HistorialEstado, 2), (EventoOutbox, 3)]:
+        for modelo, cantidad in [(OrdenTrabajo, 2), (IngresoVehiculo, 1), (HistorialEstado, 2), (EventoOutbox, 4)]:
             assert db.scalar(select(func.count()).select_from(modelo)) == cantidad
 
 
@@ -131,7 +131,7 @@ def test_fallo_commit_revierte_toda_la_generacion_y_libera_locks(motor_pg):
             generar_orden_nueva_atencion(db, solicitud_id=sid, principal=ADMIN)
     with _sesion(motor_pg) as db:
         assert db.get(SolicitudNuevaAtencion, sid).orden_generada_id is None
-        for modelo, cantidad in [(OrdenTrabajo, 1), (IngresoVehiculo, 1), (HistorialEstado, 1), (EventoOutbox, 2), (HistorialValidacionCupoIngreso, 1)]:
+        for modelo, cantidad in [(OrdenTrabajo, 1), (IngresoVehiculo, 1), (HistorialEstado, 1), (EventoOutbox, 3), (HistorialValidacionCupoIngreso, 1)]:
             assert db.scalar(select(func.count()).select_from(modelo)) == cantidad
         assert generar_orden_nueva_atencion(db, solicitud_id=sid, principal=ADMIN)[2]
 

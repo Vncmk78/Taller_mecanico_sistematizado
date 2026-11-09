@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Send } from 'lucide-react';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
 import { AplicacionPresupuestoPendienteError } from '@/domain/ports/PresupuestoPort';
+import { aplicacionPendiente } from '@/domain/entities/Presupuesto';
+import { useEstadoOrden } from '@/presentation/hooks/useEstadoOrden';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { hasAnyRole } from '@/presentation/utils/roleVisibility';
 import { PresupuestoAplicacionPanel } from '@/presentation/components/budgets/PresupuestoAplicacionPanel';
 import { esResultadoIncierto, getApiErrorMessage } from '@/infrastructure/api/errors';
 import type { ItemPresupuestoInput } from '@/domain/ports/PresupuestoPort';
@@ -39,9 +43,15 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
     const [repuestos, setRepuestos] = useState<Repuesto[]>([]);
     const [items, setItems] = useState<ItemForm[]>([emptyItem]);
     const [submitting, setSubmitting] = useState(false);
+    // Una lectura tardía del servidor no debe pisar lo que la persona ya editó.
+    const editado = useRef(false);
     const [incierto, setIncierto] = useState(false);
     const [envioPendiente, setEnvioPendiente] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [aviso, setAviso] = useState<string | null>(null);
+    const { estado: estadoOrden, recargar: recargarOrden } = useEstadoOrden(id);
+    const usuario = useAuthStore((s) => s.user);
+    const hasRole = (rol: 'administrador') => hasAnyRole(usuario, rol);
 
     const load = useCallback(async () => {
         if (!id) return;
@@ -51,7 +61,7 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
             const resumen = await presupuestoService.getByOrder(id);
             const found = resumen ? await presupuestoService.getById(resumen.id) : null;
             setPresupuesto(found);
-            if (found?.versiones?.length) {
+            if (found?.versiones?.length && !editado.current) {
                 const version = found.versiones[found.versiones.length - 1];
                 setItems(
                     version.items.map((item) => ({
@@ -83,13 +93,15 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
         })();
     }, [load]);
 
-    const addItem = () => setItems((prev) => [...prev, { ...emptyItem }]);
+    const addItem = () => { editado.current = true; setItems((prev) => [...prev, { ...emptyItem }]); };
 
     const updateItem = (index: number, patch: Partial<ItemForm>) => {
+        editado.current = true;
         setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
     };
 
     const removeItem = (index: number) => {
+        editado.current = true;
         setItems((prev) => prev.filter((_, i) => i !== index));
     };
 
@@ -110,6 +122,7 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
         setActionError(null);
         try {
             const created = await presupuestoService.create(id, toInput());
+            editado.current = false;
             setPresupuesto(created);
         } catch (err) {
             setActionError(getApiErrorMessage(err, 'No se pudo crear el presupuesto.'));
@@ -130,6 +143,7 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
             } else {
                 await presupuestoService.createVersion(presupuesto.id, { items: toInput() });
             }
+            editado.current = false;
             await load();
         } catch (err) {
             setActionError(getApiErrorMessage(err, 'No se pudo guardar el borrador.'));
@@ -144,15 +158,21 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
         if (!version) return;
         setSubmitting(true);
         setActionError(null);
+        setAviso(null);
         try {
             await presupuestoService.replaceItems(presupuesto.id, version.numero, toInput());
-            await presupuestoService.send(presupuesto.id, version.numero);
-            await load();
+            editado.current = false;
+            const resultado = await presupuestoService.send(presupuesto.id, version.numero);
+            await Promise.all([load(), recargarOrden()]);
+            setAviso(resultado?.aplicacionConfirmada
+                ? 'Versión enviada al cliente. La orden quedó en "Esperando aprobación de presupuesto".'
+                : 'Versión enviada al cliente.');
         } catch (err) {
             if (err instanceof AplicacionPresupuestoPendienteError) {
+                // El envío ya está guardado: se conserva la referencia del 503
+                // y solo se ofrece el reintento de su aplicación.
                 setEnvioPendiente(err.id);
-                setActionError(err.message);
-                await load();
+                await Promise.all([load(), recargarOrden()]);
             } else {
                 setActionError(getApiErrorMessage(err, 'No se pudo confirmar el envío. Consulte el presupuesto antes de repetir.'));
                 if (esResultadoIncierto(err)) { setIncierto(true); await load(); }
@@ -166,6 +186,15 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
     if (error) return <ErrorState className="p-4 sm:p-6 lg:p-10" title="No se pudo cargar el presupuesto" message={error} onRetry={load} />;
 
     const version = presupuesto?.versiones?.[presupuesto.versiones.length - 1];
+    const pendiente = envioPendiente
+        ? { tipo: 'envio' as const, id: envioPendiente }
+        : aplicacionPendiente(presupuesto, estadoOrden);
+    const confirmarAplicacion = async () => {
+        setEnvioPendiente(null);
+        setActionError(null);
+        await Promise.all([load(), recargarOrden()]);
+        setAviso('Aplicación confirmada: la orden quedó en "Esperando aprobación de presupuesto".');
+    };
 
     return (
         <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
@@ -180,7 +209,21 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
                 <Button variant="secondary" onClick={() => void load()}>Comprobar de nuevo</Button>
                 <Button variant="secondary" onClick={() => setIncierto(false)}>Ya lo revisé: permitir enviar otra vez</Button>
             </section>}
-            {actionError && <div className="card p-4 mb-6 text-status-red">{actionError}</div>}
+            {actionError && <div className="card p-4 mb-6 text-status-red" role="alert">{actionError}</div>}
+            {aviso && <div className="card p-4 mb-6 text-status-green" role="status">{aviso}</div>}
+            {!administrador && (
+                <div className="card p-4 mb-6 text-sm" aria-label="Revisión del administrador">
+                    <p className="text-text-muted">
+                        El Mecánico prepara la propuesta. Un Administrador revisa los precios y la envía al cliente.
+                    </p>
+                    {pendiente?.tipo === 'envio' && <p className="mt-2">El envío está registrado y su aplicación en la orden está pendiente; la reintenta un Administrador.</p>}
+                    {hasRole('administrador') && id && (
+                        <Link to={`/admin/ordenes/${id}/presupuesto`} className="inline-block mt-2 text-primary-blue">
+                            Revisar y enviar como Administrador
+                        </Link>
+                    )}
+                </div>
+            )}
 
             <div className="card p-6 mb-6 space-y-4">
                 {items.map((item, index) => (
@@ -247,8 +290,13 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
                 </Button>
             </div>
 
-            {administrador && presupuesto && (envioPendiente || (version?.numero === 1 && version.estado === 'enviada')) && (
-                <PresupuestoAplicacionPanel tipo="envio" id={envioPendiente ?? presupuesto.id} ordenId={id!} onConfirmed={() => setEnvioPendiente(null)} />
+            {administrador && pendiente?.tipo === 'envio' && (
+                <PresupuestoAplicacionPanel tipo="envio" id={pendiente.id} ordenId={id} onConfirmed={confirmarAplicacion} />
+            )}
+            {administrador && pendiente?.tipo === 'decision' && (
+                <div className="card p-4 mb-4 text-sm" role="status">
+                    El cliente ya registró su decisión (n° {pendiente.id}) y su aplicación en la orden está pendiente; la reintenta el Cliente desde su presupuesto.
+                </div>
             )}
             <div className="flex gap-3">
                 {!presupuesto ? (
@@ -256,7 +304,7 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
                 ) : (
                     <>
                         <Button onClick={handleSaveDraft} isLoading={submitting}>Guardar borrador</Button>
-                        {administrador && version?.estado === 'borrador' && !envioPendiente && !incierto && (
+                        {administrador && version?.estado === 'borrador' && !pendiente && !incierto && (
                             <Button onClick={handleSend} isLoading={submitting}>
                                 <Send className="w-4 h-4 mr-2" /> Enviar al cliente
                             </Button>

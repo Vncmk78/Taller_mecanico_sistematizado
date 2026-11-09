@@ -1,0 +1,22 @@
+Configuración: todo apunta al ambiente de pruebas.
+  OK    MS1: 127.0.0.1:5443/taller_ms1_pruebas: marca sgtm-ambiente-pruebas
+  OK    MS2: 127.0.0.1:5444/taller_ms2_pruebas: marca sgtm-ambiente-pruebas
+  OK    MS3: 127.0.0.1:5445/taller_ms3_pruebas: marca sgtm-ambiente-pruebas
+  OK    MS4: 127.0.0.1:5446/taller_ms4_pruebas: marca sgtm-ambiente-pruebas
+  OK    MinIO: 9010/evidencias-pruebas: etiqueta ambiente=sgtm-pruebas
+OK   A-03 Mecánico crea el borrador desde la web
+OK   A-03 Mecánico no ve 'Enviar al cliente'
+OK   A-03 Mecánico ve que la revisión y el envío son del Administrador
+OK   A-03 Administrador revisa el precio y envía desde su portal
+OK   A-03 Cliente ve la versión enviada con el precio revisado
+OK   A-04 Envío con 503: la web informa 'registrado, pendiente' y oculta 'Enviar'
+OK   A-04 Se conserva la referencia del presupuesto
+OK   A-04 Reintento fallido: sigue pendiente
+OK   A-04 Tras recargar, la web reconoce el envío pendiente desde el servidor
+OK   A-04 Envío recuperado: la orden pasó a 3
+OK   A-04 Un solo envío y una sola transición a 3
+OK   A-04 Decisión con 503: aprobar queda bloqueado
+OK   A-04 Decisión recuperada: la orden salió de 3
+OK   A-04 Una sola decisión y una sola transición al estado final
+
+14/14 comprobaciones; llamadas bloqueadas por el proxy: 3

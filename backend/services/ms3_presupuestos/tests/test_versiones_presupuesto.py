@@ -67,6 +67,10 @@ class _OrdenesDelCliente:
 
     verificar_propiedad = verificar_acceso
 
+    def verificar_creacion_presupuesto(self, orden_id: int, token: str, _principal):
+        """El personal de este escenario tiene asignación; se prueba el versionado."""
+        return self.verificar_acceso(orden_id, token)
+
 
 @pytest.fixture
 def ms2() -> _OrdenesDelCliente:

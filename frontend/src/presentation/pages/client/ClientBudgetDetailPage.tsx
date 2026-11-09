@@ -7,7 +7,9 @@ import {
     rechazoCancelaServicio,
     versionPendiente,
     versionVigente,
+    aplicacionPendiente,
 } from '@/domain/entities/Presupuesto';
+import { useEstadoOrden } from '@/presentation/hooks/useEstadoOrden';
 import { AplicacionPresupuestoPendienteError } from '@/domain/ports/PresupuestoPort';
 import { PresupuestoAplicacionPanel } from '@/presentation/components/budgets/PresupuestoAplicacionPanel';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
@@ -48,6 +50,7 @@ export function ClientBudgetDetailPage() {
     } = useOrderEvidence(ordenId);
     const order = useOrderStore((s) => s.orders.find((cached) => cached.id === ordenId));
     const updateBudget = useBudgetStore((s) => s.updateBudget);
+    const { estado: estadoOrden, recargar: recargarOrden } = useEstadoOrden(ordenId, { soloPropietario: true });
 
     const [approveOpen, setApproveOpen] = useState(false);
     const [rejectOpen, setRejectOpen] = useState(false);
@@ -57,12 +60,17 @@ export function ClientBudgetDetailPage() {
     const [decisionError, setDecisionError] = useState<string | null>(null);
     const [decisionResuelta, setDecisionResuelta] = useState<DecisionResuelta | null>(null);
     const [decisionVersion, setDecisionVersion] = useState<number | null>(null);
+    const [aplicacionConfirmada, setAplicacionConfirmada] = useState(false);
 
     const pendiente = presupuesto ? versionPendiente(presupuesto) : undefined;
     const cancelaServicio = presupuesto ? rechazoCancelaServicio(presupuesto) : false;
     const mostrada = pendiente ?? (presupuesto ? versionVigente(presupuesto) : undefined);
-    const puedeAprobar = !incierto && !aplicacionId && pendiente != null && !isOffline && pendiente.items.length > 0;
-    const puedeRechazar = !incierto && !aplicacionId && pendiente != null && !isOffline;
+    const pendienteAplicar = aplicacionId
+        ? { tipo: 'decision' as const, id: aplicacionId }
+        : aplicacionPendiente(presupuesto, estadoOrden);
+    const decisionPendiente = pendienteAplicar?.tipo === 'decision' ? pendienteAplicar : null;
+    const puedeAprobar = !incierto && !decisionPendiente && pendiente != null && !isOffline && pendiente.items.length > 0;
+    const puedeRechazar = !incierto && !decisionPendiente && pendiente != null && !isOffline;
 
     const cerrarDialogos = () => {
         setApproveOpen(false);
@@ -114,13 +122,17 @@ export function ClientBudgetDetailPage() {
             );
             updateBudget(resultado.presupuesto);
             setDecisionResuelta({ tipo, resultado });
+            void recargarOrden();
             cerrarDialogos();
         } catch (err) {
             if (err instanceof AplicacionPresupuestoPendienteError) {
+                // La decisión ya existe: se conserva su referencia y se ofrece
+                // solo el reintento de su aplicación, nunca decidir otra vez.
                 setAplicacionId(err.id);
-                setDecisionError(err.message);
+                setDecisionError(null);
                 cerrarDialogos();
                 refetch();
+                void recargarOrden();
             } else if (isConflictError(err)) {
                 setDecisionError(versionCambio);
                 cerrarDialogos();
@@ -181,7 +193,7 @@ export function ClientBudgetDetailPage() {
         );
     }
 
-    const aplicacionPendiente =
+    const efectoSinConfirmar =
         decisionResuelta?.resultado.efectoEnOrden != null &&
         !decisionResuelta.resultado.aplicacionConfirmada;
     const evidenciasPresupuesto = evidenciasDelPresupuesto(evidenciasOrden, presupuesto.id);
@@ -202,9 +214,18 @@ export function ClientBudgetDetailPage() {
             </section>}
             {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
-            {(aplicacionId || (mostrada?.decision && !mostrada.esModificacion)) && <PresupuestoAplicacionPanel
-                tipo="decision" id={aplicacionId ?? mostrada!.decision!.id} ordenId={presupuesto.orderId}
-                onConfirmed={() => setAplicacionId(null)} />}
+            {decisionPendiente && <PresupuestoAplicacionPanel
+                tipo="decision" id={decisionPendiente.id} ordenId={presupuesto.orderId}
+                onConfirmed={async () => {
+                    setAplicacionId(null);
+                    refetch();
+                    await recargarOrden();
+                    setDecisionError(null);
+                    setAplicacionConfirmada(true);
+                }} />}
+            {aplicacionConfirmada && !decisionPendiente && (
+                <Alert tone="success" className="mb-6">Decisión aplicada: la orden ya refleja su respuesta.</Alert>
+            )}
             {decisionResuelta && (
                 <Alert
                     tone={decisionResuelta.tipo === 'aprobado' ? 'success' : 'warning'}
@@ -215,7 +236,7 @@ export function ClientBudgetDetailPage() {
                         : 'Rechazo registrado.'}
                     {decisionResuelta.resultado.aplicacionConfirmada && decisionResuelta.resultado.efectoEnOrden &&
                         ` Estado del servicio: ${EFECTO_EN_ORDEN_LABEL[decisionResuelta.resultado.efectoEnOrden]}.`}
-                    {aplicacionPendiente &&
+                    {efectoSinConfirmar &&
                         ' La decisión quedó registrada; el estado del servicio se confirmará en breve.'}
                 </Alert>
             )}

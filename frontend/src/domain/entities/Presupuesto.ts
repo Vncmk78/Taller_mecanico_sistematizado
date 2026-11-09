@@ -105,3 +105,35 @@ export function versionVigente(presupuesto: Presupuesto): VersionPresupuesto | u
 export function rechazoCancelaServicio(presupuesto: Presupuesto): boolean {
     return presupuesto.versionVigente === null;
 }
+
+/** Operación ya guardada en MS3 cuyo efecto en la orden (MS2) no está confirmado. */
+export interface AplicacionPendiente {
+    tipo: 'envio' | 'decision';
+    /** presupuesto_id para el envío inicial; decision_id para la decisión inicial. */
+    id: string;
+}
+
+/**
+ * Deduce desde el servidor (presupuesto de MS3 + estado de la orden en MS2) si
+ * quedó una aplicación pendiente, sin depender de la memoria de la pestaña:
+ *  - envío inicial guardado (alguna versión dejó de ser borrador) y la orden
+ *    todavía no llegó a "Esperando aprobación" (estado 1 o 2);
+ *  - decisión inicial guardada (versión no modificación con decisión) y la orden
+ *    sigue en "Esperando aprobación" (estado 3).
+ * Sin estado de orden conocido no se supone nada.
+ */
+export function aplicacionPendiente(
+    presupuesto: Presupuesto | null | undefined,
+    estadoOrden: number | null | undefined
+): AplicacionPendiente | null {
+    if (!presupuesto || estadoOrden == null) return null;
+    const enviadas = presupuesto.versiones.filter((version) => version.estado !== 'borrador');
+    if (estadoOrden <= 2 && enviadas.length > 0) return { tipo: 'envio', id: presupuesto.id };
+    if (estadoOrden === 3) {
+        const inicial = [...enviadas]
+            .filter((version) => !version.esModificacion && version.decision)
+            .sort((a, b) => a.numero - b.numero)[0];
+        if (inicial?.decision) return { tipo: 'decision', id: inicial.decision.id };
+    }
+    return null;
+}

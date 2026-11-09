@@ -219,6 +219,10 @@ Detalles que condicionan la matriz:
   nada se registra (ni se toca stock) sin acceso confirmado (fail-closed).
   Orden ajena o inexistente → `404` (`Presupuesto {id}` / `Orden {id}` no
   existe); MS2 no disponible → `503`. El Administrador opera sin filtro.
+  Se confirma explícitamente `mecanico_actual_id` con el JWT y el principal,
+  reutilizando el verificador de creación. Una cuenta Cliente+Mecánico
+  propietaria necesita igualmente la asignación; ver su propia orden en MS2
+  no la autoriza a versionar, modificar ítems o mover stock como Mecánico.
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).
 - El cliente no ve el catálogo: ve el repuesto y su proveedor dentro de su presupuesto (§4.3).

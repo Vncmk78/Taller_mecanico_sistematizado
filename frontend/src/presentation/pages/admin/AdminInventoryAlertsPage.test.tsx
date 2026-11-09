@@ -23,6 +23,21 @@ describe('AdminInventoryAlertsPage', () => {
         expect(screen.getByText('3')).toBeInTheDocument();
     });
 
+    it('explica que el umbral general es necesario para activar alertas', async () => {
+        vi.mocked(inventarioService.listAlertas).mockResolvedValue({ umbralGeneral: null, total: 0, alertas: [] });
+        render(<AdminInventoryAlertsPage />);
+        expect(await screen.findByText('Alertas aún sin activar')).toBeInTheDocument();
+        expect(screen.getByText(/Configure primero el umbral general/)).toBeInTheDocument();
+        expect(screen.queryByText('No hay alertas de stock')).not.toBeInTheDocument();
+    });
+
+    it('cero es un umbral configurado', async () => {
+        vi.mocked(inventarioService.listAlertas).mockResolvedValue({ umbralGeneral: 0, total: 0, alertas: [] });
+        render(<AdminInventoryAlertsPage />);
+        expect(await screen.findByText('No hay alertas de stock')).toBeInTheDocument();
+        expect(screen.queryByText('Alertas aún sin activar')).not.toBeInTheDocument();
+    });
+
     it('muestra vacío cuando no hay alertas', async () => {
         vi.mocked(inventarioService.listAlertas).mockResolvedValue({
             umbralGeneral: 5,

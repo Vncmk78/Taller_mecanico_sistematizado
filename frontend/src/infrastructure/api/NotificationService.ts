@@ -1,4 +1,4 @@
-import type { Notification, NotificationListResponse } from '@/domain/entities/Notification';
+import type { Notification, NotificationDelivery, NotificationListResponse } from '@/domain/entities/Notification';
 import type { NotificationPort } from '@/domain/ports/NotificationPort';
 import apiClient from '../config/apiClient';
 
@@ -14,6 +14,8 @@ interface NotificacionApi {
   created_at?: string;
   orden_id?: number | string | null;
   presupuesto_id?: number | string | null;
+  solicitud_id?: number | string | null;
+  repuesto_id?: number | string | null;
 }
 
 interface NotificacionesRespuestaApi {
@@ -34,10 +36,33 @@ function mapNotificacion(n: NotificacionApi): Notification {
     creadaEn: n.creado_en ?? n.creada_en ?? n.created_at ?? '',
     ordenId: n.orden_id != null ? String(n.orden_id) : null,
     presupuestoId: n.presupuesto_id != null ? String(n.presupuesto_id) : null,
+    solicitudId: n.solicitud_id != null ? String(n.solicitud_id) : null,
+    repuestoId: n.repuesto_id != null ? String(n.repuesto_id) : null,
   };
 }
 
+interface EntregaApi {
+  entrega_id: number; canal: 'correo' | 'push'; estado: string; intentos: number;
+  aceptada_en: string | null; ultimo_error: string | null;
+  intentos_registrados: Array<{ numero: number; resultado: string; iniciado_en: string; finalizado_en: string | null; codigo_error: string | null }>;
+}
+function mapEntrega(e: EntregaApi): NotificationDelivery {
+  return { id: String(e.entrega_id), canal: e.canal, estado: e.estado, intentos: e.intentos,
+    aceptadaEn: e.aceptada_en, ultimoError: e.ultimo_error,
+    intentosRegistrados: e.intentos_registrados.map(i => ({ numero: i.numero, resultado: i.resultado,
+      iniciadoEn: i.iniciado_en, finalizadoEn: i.finalizado_en, codigoError: i.codigo_error })) };
+}
+
 class NotificationService implements NotificationPort {
+  async getDeliveries(id: string): Promise<NotificationDelivery[]> {
+    const { data } = await apiClient.get<EntregaApi[]>(`/notificaciones/${id}/entregas`);
+    return data.map(mapEntrega);
+  }
+  async retryDeliveries(id: string): Promise<NotificationDelivery[]> {
+    const { data } = await apiClient.post<EntregaApi[]>(`/notificaciones/${id}/reintentos`);
+    return data.map(mapEntrega);
+  }
+
   async getMyNotifications(params?: { soloNoLeidas?: boolean; limit?: number }): Promise<NotificationListResponse> {
     const response = await apiClient.get<NotificacionesRespuestaApi | NotificacionApi[]>('/notificaciones', {
         params: {

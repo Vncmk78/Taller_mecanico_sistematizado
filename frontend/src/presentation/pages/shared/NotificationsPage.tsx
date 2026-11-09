@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { NotificationDeliveryPanel } from '@/presentation/components/notifications/NotificationDeliveryPanel';
 import { Bell, CheckCheck, RefreshCw } from 'lucide-react';
 import type { Notification } from '@/domain/entities/Notification';
 import { notificationService } from '@/infrastructure/api/NotificationService';
@@ -227,6 +228,7 @@ export function NotificationsPage() {
                   )}
                 </div>
               </div>
+              <NotificationDeliveryPanel id={n.id} />
             </li>
           ))}
         </ul>

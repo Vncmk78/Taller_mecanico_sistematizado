@@ -21,3 +21,6 @@ boto3>=1.34,<2
 
 # Autorización HTTP v1 de FCM, solo cuando se configura el proyecto Firebase.
 google-auth[requests]>=2.29,<3
+
+# Autoridades certificadoras para SMTP TLS, también en Python de macOS.
+certifi>=2024.8.30

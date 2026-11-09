@@ -3,6 +3,7 @@
 from __future__ import annotations
 import smtplib
 import ssl
+import certifi
 from email.message import EmailMessage
 import httpx
 from services.ms1_auth.config import settings
@@ -17,6 +18,17 @@ class FalloCanal(Exception):
         self.codigo = codigo
         self.desactivar_dispositivo = desactivar_dispositivo
         super().__init__(codigo)
+
+
+def contexto_tls_smtp() -> ssl.SSLContext:
+    """Conserva la confianza del sistema y agrega las CA públicas de certifi.
+
+    Python instalado desde python.org en macOS puede no tener un cafile
+    predeterminado. Se mantiene CERT_REQUIRED y la verificación del hostname.
+    """
+    contexto = ssl.create_default_context()
+    contexto.load_verify_locations(cafile=certifi.where())
+    return contexto
 
 
 def enviar_correo(destino: str, titulo: str, mensaje: str, evento_id: str) -> str:
@@ -47,7 +59,7 @@ def enviar_correo(destino: str, titulo: str, mensaje: str, evento_id: str) -> st
                 settings.SMTP_HOST,
                 settings.SMTP_PORT,
                 timeout=settings.NOTIFICATION_TIMEOUT_SECONDS,
-                context=ssl.create_default_context(),
+                context=contexto_tls_smtp(),
             )
         else:
             conexion = smtplib.SMTP(
@@ -56,13 +68,15 @@ def enviar_correo(destino: str, titulo: str, mensaje: str, evento_id: str) -> st
                 timeout=settings.NOTIFICATION_TIMEOUT_SECONDS,
             )
             if settings.SMTP_MODO == "starttls":
-                conexion.starttls(context=ssl.create_default_context())
+                conexion.starttls(context=contexto_tls_smtp())
         if settings.SMTP_USUARIO:
             conexion.login(settings.SMTP_USUARIO, settings.SMTP_CLAVE.get_secret_value())
         rechazados = conexion.send_message(mail)
         if rechazados:
             raise FalloCanal("smtp_destinatario_rechazado")
         return ident
+    except ssl.SSLCertVerificationError as exc:
+        raise FalloCanal("smtp_certificado_no_verificable") from exc
     except smtplib.SMTPAuthenticationError as exc:
         raise FalloCanal("smtp_autenticacion_rechazada") from exc
     except (smtplib.SMTPException, OSError) as exc:

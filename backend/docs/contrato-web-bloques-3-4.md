@@ -8,8 +8,10 @@ MartinH, pendientes de publicación. La Entrega B también está integrada local
 con la web de Claude. C también está integrada localmente con la web administrativa (commit de Claude
 `f3181b1`, incorporado como `70d1380`). Se verificó contra Gateway y servicios reales:
 31 comprobaciones del portal Cliente y 13 del portal Administrador, con PostgreSQL
-y respuestas perdidas, además de la suite automatizada. El aviso de revisión llega a la bandeja de MS1; correo y push
-siguen pendientes del módulo transversal de notificaciones.
+y respuestas perdidas, además de la suite automatizada. El aviso de revisión llega a la bandeja de MS1.
+El módulo transversal incorpora canales persistentes, SMTP y FCM HTTP v1:
+SMTP está verificado con Mailpit local; Gmail/FCM externos y el APK todavía
+requieren configuración y validación real. Ver [notificaciones-canales.md](notificaciones-canales.md).
 Ninguna operación se considera publicada por aparecer aquí. Codex mantiene el backend y OpenAPI;
 Claude implementa el frontend por entregas. La integración final debe probarse
 contra servicios reales. El contrato 3.0.0 está pendiente de publicación y

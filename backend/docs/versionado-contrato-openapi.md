@@ -8,8 +8,8 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 
 | | |
 |---|---|
-| Versión vigente | **2.2.1** |
-| Copia congelada | [`docs/openapi/sgtm-gateway-2.2.1.json`](openapi/sgtm-gateway-2.2.1.json) |
+| Versión de este checkout | **3.0.0** |
+| Copia congelada | [`docs/openapi/sgtm-gateway-3.0.0.json`](openapi/sgtm-gateway-3.0.0.json) |
 | Interactivo | `http://localhost:8000/docs` (Swagger) y `/openapi.json` |
 | Dónde se define | `gateway/openapi.py` (`_VERSION`), `gateway/openapi_ms3.py`, `gateway/openapi_ejemplos.py`, `shared/openapi_ordenes.py` |
 
@@ -20,7 +20,7 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 - **Sin levantar la Gateway:** usen el archivo congelado. Sirve para generar
   tipos o clientes (`openapi-typescript`, `openapi-generator`, Flutter/Dart,
   etc.) y mocks a partir de los ejemplos.
-- **Fijen la versión:** referencien `sgtm-gateway-2.2.1.json` para el comportamiento vigente, no «el último».
+- **Fijen la versión:** referencien `sgtm-gateway-3.0.0.json` para el comportamiento de esta entrega, no «el último».
   Una versión nueva llega como un archivo nuevo; el anterior no se borra.
 - **Solo lo publicado es contrato.** Una ruta que la Gateway reenvía pero no
   aparece en el archivo puede cambiar sin aviso.
@@ -77,7 +77,7 @@ No hay migración nueva para la salida: usa columnas existentes. No altera
 estados oficiales ni repara fechas históricas. La interfaz acordada con web
 está en [contrato-web-bloques-3-4.md](contrato-web-bloques-3-4.md).
 
-La misma versión todavía no publicada agrega el backend de la Entrega B:
+La misma versión incorpora el backend de la Entrega B:
 solicitud de nueva atención del Cliente propietario (`201`/`200` idempotente),
 listado y detalle visibles por Cliente/Administrador. Publica la entidad completa,
 sus filtros y situaciones sin cambiar estados de órdenes. La tabla y el índice A

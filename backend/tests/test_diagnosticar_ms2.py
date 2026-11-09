@@ -88,7 +88,7 @@ def test_rechaza_dsn_de_otro_motor_sin_abrir_conexion(monkeypatch):
 
 def test_revisiones_se_leen_sin_importar_la_aplicacion():
     scripts = diagnostico.revisiones_codigo()
-    assert scripts.get_heads() == ["0012_integracion_ms2"]
+    assert scripts.get_heads() == ["0014_nueva_atencion_ms2"]
 
 
 @pytest.mark.parametrize("tabla", tuple(diagnostico.COLUMNAS))

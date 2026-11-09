@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Wrench } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
 import { ESTADOS_ORDEN, ordenStatusLabel } from '@/domain/entities/Order';
@@ -37,10 +37,15 @@ interface OrderActionsPanelProps {
 export function OrderActionsPanel({ order, className }: OrderActionsPanelProps) {
     const user = useAuthStore((s) => s.user);
 
-    const actor: ActorOrden | null = useMemo(
-        () => (user ? { rol: user.role, userId: user.id } : null),
-        [user]
-    );
+    const { pathname } = useLocation();
+    // El portal expresa la función que ejerce la cuenta; el orden de sus roles no es autoridad.
+    const actor: ActorOrden | null = useMemo(() => {
+        if (!user) return null;
+        const roles = user.roles ?? [user.role];
+        const portal = pathname.split('/')[1];
+        const rol = portal === 'admin' ? 'administrador' : portal === 'mechanic' ? 'mecanico' : portal === 'client' ? 'cliente' : user.role;
+        return roles.includes(rol) ? { rol, userId: user.id } : null;
+    }, [user, pathname]);
     const acciones = useMemo(
         () => (actor ? accionesDisponibles(order, actor) : []),
         [order, actor]
@@ -165,7 +170,9 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
             showToast(
                 pending.id === 'cancelar' && actor.rol === 'cliente'
                     ? `Solicitud de cancelación de la orden n° ${order.id} enviada. Pendiente de confirmación administrativa.`
-                    : `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`,
+                    : pending.id === 'asignar_mecanico' && order.mecanicoActualId !== null
+                      ? `Orden n° ${order.id} reasignada. Conserva el estado ${ordenStatusLabel(actualizada.estadoCodigo)}.`
+                      : `Orden n° ${order.id} actualizada a ${ordenStatusLabel(actualizada.estadoCodigo)}.`,
                 'success'
             );
             setPending(null);
@@ -251,7 +258,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                 <Select
                                     id={`orden-${order.id}-${accion.id}-mecanico`}
                                     name="mecanico"
-                                    label="Mecánico responsable"
+                                    label={order.mecanicoActualId ? 'Nuevo mecánico responsable' : 'Mecánico responsable'}
                                     value={mecanicoId}
                                     onChange={(e) => setMecanicoId(e.target.value)}
                                     aria-label={`Mecánico para la orden ${order.id}`}
@@ -262,11 +269,13 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                                     <option value="">
                                         {loadingMecanicos ? 'Cargando mecánicos...' : 'Seleccionar...'}
                                     </option>
-                                    {mecanicos.map((m) => (
-                                        <option key={m.id} value={m.id}>
-                                            {m.full_name}
-                                        </option>
-                                    ))}
+                                    {mecanicos
+                                        .filter((m) => m.id !== order.mecanicoActualId)
+                                        .map((m) => (
+                                            <option key={m.id} value={m.id}>
+                                                {m.full_name}
+                                            </option>
+                                        ))}
                                 </Select>
                             )}
 
@@ -335,11 +344,11 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
             <ConfirmDialog
                 open={pending !== null}
                 tone={pending?.id === 'cancelar' ? 'danger' : 'primary'}
-                title={tituloDialogo(pending, actor.rol === 'cliente')}
+                title={tituloDialogo(pending, actor.rol === 'cliente', order)}
                 description={descripcionDialogo(pending, order, {
                     destino, motivo, mecanicos, mecanicoId, solicitudCliente: actor.rol === 'cliente',
                 })}
-                confirmLabel={etiquetaConfirmar(pending, actor.rol === 'cliente')}
+                confirmLabel={etiquetaConfirmar(pending, actor.rol === 'cliente', order)}
                 isLoading={submitting}
                 onConfirm={ejecutar}
                 onCancel={() => setPending(null)}
@@ -356,10 +365,10 @@ interface DescripcionContexto {
     solicitudCliente: boolean;
 }
 
-function tituloDialogo(accion: AccionOrden | null, solicitudCliente: boolean): string {
+function tituloDialogo(accion: AccionOrden | null, solicitudCliente: boolean, order: Order): string {
     switch (accion?.id) {
         case 'asignar_mecanico':
-            return '¿Confirmar la asignación?';
+            return order.mecanicoActualId ? '¿Confirmar la reasignación?' : '¿Confirmar la asignación?';
         case 'registrar_entrega':
             return '¿Registrar la entrega del vehículo?';
         case 'cancelar':
@@ -369,10 +378,10 @@ function tituloDialogo(accion: AccionOrden | null, solicitudCliente: boolean): s
     }
 }
 
-function etiquetaConfirmar(accion: AccionOrden | null, solicitudCliente: boolean): string {
+function etiquetaConfirmar(accion: AccionOrden | null, solicitudCliente: boolean, order: Order): string {
     switch (accion?.id) {
         case 'asignar_mecanico':
-            return 'Asignar mecánico';
+            return order.mecanicoActualId ? 'Reasignar mecánico' : 'Asignar mecánico';
         case 'registrar_entrega':
             return 'Registrar entrega';
         case 'cancelar':
@@ -392,7 +401,9 @@ function descripcionDialogo(
         case 'asignar_mecanico': {
             const nombre =
                 ctx.mecanicos.find((m) => m.id === ctx.mecanicoId)?.full_name ?? 'el mecánico elegido';
-            return `La orden n° ${order.id} quedará a cargo de ${nombre}.`;
+            return order.mecanicoActualId
+                ? `La orden n° ${order.id} pasará a ${nombre} y conservará su estado (${ordenStatusLabel(order.estadoCodigo)}).`
+                : `La orden n° ${order.id} quedará a cargo de ${nombre} y pasará a Esperando diagnóstico.`;
         }
         case 'registrar_entrega':
             return `La orden n° ${order.id} pasará a Entregado. Confirme que el vehículo fue entregado al cliente.`;

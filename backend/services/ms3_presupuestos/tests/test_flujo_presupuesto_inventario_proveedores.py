@@ -42,6 +42,7 @@ def _clave() -> str:
 @pytest.fixture
 def taller(api: TestClient, db: Session, ms2: VerificadorFalso) -> dict:
     """Catálogo armado por el administrador: un distribuidor oficial con un repuesto."""
+    assert api.put("/inventario/umbral-general", headers=ADMIN, json={"umbral_general": 3}).status_code == 200
     marca = uuid.uuid4().hex[:6]
     proveedor = api.post("/proveedores", headers=ADMIN, json={
         "nombre": f"Distribuidora Oficial {marca}", "contacto": "ventas@oficial.cl",

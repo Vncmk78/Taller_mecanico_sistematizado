@@ -59,3 +59,29 @@ describe('OrderDetailPanel: panel de detalle de la orden', () => {
         expect(screen.queryByText('En reparación')).not.toBeInTheDocument();
     });
 });
+
+describe('OrderDetailPanel: devolución del vehículo', () => {
+    it('una orden Cancelada devuelta muestra la fecha y el responsable del servidor', () => {
+        const fecha = '2026-11-08T13:00:00-03:00';
+        render(<OrderDetailPanel order={{ ...order, estadoCodigo: 8, devueltoEn: fecha, devueltoPorId: '3' }} />);
+
+        expect(screen.getByText('Devolución del vehículo')).toBeInTheDocument();
+        expect(screen.getByText(`${formatDateTime(fecha)} · usuario n° 3`)).toBeInTheDocument();
+        expect(screen.getByText('Cancelado')).toBeInTheDocument();
+    });
+
+    it('una orden Cancelada sin devolución la muestra pendiente', () => {
+        render(<OrderDetailPanel order={{ ...order, estadoCodigo: 8, devueltoEn: null, devueltoPorId: null }} />);
+
+        expect(screen.getByText('Pendiente')).toBeInTheDocument();
+    });
+
+    it('no muestra el dato si la respuesta no lo informó o la orden no está Cancelada', () => {
+        const { rerender } = render(<OrderDetailPanel order={{ ...order, estadoCodigo: 8 }} />);
+        expect(screen.queryByText('Devolución del vehículo')).not.toBeInTheDocument();
+
+        rerender(<OrderDetailPanel order={{ ...order, estadoCodigo: 7, devueltoEn: null, devueltoPorId: null }} />);
+        expect(screen.queryByText('Devolución del vehículo')).not.toBeInTheDocument();
+    });
+});
+

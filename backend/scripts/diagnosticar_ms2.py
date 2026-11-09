@@ -8,6 +8,7 @@ No ejecuta Alembic env.py, migraciones, seeds ni consultas de datos personales.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from alembic.config import Config
@@ -24,6 +25,10 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Comprobaciones dirigidas a los modelos que carga GET /ordenes y a capacidad.
 # No sustituyen la validación completa de tipos, restricciones ni datos.
 COLUMNAS = {
+    "solicitud_nueva_atencion": frozenset(
+        "solicitud_id orden_cancelada_id vehiculo_id cliente_usuario_id descripcion "
+        "solicitada_en situacion respuesta revisor_id revisada_en orden_generada_id".split()
+    ),
     "orden_trabajo": frozenset(
         "orden_id vehiculo_id ingreso_id estado_codigo mecanico_actual_id "
         "creado_por_id creado_en actualizado_en diagnostico_texto fecha_diagnostico "
@@ -56,7 +61,7 @@ COLUMNAS = {
 
 class EntornoMS2(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="MS2_", env_file=BACKEND_DIR / ".env", extra="ignore",
+        env_prefix="MS2_", env_file=BACKEND_DIR / (os.environ.get("SGTM_ENV_FILE") or ".env"), extra="ignore",
         hide_input_in_errors=True,
     )
     database_url: SecretStr

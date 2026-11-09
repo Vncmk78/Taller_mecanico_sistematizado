@@ -123,7 +123,7 @@ class PruebaIntegracion:
 
 
 def main() -> int:
-    entorno = {**dotenv_values(BACKEND_DIR / ".env"), **os.environ}
+    entorno = {**dotenv_values(BACKEND_DIR / (os.environ.get("SGTM_ENV_FILE") or ".env")), **os.environ}
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--gateway", default=entorno.get("GATEWAY_URL", "http://localhost:8000"))
     parser.add_argument("--salida", type=Path, help="Directorio NUEVO para openapi.json y muestras.json anonimizadas")

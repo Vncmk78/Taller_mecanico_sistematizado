@@ -25,7 +25,6 @@ La suite vigente cubre, con **1150 pruebas** en 55 archivos:
 - ✅ Propiedad de recursos y acceso cruzado, con `404` indistinguible
 - ✅ Acceso indebido entre roles y recursos ajenos del mismo rol
 - ✅ Autenticación por canales web y móvil
-- ✅ Credenciales vacías o inválidas y cuentas con roles múltiples
 - ✅ API Gateway: enrutamiento, formato de errores, OpenAPI, CORS, evidencias, health
 - ✅ Integración real del JWT emitido por MS1 validado en MS2 a través de la Gateway
 - ✅ Contratos de MS3 (presupuestos, aislamiento, persistencia) y MS4 (evidencias, ciclo de archivos, huérfanos)
@@ -67,7 +66,6 @@ backend/
 │   ├── test_autenticacion_canales.py               (10)  Autenticación por canales web/móvil
 │   ├── test_auth_api.py                            (8)  Registro, login, /auth/me
 │   ├── test_autorizacion.py                        (6)  401 vs 403, multirol
-│   ├── test_credenciales_vacias_y_multirol.py       (29)  Credenciales vacías/inválidas y cuentas multirol
 │   ├── test_decisiones_presupuesto_integracion.py  (28)  Decisiones de presupuesto
 │   ├── test_decisiones_presupuesto_postgresql.py   (45)  Decisiones en PostgreSQL (se omiten sin PG)
 │   ├── test_gateway_errores_proxy.py               (28)  Errores del proxy
@@ -195,7 +193,6 @@ python verificar_conexion.py     # requiere los 4 servicios de DB levantados
 |---|---|---|
 | `shared/auth.py` — emisión y validación de JWT | `test_jwt.py` (11), `test_integridad_token_jwt.py` (12) | 23 |
 | `services/ms1_auth` — registro, login, `/auth/me`, roles, seguridad, canales web/móvil | `test_auth_api.py` (8), `test_autorizacion.py` (6), `test_usuarios_roles.py` (43), `test_historial_roles.py` (6), `test_login_intentos_fallidos.py` (2), `test_autenticacion_canales.py` (10), `test_normalizacion_401_403.py` (14), `test_seguridad_autenticacion.py` (12) | 101 |
-| `services/ms1_auth` — credenciales vacías o inválidas y cuentas con roles múltiples | `test_credenciales_vacias_y_multirol.py` | 29 |
 | `services/ms2_taller` — vehículos | `test_vehiculos_api.py` | 58 |
 | `services/ms2_taller` — órdenes y asignación de mecánico | `test_ordenes_api.py` (142), `test_asignacion_ordenes_api.py` (24) | 166 |
 | `services/ms2_taller` — validadores de dominio | `test_validadores_orden.py` | 22 |
@@ -222,11 +219,6 @@ y cuentan como pruebas que pasan.
   estado, responsable ni fechas.
 - Rollback: los fallos de persistencia no dejan escrituras parciales.
 - Idempotencia: repetir la misma asignación no crea historial duplicado.
-- Credenciales vacías o solo espacios: el `422` se resuelve en la capa de
-  schemas, **sin** contar como intento fallido (no puede bloquear la cuenta);
-  la contraseña incorrecta no vacía sí cuenta y bloquea al agotar los intentos,
-  con el mismo mensaje genérico. Las reglas de credenciales aplican igual a una
-  cuenta con varios roles que a una de un rol.
 
 No se publica un porcentaje de cobertura de líneas: la suite no se ejecuta con
 `--cov`, así que cualquier cifra en este documento estaría sin respaldo. Para
@@ -298,21 +290,19 @@ suite. Con todos los servicios levantadas no debería quedar ninguna omitida.
 | `test_decisiones_presupuesto_postgresql.py` | 45 | Dos PostgreSQL locales descartables | Ver el propio archivo (casos SCRUM-397/438) |
 | **Total** | **55** | **MinIO (10) + PostgreSQL (45)** | |
 
-### 2. Huecos de seguridad §4.3 y §4.4 — corregidos (2026-11)
+### 2. `xfail` estrictos por hueco de seguridad abierto (4)
 
-Los 4 `xfail` estrictos que registraban los huecos de
-`test_acceso_indebido_roles.py` se retiraron tras implementar la corrección:
+Son en `test_acceso_indebido_roles.py`. Marcan un comportamiento **no deseado y
+conocido**: hoy la API lo permite y la prueba lo documenta como brecha. Son
+**estrictos** (`strict=True`): si alguien corrige la brecha, la prueba empieza a
+fallar y obliga a retirar la marca, así nadie la deja pasar por alto.
 
-| Antiguo `xfail` | Estado actual |
+| Prueba | Brecha que registra |
 |---|---|
-| `test_administrador_no_asigna_a_un_usuario_inexistente` | Pasa: `mecanico_id` se valida contra MS1 y el usuario inexistente responde `404` |
-| `test_administrador_no_asigna_a_un_usuario_sin_rol_mecanico` | Pasa: el usuario activo sin rol `mecanico` responde `409` |
-| `test_mecanico_no_asignado_no_crea_presupuesto_de_orden_ajena` | Pasa: MS3 consulta la visibilidad en MS2 y la orden ajena responde `404` |
-| `test_mecanico_no_crea_presupuesto_de_orden_inexistente` | Pasa: la orden inexistente responde `404` |
-
-Casos nuevos que cubren el comportamiento ya corregido: usuario inactivo
-(`409`), MS1 no disponible en la asignación (`503`, fail-closed), mecánico
-asignado que SÍ puede presupuestar su orden (`201`).
+| `test_mecanico_no_asignado_no_crea_presupuesto_de_orden_ajena` | Un mecánico crea presupuesto sobre una orden que no tiene asignada (§4.4 de la matriz) |
+| `test_mecanico_no_crea_presupuesto_de_orden_inexistente` | Variante del §4.4 usando una orden inexistente |
+| `test_administrador_no_asigna_a_un_usuario_inexistente` | `mecanico_id` de la orden sin validar contra MS1 (§4.3 de la matriz) |
+| `test_administrador_no_asigna_a_un_usuario_sin_rol_mecanico` | Variante del §4.3: el id existe pero no tiene rol mecánico |
 
 Referencia completa de huecos y decisiones pendientes:
 [`docs/matriz-autorizacion-roles.md`](backend/docs/matriz-autorizacion-roles.md).
@@ -332,6 +322,7 @@ de decisión del equipo** retirarla; ver la sección «Conclusión». No se ha t
 ningún archivo de esa suite en este registro.
 
 ---
+
 
 ## 🛠️ CONFIGURACIÓN
 
@@ -356,7 +347,6 @@ de prueba se instalan con `requirements-dev.txt` (`pytest`, `httpx`, `respx`).
 **Pruebas completas y verificadas sobre el sistema en ejecución:**
 - 1150 pruebas: 1095 pasan, 55 se omiten por servicios externos (10 MinIO y 45 PostgreSQL descartable), 0 fallos y 0 `xfail` (los huecos §4.3/§4.4 ya están corregidos)
 - Autenticación verificada
-- Credenciales vacías/inválidas y cuentas con roles múltiples verificadas
 - Autorización verificada, con `401` y `403` diferenciados
 - Propiedad de recursos y acceso cruzado verificados, con `404` indistinguible
 - Contrato de claims del JWT verificado contra `shared/auth.py`

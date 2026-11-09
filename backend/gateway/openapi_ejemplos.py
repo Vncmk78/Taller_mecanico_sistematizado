@@ -185,6 +185,11 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         {"detail": "Vehículo no encontrado"},
         "Un vehículo de otro cliente y uno inexistente responden lo mismo.",
     ),
+    "detalle_perfil_cliente_conflicto": _ejemplo(
+        "409: el perfil Cliente ya existe con otro teléfono",
+        {"detail": "El perfil Cliente ya existe con otro teléfono; no se modificó"},
+        "Preparar el perfil nunca sobrescribe datos guardados.",
+    ),
     "detalle_perfil_cliente_ausente": _ejemplo(
         "404 sin perfil Cliente local en MS2",
         {"detail": "El usuario autenticado no tiene un perfil Cliente en MS2"},
@@ -363,6 +368,12 @@ _VEHICULO_EJEMPLO: dict[str, Any] = {
     "kilometraje": 45000,
 }
 
+_PERFIL_CLIENTE_EJEMPLO: dict[str, Any] = {
+    "cliente_id": 7,
+    "usuario_id": 42,
+    "telefono": "+56 9 1234 5678",
+}
+
 _VEHICULO_ACTUALIZADO_EJEMPLO: dict[str, Any] = {
     **_VEHICULO_EJEMPLO,
     "modelo": "Corolla Cross",
@@ -437,6 +448,13 @@ _SOLICITUD_CANCELACION_EJEMPLO: dict[str, Any] = {
     "solicitada_en": "2026-10-23T10:30:00-03:00",
     "administrador_id": None,
     "confirmada_en": None,
+}
+
+_SOLICITUD_NUEVA_EJEMPLO = {
+    "solicitud_id": 9, "orden_cancelada_id": 31, "vehiculo_id": 12,
+    "cliente_usuario_id": 7, "descripcion": "Revisar frenos nuevamente",
+    "solicitada_en": "2026-11-08T10:00:00Z", "situacion": "pendiente",
+    "respuesta": None, "revisor_id": None, "revisada_en": None, "orden_generada_id": None,
 }
 
 _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
@@ -570,6 +588,52 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
             "401": _EJEMPLOS_AUTENTICACION,
         },
     },
+    ("/api/clientes/perfil", "post"): {
+        "cuerpo": {
+            "con_telefono": {
+                "summary": "Preparar el perfil con teléfono de contacto",
+                "value": {"telefono": "+56 9 1234 5678"},
+            },
+            "sin_datos": {
+                "summary": "Preparar el perfil sin teléfono (reintento tras login)",
+                "value": {},
+            },
+        },
+        "respuestas": {
+            "201": {
+                "perfil_creado": {
+                    "summary": "Perfil creado por esta llamada",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
+                }
+            },
+            "200": {
+                "perfil_existente": {
+                    "summary": "El perfil ya existía; se devuelve sin cambios",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+            "409": {
+                "telefono_distinto": _ref_ejemplo("detalle_perfil_cliente_conflicto")
+            },
+        },
+    },
+    ("/api/clientes/perfil", "get"): {
+        "respuestas": {
+            "200": {
+                "perfil": {
+                    "summary": "Perfil Cliente del usuario autenticado",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+            "404": {
+                "perfil_cliente_ausente": _ref_ejemplo("detalle_perfil_cliente_ausente")
+            },
+        },
+    },
     ("/api/vehiculos", "post"): {
         "cuerpo": {
             "vehiculo": {
@@ -672,6 +736,28 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
         },
     },
 }
+
+_EJEMPLOS_OPERACIONES.update({
+    ("/api/ordenes/{orden_id}/nueva-atencion", "post"): {
+        "cuerpo": {"solicitud": _ejemplo("Nueva atención", {"descripcion": "Revisar frenos nuevamente"})},
+        "respuestas": {str(c): {"pendiente": _ejemplo("Solicitud pendiente", _SOLICITUD_NUEVA_EJEMPLO)} for c in (200, 201)},
+    },
+    ("/api/ordenes/nuevas-atenciones", "get"): {"respuestas": {
+        "200": {"pagina": _ejemplo("Solicitudes visibles", {"items": [_SOLICITUD_NUEVA_EJEMPLO], "total": 1, "limit": 20, "offset": 0})}}},
+    ("/api/ordenes/nuevas-atenciones/{solicitud_id}", "get"): {"respuestas": {
+        "200": {"solicitud": _ejemplo("Solicitud visible", _SOLICITUD_NUEVA_EJEMPLO)}}},
+})
+
+_DISPOSITIVO_EJEMPLO = {"dispositivo_id":"d42fbe85-5942-4dd7-81b3-f22a423a9980", "plataforma":"android", "activo":True, "creado_en":"2026-11-08T10:00:00Z", "actualizado_en":"2026-11-08T10:00:00Z"}
+_ENTREGA_EJEMPLO = {"entrega_id":1,"canal":"correo","estado":"sin_configuracion","intentos":1,"aceptada_en":None,"ultimo_error":"proveedor_no_configurado","intentos_registrados":[{"numero":1,"iniciado_en":"2026-11-08T10:00:00Z","finalizado_en":"2026-11-08T10:00:01Z","resultado":"sin_configuracion","codigo_error":"proveedor_no_configurado"}]}
+_EJEMPLOS_OPERACIONES.update({
+    ("/api/notificaciones/dispositivos","post"): {
+        "cuerpo":{"registro":_ejemplo("Token ficticio de pruebas",{"token":"token-fcm-de-ejemplo-no-es-una-credencial-real","plataforma":"android"})},
+        "respuestas":{str(c):{"dispositivo":_ejemplo("Dispositivo registrado sin exponer el token",_DISPOSITIVO_EJEMPLO)} for c in (200,201)}},
+    ("/api/notificaciones/dispositivos","get"): {"respuestas":{"200":{"propios":_ejemplo("Dispositivos propios",[_DISPOSITIVO_EJEMPLO])}}},
+    **{(f"/api/notificaciones/{{notificacion_id}}/{sufijo}",metodo):{"respuestas":{"200":{"canales":_ejemplo("El aviso existe; falta proveedor de correo",[_ENTREGA_EJEMPLO])}}}
+       for sufijo,metodo in [("entregas","get"),("reintentos","post")]},
+})
 
 _EJEMPLOS_503_EVIDENCIAS: dict[str, Any] = {
     "almacenamiento_no_disponible": _ref_ejemplo("detalle_almacenamiento_no_disponible"),

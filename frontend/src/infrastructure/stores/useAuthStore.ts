@@ -3,6 +3,7 @@ import type { User } from '@/domain/entities/User';
 import { getToken, removeToken, setToken } from '../config/tokenStorage';
 import { authService } from '../api/AuthService';
 import { useOrderStore } from './useOrderStore';
+import { usePerfilClienteStore } from './usePerfilClienteStore';
 import { useVehicleStore } from './useVehicleStore';
 
 /**
@@ -14,6 +15,7 @@ import { useVehicleStore } from './useVehicleStore';
 function purgeSharedCaches(): void {
   useOrderStore.getState().reset();
   useVehicleStore.getState().reset();
+  usePerfilClienteStore.getState().reset();
 }
 
 interface AuthState {
@@ -35,7 +37,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   token: getToken(),
   isAuthenticated: getToken() !== null,
   isLoading: false,
-  isInitializing: false,
+  // Con un token guardado la sesión aún no está verificada (el usuario se
+  // obtiene con GET /auth/me). Se parte "inicializando" para que las rutas
+  // protegidas esperen esa restauración en lugar de redirigir al login: así
+  // una recarga o un enlace directo (/admin/ordenes/12) conserva la ruta.
+  isInitializing: getToken() !== null,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true });

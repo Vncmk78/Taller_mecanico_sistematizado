@@ -8,8 +8,8 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 
 | | |
 |---|---|
-| Versión vigente | **2.1.0** |
-| Copia congelada | [`docs/openapi/sgtm-gateway-2.1.0.json`](openapi/sgtm-gateway-2.1.0.json) |
+| Versión de este checkout | **3.0.0** |
+| Copia congelada | [`docs/openapi/sgtm-gateway-3.0.0.json`](openapi/sgtm-gateway-3.0.0.json) |
 | Interactivo | `http://localhost:8000/docs` (Swagger) y `/openapi.json` |
 | Dónde se define | `gateway/openapi.py` (`_VERSION`), `gateway/openapi_ms3.py`, `gateway/openapi_ejemplos.py`, `shared/openapi_ordenes.py` |
 
@@ -20,7 +20,7 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 - **Sin levantar la Gateway:** usen el archivo congelado. Sirve para generar
   tipos o clientes (`openapi-typescript`, `openapi-generator`, Flutter/Dart,
   etc.) y mocks a partir de los ejemplos.
-- **Fijen la versión:** referencien `sgtm-gateway-2.1.0.json` para el comportamiento vigente, no «el último».
+- **Fijen la versión:** referencien `sgtm-gateway-3.0.0.json` para el comportamiento de esta entrega, no «el último».
   Una versión nueva llega como un archivo nuevo; el anterior no se borra.
 - **Solo lo publicado es contrato.** Una ruta que la Gateway reenvía pero no
   aparece en el archivo puede cambiar sin aviso.
@@ -53,6 +53,77 @@ Si cambias el contrato y olvidas los pasos 2 y 3,
 mano: `python scripts/exportar_openapi.py --verificar`.
 
 ## 4. Historial
+
+### 3.0.0 — Una sola orden activa por vehículo
+
+MAJOR: restringe `POST /api/ordenes`, que antes permitía varias atenciones
+activas para el mismo vehículo. Cualquier estado salvo Entregado (7) o
+Cancelado (8) es activo. Si existe una orden activa, responde `409` con su
+número, sin crear ingreso, orden, historial, outbox ni auditoría de cupo.
+El body y la respuesta de éxito no cambian. Se conservan todas las copias
+anteriores, incluida 2.2.1.
+
+Decisión aprobada para el Bloque 3. La validación está en el núcleo común y
+se respalda con un índice único parcial. La migración
+`0013_orden_activa_ms2` aborta y lista los duplicados sin corregirlos.
+Antes de desplegar hay que coordinar la versión con web e Integración IV y
+diagnosticar la base de destino. Detalles: [orden-activa-por-vehiculo.md](orden-activa-por-vehiculo.md).
+
+Antes de su primera publicación, esta versión incorpora también la Entrega A:
+`POST /api/ordenes/{orden_id}/devolucion` (Administrador, body `{}`, 200
+idempotente), los campos aditivos y anulables `devuelto_en`/`devuelto_por_id`
+en las consultas de órdenes y el cierre atómico del ingreso al entregar.
+No hay migración nueva para la salida: usa columnas existentes. No altera
+estados oficiales ni repara fechas históricas. La interfaz acordada con web
+está en [contrato-web-bloques-3-4.md](contrato-web-bloques-3-4.md).
+
+La misma versión incorpora el backend de la Entrega B:
+solicitud de nueva atención del Cliente propietario (`201`/`200` idempotente),
+listado y detalle visibles por Cliente/Administrador. Publica la entidad completa,
+sus filtros y situaciones sin cambiar estados de órdenes. La tabla y el índice A
+se crean mediante `0014_nueva_atencion_ms2`, sin reescribir datos anteriores.
+También incorpora el backend C: revisión administrativa inmutable e idempotente,
+generación atómica de orden y vínculo (`201`/`200`), y aviso de revisión por
+outbox a la bandeja de MS1. No hay migraciones nuevas en C ni cambios al JSON
+público de notificaciones. Se agrega un receptor interno autenticado por
+servicio, documentado en el acuerdo de coordinación. La integración web C ya está verificada contra servicios reales; la publicación
+y activación se confirman con las verificaciones de la entrega. Correo y push tienen adaptadores y cola persistente; SMTP está validado con Mailpit local. Gmail/FCM y el dispositivo móvil requieren configuración externa y validación real.
+
+Antes de publicar 3.0.0 se agregan `leida` y `leida_en` a la bandeja de MS1,
+el filtro `solo_no_leidas` y los PATCH de lectura propia (204 sin cuerpo). La
+migración `0006_lectura_notificaciones_ms1` agrega columnas, sin borrar avisos
+ni cambiar su fecha original. MS1 debe migrarse antes de activar los servicios.
+
+Antes del cierre de 3.0.0 se agregan las cinco operaciones de dispositivos y
+canales de notificación, las referencias anulables de contexto y los avisos
+transversales de presupuestos/stock. Las alertas de stock no tienen orden ni
+vehículo asociados: esos dos campos admiten nulo. MS1 incorpora las migraciones
+0007/0008 y MS3 la 0011, con outbox propia. El umbral general debe configurarse
+antes de activar alertas, conforme a §4.6 y la decisión del usuario. Particular
+prevalece después de ese paso; 0 es válido y la igualdad no dispara aviso.
+Detalles de activación y limitaciones: [notificaciones-canales.md](notificaciones-canales.md).
+
+### 2.2.1 — Elementos de `mecanicos_sobre_limite` documentados (D-04)
+
+PATCH: documenta lo que MS2 ya respondía. En `CapacidadMecanicoRespuesta`
+(`GET` y `PUT /api/ordenes/configuracion/capacidad/mecanicos`), cada elemento
+de `mecanicos_sobre_limite` pasa de un diccionario genérico a
+`MecanicoSobreLimite` con `mecanico_id` y `ordenes_activas`, ambos enteros y
+obligatorios. El JSON de la respuesta no cambia. Corrige D-04
+(`diferencias-contrato-consumo-real.md`).
+
+### 2.2.0 — Perfil Cliente de MS2 para el registro público
+
+Se conserva la copia 2.1.0. MINOR: agrega operaciones sin cambiar las
+existentes. `POST /api/clientes/perfil` prepara, de forma idempotente, el perfil
+Cliente que MS2 exige para vehículos y órdenes (`201` creado, `200` ya existía,
+`409` si existe con otro teléfono, sin sobrescribirlo). `GET /api/clientes/perfil`
+lo consulta sin crearlo (`404` si falta). La identidad sale del JWT y el body
+no admite `usuario_id` ni roles. `clientes` pasa de alias a prefijo publicado de
+MS2 (ya se enrutaba a MS2). Antes de este cambio el perfil solo lo creaba el
+script de semilla: un Cliente registrado desde la web o la app recibía `404` en
+vehículos. Web e Integración IV deben llamar a `POST /api/clientes/perfil`
+después del login de un Cliente y antes de usar vehículos u órdenes.
 
 ### 2.1.0 — Modificación de un presupuesto aprobado
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { orderService } from '@/infrastructure/api/OrderService';
+import { DevolucionSinDatosError, orderService } from '@/infrastructure/api/OrderService';
 import apiClient from '@/infrastructure/config/apiClient';
 import {
   bitacoraEntradaReal,
@@ -78,6 +78,12 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
       creadoEn: '2026-09-01T10:00:00Z',
       actualizadoEn: '2026-09-02T15:30:00Z',
     });
+  });
+
+  it('el detalle del Cliente exige propiedad aunque la cuenta tenga otros roles', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: ordenApi });
+    await orderService.getOrderById('3', { soloPropietario: true });
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/3', { params: { solo_propietario: true } });
   });
 
   it('getOrderById interpola el id en GET /ordenes/{id}', async () => {
@@ -351,5 +357,76 @@ describe('OrderService: solicitud y confirmación de cancelación', () => {
     expect(apiClient.patch).not.toHaveBeenCalled();
     expect(resultado.id).toBe('3');
     expect(resultado.estadoCodigo).toBe(8);
+  });
+});
+
+describe('OrderService: devolución del vehículo de una orden cancelada', () => {
+  // Fixture del acuerdo web/backend (contrato-web-bloques-3-4.md, Entrega A).
+  const devolucionApi = {
+    orden_id: 25,
+    vehiculo_id: 9,
+    ingreso_id: 12,
+    estado_codigo: 8,
+    mecanico_actual_id: null,
+    creado_por_id: 3,
+    creado_en: '2026-11-08T12:00:00Z',
+    actualizado_en: '2026-11-08T13:00:00Z',
+    devuelto_en: '2026-11-08T13:00:00Z',
+    devuelto_por_id: 3,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('publica POST /ordenes/{id}/devolucion con body vacío y conserva el estado Cancelado', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({ data: devolucionApi });
+
+    const orden = await orderService.registrarDevolucion('25');
+
+    expect(apiClient.post).toHaveBeenCalledWith('/ordenes/25/devolucion', {});
+    expect(orden).toMatchObject({
+      id: '25',
+      estadoCodigo: 8,
+      ingresoId: 12,
+      devueltoEn: '2026-11-08T13:00:00Z',
+      devueltoPorId: '3',
+    });
+  });
+
+  it('una respuesta 200 sin fecha o responsable no se muestra como devolución registrada', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { ...devolucionApi, devuelto_en: null, devuelto_por_id: null },
+    });
+
+    await expect(orderService.registrarDevolucion('25')).rejects.toBeInstanceOf(DevolucionSinDatosError);
+  });
+
+  it('el detalle mapea la devolución informada, la ausencia (null) y la falta del campo (undefined)', async () => {
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: devolucionApi })
+      .mockResolvedValueOnce({ data: { ...devolucionApi, devuelto_en: null, devuelto_por_id: null } })
+      .mockResolvedValueOnce({ data: ordenApi });
+
+    const devuelta = await orderService.getOrderById('25');
+    const pendiente = await orderService.getOrderById('25');
+    const sinCampos = await orderService.getOrderById('3');
+
+    expect([devuelta.devueltoEn, devuelta.devueltoPorId]).toEqual(['2026-11-08T13:00:00Z', '3']);
+    expect([pendiente.devueltoEn, pendiente.devueltoPorId]).toEqual([null, null]);
+    expect(sinCampos.devueltoEn).toBeUndefined();
+    expect(sinCampos.devueltoPorId).toBeUndefined();
+  });
+
+  it('el listado y el historial por vehículo también traen los datos de devolución', async () => {
+    vi.mocked(apiClient.get)
+      .mockResolvedValueOnce({ data: [devolucionApi] })
+      .mockResolvedValueOnce({ data: { items: [devolucionApi], total: 1, limit: 20, offset: 0 } });
+
+    const [listada] = await orderService.getOrders();
+    const pagina = await orderService.getVehicleOrderHistory('9', { limit: 20, offset: 0 });
+
+    expect(listada.devueltoEn).toBe('2026-11-08T13:00:00Z');
+    expect(pagina.items[0].devueltoPorId).toBe('3');
   });
 });

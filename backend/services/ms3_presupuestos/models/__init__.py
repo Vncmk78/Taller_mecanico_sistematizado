@@ -28,7 +28,10 @@ from services.ms3_presupuestos.models.presupuesto import (
     VersionPresupuesto,
 )
 
+from services.ms3_presupuestos.models.evento_aviso_outbox import EventoAvisoOutbox
+
 __all__ = [
+    "EventoAvisoOutbox",
     "Base",
     "Proveedor",
     "Repuesto",

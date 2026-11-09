@@ -7,3 +7,6 @@ venv/
 .idea/
 .vscode/
 salidas-integracion/
+
+# Recursos locales exclusivos de la demostración final
+.demo-final/

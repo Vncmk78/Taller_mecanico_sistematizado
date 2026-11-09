@@ -114,12 +114,20 @@ export function HomePage() {
           la eficiencia operativa del administrador con la tranquilidad y
           transparencia que exige el cliente.
         </p>
-        <Link
-          to="/login"
-          className="bg-primary-orange text-white px-8 py-4 rounded-lg font-bold text-xl transition-all duration-300 shadow-[0_4px_15px_rgba(242,106,46,0.25)] hover:bg-primary-orange-hover hover:-translate-y-0.5 no-underline"
-        >
-          Comenzar Ahora
-        </Link>
+        <div className="flex flex-col sm:flex-row gap-4 items-center">
+          <Link
+            to="/login"
+            className="bg-primary-orange text-white px-8 py-4 rounded-lg font-bold text-xl transition-all duration-300 shadow-[0_4px_15px_rgba(242,106,46,0.25)] hover:bg-primary-orange-hover hover:-translate-y-0.5 no-underline"
+          >
+            Comenzar Ahora
+          </Link>
+          <Link
+            to="/registro"
+            className="bg-surface border border-border-custom text-text-main px-8 py-4 rounded-lg font-bold text-xl transition-all duration-300 hover:bg-bg-secondary no-underline"
+          >
+            Crear cuenta de cliente
+          </Link>
+        </div>
       </section>
 
       <h2 id="caracteristicas" className="text-center text-3xl sm:text-4xl mb-12 mt-10">

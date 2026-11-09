@@ -181,14 +181,14 @@ Detalles que condicionan la matriz:
 | Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ solo asignada | ✅ orden existente |
 | Listar / buscar por orden (`GET /presupuestos?orden_id=`) | ✅ solo su orden y con `orden_id` | ✅ | ✅ |
 | Detalle y versión (`GET /presupuestos/{id}`, `/versiones/{n}`) | ✅ solo sus órdenes, sin borradores | ✅ | ✅ |
-| Crear la versión siguiente (`POST /presupuestos/{id}/versiones`) | ❌ 403 | ✅ | ✅ |
-| Reemplazar ítems de una versión en borrador (`PUT .../versiones/{n}/items`) | ❌ 403 | ✅ | ✅ |
+| Crear la versión siguiente (`POST /presupuestos/{id}/versiones`) | ❌ 403 | ✅ solo órdenes asignadas | ✅ |
+| Reemplazar ítems de una versión en borrador (`PUT .../versiones/{n}/items`) | ❌ 403 | ✅ solo órdenes asignadas | ✅ |
 | Enviar la versión al cliente (`POST .../versiones/{n}/envio`) | ❌ 403 | ❌ 403 | ✅ |
 | Aprobar o rechazar (`POST .../versiones/{n}/decision`) | ✅ solo dueño | ❌ 403 | ❌ 403 |
 | Listar / ver proveedores y repuestos (`GET /proveedores`, `/repuestos`, con `bajo_umbral`) | ❌ 403 | ✅ | ✅ |
 | Crear, modificar o eliminar proveedores y repuestos (`POST`/`PATCH`/`DELETE`) | ❌ 403 | ❌ 403 | ✅ |
 | Consultar movimientos, stock, alertas, umbral e historial (`GET /inventario/...`) | ❌ 403 | ✅ | ✅ |
-| Compromiso, consumo y liberación de una orden (`POST /inventario/movimientos`) | ❌ 403 | ✅ | ✅ |
+| Compromiso, consumo y liberación de una orden (`POST /inventario/movimientos`) | ❌ 403 | ✅ solo órdenes asignadas | ✅ |
 | Ingreso y ajuste de stock (`POST /inventario/movimientos`) | ❌ 403 | ❌ 403 | ✅ |
 | Cambiar el umbral general (`PUT /inventario/umbral-general`) | ❌ 403 | ❌ 403 | ✅ |
 
@@ -202,12 +202,16 @@ Detalles que condicionan la matriz:
   original. Un Cliente+Mecánico propietario sigue necesitando la asignación;
   solo Administrador está exento. Rechaza con `404` si la orden no corresponde,
   o `503` si MS2 no permite validarla, sin escrituras.
-- Esta comprobación se aplica a la creación del presupuesto. Los otros endpoints
-  de personal de MS3 conservan los alcances descritos en la tabla.
+- **Alcance del mecánico ampliado a versiones e inventario (§4.4):** los mismos
+  controles se aplican a `crear_version`, `reemplazar_items` y a los movimientos
+  de stock con `orden_id` (compromiso, consumo y liberación) de
+  `inventario.py::registrar`. La validación ocurre antes de escribir datos:
+  nada se registra (ni se toca stock) sin acceso confirmado (fail-closed).
+  Orden ajena o inexistente → `404` (`Presupuesto {id}` / `Orden {id}` no
+  existe); MS2 no disponible → `503`. El Administrador opera sin filtro.
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).
 - El cliente no ve el catálogo: ve el repuesto y su proveedor dentro de su presupuesto (§4.3).
-- Pendiente: limitar al mecánico a mover stock solo de las órdenes que tiene asignadas (dato de MS2).
 
 ### 4.5 Evidencias multimedia (MS4)
 

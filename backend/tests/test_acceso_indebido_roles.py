@@ -58,7 +58,9 @@ from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN, RECIBIDO  # n
 from services.ms3_presupuestos.config import settings as settings_ms3  # noqa: E402
 from services.ms3_presupuestos.db import get_db as get_db_ms3  # noqa: E402
 from services.ms3_presupuestos.main import app as app_ms3  # noqa: E402
-from services.ms3_presupuestos.models import Base as BaseMS3  # noqa: E402
+from services.ms3_presupuestos.models import (  # noqa: E402
+    Base as BaseMS3, Proveedor, Repuesto,
+)
 from shared.auth import NombreRol, crear_token_acceso  # noqa: E402
 
 
@@ -137,6 +139,8 @@ def _simular_entorno_externo(
                 200, json=usuario, request=httpx.Request("GET", url)
             )
         if url.startswith(MOCK_MS2):
+            if ms2["caido"]:
+                raise httpx.ConnectError("MS2 no disponible")
             cliente = ms2["cliente"]
             if cliente is None:
                 raise AssertionError("El TestClient de MS2 aún no está montado")
@@ -183,6 +187,14 @@ def escenario(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         db.commit()
         orden_id = orden.orden_id
 
+    with fabrica3() as db:
+        # Un repuesto con stock para probar los movimientos de inventario.
+        proveedor = Proveedor(nombre="Proveedor de refacción", contacto="Pruebas")
+        repuesto = Repuesto(proveedor=proveedor, nombre="Filtro de aceite", stock=5)
+        db.add_all([proveedor, repuesto])
+        db.commit()
+        repuesto_id = repuesto.repuesto_id
+
     # Mismo secreto en ambos servicios: los tokens se emiten con el de MS2.
     monkeypatch.setattr(settings_ms3, "JWT_SECRET_KEY", settings_ms2.JWT_SECRET_KEY)
     monkeypatch.setattr(settings_ms3, "MS2_URL", MOCK_MS2)
@@ -204,12 +216,15 @@ def escenario(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         "caido": False,
     }
     # El dispatcher registra el TestClient real de MS2 apenas se monte.
-    cliente_ms2 = {"cliente": None}
+    cliente_ms2 = {"cliente": None, "caido": False}
     _simular_entorno_externo(monkeypatch, ms1, cliente_ms2)
 
     with TestClient(app_ms2) as ms2, TestClient(app_ms3) as ms3:
         cliente_ms2["cliente"] = ms2
-        yield SimpleNamespace(ms2=ms2, ms3=ms3, orden_id=orden_id, ms1=ms1)
+        yield SimpleNamespace(
+            ms2=ms2, ms3=ms3, orden_id=orden_id, repuesto_id=repuesto_id,
+            ms1=ms1, ms2_ext=cliente_ms2,
+        )
 
     app_ms2.dependency_overrides.pop(get_db_ms2, None)
     app_ms3.dependency_overrides.pop(get_db_ms3, None)
@@ -262,6 +277,51 @@ def _asignar_mecanico(escenario: SimpleNamespace, mecanico_id: int,
     return escenario.ms2.put(
         f"/ordenes/{escenario.orden_id}/mecanico",
         json={"mecanico_id": mecanico_id},
+        headers=_cabeceras(**cabeceras_extra),
+    )
+
+
+def _registrar_movimiento(escenario: SimpleNamespace, tipo: str = "compromiso",
+                          *, orden_id: int | None = None,
+                          clave: str = "clv-prueba-0001",
+                          **cabeceras_extra) -> httpx.Response:
+    """`POST /inventario/movimientos` de MS3, operación del mecánico/administrador."""
+
+    body: dict[str, object] = {
+        "clave_operacion": clave,
+        "repuesto_id": escenario.repuesto_id,
+        "tipo": tipo,
+        "cantidad": 1,
+    }
+    if tipo in ("compromiso", "consumo", "liberacion"):
+        body["orden_id"] = orden_id if orden_id is not None else escenario.orden_id
+    return escenario.ms3.post(
+        "/inventario/movimientos", json=body, headers=_cabeceras(**cabeceras_extra)
+    )
+
+
+def _versiones(escenario: SimpleNamespace, presupuesto_id: int,
+               **cabeceras_extra) -> httpx.Response:
+    """`POST /presupuestos/{id}/versiones` de MS3 (nueva versión, sin body)."""
+
+    return escenario.ms3.post(
+        f"/presupuestos/{presupuesto_id}/versiones",
+        headers=_cabeceras(**cabeceras_extra),
+    )
+
+
+def _reemplazar_items(escenario: SimpleNamespace, presupuesto_id: int, numero: int,
+                      **cabeceras_extra) -> httpx.Response:
+    """`PUT /presupuestos/{id}/versiones/{n}/items` de MS3 (borrador)."""
+
+    return escenario.ms3.put(
+        f"/presupuestos/{presupuesto_id}/versiones/{numero}/items",
+        json={"items": [{
+            "tipo": "mano_de_obra",
+            "descripcion": "Diagnóstico ampliado",
+            "cantidad": 2,
+            "precio_unitario": 12000,
+        }]},
         headers=_cabeceras(**cabeceras_extra),
     )
 
@@ -461,3 +521,113 @@ def test_asignacion_sin_ms1_responde_503_y_deja_la_orden_intacta(
     )
     assert orden.status_code == 200
     assert orden.json()["mecanico_actual_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Alcance de inventario y versiones (§4.4): mecánico = solo órdenes asignadas
+# ---------------------------------------------------------------------------
+
+
+def _presupuesto_admin(escenario: SimpleNamespace) -> dict[str, int]:
+    """Presupuesto versión 1 creado por el Administrador sobre la orden viva."""
+
+    creada = _crear_presupuesto(escenario, usuario_id=99, roles=NombreRol.ADMINISTRADOR)
+    assert creada.status_code == 201, creada.text
+    detalle = creada.json()
+    assert detalle["presupuesto_id"] > 0
+    return detalle
+
+
+def test_mecanico_no_asignado_no_registra_compromiso_de_stock_ajeno(
+    escenario: SimpleNamespace,
+) -> None:
+    """El stock se mueve solo desde órdenes que el mecánico tiene asignadas (§4.4)."""
+
+    respuesta = _registrar_movimiento(
+        escenario, usuario_id=77, roles=NombreRol.MECANICO
+    )
+
+    assert respuesta.status_code == 404
+    assert respuesta.json()["detail"] == f"Orden {escenario.orden_id} no existe"
+
+
+def test_mecanico_asignado_registra_compromiso_de_su_orden(
+    escenario: SimpleNamespace,
+) -> None:
+    """La regla de §4.4 no bloquea al mecánico con la orden asignada."""
+
+    assert _asignar_mecanico(
+        escenario, 77, usuario_id=99, roles=NombreRol.ADMINISTRADOR
+    ).status_code == 200
+
+    respuesta = _registrar_movimiento(
+        escenario, clave="clv-asignada-01", usuario_id=77, roles=NombreRol.MECANICO
+    )
+
+    assert respuesta.status_code == 201, respuesta.text
+    assert respuesta.json()["movimiento"]["orden_id"] == escenario.orden_id
+
+
+def test_compromiso_sin_ms2_no_se_aplica_responde_503(
+    escenario: SimpleNamespace,
+) -> None:
+    """Sin poder validar la orden en MS2, el stock no se toca (fail-closed)."""
+
+    escenario.ms2_ext["caido"] = True
+
+    respuesta = _registrar_movimiento(
+        escenario, usuario_id=77, roles=NombreRol.MECANICO
+    )
+
+    assert respuesta.status_code == 503
+
+
+def test_mecanico_no_asignado_no_versiona_ni_edita_presupuesto_ajeno(
+    escenario: SimpleNamespace,
+) -> None:
+    """Crear versión y editar ítems exigen la orden asignada (§4.4)."""
+
+    detalle = _presupuesto_admin(escenario)
+    presupuesto_id = detalle["presupuesto_id"]
+
+    nueva = _versiones(
+        escenario, presupuesto_id, usuario_id=77, roles=NombreRol.MECANICO
+    )
+    assert nueva.status_code == 404
+    # No revela la orden ni su existencia: solo que el presupuesto no está
+    # disponible para el mecánico (misma respuesta que para el cliente ajeno).
+    assert nueva.json()["detail"] == f"Presupuesto {presupuesto_id} no existe"
+
+    items = _reemplazar_items(
+        escenario, presupuesto_id, 1, usuario_id=77, roles=NombreRol.MECANICO
+    )
+    assert items.status_code == 404
+    assert items.json()["detail"] == f"Presupuesto {presupuesto_id} no existe"
+
+
+def test_mecanico_asignado_versiona_presupuesto_de_su_orden(
+    escenario: SimpleNamespace,
+) -> None:
+    """Con la asignación vigente, el mecánico crea la versión siguiente (§4.4)."""
+
+    assert _asignar_mecanico(
+        escenario, 77, usuario_id=99, roles=NombreRol.ADMINISTRADOR
+    ).status_code == 200
+    detalle = _presupuesto_admin(escenario)
+    presupuesto_id = detalle["presupuesto_id"]
+
+    # No puede haber un borrador abierto: el admin congela la versión 1
+    # enviándola al cliente antes de que el mecánico proponga la 2.
+    enviada = escenario.ms3.post(
+        f"/presupuestos/{presupuesto_id}/versiones/1/envio",
+        headers=_cabeceras(99, NombreRol.ADMINISTRADOR),
+    )
+    assert enviada.status_code == 200, enviada.text
+
+    nueva = _versiones(
+        escenario, presupuesto_id, usuario_id=77, roles=NombreRol.MECANICO
+    )
+
+    assert nueva.status_code == 201, nueva.text
+    assert nueva.json()["orden_id"] == escenario.orden_id
+    assert len(nueva.json()["versiones"]) == 2

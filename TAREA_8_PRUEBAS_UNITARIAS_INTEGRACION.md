@@ -34,7 +34,7 @@
 
 ## 📋 RESUMEN
 
-La suite vigente cubre, con **1145 pruebas** en 55 archivos:
+La suite vigente cubre, con **1150 pruebas** en 55 archivos:
 
 - ✅ Autenticación (registro, login, `/auth/me`, intentos fallidos, historial de roles)
 - ✅ JWT: firma, expiración, claims obligatorios, formato de `sub` y `roles`, integridad del token
@@ -48,7 +48,7 @@ La suite vigente cubre, con **1145 pruebas** en 55 archivos:
 - ✅ Contratos de MS3 (presupuestos, aislamiento, persistencia) y MS4 (evidencias, ciclo de archivos, huérfanos)
 - ✅ Decisiones de presupuesto (integración y migraciones)
 
-**Total:** 1145 pruebas → **1090 pasan, 55 se omiten y 0 fallan**. No queda
+**Total:** 1150 pruebas → **1095 pasan, 55 se omiten y 0 fallan**. No queda
 ningún `xfail`: los dos huecos de seguridad que estaban registrados como
 `xfail` estricto (§4.3 y §4.4 de la matriz de autorización) quedaron
 corregidos y ahora hay pruebas que verifican el comportamiento correcto.
@@ -78,7 +78,7 @@ dos sustituye a `pytest`.
 backend/
 ├── tests/
 │   ├── conftest.py                    Fixtures: SQLite en memoria, .env de pruebas
-│   ├── test_acceso_indebido_roles.py               (13)  Acceso indebido entre roles (§4.3 y §4.4 corregidos)
+│   ├── test_acceso_indebido_roles.py               (18)  Acceso indebido entre roles (§4.3 y §4.4 corregidos)
 │   ├── test_acceso_recursos_ajenos_mismo_rol.py    (8)  Recursos ajenos del mismo rol
 │   ├── test_asignacion_ordenes_api.py              (24)  Asignación, reasignación, idempotencia
 │   ├── test_autenticacion_canales.py               (10)  Autenticación por canales web/móvil
@@ -322,10 +322,10 @@ python -m pytest tests -q
 
 ### Resultado verificado
 ```
-1090 passed, 55 skipped, 51 warnings in 281.57s (0:04:41)
+1095 passed, 55 skipped, 51 warnings in 292.09s (0:04:52)
 ```
 
-De las 1145 pruebas, **55 se omiten** por depender de un servicio externo no
+De las 1150 pruebas, **55 se omiten** por depender de un servicio externo no
 levantado y **0 fallan**. El desglose se revisó después de corregir los dos
 huecos de seguridad `xfail` que antes registraba este documento (§4.3 y §4.4
 de la matriz de autorización). El detalle completo está en la sección
@@ -380,10 +380,10 @@ python verificar_conexion.py     # requiere los 4 servicios de DB levantados
 | `services/ms3_presupuestos` | `test_ms3_aislamiento.py` (20), `test_ms3_integracion_ms2.py` (17), `test_ms3_presupuestos_contratos.py` (15), `test_ms3_persistencia_base.py` (15), `test_ms3_estructura.py` (12), `test_ms2_integracion_ms3.py` (12) | 91 |
 | `services/ms3_presupuestos` — decisiones de presupuesto | `test_decisiones_presupuesto_integracion.py` (28), `test_decisiones_presupuesto_postgresql.py` (45, se omiten sin PostgreSQL), `test_migraciones_decisiones.py` (2) | 75 |
 | `services/ms4_evidencias` | `test_ms4_validacion_contenido.py` (43), `test_ms4_limites_archivos.py` (49), `test_ms4_asociacion_ordenes.py` (38), `test_ms4_autorizacion_evidencias.py` (24), `test_ms4_huerfanos.py` (23, 1 se omite sin MinIO), `test_ms4_logs.py` (23), `test_ms4_api_evidencias.py` (20), `test_ms4_convencion_metadatos.py` (19), `test_ms4_recepcion.py` (18), `test_ms4_modelo_evidencia.py` (17), `test_ms4_url_firmada.py` (17), `test_ms4_ciclo_archivos.py` (12, 6 se omiten sin MinIO), `test_ms4_errores_carga.py` (12), `test_ms4_estructura.py` (6), `test_ms4_config.py` (2), `test_ms4_minio_integracion.py` (2, se omiten sin MinIO), `test_ms4_recepcion_minio.py` (1, se omite sin MinIO) | 326 |
-| Seguridad transversal — acceso indebido entre roles y recursos ajenos del mismo rol | `test_acceso_indebido_roles.py` (13, incluye §4.3/§4.4 corregidos), `test_acceso_recursos_ajenos_mismo_rol.py` (8) | 21 |
-| **Total** | **55 archivos** | **1145** |
+| Seguridad transversal — acceso indebido entre roles y recursos ajenos del mismo rol | `test_acceso_indebido_roles.py` (18, incluye §4.3/§4.4 corregidos), `test_acceso_recursos_ajenos_mismo_rol.py` (8) | 26 |
+| **Total** | **55 archivos** | **1150** |
 
-**Total de la suite: 1145 pruebas** → 1090 pasan, 55 se omiten (10 de MinIO y
+**Total de la suite: 1150 pruebas** → 1095 pasan, 55 se omiten (10 de MinIO y
 45 de PostgreSQL descartable) y **0 fallan**; ya no queda ningún `xfail`
 estricto: los huecos §4.3 y §4.4 de la matriz de autorización están corregidos
 y cuentan como pruebas que pasan.
@@ -512,10 +512,10 @@ test('Cliente cannot access another clients order', async () => {
 ### Suite vigente — resultado verificado
 
 ```
-1090 passed, 55 skipped, 51 warnings in 281.57s (0:04:41)
+1095 passed, 55 skipped, 51 warnings in 292.09s (0:04:52)
 ```
 
-Reproducir con `cd backend && python -m pytest tests -q`. De las 1145 pruebas,
+Reproducir con `cd backend && python -m pytest tests -q`. De las 1150 pruebas,
 55 se omiten por depender de servicios externos (10 de MinIO y 45 de PostgreSQL
 descartable) y **0 fallan**; ya no queda ningún `xfail`: los huecos de seguridad
 §4.3 y §4.4 están corregidos (detalle en la sección «Casos pendientes»).
@@ -577,12 +577,13 @@ Time:        1.234s
 
 ## ⏳ CASOS PENDIENTES
 
-De las 1145 pruebas de la suite vigente, **1090 pasan**. Las restantes **55 no
+De las 1150 pruebas de la suite vigente, **1095 pasan**. Las restantes **55 no
 son fallos**: se omiten por depender de un servicio externo no levantado.
 Antes había además 4 `xfail` estrictos que registraban huecos de seguridad
 abiertos (§4.3 y §4.4 de la matriz de autorización): **ya están corregidos**,
 las marcas se retiraron y sus casos quedaron como pruebas de regresión con
-código de rechazo exacto (3 casos nuevos y las 4 antiguas convertidas → 13 en
+código de rechazo exacto (3 casos nuevos y las 4 antiguas convertidas, más
+las de versiones/inventario de §4.4 → 18 en
 `test_acceso_indebido_roles.py`). Este documento mantiene todos los estados
 identificados; ninguno se esconde ni se «bendice».
 
@@ -672,14 +673,14 @@ Los tres caminos que fallan —`src/**/*.js`, `main: "src/index.js"` en
 ✅ **Refactoring seguro:** Puede cambiar código sin miedo  
 ✅ **Documentación viva:** Las pruebas documentan el comportamiento  
 ✅ **Catch bugs:** Previene regressions  
-✅ **Quality:** 1145 pruebas de uso cubiertas, incluidas las de seguridad
+✅ **Quality:** 1150 pruebas de uso cubiertas, incluidas las de seguridad
 
 ---
 
 ## 🎯 CONCLUSIÓN
 
 **Pruebas completas y verificadas sobre el sistema en ejecución:**
-- 1145 pruebas: 1090 pasan, 55 se omiten por servicios externos (10 MinIO y 45 PostgreSQL descartable), 0 fallos y 0 `xfail` (los huecos §4.3/§4.4 ya están corregidos)
+- 1150 pruebas: 1095 pasan, 55 se omiten por servicios externos (10 MinIO y 45 PostgreSQL descartable), 0 fallos y 0 `xfail` (los huecos §4.3/§4.4 ya están corregidos)
 - Autenticación verificada
 - Credenciales vacías/inválidas y cuentas con roles múltiples verificadas
 - Autorización verificada, con `401` y `403` diferenciados

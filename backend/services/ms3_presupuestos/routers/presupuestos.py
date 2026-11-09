@@ -10,8 +10,9 @@
     POST /presupuestos/{presupuesto_id}/versiones/{n}/decision aprobar / rechazar (Cliente dueño)
 
 Acceso (§4.3):
-- Mecánico: crea, consulta y edita borradores SOLO de las órdenes que tiene
-  asignadas (MS3 lo confirma con MS2 reenviando su JWT, §4.4).
+- Mecánico: crea, consulta y edita borradores; además, crea la versión
+  siguiente y edita ítems SOLO de las órdenes que tiene asignadas (MS3 lo
+  confirma con MS2 reenviando su JWT, §4.4).
 - Administrador: crea, consulta, edita y revisa precios de todas las órdenes.
 - Cliente: solo presupuestos de SUS órdenes (MS3 lo confirma con MS2
   reenviando su JWT) y solo versiones ya enviadas; decide sobre la última.
@@ -225,6 +226,7 @@ def version(
     responses={
         **_ERRORES_COMUNES,
         **_NO_EXISTE,
+        **_503,
         status.HTTP_409_CONFLICT: {
             "description": "Ya hay un borrador abierto o el servicio fue cancelado"
         },
@@ -236,8 +238,15 @@ def crear_version(
     presupuesto_id: int = IdPresupuesto,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> PresupuestoDetalle:
     body = body or NuevaVersion()
+    presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
+    # §4.4: el mecánico solo versiona presupuestos de órdenes que tiene
+    # asignadas; el administrador opera todas.
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        _exigir_orden_del_cliente(presupuesto.orden_id, presupuesto_id, token, verificador)
     casos.crear_version(
         uow, presupuesto_id=presupuesto_id, creado_por_id=principal.usuario_id,
         items=body.items, copiar_de=body.copiar_de,
@@ -251,20 +260,28 @@ def crear_version(
     "/{presupuesto_id}/versiones/{numero}/items",
     response_model=VersionDetalle,
     summary="Reemplazar los ítems de una versión en borrador",
+    description="El mecánico solo edita borradores de órdenes que tiene asignadas (§4.4).",
     responses={
         **_ERRORES_COMUNES,
         **_NO_EXISTE,
+        **_503,
         status.HTTP_409_CONFLICT: {"description": "La versión ya fue enviada (congelada)"},
         422: {"description": "Ítems inválidos o repuesto inexistente"},
     },
-    dependencies=[Depends(_personal_del_taller)],
 )
 def reemplazar_items(
     body: ItemsVersion,
     presupuesto_id: int = IdPresupuesto,
     numero: int = NumeroVersion,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal_del_taller),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> VersionDetalle:
+    presupuesto = casos.obtener_presupuesto(uow, presupuesto_id)
+    # §4.4: el mecánico solo edita borradores de órdenes que tiene asignadas.
+    if NombreRol.ADMINISTRADOR not in principal.roles:
+        _exigir_orden_del_cliente(presupuesto.orden_id, presupuesto_id, token, verificador)
     version_editada = casos.reemplazar_items(
         uow, presupuesto_id=presupuesto_id, numero=numero, items=body.items
     )

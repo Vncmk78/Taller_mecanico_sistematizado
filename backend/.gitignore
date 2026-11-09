@@ -10,3 +10,6 @@ salidas-integracion/
 
 # Recursos locales exclusivos de la demostración final
 .demo-final/
+
+# Configuración local del ambiente de despliegue (generada con secretos)
+despliegue/.env.despliegue

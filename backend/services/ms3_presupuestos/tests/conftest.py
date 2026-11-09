@@ -156,6 +156,10 @@ class _Ms2Permisivo:
 
     verificar_propiedad = verificar_acceso
 
+    def verificar_creacion_presupuesto(self, orden_id: int, token: str, _principal):
+        """En las suites ORM se simula una asignación válida; la API real prueba permisos."""
+        return self.verificar_acceso(orden_id, token)
+
 
 @pytest.fixture(autouse=True)
 def _ms2_permisivo():

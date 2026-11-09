@@ -27,6 +27,8 @@ _EJEMPLO_RESPUESTA: dict[str, object] = {
     "creado_por_id": 99,
     "creado_en": "2026-09-28T10:30:00-03:00",
     "actualizado_en": "2026-09-28T10:30:00-03:00",
+    "devuelto_en": None,
+    "devuelto_por_id": None,
 }
 
 _EJEMPLO_CAMBIAR_ESTADO: dict[str, object] = {
@@ -226,6 +228,30 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime = Field(
         description="Fecha y hora de la última actualización de la orden."
     )
+    devuelto_en: datetime | None = Field(
+        description="Fecha y hora de devolución física; nula si no se registró."
+    )
+    devuelto_por_id: int | None = Field(
+        description="Responsable de la devolución en MS1; nulo si no se registró."
+    )
+
+
+class DevolucionSolicitud(BaseModel):
+    """Body vacío obligatorio: fecha y responsable los obtiene MS2."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{}]})
+
+
+class DevolucionOrdenRespuesta(OrdenRespuesta):
+    """Conserva Cancelado y confirma la auditoría original de devolución."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [{
+        **_EJEMPLO_RESPUESTA, "estado_codigo": 8,
+        "devuelto_en": "2026-09-28T15:00:00-03:00", "devuelto_por_id": 99,
+    }]})
+
+    devuelto_en: datetime
+    devuelto_por_id: int = Field(gt=0)
 
 
 class HistorialOrdenesVehiculoRespuesta(BaseModel):

@@ -217,6 +217,8 @@ def diferencias_consumo(contrato: dict, consumo: ConsumoWeb) -> list[str]:
     if respuesta is None:
         return diferencias + [f"el estado {consumo.estado} no está publicado"]
     esquema = respuesta.get("content", {}).get(_JSON, {}).get("schema")
+    if consumo.estado == "204" and not consumo.respuesta and not respuesta.get("content"):
+        return diferencias
     return diferencias + _comparar_respuesta(contrato, consumo.respuesta, esquema, "")
 
 
@@ -274,7 +276,7 @@ def _crear_mecanico(sesion_ms1, gw) -> str:
 
 
 @pytest.fixture
-def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F811
+def respuestas_reales(ecosistema, mecanicos_validos) -> list[tuple[str, str, int, Any]]:  # noqa: F811
     """Recorre los flujos de cliente y mecánico; devuelve (método, ruta, estado, body)."""
     gw, sesion_ms1, sesion_ms2 = ecosistema
     app_ms2.dependency_overrides[obtener_verificador_aprobacion_inicial] = (
@@ -330,6 +332,15 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
         base = f"/api/ordenes/{orden_id}"
         llamar("PUT", "/api/ordenes/{orden_id}/mecanico", f"{base}/mecanico", administrador,
                json={"mecanico_id": mecanico_id})
+        # Se conserva el rechazo de capacidad y luego se prepara la asignación
+        # válida: la atención debe terminar antes de abrir otra del vehículo.
+        llamar("PUT", capacidad, capacidad, administrador, json={"max_ordenes_activas": 5})
+        asignacion = llamar("PUT", "/api/ordenes/{orden_id}/mecanico", f"{base}/mecanico",
+                            administrador, json={"mecanico_id": mecanico_id})
+        assert asignacion.status_code == 200
+        duplicada = llamar("POST", "/api/ordenes", "/api/ordenes", administrador,
+                           json={"vehiculo_id": vehiculo_id})
+        assert duplicada.status_code == 409
 
         llamar("GET", "/api/ordenes", "/api/ordenes")
         llamar("GET", "/api/ordenes", "/api/ordenes", cliente)
@@ -353,8 +364,9 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
                json={"estado_destino": 6})
         llamar("PATCH", "/api/ordenes/{orden_id}/estado", f"{base}/estado", mecanico,
                json={"estado_destino": 6})
-        llamar("POST", "/api/ordenes/{orden_id}/entrega", f"{base}/entrega", administrador,
-               json={})
+        entregada = llamar("POST", "/api/ordenes/{orden_id}/entrega", f"{base}/entrega",
+                           administrador, json={})
+        assert entregada.status_code == 200
 
         # Segunda orden del mismo vehículo: solicitud y confirmación de cancelación.
         segunda = llamar("POST", "/api/ordenes", "/api/ordenes", administrador,
@@ -367,6 +379,34 @@ def respuestas_reales(ecosistema) -> list[tuple[str, str, int, Any]]:  # noqa: F
                cliente, json=motivo)
         llamar("POST", "/api/ordenes/{orden_id}/cancelacion/confirmacion",
                f"{base}/cancelacion/confirmacion", administrador)
+        devolucion = "/api/ordenes/{orden_id}/devolucion"
+        llamar("POST", devolucion, f"{base}/devolucion", cliente, json={})
+        primera = llamar("POST", devolucion, f"{base}/devolucion", administrador, json={})
+        segunda_devolucion = llamar("POST", devolucion, f"{base}/devolucion", administrador, json={})
+        assert primera.status_code == segunda_devolucion.status_code == 200
+        assert primera.json() == segunda_devolucion.json()
+        assert primera.json()["estado_codigo"] == 8
+        ruta_solicitar = "/api/ordenes/{orden_id}/nueva-atencion"
+        solicitud = llamar("POST", ruta_solicitar, f"{base}/nueva-atencion", cliente,
+                           json={"descripcion": "Revisar nuevamente los frenos"})
+        assert solicitud.status_code == 201
+        repetida = llamar("POST", ruta_solicitar, f"{base}/nueva-atencion", cliente,
+                          json={"descripcion": "Revisar nuevamente los frenos"})
+        assert repetida.status_code == 200 and repetida.json() == solicitud.json()
+        llamar("POST", ruta_solicitar, f"{base}/nueva-atencion", cliente,
+               json={"descripcion": "Otra descripción"})
+        ruta_lista = "/api/ordenes/nuevas-atenciones"
+        llamar("GET", ruta_lista, ruta_lista, cliente, params={"orden_cancelada_id": segunda})
+        llamar("GET", ruta_lista, ruta_lista, administrador)
+        llamar("GET", ruta_lista, ruta_lista, mecanico)
+        llamar("GET", "/api/ordenes/nuevas-atenciones/{solicitud_id}",
+               f"{ruta_lista}/{solicitud.json()['solicitud_id']}", cliente)
+        sid = solicitud.json()["solicitud_id"]
+        ruta_revision = "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision"
+        assert llamar("POST", ruta_revision, f"{ruta_lista}/{sid}/revision", administrador,
+                      json={"decision": "aceptada", "respuesta": "Atención autorizada"}).status_code == 200
+        ruta_generar = "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden"
+        assert llamar("POST", ruta_generar, f"{ruta_lista}/{sid}/orden", administrador, json={}).status_code == 201
         llamar("GET", "/api/ordenes/vehiculo/{vehiculo_id}/historial",
                f"/api/ordenes/vehiculo/{vehiculo_id}/historial", cliente,
                params={"limit": 10, "offset": 0})
@@ -446,6 +486,10 @@ def test_el_recorrido_cubre_exitos_y_errores_del_consumo(respuestas_reales) -> N
         ("put", "/api/ordenes/configuracion/capacidad/mecanicos", 422),
         ("put", "/api/ordenes/configuracion/capacidad/ingresos-diarios", 200),
         ("post", "/api/ordenes", 201),
+        ("post", "/api/ordenes/{orden_id}/nueva-atencion", 201),
+        ("post", "/api/ordenes/{orden_id}/nueva-atencion", 200),
+        ("post", "/api/ordenes/{orden_id}/nueva-atencion", 409),
+        ("get", "/api/ordenes/nuevas-atenciones", 403),
         ("post", "/api/auth/register", 201),
         ("get", "/api/vehiculos", 404),
         ("get", "/api/clientes/perfil", 404),

@@ -15,6 +15,11 @@ validó de cada una** y **qué brechas quedan** en el contrato publicado.
 
 ## 1. Alcance
 
+El contrato 3.0.0 agrega una restricción a la creación administrativa de órdenes:
+solo una activa por vehículo. `POST /api/ordenes` no pertenece al catálogo móvil,
+pero debe coordinarse la actualización de versión y verificar los recorridos
+de consulta. No se modifican los ocho estados ni las respuestas de éxito.
+
 La app móvil atiende a dos roles. El Administrador trabaja desde la web y queda
 fuera de este catálogo.
 
@@ -23,10 +28,41 @@ fuera de este catálogo.
 | Cliente | Se registra, entra, ve sus vehículos y órdenes, sigue el historial, revisa evidencias, aprueba o rechaza presupuestos y solicita cancelaciones |
 | Mecánico | Entra, ve sus órdenes y vehículos asignados, cambia estados, registra bitácora y sube evidencias |
 
-## 2. Catálogo de operaciones (27)
+La versión 3.0.0 incorpora también las solicitudes de nueva atención del Cliente
+(propiedad, descripción de 1–2000 caracteres, reintento idéntico 200 y creación 201),
+su listado paginado y detalle. Los estados son pendiente/aceptada/rechazada; solicitar
+no crea una orden ni reserva cupo. Una aceptada sigue bloqueando otra solicitud sobre
+el mismo antecedente aunque ya tenga orden generada. Una rechazada permite otra.
+
+Los avisos se consultan con `limite`, `offset` y `solo_no_leidas`; la fecha es
+`creado_en`. `leida` y `leida_en` se conservan en MS1. Los PATCH de lectura responden
+204 sin cuerpo, son idempotentes y un aviso ajeno devuelve 404.
+
+**Validación móvil pendiente:** estas comprobaciones son de API y navegador web.
+No acreditan recepción push ni funcionamiento de un APK. Falta el dispositivo/app
+de Integración IV y la configuración del proveedor de push.
+
+El contrato incluye el registro autenticado de dispositivos, su desactivación
+al cerrar sesión y la consulta/reintento de canales propios. Las alertas de stock
+pueden tener `orden_id`/`vehiculo_id` nulos; las referencias a presupuesto,
+solicitud y repuesto son anulables. Ver [notificaciones-canales.md](notificaciones-canales.md)
+para cuerpos, credenciales, estados y coordinación móvil.
+
+## 2. Catálogo de operaciones (38)
 
 | Flujo | Operación | Cliente | Mecánico |
 |---|---|:-:|:-:|
+| Nuevas atenciones | `POST /api/ordenes/{orden_id}/nueva-atencion` | ✅ | — |
+| Nuevas atenciones | `GET /api/ordenes/nuevas-atenciones` | ✅ | — |
+| Nuevas atenciones | `GET /api/ordenes/nuevas-atenciones/{solicitud_id}` | ✅ | — |
+| Dispositivos | `POST /api/notificaciones/dispositivos` | ✅ | ✅ |
+| Dispositivos | `GET /api/notificaciones/dispositivos` | ✅ | ✅ |
+| Dispositivos | `DELETE /api/notificaciones/dispositivos/{dispositivo_id}` | ✅ | ✅ |
+| Canales | `GET /api/notificaciones/{notificacion_id}/entregas` | ✅ | ✅ |
+| Canales | `POST /api/notificaciones/{notificacion_id}/reintentos` | ✅ | ✅ |
+| Avisos | `GET /api/notificaciones` | ✅ | ✅ |
+| Avisos | `PATCH /api/notificaciones/{notificacion_id}/leer` | ✅ | ✅ |
+| Avisos | `PATCH /api/notificaciones/leer-todas` | ✅ | ✅ |
 | Acceso | `POST /api/auth/register` | ✅ | — |
 | Acceso | `POST /api/auth/login` | ✅ | ✅ |
 | Acceso | `GET /api/auth/me` | ✅ | ✅ |
@@ -148,7 +184,7 @@ debe consumir ninguna ruta no publicada aunque responda:
 | Capacidad | Estado |
 |---|---|
 | Solicitar hora / agendar ingreso (Cliente) | Sin endpoint |
-| Notificaciones push | Sin endpoint |
+| Notificaciones push | Registro propio de dispositivos y resultados de canales implementados; recepción en APK/FCM real pendiente. |
 | Repuestos e inventario desde la app del mecánico | Publicados, pero no forman parte del flujo móvil acordado |
 
 ## 7. Cómo ejecutar la validación

@@ -102,11 +102,19 @@ Informa por separado:
 1. **Recorridos implementados**: `flujos_e2e_gateway.py` (registro y acceso,
    configuración, orden completa hasta la entrega, rechazo, cancelación,
    seguridad), validados contra el contrato congelado.
-2. **Problemas conocidos reproducidos** por la API con vehículos nuevos: varias
-   órdenes activas por vehículo; la entrega no registra la salida y la orden
-   siguiente reutiliza ese ingreso. No cuentan como recorridos funcionales.
-3. **Pendientes**: devolución, solicitud de nueva atención, regla de una orden
-   activa y registro de salida. Solo se comprueba que no existen; no se simulan.
+2. **Regresión y problemas conocidos**, con vehículos nuevos: desde 3.0.0, P1
+   debe rechazar la segunda orden activa con `409`; si no lo confirma, el
+   comando falla. P2 debe confirmar que, después de entregar, la orden siguiente
+   recibe un ingreso nuevo; si no lo confirma, el comando falla. La fecha interna
+   de salida se comprueba además con las pruebas de PostgreSQL.
+3. **Estado del alcance**: la devolución y las nuevas atenciones están en 3.0.0,
+   con pruebas reales de API y navegador. Su presencia en el contrato por sí sola
+   no prueba su ejecución. La regla de una orden activa se comprueba en P1.
+
+Un ambiente anterior puede conservar duplicados creados al reproducir P1.
+La migración a 3.0.0 aborta y los lista; no los cancela automáticamente. Revisar
+el diagnóstico antes de decidir una reconstrucción o una resolución explícita:
+[una orden activa por vehículo](orden-activa-por-vehiculo.md).
 
 `recorridos` crea datos nuevos (vehículos `E2E*`, `PVA*`, `PSE*`). Para una
 demostración limpia, reconstruir y ejecutar solo `sembrar`.
@@ -163,3 +171,63 @@ MinIO de este ambiente (credencial de administración para crear y borrar los
 buckets de prueba, y el usuario de MS4 para comprobar que no los alcanza). Sin
 `MS4_TEST_S3_ENDPOINT`, un `pytest` normal omite estas pruebas indicando cómo
 configurarlas; ya no toman la configuración `MS4_S3_*` del `.env`.
+
+
+## Demostración final con datos nuevos
+
+El perfil `sgtm_demo_final` conserva los ambientes anteriores y genera recursos
+propios en `backend/.demo-final/` (ignorado por Git). Usa PostgreSQL 5453–5456,
+Gateway 8300, servicios 8301–8304, frontend 5383 y MinIO 9020/9021, bucket privado
+`evidencias-demo-final`, usuario S3 propio y volúmenes `sgtm_demo_final_*`.
+
+Desde `backend/`, con el Python del entorno virtual:
+
+```sh
+python scripts/demo_final.py configurar
+python scripts/demo_final.py infra
+python scripts/demo_final.py migrar
+python scripts/demo_final.py iniciar
+python scripts/demo_final.py sembrar
+python scripts/demo_final.py recorridos
+```
+
+Web: `http://127.0.0.1:5383`. Credenciales exclusivamente sintéticas:
+`cliente@pruebas.cl` / `ClientePrueba123!`, `mecanico@pruebas.cl` /
+`MecanicoPrueba123!`, `administrador@pruebas.cl` / `AdminPrueba123!`.
+No son cuentas de producción. Los siete perfiles de combinación de roles se
+crean con `seed_usuarios_prueba.py`.
+
+Escenarios: DEMO01–09 cubren órdenes recibidas, diagnóstico, presupuesto,
+reparación, listo, entrega y cancelaciones. DEMO07 tiene solicitud pendiente;
+DEMO08 fue devuelta y su nueva atención aceptada tiene otra orden vinculada;
+DEMO10 conserva una solicitud rechazada; DEMO11 tiene una aceptada sin orden
+para demostrar la generación desde la web. Todo se construye mediante la API.
+`sembrar` conserva los escenarios ya creados y se detiene si encuentra datos
+previos incompatibles; no fuerza una revisión ni una cancelación histórica.
+
+Para detener solo este perfil: `python scripts/demo_final.py detener`.
+Para el diagnóstico histórico se conservan las bases anteriores. No se han
+reparado automáticamente las salidas antiguas ni las órdenes duplicadas.
+
+## Verificación automática completa
+
+Con el MinIO y PostgreSQL de `sgtm_pruebas` levantados:
+
+```sh
+python scripts/verificar_backend.py
+```
+
+El ejecutor crea bases privadas `verificar_suite_ms2/ms3`, ejecuta `pytest tests
+services` con todos los destinos explícitos y las retira al terminar. Las pruebas
+S3 usan buckets por prueba, nunca el bucket de una demostración. GitHub Actions
+usa el mismo ejecutor, además de lint, pruebas y build del frontend. Un resultado
+local no se presenta como una ejecución remota de CI.
+
+## Correo capturado en la demostración final
+
+El perfil `scripts/demo_final.py infra` agrega Mailpit local, separado del
+almacenamiento multimedia: consola `http://127.0.0.1:8026`, SMTP 1026.
+Los mensajes se capturan y no se entregan externamente. La web del perfil
+es `http://127.0.0.1:5383`. Los avisos por MS3 y los canales de MS1 requieren
+las nuevas migraciones y pares de secretos que el configurador completa sin
+sobrescribir las claves existentes. Ver [notificaciones-canales.md](notificaciones-canales.md).

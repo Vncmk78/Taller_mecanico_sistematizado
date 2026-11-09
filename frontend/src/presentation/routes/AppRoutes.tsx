@@ -29,11 +29,16 @@ import { ClientBudgetDetailPage } from '@/presentation/pages/client/ClientBudget
 import { ClientOrdersPage } from '@/presentation/pages/client/ClientOrdersPage';
 import { ClientOrderDetailPage } from '@/presentation/pages/client/ClientOrderDetailPage';
 import { ClientOrderEvidencePage } from '@/presentation/pages/client/ClientOrderEvidencePage';
+import { AdminNuevasAtencionesPage } from '@/presentation/pages/admin/AdminNuevasAtencionesPage';
+import { AdminNuevaAtencionDetailPage } from '@/presentation/pages/admin/AdminNuevaAtencionDetailPage';
+import { ClientNuevasAtencionesPage } from '@/presentation/pages/client/ClientNuevasAtencionesPage';
+import { ClientNuevaAtencionDetailPage } from '@/presentation/pages/client/ClientNuevaAtencionDetailPage';
 import { MechanicDashboardPage } from '@/presentation/pages/mechanic/MechanicDashboardPage';
 import { MechanicVehiclesPage } from '@/presentation/pages/mechanic/MechanicVehiclesPage';
 import { MechanicVehicleDetailPage } from '@/presentation/pages/mechanic/MechanicVehicleDetailPage';
 import { MechanicOrdersPage } from '@/presentation/pages/mechanic/MechanicOrdersPage';
 import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicOrderDetailPage';
+import { BudgetEditor } from '@/presentation/components/budgets/BudgetEditor';
 import { MechanicBudgetPage } from '@/presentation/pages/mechanic/MechanicBudgetPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
 import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage';
@@ -75,10 +80,13 @@ export function AppRoutes() {
         <Route index element={<AdminDashboardPage />} />
         <Route path="ordenes" element={<AdminOrdersPage />} />
         <Route path="ordenes/:id" element={<AdminOrderDetailPage />} />
+        <Route path="ordenes/:id/presupuesto" element={<BudgetEditor administrador />} />
         <Route
           path="ordenes/:id/evidencias"
           element={<OrderEvidencePage backTo="/admin/ordenes" backLabel="Volver a la gestión de órdenes" canUpload />}
         />
+        <Route path="nuevas-atenciones" element={<AdminNuevasAtencionesPage />} />
+        <Route path="nuevas-atenciones/:id" element={<AdminNuevaAtencionDetailPage />} />
         <Route path="clientes" element={<AdminClientsPage />} />
         <Route path="configuracion" element={<AdminConfigurationPage />} />
         <Route path="vehiculos" element={<AdminVehiclesPage />} />
@@ -107,11 +115,13 @@ export function AppRoutes() {
         <Route path="vehiculos" element={<ClientVehiclesPage />} />
         <Route path="vehiculos/nuevo" element={<ClientVehicleFormPage />} />
         <Route path="vehiculos/:id" element={<ClientVehicleDetailPage />} />
-        <Route path="agendar" element={<div className="text-text-muted">Agendar Mantención - Próximamente</div>} />
+        <Route path="agendar" element={<Navigate to="/client/ordenes" replace />} />
         <Route path="servicios" element={<ClientServicesPage />} />
         <Route path="ordenes" element={<ClientOrdersPage />} />
         <Route path="ordenes/:id" element={<ClientOrderDetailPage />} />
         <Route path="ordenes/:id/evidencias" element={<ClientOrderEvidencePage />} />
+        <Route path="nuevas-atenciones" element={<ClientNuevasAtencionesPage />} />
+        <Route path="nuevas-atenciones/:id" element={<ClientNuevaAtencionDetailPage />} />
         <Route path="presupuestos" element={<ClientBudgetsPage />} />
         <Route path="presupuestos/:ordenId" element={<ClientBudgetDetailPage />} />
         <Route path="notificaciones" element={<NotificationsPage />} />

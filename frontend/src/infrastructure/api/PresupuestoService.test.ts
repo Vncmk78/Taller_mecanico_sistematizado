@@ -257,3 +257,23 @@ describe('PresupuestoService: contrato HTTP de MS3 (presupuestos)', () => {
     });
 });
 
+
+describe('recuperación de hechos ya guardados', () => {
+    beforeEach(() => vi.clearAllMocks());
+    it('distingue una decisión guardada de un 503 antes de guardar', async () => {
+        vi.mocked(apiClient.post).mockRejectedValueOnce({ response: { status: 503, data: { decision_id: 82, orden_id: 101 } } });
+        await expect(presupuestoService.decidir('501', 1, 'aprobado')).rejects.toMatchObject({ tipo: 'decision', id: '82' });
+        const error = { response: { status: 503, data: { detail: 'No fue posible validar la orden' } } };
+        vi.mocked(apiClient.post).mockRejectedValueOnce(error);
+        await expect(presupuestoService.decidir('501', 1, 'aprobado')).rejects.toBe(error);
+    });
+    it('conserva el identificador del envío guardado y aplica sin volver a enviar', async () => {
+        vi.mocked(apiClient.post).mockRejectedValueOnce({ response: { status: 503, data: { presupuesto_id: 501, orden_id: 101 } } });
+        await expect(presupuestoService.send('501', 1)).rejects.toMatchObject({ tipo: 'envio', id: '501' });
+        vi.mocked(apiClient.post).mockResolvedValue({ data: {} });
+        await presupuestoService.aplicarEnvio('501');
+        await presupuestoService.aplicarDecision('82');
+        expect(apiClient.post).toHaveBeenNthCalledWith(2, '/presupuestos/501/envio-inicial/aplicacion');
+        expect(apiClient.post).toHaveBeenNthCalledWith(3, '/presupuestos/decisiones/82/aplicacion');
+    });
+});

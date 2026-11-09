@@ -736,7 +736,7 @@ def test_historial_vehiculo_admin_pagina_y_ordena_de_forma_estable(
 ):
     vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
     ordenes = []
-    for _ in range(3):
+    for estado in (CANCELADO, CANCELADO, RECIBIDO):
         ingreso = IngresoVehiculo(
             vehiculo_id=vehiculo.vehiculo_id,
             registrado_por_id=99,
@@ -746,7 +746,7 @@ def test_historial_vehiculo_admin_pagina_y_ordena_de_forma_estable(
         orden = OrdenTrabajo(
             vehiculo_id=vehiculo.vehiculo_id,
             ingreso_id=ingreso.ingreso_id,
-            estado_codigo=RECIBIDO,
+            estado_codigo=estado,
             creado_por_id=99,
         )
         db_ordenes.add(orden)
@@ -813,7 +813,7 @@ def test_historial_vehiculo_mecanico_solo_recibe_ordenes_asignadas(
     asignada = OrdenTrabajo(
         vehiculo_id=vehiculo.vehiculo_id,
         ingreso_id=ingreso.ingreso_id,
-        estado_codigo=RECIBIDO,
+        estado_codigo=CANCELADO,
         mecanico_actual_id=50,
         creado_por_id=99,
     )

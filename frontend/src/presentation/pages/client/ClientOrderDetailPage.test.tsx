@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
+import { nuevaAtencionService } from '@/infrastructure/api/NuevaAtencionService';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderHistoryStore } from '@/infrastructure/stores/useOrderHistoryStore';
@@ -19,6 +20,10 @@ vi.mock('@/infrastructure/api/OrderService', () => ({
         registrarEntrega: vi.fn(),
         cancelarComoCliente: vi.fn(),
     },
+}));
+
+vi.mock('@/infrastructure/api/NuevaAtencionService', () => ({
+    nuevaAtencionService: { solicitar: vi.fn(), listar: vi.fn(), obtener: vi.fn() },
 }));
 
 const orden: Order = {
@@ -103,3 +108,72 @@ describe('ClientOrderDetailPage: detalle desde el portal del cliente', () => {
         expect(screen.getByRole('button', { name: 'Solicitar cancelación' })).toBeInTheDocument();
     });
 });
+
+describe('ClientOrderDetailPage: nueva atención de una orden cancelada', () => {
+    const cliente = {
+        id: '10', email: 'c@taller.cl', full_name: 'Cliente', role: 'cliente' as const,
+        roles: ['cliente' as const], is_active: true,
+    };
+
+    beforeEach(() => {
+        useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false });
+        useOrderHistoryStore.setState({ entries: [], status: 'idle', error: null, isOffline: false });
+        useAuthStore.setState({ user: cliente, token: 't', isAuthenticated: true });
+        vi.clearAllMocks();
+        vi.mocked(orderService.getOrderHistory).mockResolvedValue([]);
+        vi.mocked(nuevaAtencionService.listar).mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
+    });
+
+    it('la orden Cancelada propia (ya autorizada por el GET) ofrece solicitar nueva atención', async () => {
+        vi.mocked(orderService.getOrderById).mockResolvedValue({
+            ...orden, estadoCodigo: 8, mecanicoActualId: null, mecanicoNombre: undefined,
+            devueltoEn: null, devueltoPorId: null,
+        });
+
+        renderPage();
+
+        expect(await screen.findByRole('heading', { name: 'Nueva atención' })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'Enviar solicitud' })).toBeInTheDocument();
+        expect(orderService.getOrderById).toHaveBeenCalledWith('101', { soloPropietario: true });
+        expect(nuevaAtencionService.listar).toHaveBeenCalledWith({ ordenCanceladaId: '101' }, { limit: 20, offset: 0 });
+    });
+
+    it('una orden activa no la ofrece', async () => {
+        vi.mocked(orderService.getOrderById).mockResolvedValue(orden);
+
+        renderPage();
+
+        expect(await screen.findByText('Orden de trabajo n° 101')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Nueva atención' })).not.toBeInTheDocument();
+        expect(nuevaAtencionService.listar).not.toHaveBeenCalled();
+    });
+
+    it('una orden ajena o inexistente (404) no muestra el formulario', async () => {
+        vi.mocked(orderService.getOrderById).mockRejectedValue(axios404);
+
+        renderPage();
+
+        expect(await screen.findByText(/Orden no encontrada/)).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Nueva atención' })).not.toBeInTheDocument();
+    });
+
+    it('Cliente+Administrador no ofrece solicitar sobre una orden administrativa ajena en caché', async () => {
+        useAuthStore.setState({ user: { ...cliente, roles: ['cliente', 'administrador'] } });
+        useOrderStore.setState({ orders: [{ ...orden, estadoCodigo: 8 }] });
+        vi.mocked(orderService.getOrderById).mockRejectedValue(axios404);
+        renderPage();
+        expect(await screen.findByText(/Orden no encontrada/)).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Nueva atención' })).not.toBeInTheDocument();
+        expect(nuevaAtencionService.listar).not.toHaveBeenCalled();
+    });
+
+    it('una copia en caché con fallo de red no acredita propiedad para solicitar', async () => {
+        useOrderStore.setState({ orders: [{ ...orden, estadoCodigo: 8 }] });
+        vi.mocked(orderService.getOrderById).mockRejectedValue(axios500);
+        renderPage();
+        expect(await screen.findByText('Orden de trabajo n° 101')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Nueva atención' })).not.toBeInTheDocument();
+        expect(nuevaAtencionService.listar).not.toHaveBeenCalled();
+    });
+});
+

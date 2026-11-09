@@ -44,16 +44,21 @@ from services.ms3_presupuestos.schemas.inventario import (
     ResultadoReserva,
 )
 from services.ms3_presupuestos.services import disponibilidad
-from services.ms3_presupuestos.services.inventario import StockInsuficiente
+from services.ms3_presupuestos.services.inventario import StockInsuficiente,umbral_general,umbral_efectivo,esta_bajo_umbral
+from services.ms3_presupuestos.services.avisos import registrar_alerta
 
 
 def _mover(uow: UnidadDeTrabajo, repuesto: Repuesto, tipo: str, cantidad: int, orden_id: int,
            usuario_id: int, clave: str) -> MovimientoInventario:
+    efectivo=umbral_efectivo(repuesto,umbral_general(uow))
+    estaba_bajo=esta_bajo_umbral(repuesto.stock,efectivo)
     if tipo == "consumo":
         repuesto.stock -= cantidad
     movimiento = uow.movimientos.agregar(MovimientoInventario(
         clave_operacion=clave, repuesto=repuesto, tipo=tipo, cantidad=cantidad,
         orden_id=orden_id, registrado_por_id=usuario_id))
+    if esta_bajo_umbral(repuesto.stock,efectivo) and not estaba_bajo:
+        registrar_alerta(uow,repuesto,efectivo)
     return movimiento  # fecha_hora llega con RETURNING (eager_defaults)
 
 

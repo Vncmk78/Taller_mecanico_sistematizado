@@ -1,4 +1,4 @@
-import { CalendarDays, ClipboardList, Clock, Hash, User, Wrench } from 'lucide-react';
+import { CalendarDays, ClipboardList, Clock, Hash, PackageCheck, User, Wrench } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
 import { OrderStatusBadge } from '@/presentation/components/orders/OrderStatusBadge';
 import { formatDateTime } from '@/presentation/utils/orderDisplay';
@@ -75,6 +75,19 @@ export function OrderDetailPanel({ order, patente, vehicleLabel }: OrderDetailPa
                         {formatDateTime(order.actualizadoEn)}
                     </div>
                 </div>
+
+                {/* Solo órdenes Canceladas cuya respuesta informa la devolución. */}
+                {order.estadoCodigo === 8 && order.devueltoEn !== undefined && (
+                    <div>
+                        <span className="text-text-muted text-sm block mb-1">Devolución del vehículo</span>
+                        <div className="flex items-center gap-2 text-base font-medium">
+                            <PackageCheck className="w-4 h-4 text-text-muted shrink-0" />
+                            {order.devueltoEn
+                                ? `${formatDateTime(order.devueltoEn)} · usuario n° ${order.devueltoPorId}`
+                                : 'Pendiente'}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

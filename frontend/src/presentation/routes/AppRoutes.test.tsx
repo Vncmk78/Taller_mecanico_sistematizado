@@ -26,6 +26,16 @@ vi.mock('@/infrastructure/api/PerfilClienteService', () => ({
   },
 }));
 
+vi.mock('@/infrastructure/api/NuevaAtencionService', () => ({
+  nuevaAtencionService: {
+    listar: vi.fn(() => Promise.resolve({ items: [], total: 0, limit: 20, offset: 0 })),
+    obtener: vi.fn(),
+    solicitar: vi.fn(),
+    revisar: vi.fn(),
+    generarOrden: vi.fn(),
+  },
+}));
+
 const adminUser: User = {
   id: '1',
   email: 'admin@taller.cl',
@@ -159,6 +169,28 @@ describe('AppRoutes: navegación por los tres roles', () => {
       expect(
         await screen.findByText('Catálogo de Vehículos Registrados')
       ).toBeInTheDocument();
+    });
+
+    it('navega desde el menú a las solicitudes de nueva atención', async () => {
+      logueadoComo(adminUser);
+      renderApp('/admin');
+
+      fireEvent.click(screen.getByRole('link', { name: 'Nuevas atenciones' }));
+
+      expect(
+        await screen.findByRole('heading', { name: 'Solicitudes de nueva atención' })
+      ).toBeInTheDocument();
+    });
+
+    it('una cuenta multirrol con Administrador entra sin preparar el perfil Cliente', async () => {
+      usePerfilClienteStore.getState().reset();
+      logueadoComo({ ...clientUser, role: 'cliente', roles: ['cliente', 'administrador'] });
+      renderApp('/admin/nuevas-atenciones');
+
+      expect(
+        await screen.findByRole('heading', { name: 'Solicitudes de nueva atención' })
+      ).toBeInTheDocument();
+      expect(perfilClienteService.preparar).not.toHaveBeenCalled();
     });
 
     it('niega /admin a un cliente y lo lleva a acceso denegado', () => {

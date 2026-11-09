@@ -24,6 +24,8 @@ class Settings(ServiceSettings):
         extra="ignore",
     )
 
+    NOTIFICATION_LOOKUP_SECRET: SecretStr | None = Field(default=None, min_length=32)
+
     SERVICE_NAME: str = "MS2 — Vehículos y Órdenes de Trabajo"
     DATABASE_URL: str = (
         "postgresql+psycopg://taller:taller@localhost:5434/taller_ms2"

@@ -39,6 +39,7 @@ from services.ms3_presupuestos.persistencia import (
     UnidadDeTrabajo,
 )
 from services.ms3_presupuestos.persistencia.repositorios import FiltroRepuestos
+from services.ms3_presupuestos.services.avisos import registrar_alerta
 from services.ms3_presupuestos.schemas.inventario import (
     AlertaRepuesto,
     AlertaStock,
@@ -76,6 +77,8 @@ def umbral_general(uow: UnidadDeTrabajo) -> int | None:
 
 
 def umbral_efectivo(repuesto: Repuesto, general: int | None) -> int | None:
+    if general is None:
+        return None  # Decisión acordada: configurar el general antes de activar avisos.
     return repuesto.umbral_particular if repuesto.umbral_particular is not None else general
 
 
@@ -160,6 +163,8 @@ def registrar_movimiento(
             registrado_por_id=usuario_id,
         ))  # fecha_hora llega con RETURNING (eager_defaults): sin refresh
         queda_bajo = esta_bajo_umbral(repuesto.stock, efectivo)
+        if queda_bajo and not estaba_bajo:
+            registrar_alerta(uow,repuesto,efectivo)
         resultado = ResultadoMovimiento(
             movimiento=MovimientoSalida.model_validate(movimiento),
             stock=estado_stock(uow, repuesto, general),
@@ -253,6 +258,14 @@ def cambiar_umbral_general(
                 repuesto_id=None, valor_anterior=anterior, valor_nuevo=valor,
                 administrador_id=administrador_id, observacion=observacion))
             uow.sesion.flush()
+            consulta=select(Repuesto).order_by(Repuesto.repuesto_id).with_for_update()
+            if anterior is not None:
+                consulta=consulta.where(Repuesto.umbral_particular.is_(None))
+            for repuesto in uow.sesion.scalars(consulta.execution_options(populate_existing=True)):
+                antes=umbral_efectivo(repuesto,anterior)
+                ahora=umbral_efectivo(repuesto,valor)
+                if esta_bajo_umbral(repuesto.stock,ahora) and not esta_bajo_umbral(repuesto.stock,antes):
+                    registrar_alerta(uow,repuesto,ahora)
     return obtener_umbral_general(uow)
 
 

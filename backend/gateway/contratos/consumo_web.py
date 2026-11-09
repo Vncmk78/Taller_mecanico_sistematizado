@@ -77,6 +77,14 @@ ORDEN: Campos = {  # OrderService.ts → OrdenRespuesta
     "creado_por_id": "integer",
     "creado_en": "string",
     "actualizado_en": "string",
+    "devuelto_en": "?string",
+    "devuelto_por_id": "?integer",
+}
+SOLICITUD_NUEVA_ATENCION: Campos = {  # NuevaAtencionService.ts → SolicitudNuevaAtencionApi
+    "solicitud_id": "integer", "orden_cancelada_id": "integer", "vehiculo_id": "integer",
+    "cliente_usuario_id": "integer", "descripcion": "string", "solicitada_en": "string",
+    "situacion": ("pendiente", "aceptada", "rechazada"), "respuesta": "?string",
+    "revisor_id": "?integer", "revisada_en": "?string", "orden_generada_id": "?integer",
 }
 CUPO_DIARIO: Campos = {  # ConfiguracionTallerService.ts → CupoDiarioApi
     "max_ingresos_diarios": "?integer",
@@ -269,6 +277,32 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
         "OrderService.registrarEntrega", "post", "/api/ordenes/{orden_id}/entrega", "200",
         ORDEN, cuerpo={"observacion": "~string"},
     ),
+    ConsumoWeb(
+        "OrderService.registrarDevolucion", "post", "/api/ordenes/{orden_id}/devolucion",
+        "200", {**ORDEN, "devuelto_en": "string", "devuelto_por_id": "integer"},
+        cuerpo={},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.solicitar", "post", "/api/ordenes/{orden_id}/nueva-atencion", "201",
+        SOLICITUD_NUEVA_ATENCION, cuerpo={"descripcion": "string"},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.listar", "get", "/api/ordenes/nuevas-atenciones", "200",
+        {"items": [SOLICITUD_NUEVA_ATENCION], "total": "integer", "limit": "integer", "offset": "integer"},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.obtener", "get", "/api/ordenes/nuevas-atenciones/{solicitud_id}", "200",
+        SOLICITUD_NUEVA_ATENCION,
+    ),
+    ConsumoWeb("NuevaAtencionService.revisar", "post", "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision", "200",
+               SOLICITUD_NUEVA_ATENCION, cuerpo={"decision": ("aceptada", "rechazada"), "respuesta": "string"}),
+    ConsumoWeb("NuevaAtencionService.generarOrden", "post", "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden", "201",
+               {"solicitud": SOLICITUD_NUEVA_ATENCION, "orden": ORDEN}, cuerpo={}),
+    ConsumoWeb("NotificationService.getMyNotifications", "get", "/api/notificaciones", "200",
+               [{"notificacion_id": "integer", "tipo": "string", "titulo": "string", "mensaje": "string",
+                 "leida": "boolean", "creado_en": "string", "orden_id": "?integer"}]),
+    ConsumoWeb("NotificationService.markAsRead", "patch", "/api/notificaciones/{notificacion_id}/leer", "204", {}),
+    ConsumoWeb("NotificationService.markAllAsRead", "patch", "/api/notificaciones/leer-todas", "204", {}),
     # No lee la respuesta (es una solicitud pendiente, no una orden): después
     # vuelve a pedir la orden con getOrderById. Corregido en SCRUM-706 (D-01).
     ConsumoWeb(

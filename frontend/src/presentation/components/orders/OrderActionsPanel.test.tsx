@@ -307,3 +307,11 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         expect(actualizar).not.toHaveBeenCalled();
     });
 });
+
+it('la cuenta Cliente+Administrador ejerce administración desde su portal aunque Cliente sea primero', async () => {
+    useAuthStore.setState({ user: { ...sesion('cliente'), roles: ['cliente', 'administrador'] }, token: 't', isAuthenticated: true });
+    vi.mocked(authService.listarUsuarios).mockResolvedValue(MECANICOS);
+    render(<MemoryRouter initialEntries={['/admin/ordenes/101']}><ToastProvider><OrderActionsPanel order={orden()} /></ToastProvider></MemoryRouter>);
+    expect(await screen.findByRole('button', { name: 'Asignar mecánico' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Solicitar cancelación' })).not.toBeInTheDocument();
+});

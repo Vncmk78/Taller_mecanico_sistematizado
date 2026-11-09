@@ -105,6 +105,14 @@ class VehiculoNoEncontradoError(Exception):
     """El vehículo indicado para la nueva orden no existe."""
 
 
+class VehiculoConOrdenActivaError(Exception):
+    """El vehículo ya tiene una atención no terminal."""
+
+    def __init__(self, orden_id: int) -> None:
+        self.orden_id = orden_id
+        super().__init__(f"El vehículo ya tiene una orden activa (n° {orden_id})")
+
+
 class OrdenNoEncontradaError(Exception):
     """La orden no existe o no es visible para la identidad autenticada."""
 
@@ -135,6 +143,12 @@ class OrdenObservacionInvalidaError(Exception):
 
 class EntregaOrdenInconsistenteError(Exception):
     """La orden entregada no conserva sus datos de auditoría esperados."""
+
+
+class SalidaVehiculoNoPermitidaError(Exception):
+    """El ingreso físico no permite registrar la salida solicitada."""
+
+
 def listar_solicitudes_cancelacion_pendientes(db: Session) -> list[SolicitudCancelacion]:
     return list(db.scalars(
         select(SolicitudCancelacion)
@@ -372,8 +386,9 @@ def registrar_orden_sin_confirmar(
 ) -> OrdenTrabajo:
     """Núcleo del registro de una orden, sin confirmar la transacción.
 
-    Bloquea el vehículo, reutiliza su ingreso abierto o valida el cupo y crea un
-    ingreso nuevo, y agrega la orden en `Recibido` con su historial inicial (y
+    Bloquea el vehículo y rechaza otra orden activa antes de escribir. Reutiliza
+    su ingreso abierto o valida el cupo y crea un ingreso nuevo, y agrega la
+    orden en `Recibido` con su historial inicial (y
     el evento de outbox que agrega `registrar_historial_estado`). Solo hace
     `flush`: quien lo llama confirma o deshace todo junto y puede sumar otros
     cambios a la misma transacción. No hace commit ni rollback.
@@ -388,6 +403,21 @@ def registrar_orden_sin_confirmar(
     vehiculo = db.scalar(_consulta_vehiculo_para_actualizacion(vehiculo_id))
     if vehiculo is None:
         raise VehiculoNoEncontradoError("Vehículo no encontrado")
+
+    # Se consulta después de bloquear el vehículo: dos altas concurrentes no
+    # pueden comprobar a la vez que está libre. El índice parcial respalda la
+    # regla también frente a escrituras que no pasen por este servicio.
+    activa = db.scalar(
+        select(OrdenTrabajo.orden_id)
+        .where(
+            OrdenTrabajo.vehiculo_id == vehiculo_id,
+            OrdenTrabajo.estado_codigo.not_in((ENTREGADO, CANCELADO)),
+        )
+        .order_by(OrdenTrabajo.orden_id)
+        .limit(1)
+    )
+    if activa is not None:
+        raise VehiculoConOrdenActivaError(activa)
 
     ingreso = db.scalar(
         select(IngresoVehiculo)
@@ -449,7 +479,8 @@ def crear_orden(
 ) -> OrdenTrabajo:
     """Crea ingreso, orden e historial inicial dentro de una transacción.
 
-    Si ya existe una estancia abierta para el vehículo, se reutiliza sin
+    Rechaza una atención activa existente sin efectos. Si ya existe una
+    estancia abierta para el vehículo, se reutiliza sin
     consumir otro cupo diario. Un nuevo ingreso valida y audita el límite antes
     de registrarse. Un rechazo de cupo deshace todo y después guarda, en una
     transacción propia, la auditoría con los datos de la validación original.
@@ -459,7 +490,7 @@ def crear_orden(
         orden = registrar_orden_sin_confirmar(db, vehiculo_id, administrador_id)
         db.commit()
         return orden
-    except VehiculoNoEncontradoError:
+    except (VehiculoNoEncontradoError, VehiculoConOrdenActivaError):
         db.rollback()
         raise
     except (CupoDiarioNoConfiguradoError, CupoDiarioExcedidoError) as exc:
@@ -796,6 +827,100 @@ def cambiar_estado_orden(
         ) from exc
 
 
+def _bloquear_orden_e_ingreso_para_salida(
+    db: Session, orden_id: int,
+) -> tuple[OrdenTrabajo, IngresoVehiculo]:
+    """Comparte el orden de bloqueos del alta: vehículo antes que orden.
+
+    El alta y la salida de un mismo vehículo deben decidir sobre la misma
+    estancia en serie. populate_existing evita usar una orden/ingreso que la
+    sesión hubiera leído antes de esperar el bloqueo.
+    """
+    vehiculo_id = db.scalar(
+        select(OrdenTrabajo.vehiculo_id).where(OrdenTrabajo.orden_id == orden_id)
+    )
+    if vehiculo_id is None:
+        raise OrdenNoEncontradaError("Orden no encontrada")
+    db.scalar(_consulta_vehiculo_para_actualizacion(vehiculo_id))
+    orden = db.scalar(
+        _consulta_orden_para_actualizacion(orden_id)
+        .execution_options(populate_existing=True)
+    )
+    if orden is None:
+        raise OrdenNoEncontradaError("Orden no encontrada")
+    ingreso = db.scalar(
+        select(IngresoVehiculo)
+        .where(IngresoVehiculo.ingreso_id == orden.ingreso_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if ingreso is None or ingreso.vehiculo_id != orden.vehiculo_id:
+        raise SalidaVehiculoNoPermitidaError(
+            "El ingreso de la orden no corresponde al vehículo; requiere revisión"
+        )
+    return orden, ingreso
+
+
+def _validar_ingreso_para_salida(
+    db: Session, orden: OrdenTrabajo, ingreso: IngresoVehiculo,
+) -> None:
+    if ingreso.salida_en is not None:
+        raise SalidaVehiculoNoPermitidaError(
+            "El ingreso ya tiene una salida física registrada"
+        )
+    otra_activa = db.scalar(
+        select(OrdenTrabajo.orden_id).where(
+            OrdenTrabajo.ingreso_id == ingreso.ingreso_id,
+            OrdenTrabajo.orden_id != orden.orden_id,
+            OrdenTrabajo.estado_codigo.not_in((ENTREGADO, CANCELADO)),
+        ).order_by(OrdenTrabajo.orden_id).limit(1)
+    )
+    if otra_activa is not None:
+        raise SalidaVehiculoNoPermitidaError(
+            f"El vehículo no puede salir: la orden n° {otra_activa} "
+            "sigue activa en el mismo ingreso"
+        )
+
+
+def registrar_devolucion_fisica(
+    db: Session, *, orden_id: int, administrador_id: int,
+) -> OrdenTrabajo:
+    """Devuelve una atención cancelada sin cambiar su estado ni su historial."""
+    try:
+        orden, ingreso = _bloquear_orden_e_ingreso_para_salida(db, orden_id)
+        if orden.estado_codigo != CANCELADO:
+            raise SalidaVehiculoNoPermitidaError(
+                "La devolución física solo se puede registrar de una orden Cancelada"
+            )
+        if orden.devuelto_en is not None or orden.devuelto_por_id is not None:
+            if (orden.devuelto_en is None or orden.devuelto_por_id is None
+                    or ingreso.salida_en is None):
+                raise SalidaVehiculoNoPermitidaError(
+                    "La devolución histórica está incompleta; requiere revisión"
+                )
+            # Puede haber una atención posterior en otro ingreso. Este reintento
+            # solo confirma la devolución original, sin tocar la nueva estancia.
+            db.commit()
+            return orden
+        _validar_ingreso_para_salida(db, orden, ingreso)
+        fecha = db.scalar(select(func.now()))
+        orden.devuelto_en = fecha
+        orden.devuelto_por_id = administrador_id
+        ingreso.salida_en = fecha
+        db.flush()
+        db.refresh(orden)
+        db.commit()
+        return orden
+    except (OrdenNoEncontradaError, SalidaVehiculoNoPermitidaError):
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaOrdenError(
+            "No fue posible registrar la devolución física"
+        ) from exc
+
+
 def registrar_entrega_fisica(
     db: Session,
     *,
@@ -805,16 +930,13 @@ def registrar_entrega_fisica(
 ) -> tuple[OrdenTrabajo, HistorialEstado]:
     """Registra la entrega física y `Listo → Entregado` de forma atómica.
 
-    La fila de la orden queda bloqueada hasta confirmar ambos cambios. Repetir
+    El vehículo, la orden y el ingreso quedan bloqueados hasta confirmar. Repetir
     la operación después de una respuesta perdida devuelve la entrega y el
     historial originales, sin reemplazar la fecha ni agregar otro historial.
     """
 
     try:
-        orden = db.scalar(_consulta_orden_para_actualizacion(orden_id))
-        if orden is None:
-            raise OrdenNoEncontradaError("Orden no encontrada")
-
+        orden, ingreso = _bloquear_orden_e_ingreso_para_salida(db, orden_id)
         if orden.estado_codigo == ENTREGADO:
             historial = db.scalar(
                 select(HistorialEstado)
@@ -829,6 +951,8 @@ def registrar_entrega_fisica(
                 raise EntregaOrdenInconsistenteError(
                     "La orden entregada no conserva el registro de entrega completo"
                 )
+            # Un registro histórico puede carecer de salida_en. No inventar
+            # su fecha ni corregirlo al repetir una entrega anterior.
             db.commit()
             return orden, historial
 
@@ -837,13 +961,16 @@ def registrar_entrega_fisica(
                 "La entrega física solo se puede registrar desde Listo"
             )
 
+        _validar_ingreso_para_salida(db, orden, ingreso)
         estado_nuevo = resolver_transicion(
             orden.estado_codigo, EventoOrden.ENTREGA_FISICA
         )
         estado_anterior = orden.estado_codigo
         orden.estado_codigo = estado_nuevo
-        orden.entregado_en = func.now()
+        fecha = db.scalar(select(func.now()))
+        orden.entregado_en = fecha
         orden.entregado_por_id = administrador_id
+        ingreso.salida_en = fecha
         historial = registrar_historial_estado(
             db,
             orden_id=orden.orden_id,
@@ -861,6 +988,7 @@ def registrar_entrega_fisica(
         OrdenNoEncontradaError,
         OrdenTransicionNoPermitidaError,
         EntregaOrdenInconsistenteError,
+        SalidaVehiculoNoPermitidaError,
         OrdenObservacionInvalidaError,
     ):
         db.rollback()

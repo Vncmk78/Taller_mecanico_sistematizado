@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class OrdenCrear(BaseModel):
@@ -85,6 +85,30 @@ class OrdenRespuesta(BaseModel):
     creado_por_id: int
     creado_en: datetime
     actualizado_en: datetime
+    devuelto_en: datetime | None
+    devuelto_por_id: int | None
+
+    @field_validator("devuelto_en")
+    @classmethod
+    def fecha_devolucion_con_zona(cls, valor: datetime | None) -> datetime | None:
+        # SQLite (solo pruebas) pierde el tzinfo de DateTime(timezone=True).
+        # Las fechas de esa base se generan en UTC; PostgreSQL conserva la zona.
+        if valor is not None and valor.tzinfo is None:
+            return valor.replace(tzinfo=timezone.utc)
+        return valor
+
+
+class DevolucionSolicitud(BaseModel):
+    """Confirmación física: no acepta identidad, fecha ni estado del cliente."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DevolucionOrdenRespuesta(OrdenRespuesta):
+    """Orden cancelada y auditoría original de su devolución física."""
+
+    devuelto_en: datetime
+    devuelto_por_id: int = Field(gt=0)
 
 
 class EntregaOrdenRespuesta(OrdenRespuesta):

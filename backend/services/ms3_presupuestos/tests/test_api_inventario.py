@@ -210,6 +210,7 @@ def test_clave_reutilizada_con_otros_datos_es_409(api: TestClient, db: Session) 
 # ================================================================== alertas ==
 
 def test_alerta_se_activa_una_vez_y_se_apaga_al_reponer(api: TestClient, db: Session) -> None:
+    fabricas.umbral_general_vigente(db, valor=4)
     repuesto = fabricas.nuevo_repuesto(db, stock=6, umbral_particular=5)
     orden = fabricas.nuevo_orden_id()
     r = _mover(api, repuesto, "consumo", 1, orden)       # 5: igual al umbral, NO es alerta

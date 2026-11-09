@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { evidenciaService } from '@/infrastructure/api/EvidenciaService';
 import { AplicacionPresupuestoPendienteError } from '@/domain/ports/PresupuestoPort';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
+import { orderService } from '@/infrastructure/api/OrderService';
 import { useBudgetStore } from '@/infrastructure/stores/useBudgetStore';
 import { useEvidenceStore } from '@/infrastructure/stores/useEvidenceStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
@@ -17,6 +18,10 @@ vi.mock('@/infrastructure/api/PresupuestoService', () => ({
         getById: vi.fn(),
         decidir: vi.fn(),
     },
+}));
+
+vi.mock('@/infrastructure/api/OrderService', () => ({
+    orderService: { getOrderById: vi.fn() },
 }));
 
 vi.mock('@/infrastructure/api/EvidenciaService', () => ({
@@ -60,6 +65,8 @@ function withPendingSources() {
 
 describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => {
     beforeEach(() => {
+        vi.mocked(orderService.getOrderById).mockReset();
+        vi.mocked(orderService.getOrderById).mockRejectedValue(new Error('sin lectura de la orden'));
         useBudgetStore.setState({ presupuestos: [], status: 'idle', error: null, isOffline: false, requestId: null });
         useOrderStore.setState({ orders: [], status: 'idle', error: null, isOffline: false, requestId: null });
         useEvidenceStore.setState({
@@ -276,7 +283,8 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         fireEvent.click(await screen.findByRole('button', { name: 'Aprobar Presupuesto' }));
         fireEvent.click(screen.getByLabelText(/He revisado las partidas y el total/));
         fireEvent.click(screen.getByRole('button', { name: 'Confirmar aprobación' }));
-        expect(await screen.findByRole('button', { name: 'Confirmar estado de la orden' })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'Reintentar aplicación en la orden' })).toBeInTheDocument();
+        expect(screen.getByText(/Decisión n° 82/)).toBeInTheDocument();
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Aprobar Presupuesto' })).toBeDisabled();
         expect(presupuestoService.decidir).toHaveBeenCalledOnce();
@@ -296,4 +304,30 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         expect(screen.getByRole('button', { name: 'Aprobar Presupuesto' })).toBeEnabled();
     });
 
+
+    it('al volver a la página reconoce desde el servidor una decisión pendiente de aplicar', async () => {
+        // Decisión inicial guardada (versión aprobada) y orden aún en "Esperando aprobación".
+        vi.mocked(presupuestoService.getByOrder).mockResolvedValue({ ...mockPresupuestoPendiente, versiones: [] });
+        vi.mocked(presupuestoService.getById).mockResolvedValue({
+            ...mockPresupuestoPendiente, versionVigente: 1, versiones: [versionAprobada],
+        });
+        vi.mocked(orderService.getOrderById).mockResolvedValue({ id: '101', estadoCodigo: 3 } as never);
+        renderPage();
+        expect(await screen.findByRole('button', { name: 'Reintentar aplicación en la orden' })).toBeInTheDocument();
+        expect(screen.getByText(/Decisión n° 77/)).toBeInTheDocument();
+        expect(orderService.getOrderById).toHaveBeenCalledWith('101', { soloPropietario: true });
+        expect(presupuestoService.decidir).not.toHaveBeenCalled();
+    });
+
+    it('no ofrece reintento cuando la orden ya refleja la decisión', async () => {
+        vi.mocked(presupuestoService.getByOrder).mockResolvedValue({ ...mockPresupuestoPendiente, versiones: [] });
+        vi.mocked(presupuestoService.getById).mockResolvedValue({
+            ...mockPresupuestoPendiente, versionVigente: 1, versiones: [versionAprobada],
+        });
+        vi.mocked(orderService.getOrderById).mockResolvedValue({ id: '101', estadoCodigo: 5 } as never);
+        renderPage();
+        await screen.findByText(/Servicio n° 101/);
+        await vi.waitFor(() => expect(orderService.getOrderById).toHaveBeenCalled());
+        expect(screen.queryByRole('button', { name: 'Reintentar aplicación en la orden' })).not.toBeInTheDocument();
+    });
 });

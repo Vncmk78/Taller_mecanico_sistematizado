@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class OrdenCrear(BaseModel):
@@ -33,6 +33,13 @@ class CapacidadMecanicoActualizar(BaseModel):
     max_ordenes_activas: int = Field(gt=0, strict=True)
 
 
+class MecanicoSobreLimite(BaseModel):
+    """Mecánico cuya carga activa supera el máximo configurado."""
+
+    mecanico_id: int
+    ordenes_activas: int
+
+
 class CapacidadMecanicoRespuesta(BaseModel):
     """Límite vigente y carga que supera el valor recién configurado."""
 
@@ -41,7 +48,7 @@ class CapacidadMecanicoRespuesta(BaseModel):
     max_ordenes_activas: int | None
     actualizado_por_id: int | None
     actualizado_en: datetime
-    mecanicos_sobre_limite: list[dict[str, int]]
+    mecanicos_sobre_limite: list[MecanicoSobreLimite]
 
 
 class CupoDiarioIngresosActualizar(BaseModel):
@@ -78,6 +85,30 @@ class OrdenRespuesta(BaseModel):
     creado_por_id: int
     creado_en: datetime
     actualizado_en: datetime
+    devuelto_en: datetime | None
+    devuelto_por_id: int | None
+
+    @field_validator("devuelto_en")
+    @classmethod
+    def fecha_devolucion_con_zona(cls, valor: datetime | None) -> datetime | None:
+        # SQLite (solo pruebas) pierde el tzinfo de DateTime(timezone=True).
+        # Las fechas de esa base se generan en UTC; PostgreSQL conserva la zona.
+        if valor is not None and valor.tzinfo is None:
+            return valor.replace(tzinfo=timezone.utc)
+        return valor
+
+
+class DevolucionSolicitud(BaseModel):
+    """Confirmación física: no acepta identidad, fecha ni estado del cliente."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DevolucionOrdenRespuesta(OrdenRespuesta):
+    """Orden cancelada y auditoría original de su devolución física."""
+
+    devuelto_en: datetime
+    devuelto_por_id: int = Field(gt=0)
 
 
 class EntregaOrdenRespuesta(OrdenRespuesta):

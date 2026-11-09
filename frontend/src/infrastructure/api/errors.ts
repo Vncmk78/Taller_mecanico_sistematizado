@@ -72,3 +72,18 @@ export function getApiErrorCode(error: unknown): string | null {
     const codigo = (error.response.data as { error?: { codigo?: unknown } } | undefined)?.error?.codigo;
     return typeof codigo === 'string' && codigo ? codigo : null;
 }
+
+/**
+ * true cuando el error de una escritura no prueba que el servicio la haya
+ * descartado: no llegó respuesta, la Gateway no obtuvo la del servicio
+ * (502/503/504) o falló ella misma (500 con código de la Gateway). La
+ * operación pudo confirmarse igual, así que hay que comprobarla con un GET. Un
+ * rechazo propio del microservicio (409, 404, 422 o su 500 tras deshacer la
+ * transacción) sí es definitivo.
+ */
+export function esResultadoIncierto(error: unknown): boolean {
+    if (!axios.isAxiosError(error) || !error.response) return true;
+    const estado = error.response.status;
+    if ([502, 503, 504].includes(estado)) return true;
+    return estado === 500 && getApiErrorCode(error) !== null;
+}

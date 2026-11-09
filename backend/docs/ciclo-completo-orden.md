@@ -80,7 +80,7 @@ sequenceDiagram
     M->>G: Declarar Listo
     G->>O: Validar responsable y transición 5 a 6
     A->>G: Registrar entrega física
-    G->>O: Transición 6 a 7, fecha, responsable e historial
+    G->>O: Transición 6 a 7, fecha, responsable, historial y cierre del ingreso
 ```
 
 La Gateway reenvía el JWT. Los servicios obtienen del token al actor y verifican
@@ -135,6 +135,11 @@ demuestran por sí solos que existan endpoints de devolución o nueva atención.
 
 ## Persistencia, errores y reintentos
 
+- Desde el contrato 3.0.0 solo se permite una orden activa por vehículo:
+  cualquier estado salvo Entregado o Cancelado. Crear otra devuelve `409`
+  indicando la orden existente, sin efectos. Se conserva el ingreso abierto
+  cuando una atención posterior sucede después de cancelar sin salida física.
+  [Regla, migración y despliegue](orden-activa-por-vehiculo.md).
 - MS2 bloquea la orden al cambiar su estado y confirma estado e historial en
   una transacción local. El historial conserva estado anterior/nuevo, actor,
   origen, fecha y observación cuando corresponde. Un fallo revierte el conjunto.
@@ -183,3 +188,45 @@ antes de `Listo`. Tampoco se presume
 implementación de diagnóstico, devolución o nueva atención por existir columnas
 o transiciones documentadas. Ninguna de estas brechas se resuelve inventando
 permisos, estados o campos controlados por el cliente.
+
+
+## Nueva atención después de cancelar
+
+La cancelación conserva la orden y no registra una salida física. El Cliente
+puede solicitar otra atención desde ese antecedente sin exigir una devolución
+previa. La solicitud tiene su propia revisión; aceptarla no crea una orden.
+
+```mermaid
+sequenceDiagram
+    actor C as Cliente propietario
+    actor A as Administrador
+    participant G as Gateway
+    participant O as MS2
+    participant N as MS1 Notificaciones
+    C->>G: Solicitar nueva atención sobre una orden Cancelada
+    G->>O: Descripción, identidad desde JWT
+    O->>O: Guardar solicitud pendiente (índice A)
+    A->>G: Aceptar o rechazar con respuesta
+    G->>O: Revisión inmutable, actor y hora del servidor
+    O->>O: Confirmar revisión y outbox juntos
+    O-->>N: Publicar aviso de revisión, con reintentos
+    alt Solicitud aceptada
+        A->>G: Generar orden (body vacío)
+        G->>O: Usar núcleo sin commit intermedio
+        alt Vehículo permanece en taller
+            O->>O: Reutilizar ingreso abierto
+        else Vehículo fue devuelto
+            O->>O: Validar cupo y crear ingreso
+        end
+        O->>O: Confirmar orden Recibida y vínculo en una transacción
+        O-->>G: 201 nueva / 200 misma orden en reintento
+    else Solicitud rechazada
+        C->>G: Puede presentar una nueva solicitud
+    end
+```
+
+Una solicitud aceptada con orden generada sigue bloqueando otra sobre el mismo
+antecedente. Si la nueva orden también se cancela, el siguiente pedido se hace
+sobre esa nueva orden. Una sola orden activa por vehículo rige ambos caminos
+de creación. La devolución de una cancelada con otra activa en su ingreso
+responde 409; entregar la activa registra la salida física.

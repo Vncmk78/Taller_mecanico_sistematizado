@@ -87,10 +87,10 @@ export function ClientVehicleDetailPage() {
                 <div className="flex flex-col gap-4">
                     <VehicleInfoPanel vehicle={vehicle} />
                     <Link
-                        to="/client/agendar"
+                        to="/client/ordenes"
                         className="bg-primary-blue text-white py-3 rounded-lg font-bold text-center flex items-center justify-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors"
                     >
-                        <CalendarPlus className="w-4 h-4" aria-hidden /> Agendar mantención para este vehículo
+                        <CalendarPlus className="w-4 h-4" aria-hidden /> Consultar mis órdenes
                     </Link>
                 </div>
 

@@ -10,8 +10,14 @@ export interface OrderPort {
     ): Promise<{ items: Order[]; total: number; limit: number; offset: number }>;
     /** Lista de órdenes visibles para el rol autenticado (el servidor filtra por rol). */
     getOrders(): Promise<Order[]>;
-    /** Detalle de una orden por id (404 si no está en el alcance del rol). */
-    getOrderById(id: string): Promise<Order>;
+    /**
+     * Registra el ingreso físico y crea la orden en Recibido, sin mecánico
+     * (POST /ordenes, solo Administrador). MS2 valida el cupo diario y reutiliza
+     * el ingreso abierto del vehículo si existe, sin contarlo dos veces.
+     */
+    crearOrden(vehiculoId: string): Promise<Order>;
+    /** Detalle visible; soloPropietario exige propiedad incluso en cuentas multirrol. */
+    getOrderById(id: string, options?: { soloPropietario?: boolean }): Promise<Order>;
     /** Historial de cambios de estado de una orden (el servidor filtra por rol). */
     getOrderHistory(ordenId: string): Promise<OrderHistoryEntry[]>;
     /** Bitácora de trabajo del mecánico de una orden (GET /ordenes/{id}/bitacora). */
@@ -32,6 +38,13 @@ export interface OrderPort {
     ): Promise<Order>;
     /** Registra la entrega física de la orden (POST /ordenes/{id}/entrega). */
     registrarEntrega(ordenId: string, observacion?: string): Promise<Order>;
+    /**
+     * Registra la devolución física del vehículo de una orden Cancelada
+     * (POST /ordenes/{id}/devolucion, solo Administrador). La orden sigue
+     * Cancelada; MS2 decide fecha y responsable, cierra el ingreso y, si se
+     * repite, devuelve los datos originales.
+     */
+    registrarDevolucion(ordenId: string): Promise<Order>;
     /** Cancelación iniciada por el cliente propietario (POST /ordenes/{id}/cancelacion). */
     cancelarComoCliente(ordenId: string, motivo: string): Promise<Order>;
     /** Administrador confirma una solicitud pendiente; MS2 verifica la aprobación en MS3. */

@@ -225,6 +225,8 @@ def test_ciclo_crud_completo_de_repuesto(api: TestClient, db: Session) -> None:
     pid = proveedor["proveedor_id"]
     nombre = _nombre("Pastilla de freno")
 
+    # La alerta particular se habilita después del general, según §4.6.
+    _umbral_general(db, 5)
     # Crear
     creado = _crear_repuesto(api, pid, nombre, umbral_particular=4)
     rid = creado["repuesto_id"]

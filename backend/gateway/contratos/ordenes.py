@@ -27,6 +27,8 @@ _EJEMPLO_RESPUESTA: dict[str, object] = {
     "creado_por_id": 99,
     "creado_en": "2026-09-28T10:30:00-03:00",
     "actualizado_en": "2026-09-28T10:30:00-03:00",
+    "devuelto_en": None,
+    "devuelto_por_id": None,
 }
 
 _EJEMPLO_CAMBIAR_ESTADO: dict[str, object] = {
@@ -108,6 +110,19 @@ class CapacidadMecanicoActualizar(BaseModel):
     )
 
 
+class MecanicoSobreLimite(BaseModel):
+    """Mecánico cuya carga activa supera el máximo configurado."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"mecanico_id": 12, "ordenes_activas": 6}]}
+    )
+
+    mecanico_id: int = Field(description="Referencia lógica al usuario Mecánico de MS1.")
+    ordenes_activas: int = Field(
+        description="Órdenes asignadas que no están Entregadas ni Canceladas."
+    )
+
+
 class CapacidadMecanicoRespuesta(BaseModel):
     """Configuración vigente e información de mecánicos sobre el nuevo límite."""
 
@@ -131,7 +146,7 @@ class CapacidadMecanicoRespuesta(BaseModel):
         description="Referencia lógica al Administrador que configuró el valor."
     )
     actualizado_en: datetime = Field(description="Fecha y hora de la configuración.")
-    mecanicos_sobre_limite: list[dict[str, int]] = Field(
+    mecanicos_sobre_limite: list[MecanicoSobreLimite] = Field(
         description="Mecánicos cuya carga actual supera el máximo recién configurado."
     )
 
@@ -213,6 +228,30 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime = Field(
         description="Fecha y hora de la última actualización de la orden."
     )
+    devuelto_en: datetime | None = Field(
+        description="Fecha y hora de devolución física; nula si no se registró."
+    )
+    devuelto_por_id: int | None = Field(
+        description="Responsable de la devolución en MS1; nulo si no se registró."
+    )
+
+
+class DevolucionSolicitud(BaseModel):
+    """Body vacío obligatorio: fecha y responsable los obtiene MS2."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{}]})
+
+
+class DevolucionOrdenRespuesta(OrdenRespuesta):
+    """Conserva Cancelado y confirma la auditoría original de devolución."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [{
+        **_EJEMPLO_RESPUESTA, "estado_codigo": 8,
+        "devuelto_en": "2026-09-28T15:00:00-03:00", "devuelto_por_id": 99,
+    }]})
+
+    devuelto_en: datetime
+    devuelto_por_id: int = Field(gt=0)
 
 
 class HistorialOrdenesVehiculoRespuesta(BaseModel):

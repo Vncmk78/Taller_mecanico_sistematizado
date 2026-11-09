@@ -46,6 +46,12 @@ class ConsumoWeb:
 
 # ── formas que lee el frontend (interfaces *Api de los servicios) ──────────
 
+PERFIL_CLIENTE: Campos = {  # PerfilClienteService.ts → PerfilClienteApi
+    "cliente_id": "integer",
+    "usuario_id": "integer",
+    "telefono": "?string",
+}
+
 USUARIO: Campos = {  # AuthService.ts → ApiUser
     "id": "integer",
     "email": "string",
@@ -71,7 +77,31 @@ ORDEN: Campos = {  # OrderService.ts → OrdenRespuesta
     "creado_por_id": "integer",
     "creado_en": "string",
     "actualizado_en": "string",
+    "devuelto_en": "?string",
+    "devuelto_por_id": "?integer",
 }
+SOLICITUD_NUEVA_ATENCION: Campos = {  # NuevaAtencionService.ts → SolicitudNuevaAtencionApi
+    "solicitud_id": "integer", "orden_cancelada_id": "integer", "vehiculo_id": "integer",
+    "cliente_usuario_id": "integer", "descripcion": "string", "solicitada_en": "string",
+    "situacion": ("pendiente", "aceptada", "rechazada"), "respuesta": "?string",
+    "revisor_id": "?integer", "revisada_en": "?string", "orden_generada_id": "?integer",
+}
+CUPO_DIARIO: Campos = {  # ConfiguracionTallerService.ts → CupoDiarioApi
+    "max_ingresos_diarios": "?integer",
+    "actualizado_por_id": "?integer",
+    "actualizado_en": "string",
+    "jornada_local": "string",
+    "ingresos_registrados": "integer",
+    "sobre_limite": "boolean",
+}
+
+CAPACIDAD_MECANICOS: Campos = {  # ConfiguracionTallerService.ts → CapacidadMecanicosApi
+    "max_ordenes_activas": "?integer",
+    "actualizado_por_id": "?integer",
+    "actualizado_en": "string",
+    "mecanicos_sobre_limite": [{"mecanico_id": "integer", "ordenes_activas": "integer"}],
+}
+
 HISTORIAL: Campos = {  # OrderService.ts → HistorialEstadoApi
     "historial_id": "integer",
     "orden_id": "integer",
@@ -156,7 +186,21 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
         {"access_token": "string", "token_type": "string", "user": USUARIO},
         cuerpo={"email": "string", "password": "string"},
     ),
+    ConsumoWeb(
+        "AuthService.register", "post", "/api/auth/register", "201", USUARIO,
+        cuerpo={"email": "string", "password": "string", "full_name": "string"},
+    ),
     ConsumoWeb("AuthService.getProfile", "get", "/api/auth/me", "200", USUARIO),
+    # ── PerfilClienteService ────────────────────────────────────────────
+    # Tras el login de un Cliente (ClientProfileGate). Sin teléfono envía {}.
+    ConsumoWeb(
+        "PerfilClienteService.preparar", "post", "/api/clientes/perfil", "201",
+        PERFIL_CLIENTE, cuerpo={"telefono": "~string"},
+    ),
+    ConsumoWeb(
+        "PerfilClienteService.preparar (existente)", "post", "/api/clientes/perfil",
+        "200", PERFIL_CLIENTE, cuerpo={"telefono": "~string"},
+    ),
     ConsumoWeb("AuthService.listarUsuarios", "get", "/api/auth/usuarios", "200", [USUARIO]),
     # ── VehicleService ──────────────────────────────────────────────────
     ConsumoWeb(
@@ -183,6 +227,29 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
     ),
     # ── OrderService ────────────────────────────────────────────────────
     ConsumoWeb("OrderService.getOrders", "get", "/api/ordenes", "200", [ORDEN]),
+    ConsumoWeb(
+        "OrderService.crearOrden", "post", "/api/ordenes", "201", ORDEN,
+        cuerpo={"vehiculo_id": "integer"},
+    ),
+    # ── ConfiguracionTallerService (portal Administrador) ───────────────
+    ConsumoWeb(
+        "ConfiguracionTallerService.obtenerCupoDiario", "get",
+        "/api/ordenes/configuracion/capacidad/ingresos-diarios", "200", CUPO_DIARIO,
+    ),
+    ConsumoWeb(
+        "ConfiguracionTallerService.configurarCupoDiario", "put",
+        "/api/ordenes/configuracion/capacidad/ingresos-diarios", "200", CUPO_DIARIO,
+        cuerpo={"max_ingresos_diarios": "integer"},
+    ),
+    ConsumoWeb(
+        "ConfiguracionTallerService.obtenerCapacidadMecanicos", "get",
+        "/api/ordenes/configuracion/capacidad/mecanicos", "200", CAPACIDAD_MECANICOS,
+    ),
+    ConsumoWeb(
+        "ConfiguracionTallerService.configurarCapacidadMecanicos", "put",
+        "/api/ordenes/configuracion/capacidad/mecanicos", "200", CAPACIDAD_MECANICOS,
+        cuerpo={"max_ordenes_activas": "integer"},
+    ),
     ConsumoWeb("OrderService.getOrderById", "get", "/api/ordenes/{orden_id}", "200", ORDEN),
     ConsumoWeb(
         "OrderService.getOrderHistory", "get", "/api/ordenes/{orden_id}/historial", "200",
@@ -210,6 +277,32 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
         "OrderService.registrarEntrega", "post", "/api/ordenes/{orden_id}/entrega", "200",
         ORDEN, cuerpo={"observacion": "~string"},
     ),
+    ConsumoWeb(
+        "OrderService.registrarDevolucion", "post", "/api/ordenes/{orden_id}/devolucion",
+        "200", {**ORDEN, "devuelto_en": "string", "devuelto_por_id": "integer"},
+        cuerpo={},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.solicitar", "post", "/api/ordenes/{orden_id}/nueva-atencion", "201",
+        SOLICITUD_NUEVA_ATENCION, cuerpo={"descripcion": "string"},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.listar", "get", "/api/ordenes/nuevas-atenciones", "200",
+        {"items": [SOLICITUD_NUEVA_ATENCION], "total": "integer", "limit": "integer", "offset": "integer"},
+    ),
+    ConsumoWeb(
+        "NuevaAtencionService.obtener", "get", "/api/ordenes/nuevas-atenciones/{solicitud_id}", "200",
+        SOLICITUD_NUEVA_ATENCION,
+    ),
+    ConsumoWeb("NuevaAtencionService.revisar", "post", "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision", "200",
+               SOLICITUD_NUEVA_ATENCION, cuerpo={"decision": ("aceptada", "rechazada"), "respuesta": "string"}),
+    ConsumoWeb("NuevaAtencionService.generarOrden", "post", "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden", "201",
+               {"solicitud": SOLICITUD_NUEVA_ATENCION, "orden": ORDEN}, cuerpo={}),
+    ConsumoWeb("NotificationService.getMyNotifications", "get", "/api/notificaciones", "200",
+               [{"notificacion_id": "integer", "tipo": "string", "titulo": "string", "mensaje": "string",
+                 "leida": "boolean", "creado_en": "string", "orden_id": "?integer"}]),
+    ConsumoWeb("NotificationService.markAsRead", "patch", "/api/notificaciones/{notificacion_id}/leer", "204", {}),
+    ConsumoWeb("NotificationService.markAllAsRead", "patch", "/api/notificaciones/leer-todas", "204", {}),
     # No lee la respuesta (es una solicitud pendiente, no una orden): después
     # vuelve a pedir la orden con getOrderById. Corregido en SCRUM-706 (D-01).
     ConsumoWeb(

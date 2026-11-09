@@ -7,7 +7,7 @@ import apiClient from '../config/apiClient';
 // Contrato HTTP de MS2 (OrdenRespuesta) a través de la API Gateway (/api/ordenes).
 // Al igual que en vehículos, el backend usa nombres en español y el dominio del
 // frontend en inglés; este servicio traduce el sentido de la respuesta.
-interface OrdenRespuesta {
+export interface OrdenRespuesta {
     orden_id: number;
     vehiculo_id: number;
     ingreso_id: number;
@@ -16,9 +16,30 @@ interface OrdenRespuesta {
     creado_por_id: number;
     creado_en: string;
     actualizado_en: string;
+    // Devolución de una orden Cancelada: ambos nulos si no hubo. Se declaran
+    // opcionales para distinguir una respuesta que no los informa.
+    devuelto_en?: string | null;
+    devuelto_por_id?: number | null;
 }
 
-function mapOrdenApi(o: OrdenRespuesta): Order {
+/** Respuesta de POST /ordenes/{id}/devolucion: la devolución siempre viene informada. */
+interface DevolucionRespuesta extends OrdenRespuesta {
+    devuelto_en: string;
+    devuelto_por_id: number;
+}
+
+/**
+ * La respuesta 200 de la devolución no trae sus datos: no se puede mostrar lo
+ * que registró el servidor y la pantalla debe comprobarlo con el detalle.
+ */
+export class DevolucionSinDatosError extends Error {
+    constructor() {
+        super('La respuesta de la devolución no incluyó la fecha ni el responsable.');
+        this.name = 'DevolucionSinDatosError';
+    }
+}
+
+export function mapOrdenApi(o: OrdenRespuesta): Order {
     return {
         id: String(o.orden_id),
         vehicleId: String(o.vehiculo_id),
@@ -28,6 +49,13 @@ function mapOrdenApi(o: OrdenRespuesta): Order {
         creadoPorId: String(o.creado_por_id),
         creadoEn: o.creado_en,
         actualizadoEn: o.actualizado_en,
+        devueltoEn: o.devuelto_en,
+        devueltoPorId:
+            o.devuelto_por_id === undefined
+                ? undefined
+                : o.devuelto_por_id === null
+                  ? null
+                  : String(o.devuelto_por_id),
     };
 }
 
@@ -109,13 +137,24 @@ class OrderService implements OrderPort {
         return { ...data, items: data.items.map(mapOrdenApi) };
     }
 
+    async crearOrden(vehiculoId: string): Promise<Order> {
+        // El contrato OrdenCrear solo admite vehiculo_id: el creador, el estado
+        // inicial y el ingreso los decide MS2 a partir del JWT y de sus reglas.
+        const { data } = await apiClient.post<OrdenRespuesta>('/ordenes', {
+            vehiculo_id: Number(vehiculoId),
+        });
+        return mapOrdenApi(data);
+    }
+
     async getOrders(): Promise<Order[]> {
         const { data } = await apiClient.get<OrdenRespuesta[]>('/ordenes');
         return data.map(mapOrdenApi);
     }
 
-    async getOrderById(id: string): Promise<Order> {
-        const { data } = await apiClient.get<OrdenRespuesta>(`/ordenes/${id}`);
+    async getOrderById(id: string, options?: { soloPropietario?: boolean }): Promise<Order> {
+        const { data } = options?.soloPropietario
+            ? await apiClient.get<OrdenRespuesta>(`/ordenes/${id}`, { params: { solo_propietario: true } })
+            : await apiClient.get<OrdenRespuesta>(`/ordenes/${id}`);
         return mapOrdenApi(data);
     }
 
@@ -162,6 +201,18 @@ class OrderService implements OrderPort {
         const { data } = await apiClient.post<OrdenRespuesta>(`/ordenes/${ordenId}/entrega`, {
             observacion: observacion?.trim() || undefined,
         });
+        return mapOrdenApi(data);
+    }
+
+    async registrarDevolucion(ordenId: string): Promise<Order> {
+        // Body vacío obligatorio: fecha y responsable los decide MS2 desde el JWT.
+        const { data } = await apiClient.post<DevolucionRespuesta>(
+            `/ordenes/${ordenId}/devolucion`,
+            {}
+        );
+        if (!data.devuelto_en || data.devuelto_por_id === null || data.devuelto_por_id === undefined) {
+            throw new DevolucionSinDatosError();
+        }
         return mapOrdenApi(data);
     }
 

@@ -40,7 +40,7 @@ export function OrderStatusAndHistory({ order }: OrderStatusAndHistoryProps) {
                     )}
                 </Alert>
             )}
-            <OrderStateStepper estadoCodigo={order.estadoCodigo} />
+            <OrderStateStepper estadoCodigo={order.estadoCodigo} historial={entries} />
             <OrderHistoryTimeline entries={entries} loading={loading} failed={isServerError} />
         </div>
     );

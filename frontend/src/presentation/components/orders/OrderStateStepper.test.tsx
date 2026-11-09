@@ -27,4 +27,14 @@ describe('OrderStateStepper: ciclo de estados de la orden', () => {
         );
         expect(screen.getByLabelText('Estado 1: Recibido')).not.toHaveAttribute('aria-current');
     });
+    it('cancelar no inventa reparación, listo ni entrega', () => {
+        render(<OrderStateStepper estadoCodigo={8} historial={[{ estadoAnteriorCodigo: 2, estadoNuevoCodigo: 8 } as never]} />);
+        expect(screen.getByLabelText('Estado 2: Esperando diagnóstico')).toHaveAttribute('data-alcanzado', 'true');
+        for (const codigo of [3, 4, 5, 6, 7]) expect(screen.getByLabelText(new RegExp(`Estado ${codigo}:`))).toHaveAttribute('data-alcanzado', 'false');
+    });
+    it('no supone espera de repuestos si el historial pasa de aprobación a reparación', () => {
+        render(<OrderStateStepper estadoCodigo={5} historial={[{ estadoAnteriorCodigo: 3, estadoNuevoCodigo: 5 } as never]} />);
+        expect(screen.getByLabelText('Estado 4: Esperando repuestos')).toHaveAttribute('data-alcanzado', 'false');
+    });
+
 });

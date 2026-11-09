@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { evidenciaService } from '@/infrastructure/api/EvidenciaService';
+import { AplicacionPresupuestoPendienteError } from '@/domain/ports/PresupuestoPort';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
 import { useBudgetStore } from '@/infrastructure/stores/useBudgetStore';
 import { useEvidenceStore } from '@/infrastructure/stores/useEvidenceStore';
@@ -116,7 +117,7 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         fireEvent.click(screen.getByLabelText(/He revisado las partidas y el total/));
         fireEvent.click(confirmar);
 
-        expect(await screen.findByText(/Presupuesto aprobado/)).toBeInTheDocument();
+        expect(await screen.findByText(/Aprobación registrada/)).toBeInTheDocument();
         expect(presupuestoService.decidir).toHaveBeenCalledWith('501', 1, 'aprobado', undefined, undefined);
     });
 
@@ -183,7 +184,7 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         );
         fireEvent.click(confirmar);
 
-        expect(await screen.findByText(/Presupuesto rechazado/)).toBeInTheDocument();
+        expect(await screen.findByText(/Rechazo registrado/)).toBeInTheDocument();
         expect(presupuestoService.decidir).toHaveBeenCalledWith('501', 1, 'rechazado', 'Costo elevado', true);
     });
 
@@ -268,4 +269,31 @@ describe('ClientBudgetDetailPage: aprobación y rechazo del presupuesto', () => 
         expect(await screen.findByText('Servicio n° 101')).toBeInTheDocument();
         expect(screen.queryByRole('heading', { name: 'Evidencia del presupuesto' })).not.toBeInTheDocument();
     });
+    it('un 503 con decisión guardada ofrece aplicar su ID sin volver a decidir', async () => {
+        withPendingSources();
+        vi.mocked(presupuestoService.decidir).mockRejectedValue(new AplicacionPresupuestoPendienteError('decision', '82'));
+        renderPage();
+        fireEvent.click(await screen.findByRole('button', { name: 'Aprobar Presupuesto' }));
+        fireEvent.click(screen.getByLabelText(/He revisado las partidas y el total/));
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar aprobación' }));
+        expect(await screen.findByRole('button', { name: 'Confirmar estado de la orden' })).toBeInTheDocument();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Aprobar Presupuesto' })).toBeDisabled();
+        expect(presupuestoService.decidir).toHaveBeenCalledOnce();
+    });
+
+    it('una respuesta perdida bloquea decisiones hasta revisión explícita', async () => {
+        withPendingSources();
+        vi.mocked(presupuestoService.decidir).mockRejectedValue({ isAxiosError: true, request: {} });
+        renderPage();
+        fireEvent.click(await screen.findByRole('button', { name: 'Aprobar Presupuesto' }));
+        fireEvent.click(screen.getByLabelText(/He revisado las partidas y el total/));
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar aprobación' }));
+        const salida = await screen.findByRole('button', { name: 'Ya lo revisé: permitir decidir otra vez' });
+        expect(screen.getByRole('button', { name: 'Aprobar Presupuesto' })).toBeDisabled();
+        expect(presupuestoService.decidir).toHaveBeenCalledOnce();
+        fireEvent.click(salida);
+        expect(screen.getByRole('button', { name: 'Aprobar Presupuesto' })).toBeEnabled();
+    });
+
 });

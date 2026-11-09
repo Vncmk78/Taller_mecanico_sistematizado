@@ -1,6 +1,9 @@
 """API del microservicio MS1: Autenticación y Usuarios."""
+
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -9,9 +12,30 @@ from services.ms1_auth.config import settings
 from services.ms1_auth.db import get_db
 from services.ms1_auth.routers import router_auth, router_notificaciones
 
-app = FastAPI(title="SGTM — MS1: Autenticación y Usuarios", version="0.1.0")
+from services.ms1_auth.routers.entregas_notificaciones import router as router_entregas
+from services.ms1_auth.services.worker_notificaciones import ejecutar_worker
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    tarea = asyncio.create_task(ejecutar_worker()) if settings.NOTIFICATION_WORKER_ENABLED else None
+    try:
+        yield
+    finally:
+        if tarea is not None:
+            tarea.cancel()
+            try:
+                await tarea
+            except asyncio.CancelledError:
+                pass
+
+
+app = FastAPI(lifespan=lifespan, title="SGTM — MS1: Autenticación y Usuarios", version="0.1.0")
 app.include_router(router_auth)
 app.include_router(router_notificaciones)
+app.include_router(router_entregas)
+from services.ms1_auth.routers.avisos_ms3 import router as router_avisos_ms3
+app.include_router(router_avisos_ms3)
 
 
 @app.get("/health", tags=["health"])

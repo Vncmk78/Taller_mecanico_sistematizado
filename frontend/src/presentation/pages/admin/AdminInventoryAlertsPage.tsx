@@ -75,9 +75,13 @@ export function AdminInventoryAlertsPage() {
                 <div className="card p-8">
                     <ErrorState title="No se pudieron cargar las alertas" message={error} requestId={requestId} onRetry={handleRetry} />
                 </div>
+            ) : status === 'success' && umbralGeneral === null ? (
+                <div className="card p-8">
+                    <EmptyState icon={AlertTriangle} title="Alertas aún sin activar" description="Configure primero el umbral general en Inventario. Después se utilizará el umbral particular de cada repuesto o, si está vacío, el general." />
+                </div>
             ) : alertas.length === 0 ? (
                 <div className="card p-8">
-                    <EmptyState icon={AlertTriangle} title="No hay alertas de stock" description="Todos los repuestos están sobre su umbral." />
+                    <EmptyState icon={AlertTriangle} title="No hay alertas de stock" description="Ningún repuesto tiene stock menor que su umbral efectivo." />
                 </div>
             ) : (
                 <div className="card overflow-hidden">

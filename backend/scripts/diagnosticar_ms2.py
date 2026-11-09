@@ -25,6 +25,10 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Comprobaciones dirigidas a los modelos que carga GET /ordenes y a capacidad.
 # No sustituyen la validación completa de tipos, restricciones ni datos.
 COLUMNAS = {
+    "solicitud_nueva_atencion": frozenset(
+        "solicitud_id orden_cancelada_id vehiculo_id cliente_usuario_id descripcion "
+        "solicitada_en situacion respuesta revisor_id revisada_en orden_generada_id".split()
+    ),
     "orden_trabajo": frozenset(
         "orden_id vehiculo_id ingreso_id estado_codigo mecanico_actual_id "
         "creado_por_id creado_en actualizado_en diagnostico_texto fecha_diagnostico "

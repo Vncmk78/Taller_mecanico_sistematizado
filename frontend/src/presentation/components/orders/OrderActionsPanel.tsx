@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Wrench } from 'lucide-react';
 import type { Order } from '@/domain/entities/Order';
 import { ESTADOS_ORDEN, ordenStatusLabel } from '@/domain/entities/Order';
@@ -37,10 +37,15 @@ interface OrderActionsPanelProps {
 export function OrderActionsPanel({ order, className }: OrderActionsPanelProps) {
     const user = useAuthStore((s) => s.user);
 
-    const actor: ActorOrden | null = useMemo(
-        () => (user ? { rol: user.role, userId: user.id } : null),
-        [user]
-    );
+    const { pathname } = useLocation();
+    // El portal expresa la función que ejerce la cuenta; el orden de sus roles no es autoridad.
+    const actor: ActorOrden | null = useMemo(() => {
+        if (!user) return null;
+        const roles = user.roles ?? [user.role];
+        const portal = pathname.split('/')[1];
+        const rol = portal === 'admin' ? 'administrador' : portal === 'mechanic' ? 'mecanico' : portal === 'client' ? 'cliente' : user.role;
+        return roles.includes(rol) ? { rol, userId: user.id } : null;
+    }, [user, pathname]);
     const acciones = useMemo(
         () => (actor ? accionesDisponibles(order, actor) : []),
         [order, actor]

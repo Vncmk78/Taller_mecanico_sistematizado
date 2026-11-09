@@ -10,6 +10,7 @@ import type {
 } from '@/domain/entities/Presupuesto';
 import type { ItemPresupuestoInput, PresupuestoPort, ResultadoEnvio } from '@/domain/ports/PresupuestoPort';
 import apiClient from '../config/apiClient';
+import { AplicacionPresupuestoPendienteError } from '@/domain/ports/PresupuestoPort';
 
 // Contrato HTTP de MS3 (presupuestos) a través de la API Gateway. El backend usa
 // nombres en español; el dominio del frontend en inglés. El dinero y las
@@ -143,6 +144,30 @@ function mapDetalleApi(detalle: PresupuestoDetalleApi): Presupuesto {
 }
 
 class PresupuestoService implements PresupuestoPort {
+    private async operacionGuardada(ruta: string, body?: Record<string, unknown>): Promise<ResultadoOperacionApi> {
+        try {
+            return (body === undefined ? await apiClient.post<ResultadoOperacionApi>(ruta) : await apiClient.post<ResultadoOperacionApi>(ruta, body)).data;
+        } catch (error) {
+            const response = (error as { response?: { status: number; data?: { decision_id?: number; presupuesto_id?: number } } })?.response;
+            if (response?.status === 503) {
+                const data = response.data;
+                if (Number.isInteger(data?.decision_id) && data!.decision_id! > 0)
+                    throw new AplicacionPresupuestoPendienteError('decision', String(data!.decision_id));
+                if (Number.isInteger(data?.presupuesto_id) && data!.presupuesto_id! > 0)
+                    throw new AplicacionPresupuestoPendienteError('envio', String(data!.presupuesto_id));
+            }
+            throw error;
+        }
+    }
+
+    async aplicarEnvio(presupuestoId: string): Promise<void> {
+        await apiClient.post(`/presupuestos/${presupuestoId}/envio-inicial/aplicacion`);
+    }
+
+    async aplicarDecision(decisionId: string): Promise<void> {
+        await apiClient.post(`/presupuestos/decisiones/${decisionId}/aplicacion`);
+    }
+
     async getByOrder(ordenId: string): Promise<Presupuesto | null> {
         const { data } = await apiClient.get<PaginaPresupuestosApi>('/presupuestos', {
             params: { orden_id: ordenId },
@@ -215,14 +240,12 @@ class PresupuestoService implements PresupuestoPort {
     }
 
     async send(presupuestoId: string, numero: number): Promise<ResultadoEnvio> {
-        const { data } = await apiClient.post<ResultadoOperacionApi>(
-            `/presupuestos/${presupuestoId}/versiones/${numero}/envio`
-        );
+        const data = await this.operacionGuardada(`/presupuestos/${presupuestoId}/versiones/${numero}/envio`);
         return {
             presupuesto: mapDetalleApi(data.presupuesto),
             efectoEnOrden: (data.efecto_en_orden as string | null) ?? null,
             decisionId: data.decision_id === null ? null : String(data.decision_id),
-            aplicacionConfirmada: data.aplicacion_en_orden !== null,
+            aplicacionConfirmada: data.aplicacion_en_orden != null,
         };
     }
 
@@ -238,15 +261,12 @@ class PresupuestoService implements PresupuestoPort {
             body.motivo = motivo?.trim() || undefined;
             body.confirmar_cancelacion = Boolean(confirmarCancelacion);
         }
-        const { data } = await apiClient.post<ResultadoOperacionApi>(
-            `/presupuestos/${presupuestoId}/versiones/${numero}/decision`,
-            body
-        );
+        const data = await this.operacionGuardada(`/presupuestos/${presupuestoId}/versiones/${numero}/decision`, body);
         return {
             presupuesto: mapDetalleApi(data.presupuesto),
             efectoEnOrden: (data.efecto_en_orden as ResultadoDecision['efectoEnOrden']) ?? null,
             decisionId: data.decision_id === null ? null : String(data.decision_id),
-            aplicacionConfirmada: data.aplicacion_en_orden !== null,
+            aplicacionConfirmada: data.aplicacion_en_orden != null,
         };
     }
 }

@@ -4,8 +4,8 @@ Deja vehículos del Cliente de prueba con órdenes en cada estado alcanzable con
 los endpoints implementados hoy. Todo pasa por la Gateway con los tokens de las
 cuentas de `seed_usuarios_prueba.py`: las identidades salen del JWT, las fechas
 del servidor y los estados de las transiciones reales. No escribe en ninguna
-base de forma directa ni simula funciones pendientes (devolución del vehículo
-o solicitud de nueva atención).
+base de forma directa ni altera estados o fechas directamente. Los escenarios de nueva atención y
+devolución se agregan con `sembrar_nuevas_atenciones_demo.py`.
 
 Patentes fijas (reproducible): sobre un ambiente recién construido produce
 siempre los mismos escenarios. Si ya están todas, no hace nada; si solo hay

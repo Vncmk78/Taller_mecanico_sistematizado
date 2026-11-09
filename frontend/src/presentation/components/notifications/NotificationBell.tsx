@@ -101,7 +101,7 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
       setItems((prev) => prev.map((n) => (n.id === id ? { ...n, leida: true } : n)));
       setNoLeidas((prev) => Math.max(0, prev - 1));
     } catch {
-      // Ignorar; el usuario puede reintentar
+      setError('No se pudo marcar el aviso como leído. Puede reintentar.');
     }
   };
 
@@ -111,7 +111,7 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
       setItems((prev) => prev.map((n) => ({ ...n, leida: true })));
       setNoLeidas(0);
     } catch {
-      // Ignorar
+      setError('No se pudieron marcar los avisos como leídos. Puede reintentar.');
     }
   };
 

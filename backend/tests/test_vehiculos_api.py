@@ -24,7 +24,7 @@ from services.ms2_taller.models import (
     OrdenTrabajo,
     Vehiculo,
 )
-from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN
+from services.ms2_taller.models.estado_orden import CANCELADO, ESTADOS_ORDEN
 from shared.auth import NombreRol, crear_token_acceso
 
 DATOS_VEHICULO = {
@@ -492,7 +492,9 @@ def test_asignados_no_duplica_vehiculos_con_varias_ordenes(
 ):
     cliente = _crear_cliente(db_ms2, usuario_id=1)
     vehiculo = _crear_vehiculo(db_ms2, cliente)
-    _asignar_vehiculo_a_mecanico(db_ms2, vehiculo, mecanico_usuario_id=50)
+    anterior = _asignar_vehiculo_a_mecanico(db_ms2, vehiculo, mecanico_usuario_id=50)
+    anterior.estado_codigo = CANCELADO
+    db_ms2.commit()
     _asignar_vehiculo_a_mecanico(db_ms2, vehiculo, mecanico_usuario_id=50)
 
     respuesta = api_ms2.get(

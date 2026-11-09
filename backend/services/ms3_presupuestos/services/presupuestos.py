@@ -19,6 +19,8 @@ presupuesto para que dos peticiones simultáneas no creen dos "versión 3".
 """
 from __future__ import annotations
 
+from services.ms3_presupuestos.services.avisos import registrar_hecho
+
 from collections.abc import Iterable, Sequence
 from decimal import Decimal
 
@@ -295,6 +297,7 @@ def enviar_version(uow: UnidadDeTrabajo, *, presupuesto_id: int, numero: int) ->
         uow.sesion.flush()
         uow.sesion.refresh(version)
         efecto = None if presupuesto.version_vigente else "esperando_aprobacion"
+        registrar_hecho(uow,'presupuesto.enviado',presupuesto_id=presupuesto_id,orden_id=presupuesto.orden_id,version=numero)
     return ResultadoOperacion(presupuesto=a_detalle(presupuesto), efecto_en_orden=efecto)
 
 
@@ -370,6 +373,8 @@ def decidir_version(
         uow.sesion.flush()
         uow.sesion.refresh(version)  # bloqueada_en lo completa el trigger al aprobar
 
+        registrar_hecho(uow,'presupuesto.decidido',presupuesto_id=presupuesto_id,orden_id=presupuesto.orden_id,
+            version=numero,decision_id=registro.decision_id,decision=decision)
         if decision == "aprobado":
             efecto = "esperando_repuestos" if faltantes else "en_reparacion"
         else:

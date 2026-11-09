@@ -1,0 +1,24 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
+import { orderService } from '@/infrastructure/api/OrderService';
+import { PresupuestoAplicacionPanel } from './PresupuestoAplicacionPanel';
+vi.mock('@/infrastructure/api/PresupuestoService', () => ({ presupuestoService: { aplicarDecision: vi.fn(), aplicarEnvio: vi.fn(), decidir: vi.fn(), send: vi.fn() } }));
+vi.mock('@/infrastructure/api/OrderService', () => ({ orderService: { getOrderById: vi.fn() } }));
+beforeEach(() => { vi.clearAllMocks(); vi.mocked(orderService.getOrderById).mockResolvedValue({ id: '101', estadoCodigo: 5 } as never); });
+it.each(['envio', 'decision'] as const)('reintenta únicamente la aplicación de %s y permite recuperarse de otro 503', async (tipo) => {
+    const aplicar = tipo === 'envio' ? presupuestoService.aplicarEnvio : presupuestoService.aplicarDecision;
+    vi.mocked(aplicar).mockRejectedValueOnce(new Error('No disponible')).mockResolvedValueOnce(undefined);
+    const refresh = vi.fn();
+    render(<PresupuestoAplicacionPanel tipo={tipo} id="82" ordenId="101" onConfirmed={refresh} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar estado de la orden' }));
+    await screen.findByRole('alert');
+    expect(refresh).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar estado de la orden' }));
+    await screen.findByText('Aplicación confirmada en la orden.');
+    await waitFor(() => expect(orderService.getOrderById).toHaveBeenCalledWith('101'));
+    expect(aplicar).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(presupuestoService.send).not.toHaveBeenCalled();
+    expect(presupuestoService.decidir).not.toHaveBeenCalled();
+});

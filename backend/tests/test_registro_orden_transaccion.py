@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 import services.ms2_taller.services.cupo_ingresos as servicio_cupo
@@ -34,6 +34,7 @@ from services.ms2_taller.services.cupo_ingresos import (
 )
 from services.ms2_taller.services.ordenes import (
     PersistenciaOrdenError,
+    VehiculoConOrdenActivaError,
     crear_orden,
     registrar_orden_sin_confirmar,
 )
@@ -137,6 +138,9 @@ def test_reutiliza_el_ingreso_abierto_sin_validar_cupo(
 ):
     vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
     primera = _post(api_ordenes, vehiculo)
+    # Nueva atención tras cancelar, mientras el vehículo sigue en el taller.
+    db_ordenes.get(OrdenTrabajo, primera.json()["orden_id"]).estado_codigo = 8
+    db_ordenes.commit()
     _fijar_cupo(db_ordenes, 1)  # el cupo ya está usado por el primer ingreso
 
     segunda = _post(api_ordenes, vehiculo)
@@ -146,6 +150,62 @@ def test_reutiliza_el_ingreso_abierto_sin_validar_cupo(
     assert _conteos(db_ordenes) == {
         "ingresos": 1, "ordenes": 2, "historial": 2, "outbox": 2, "validaciones": 1,
     }
+
+
+@pytest.mark.parametrize("estado", range(1, 7))
+def test_rechaza_otra_orden_activa_sin_crear_registros(api_ordenes, db_ordenes, estado):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    primera = _post(api_ordenes, vehiculo).json()
+    db_ordenes.get(OrdenTrabajo, primera["orden_id"]).estado_codigo = estado
+    db_ordenes.commit()
+    antes = _conteos(db_ordenes)
+
+    respuesta = _post(api_ordenes, vehiculo)
+
+    assert respuesta.status_code == 409
+    assert respuesta.json() == {
+        "detail": f'El vehículo ya tiene una orden activa (n° {primera["orden_id"]})'
+    }
+    assert _conteos(db_ordenes) == antes
+
+
+@pytest.mark.parametrize("estado", [7, 8])
+def test_una_orden_terminal_no_bloquea_otra_atencion(api_ordenes, db_ordenes, estado):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    primera = _post(api_ordenes, vehiculo).json()
+    # Solo prepara el antecedente terminal; no representa una salida física.
+    db_ordenes.get(OrdenTrabajo, primera["orden_id"]).estado_codigo = estado
+    db_ordenes.commit()
+    segunda = _post(api_ordenes, vehiculo)
+    assert segunda.status_code == 201
+    assert segunda.json()["orden_id"] != primera["orden_id"]
+    assert db_ordenes.get(OrdenTrabajo, primera["orden_id"]).estado_codigo == estado
+
+
+def test_el_nucleo_rechaza_la_activa_sin_confirmar_cambios_del_llamador(db_ordenes):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    primera = crear_orden(db_ordenes, vehiculo.vehiculo_id, ADMIN)
+    primera_id = primera.orden_id
+    vehiculo.marca = "Cambio pendiente"
+    with pytest.raises(VehiculoConOrdenActivaError) as error:
+        registrar_orden_sin_confirmar(db_ordenes, vehiculo.vehiculo_id, ADMIN)
+    assert error.value.orden_id == primera_id
+    assert db_ordenes.in_transaction()
+    db_ordenes.rollback()
+    assert vehiculo.marca == "Toyota"
+
+
+def test_el_indice_rechaza_una_escritura_que_omite_el_servicio(db_ordenes):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    primera = crear_orden(db_ordenes, vehiculo.vehiculo_id, ADMIN)
+    db_ordenes.add(OrdenTrabajo(
+        vehiculo_id=vehiculo.vehiculo_id, ingreso_id=primera.ingreso_id,
+        estado_codigo=1, creado_por_id=ADMIN,
+    ))
+    with pytest.raises(IntegrityError):
+        db_ordenes.commit()
+    db_ordenes.rollback()
+    assert _conteos(db_ordenes)["ordenes"] == 1
 
 
 @pytest.mark.parametrize("fallo_en", ["historial", "outbox"])

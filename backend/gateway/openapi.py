@@ -19,10 +19,12 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import entregas_notificaciones as contratos_entregas
 from gateway.contratos import clientes as contratos_clientes
 from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
+from gateway.contratos import nuevas_atenciones as contratos_nuevas_atenciones
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
 from gateway.openapi_ejemplos import agregar_ejemplos_gateway
@@ -34,7 +36,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "2.2.1"
+_VERSION = "3.0.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -201,6 +203,10 @@ _TAGS = [
 ]
 
 _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
+    ("DispositivoRegistrar", contratos_entregas.DispositivoRegistrar),
+    ("DispositivoRespuesta", contratos_entregas.DispositivoRespuesta),
+    ("IntentoEntregaRespuesta", contratos_entregas.IntentoEntregaRespuesta),
+    ("EntregaRespuesta", contratos_entregas.EntregaRespuesta),
     ("RegistroSolicitud", contratos_auth.RegistroSolicitud),
     ("LoginSolicitud", contratos_auth.LoginSolicitud),
     ("UsuarioRespuesta", contratos_auth.UsuarioRespuesta),
@@ -246,6 +252,14 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
     ("EntregaOrdenRespuesta", contratos_ordenes.EntregaOrdenRespuesta),
+    ("DevolucionSolicitud", contratos_ordenes.DevolucionSolicitud),
+    ("DevolucionOrdenRespuesta", contratos_ordenes.DevolucionOrdenRespuesta),
+    ("NuevaAtencionSolicitud", contratos_nuevas_atenciones.NuevaAtencionSolicitud),
+    ("SolicitudNuevaAtencionRespuesta", contratos_nuevas_atenciones.SolicitudNuevaAtencionRespuesta),
+    ("SolicitudesNuevaAtencionRespuesta", contratos_nuevas_atenciones.SolicitudesNuevaAtencionRespuesta),
+    ("RevisionNuevaAtencionSolicitud", contratos_nuevas_atenciones.RevisionNuevaAtencionSolicitud),
+    ("GeneracionNuevaAtencionSolicitud", contratos_nuevas_atenciones.GeneracionNuevaAtencionSolicitud),
+    ("GeneracionNuevaAtencionRespuesta", contratos_nuevas_atenciones.GeneracionNuevaAtencionRespuesta),
     ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
     ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
@@ -319,6 +333,9 @@ _PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
 }
 
 _PARAMETROS_NOTIFICACIONES: list[dict[str, object]] = [
+    {"name": "solo_no_leidas", "in": "query", "required": False,
+     "schema": {"type": "boolean", "default": False},
+     "description": "Filtrar solo avisos sin leer del usuario autenticado."},
     {
         "name": "limite",
         "in": "query",
@@ -692,6 +709,55 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 requiere_auth=True,
             )
         },
+        "/api/notificaciones/dispositivos": {
+            "post": _operacion(tag="Notificaciones", resumen="Registrar mi dispositivo para push FCM",
+                descripcion="Identidad desde JWT, token de registro FCM y plataforma. No devuelve el token. Repetirlo actualiza el registro (200); una cuenta que registra el mismo dispositivo pasa a ser su propietaria. Los avisos anteriores no se transfieren.",
+                operation_id="registrar_dispositivo", cuerpo="DispositivoRegistrar", requiere_auth=True,
+                respuestas_ok={str(c): _respuesta("Dispositivo propio registrado.", _ref("DispositivoRespuesta")) for c in (200,201)},
+                errores_ms={"401":"JWT requerido","409":"Registro concurrente; reintentar","422":"Token o plataforma inválidos"}),
+            "get": _operacion(tag="Notificaciones", resumen="Listar mis dispositivos",
+                descripcion="Solo registros propios, sin tokens ni claves.", operation_id="listar_dispositivos",
+                cuerpo=None, requiere_auth=True, respuestas_ok={"200":_respuesta("Dispositivos propios.",{"type":"array","items":_ref("DispositivoRespuesta")})},
+                errores_ms={"401":"JWT requerido"}),
+        },
+        "/api/notificaciones/dispositivos/{dispositivo_id}": {
+            "delete": _operacion(tag="Notificaciones", resumen="Desactivar mi dispositivo",
+                descripcion="Baja lógica idempotente; se conserva el historial de intentos. Un registro ajeno devuelve 404.",
+                operation_id="desactivar_dispositivo", cuerpo=None, requiere_auth=True,
+                parametros_extra=[{"name":"dispositivo_id","in":"path","required":True,"schema":{"type":"string","format":"uuid"}}],
+                respuestas_ok={"204":{"description":"Dispositivo desactivado."}},
+                errores_ms={"401":"JWT requerido","422":"UUID inválido"},
+                descripcion_404="Dispositivo inexistente o ajeno.", esquema_404=error_404_recurso),
+        },
+        **{
+            f"/api/notificaciones/{{notificacion_id}}/{sufijo}": {
+                metodo: _operacion(tag="Notificaciones", resumen=resumen,
+                    descripcion="Solo el destinatario del aviso. Aceptada significa aceptación por SMTP/FCM, no lectura por la persona. Un reintento no vuelve a enviar canales ya aceptados ni duplica el aviso lógico.",
+                    operation_id=f"notificacion_{sufijo}", cuerpo=None, requiere_auth=True,
+                    parametros_extra=[{"name":"notificacion_id","in":"path","required":True,"schema":{"type":"integer","minimum":1}}],
+                    respuestas_ok={"200":_respuesta("Estado e intentos de los canales.",{"type":"array","items":_ref("EntregaRespuesta")})},
+                    errores_ms={"401":"JWT requerido","422":"Identificador inválido"},
+                    descripcion_404="Notificación inexistente o ajena.",esquema_404=error_404_recurso)
+            }
+            for sufijo,metodo,resumen in [("entregas","get","Consultar mis intentos de correo y push"),("reintentos","post","Reintentar canales fallidos de mi aviso")]
+        },
+        "/api/notificaciones/leer-todas": {
+            "patch": _operacion(tag="Notificaciones", resumen="Marcar todos mis avisos como leídos",
+                descripcion="Solo la bandeja propia. Conserva la fecha de la primera lectura ante reintentos.",
+                operation_id="leer_todas", cuerpo=None, requiere_auth=True,
+                respuestas_ok={"204": {"description": "Avisos propios marcados como leídos."}},
+                errores_ms={"401": "JWT ausente o inválido"}),
+        },
+        "/api/notificaciones/{notificacion_id}/leer": {
+            "patch": _operacion(tag="Notificaciones", resumen="Marcar un aviso propio como leído",
+                descripcion="Idempotente. Un aviso inexistente o ajeno devuelve 404.",
+                operation_id="leer_notificacion", cuerpo=None, requiere_auth=True,
+                parametros_extra=[{"name": "notificacion_id", "in": "path", "required": True,
+                                   "schema": {"type": "integer", "minimum": 1}}],
+                respuestas_ok={"204": {"description": "Aviso marcado como leído."}},
+                errores_ms={"401": "JWT ausente o inválido", "422": "Identificador inválido"},
+                descripcion_404="Notificación no encontrada", esquema_404=error_404_recurso),
+        },
         "/api/notificaciones": {
             "get": _operacion(
                 tag="Notificaciones",
@@ -709,6 +775,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                         "Notificaciones del usuario.",
                         {"type": "array", "items": _ref("NotificacionRespuesta")},
                     ) | {
+                        "headers": {
+                            "X-Notificaciones-Total": {"description": "Total de avisos propios que cumplen el filtro, antes de paginar.", "schema": {"type": "integer", "minimum": 0}},
+                            "X-Notificaciones-No-Leidas": {"description": "Total de avisos propios sin leer, antes de paginar.", "schema": {"type": "integer", "minimum": 0}},
+                        },
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -981,6 +1051,102 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             ),
         },
+        "/api/ordenes/nuevas-atenciones": {
+            "get": _operacion(
+                tag="Órdenes", resumen="Listar solicitudes de nueva atención visibles",
+                descripcion=(
+                    "Cliente ve las propias; Administrador todas, incluso multirrol. "
+                    "Mecánico sin esos roles recibe 403. Orden descendente por fecha e ID. "
+                    "Una lista vacía devuelve 200. No crea órdenes ni consume cupo."
+                ),
+                operation_id="listar_nuevas_atenciones", cuerpo=None,
+                respuestas_ok={"200": _respuesta("Página de solicitudes visibles.", _ref("SolicitudesNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente o Administrador", "422": "Filtros o paginación inválidos"},
+                requiere_auth=True,
+                parametros_extra=[
+                    {"name": "situacion", "in": "query", "required": False,
+                     "schema": {"type": "string", "enum": ["pendiente", "aceptada", "rechazada"]}},
+                    *[{"name": campo, "in": "query", "required": False, "schema": {"type": "integer", "minimum": 1}}
+                      for campo in ("orden_cancelada_id", "orden_generada_id")],
+                    {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100}},
+                    {"name": "offset", "in": "query", "required": False, "schema": {"type": "integer", "default": 0, "minimum": 0}},
+                ],
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}": {
+            "get": _operacion(
+                tag="Órdenes", resumen="Consultar una solicitud de nueva atención visible",
+                descripcion="Cliente propietario o Administrador. Inexistente y ajena responden el mismo 404.",
+                operation_id="consultar_nueva_atencion", cuerpo=None,
+                respuestas_ok={"200": _respuesta("Solicitud visible.", _ref("SolicitudNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente o Administrador", "422": "Identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud de nueva atención inexistente o ajena.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Confirmar revisión administrativa de nueva atención",
+                descripcion=(
+                    "Solo Administrador, incluida autorrevisión multirrol. Respuesta recortada "
+                    "y no vacía. Identidad del JWT, fecha del servidor. Una revisión confirmada "
+                    "no se edita; repetir exactamente decisión y respuesta devuelve la original. "
+                    "Guarda un evento de aviso junto con la revisión; un fallo de MS1 no la revierte."
+                ),
+                operation_id="revisar_nueva_atencion", cuerpo="RevisionNuevaAtencionSolicitud",
+                respuestas_ok={"200": _respuesta("Revisión confirmada o repetición idéntica.", _ref("SolicitudNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                            "409": "Revisión confirmada con otro contenido", "422": "Body o identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud no encontrada.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Generar orden vinculada a solicitud aceptada",
+                descripcion=(
+                    "Administrador, body vacío obligatorio. Crea una orden Recibido sin mecánico "
+                    "y su vínculo en una sola transacción. Aplica una orden activa por vehículo; "
+                    "reutiliza el ingreso abierto o valida cupo para uno nuevo. Repetir devuelve "
+                    "la asociación existente y la orden en su estado actual. No reabre el antecedente. "
+                    "El rechazo de cupo se audita aparte después del rollback."
+                ),
+                operation_id="generar_orden_nueva_atencion", cuerpo="GeneracionNuevaAtencionSolicitud",
+                respuestas_ok={
+                    "201": _respuesta("Orden y vínculo creados.", _ref("GeneracionNuevaAtencionRespuesta")),
+                    "200": _respuesta("Asociación ya existente; no se crea otra orden.", _ref("GeneracionNuevaAtencionRespuesta")),
+                },
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                            "409": "Solicitud/antecedente incompatible, orden activa o rechazo de cupo", "422": "Body o identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud no encontrada.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/nueva-atencion": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Solicitar nueva atención de una orden cancelada propia",
+                descripcion=(
+                    "Cliente propietario, incluso multirrol. Descripción recortada, no vacía, "
+                    "máximo 2000 caracteres. 201 al crear; 200 si ya hay una pendiente con la "
+                    "misma descripción. 409 si el antecedente no está Cancelado o existe otra "
+                    "pendiente/aceptada, aunque ya haya generado orden. Un rechazo permite "
+                    "otra solicitud conservando la anterior. No exige devolución previa, "
+                    "no reserva hora y no crea orden, ingreso ni validación de cupo."
+                ),
+                operation_id="solicitar_nueva_atencion", cuerpo="NuevaAtencionSolicitud",
+                respuestas_ok={
+                    "201": _respuesta("Solicitud creada.", _ref("SolicitudNuevaAtencionRespuesta")),
+                    "200": _respuesta("Pendiente idéntica ya registrada.", _ref("SolicitudNuevaAtencionRespuesta")),
+                },
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente",
+                    "409": "Orden no cancelada o solicitud pendiente/aceptada existente", "422": "Body o identificador inválido"},
+                requiere_auth=True, con_orden_id=True,
+                descripcion_404="Orden inexistente o ajena.", esquema_404=error_404_recurso,
+            )
+        },
         "/api/ordenes": {
             "post": _operacion(
                 tag="Órdenes",
@@ -990,7 +1156,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "registrado. Si no hay un ingreso abierto, valida el cupo "
                     "diario antes de crearlo; reutilizar un ingreso abierto no "
                     "consume otro cupo. La orden comienza en Recibido y puede "
-                    "quedar sin mecánico."
+                    "quedar sin mecánico. Solo se permite una orden activa por "
+                    "vehículo (estado distinto de Entregado o Cancelado). Si ya "
+                    "existe una, responde 409 con su número sin crear ingreso, "
+                    "orden, historial ni validación de cupo."
                 ),
                 operation_id="crear_orden",
                 cuerpo="OrdenCrear",
@@ -1000,7 +1169,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "409": "Cupo diario agotado o aún no configurado",
+                    "409": "Vehículo con orden activa, cupo diario agotado o aún no configurado",
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
@@ -1375,11 +1544,13 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 resumen="Registrar la entrega física de una orden lista",
                 descripcion=(
                     "Cierra el ciclo normal (6 → 7): registra la fecha de entrega "
-                    "y la identidad que la autorizó. Solo el Administrador puede "
+                    "y la identidad que la autorizó, y cierra el ingreso físico "
+                    "en la misma transacción. Solo el Administrador puede "
                     "invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. "
                     "Repetir una entrega válida devuelve el registro original sin "
                     "duplicar historial. Otro estado responde 409; una entrega "
-                    "histórica sin auditoría completa responde 500."
+                    "histórica sin auditoría completa responde 500. No se corrigen "
+                    "automáticamente fechas de salida históricas desconocidas."
                 ),
                 operation_id="registrar_entrega_orden",
                 cuerpo="EntregaSolicitud",
@@ -1390,8 +1561,39 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "409": "La orden no está Lista o ya es terminal",
+                    "409": "La orden no está Lista o el ingreso no permite la salida",
                     "422": "Observación de entrega vacía",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/devolucion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar la devolución física de una orden cancelada",
+                descripcion=(
+                    "Solo Administrador. Body vacío obligatorio. Conserva Cancelado "
+                    "y registra fecha del servidor y responsable del JWT. Cierra el "
+                    "ingreso en la misma transacción sin agregar historial de estado. "
+                    "Repetir conserva los datos originales. Rechaza con 409 si otra "
+                    "orden del ingreso sigue activa o el ingreso ya está cerrado."
+                ),
+                operation_id="registrar_devolucion_orden",
+                cuerpo="DevolucionSolicitud",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Devolución registrada; un reintento conserva la original.",
+                        _ref("DevolucionOrdenRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "Estado o ingreso incompatible con la devolución",
+                    "422": "Body o identificador inválido",
                 },
                 requiere_auth=True,
                 con_orden_id=True,

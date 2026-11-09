@@ -102,7 +102,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - '/usr/bin/mc --config-dir /tmp/mc-live alias set local http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 && /usr/bin/mc --config-dir /tmp/mc-live ready local >/dev/null 2>&1'
+        - '/usr/bin/mc --config-dir /tmp/mc-live alias set -- local http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 && /usr/bin/mc --config-dir /tmp/mc-live ready local >/dev/null 2>&1'
       interval: 5s
       timeout: 3s
       retries: 10
@@ -123,11 +123,11 @@ services:
       - -c
       - |
         set -e
-        /usr/bin/mc alias set sgtm http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        /usr/bin/mc alias set -- sgtm http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         /usr/bin/mc mb --ignore-existing sgtm/evidencias-pruebas
         /usr/bin/mc anonymous set none sgtm/evidencias-pruebas
         /usr/bin/mc tag set sgtm/evidencias-pruebas "ambiente=sgtm-pruebas"
-        /usr/bin/mc admin user add sgtm "$${MS4_S3_ACCESS_KEY}" "$${MS4_S3_SECRET_KEY}" || true
+        /usr/bin/mc admin user add -- sgtm "$${MS4_S3_ACCESS_KEY}" "$${MS4_S3_SECRET_KEY}" || true
         /usr/bin/mc admin policy create sgtm politica-ms4-pruebas /config/politica-ms4-pruebas.json || true
         /usr/bin/mc admin policy attach sgtm politica-ms4-pruebas --user "$${MS4_S3_ACCESS_KEY}" || true
         INFO_USUARIO=$(/usr/bin/mc admin user info sgtm "$${MS4_S3_ACCESS_KEY}")

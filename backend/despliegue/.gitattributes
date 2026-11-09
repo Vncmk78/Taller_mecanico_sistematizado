@@ -1,0 +1,3 @@
+# Los scripts de initdb se ejecutan dentro de Linux: nunca con CRLF.
+initdb/* text eol=lf
+*.yml text eol=lf

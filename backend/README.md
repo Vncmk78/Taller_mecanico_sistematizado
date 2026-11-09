@@ -62,6 +62,16 @@ diario también debe configurarse antes de recibir el primer vehículo.
 Cada servicio tiene su **propia base declarativa**. Es lo que impide que las
 tablas de los cuatro dominios terminen mezcladas en una misma migración.
 
+## Base de datos de despliegue y datos de demostración
+
+- `docs/despliegue-base-datos.md`: crear las cuatro bases con un rol propio por
+  servicio y migrarlas en orden con `python scripts/inicializar_bd.py`
+  (o `SGTM_SERVICIO=migraciones` en la imagen del backend).
+- `docs/datos-demostracion.md`: `python scripts/datos_demo.py cargar | verificar
+  | limpiar | reiniciar` con datos controlados y protección contra producción.
+- `docs/estudio-postgresql-docker-credenciales.md` y
+  `docs/validacion-despliegue-limpio.md`: fundamentos y evidencia.
+
 ## Puesta en marcha
 
 ### Comunicación MS2–MS3 en Vercel

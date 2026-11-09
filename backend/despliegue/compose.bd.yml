@@ -1,0 +1,77 @@
+# BASE DE DATOS DEL AMBIENTE DE DESPLIEGUE (SGTM)
+#
+# Una instancia PostgreSQL 16 con CUATRO bases independientes (sgtm_ms1..4),
+# cada una con su propio rol dueño y sin acceso cruzado, más un contenedor
+# de una sola ejecución que aplica las migraciones en orden (MS1 → MS4).
+# Reproduce lo que se configura en Kubero/Neon, pero en Docker local.
+#
+# Uso (desde backend/; el detalle está en docs/despliegue-base-datos.md):
+#   python scripts/inicializar_bd.py configurar
+#   docker compose -f despliegue/compose.bd.yml --env-file despliegue/.env.despliegue up -d --wait postgres
+#   docker compose -f despliegue/compose.bd.yml --env-file despliegue/.env.despliegue run --rm migraciones
+#
+# Sin valores por defecto para credenciales: si falta una, Compose se detiene.
+name: ${COMPOSE_PROJECT_NAME:-sgtm_despliegue}
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: sgtm_despliegue_postgres
+    environment:
+      POSTGRES_USER: ${DESPLIEGUE_PG_ADMIN_USUARIO:?Falta DESPLIEGUE_PG_ADMIN_USUARIO}
+      POSTGRES_PASSWORD: ${DESPLIEGUE_PG_ADMIN_CLAVE:?Falta DESPLIEGUE_PG_ADMIN_CLAVE}
+      POSTGRES_DB: postgres
+      # scram-sha-256 para conexiones TCP y checksums para detectar corrupción.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --data-checksums"
+      SGTM_MS1_BD_CLAVE: ${SGTM_MS1_BD_CLAVE:?Falta SGTM_MS1_BD_CLAVE}
+      SGTM_MS2_BD_CLAVE: ${SGTM_MS2_BD_CLAVE:?Falta SGTM_MS2_BD_CLAVE}
+      SGTM_MS3_BD_CLAVE: ${SGTM_MS3_BD_CLAVE:?Falta SGTM_MS3_BD_CLAVE}
+      SGTM_MS4_BD_CLAVE: ${SGTM_MS4_BD_CLAVE:?Falta SGTM_MS4_BD_CLAVE}
+      SGTM_BD_MARCA: ${SGTM_BD_MARCA:-sgtm-despliegue}
+      TZ: America/Santiago
+    # Solo en 127.0.0.1: no queda expuesta a la red local.
+    ports: ["127.0.0.1:${DESPLIEGUE_PG_PUERTO:-5460}:5432"]
+    volumes:
+      - pg_datos:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    labels: {sgtm.ambiente: despliegue}
+    healthcheck:
+      # Sano solo cuando la última base creada por initdb ya acepta conexiones.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d sgtm_ms4"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  # Contenedor de una sola ejecución con la MISMA imagen del backend:
+  # SGTM_SERVICIO=migraciones ejecuta scripts/inicializar_bd.py y termina.
+  migraciones:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: sgtm-backend:despliegue
+    container_name: sgtm_despliegue_migraciones
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SGTM_SERVICIO: migraciones
+      MS1_DATABASE_URL: postgresql+psycopg://sgtm_ms1:${SGTM_MS1_BD_CLAVE}@postgres:5432/sgtm_ms1
+      MS2_DATABASE_URL: postgresql+psycopg://sgtm_ms2:${SGTM_MS2_BD_CLAVE}@postgres:5432/sgtm_ms2
+      MS3_DATABASE_URL: postgresql+psycopg://sgtm_ms3:${SGTM_MS3_BD_CLAVE}@postgres:5432/sgtm_ms3
+      MS4_DATABASE_URL: postgresql+psycopg://sgtm_ms4:${SGTM_MS4_BD_CLAVE}@postgres:5432/sgtm_ms4
+      MS1_JWT_SECRET_KEY: ${SGTM_JWT_SECRET:?Falta SGTM_JWT_SECRET}
+      MS2_JWT_SECRET_KEY: ${SGTM_JWT_SECRET:?Falta SGTM_JWT_SECRET}
+      MS3_JWT_SECRET_KEY: ${SGTM_JWT_SECRET:?Falta SGTM_JWT_SECRET}
+      MS4_JWT_SECRET_KEY: ${SGTM_JWT_SECRET:?Falta SGTM_JWT_SECRET}
+    labels: {sgtm.ambiente: despliegue}
+    restart: "no"
+
+volumes:
+  pg_datos:
+    name: sgtm_despliegue_pg
+
+networks:
+  default:
+    name: sgtm_despliegue_red

@@ -1,0 +1,19 @@
+Configuración: todo apunta al ambiente de pruebas.
+  OK    MS1: 127.0.0.1:5443/taller_ms1_pruebas: marca sgtm-ambiente-pruebas
+  OK    MS2: 127.0.0.1:5444/taller_ms2_pruebas: marca sgtm-ambiente-pruebas
+  OK    MS3: 127.0.0.1:5445/taller_ms3_pruebas: marca sgtm-ambiente-pruebas
+  OK    MS4: 127.0.0.1:5446/taller_ms4_pruebas: marca sgtm-ambiente-pruebas
+  OK    MinIO: 9010/evidencias-pruebas: etiqueta ambiente=sgtm-pruebas
+OK   Proveedor creado en la web y persistido en MS3 como oficial
+OK   Repuesto con proveedor, stock 4 y umbral 3: pantalla = API = BD
+OK   Detalle de stock coincide con la API (físico/comprometido/disponible/umbral)
+OK   Ajuste -2 persistido (stock 2)
+OK   Stock 2 < umbral 3: aparece en Alertas
+OK   Stock insuficiente: el mensaje detalla lo que falta
+OK   Stock insuficiente: stock y movimientos sin cambios
+OK   Stock 3 = umbral 3: ya no está en Alertas (comparación estricta)
+OK   Umbral general guardado y en el historial
+OK   Movimientos muestran repuesto, tipo, cantidad y responsable
+OK   El Cliente ve la procedencia (proveedor) del repuesto en su presupuesto
+
+11/11 comprobaciones (repuesto #5, marca 2511)

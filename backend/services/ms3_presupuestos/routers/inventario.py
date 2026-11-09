@@ -33,7 +33,6 @@ from services.ms3_presupuestos.dependencies import (
 )
 from services.ms3_presupuestos.integracion_ms2 import (
     OrdenNoVisible,
-    ServicioOrdenesNoDisponible,
     VerificadorOrdenes,
     obtener_verificador_ordenes,
 )
@@ -57,7 +56,6 @@ from services.ms3_presupuestos.schemas.inventario import (
     TipoMovimiento,
     UmbralGeneralEntrada,
     UmbralGeneralSalida,
-    TIPOS_CON_ORDEN,
 )
 from services.ms3_presupuestos.services import disponibilidad
 from services.ms3_presupuestos.services import inventario as casos
@@ -117,7 +115,9 @@ def registrar(
         and NombreRol.ADMINISTRADOR not in principal.roles
     ):
         try:
-            verificador.verificar_acceso(body.orden_id, token)
+            # Ser propietario con rol Cliente también da visibilidad en MS2;
+            # esa lectura no sustituye la asignación como Mecánico.
+            verificador.verificar_creacion_presupuesto(body.orden_id, token, principal)
         except OrdenNoVisible as exc:
             raise RecursoNoEncontrado(f"Orden {body.orden_id} no existe") from exc
         # ServicioOrdenesNoDisponible viaja al manejador global de MS3 (503).

@@ -510,6 +510,35 @@ def _presupuesto_admin(escenario: SimpleNamespace) -> dict:
     return creada.json()
 
 
+@pytest.mark.parametrize("tipo", ["compromiso", "consumo", "liberacion"])
+def test_cliente_mecanico_propietario_no_mueve_stock_sin_asignacion(escenario, tipo):
+    antes = _datos_guardados(escenario)
+    respuesta = _registrar_movimiento(
+        escenario, tipo=tipo, usuario_id=42,
+        roles=(NombreRol.CLIENTE, NombreRol.MECANICO),
+    )
+    assert respuesta.status_code == 404
+    assert _datos_guardados(escenario) == antes
+
+
+@pytest.mark.parametrize("operacion", ["version", "items", "modificacion"])
+def test_cliente_mecanico_propietario_no_edita_presupuesto_sin_asignacion(escenario, operacion):
+    presupuesto_id = _presupuesto_admin(escenario)["presupuesto_id"]
+    antes = _datos_guardados(escenario)
+    cabeceras = dict(usuario_id=42, roles=(NombreRol.CLIENTE, NombreRol.MECANICO))
+    if operacion == "version":
+        respuesta = _versiones(escenario, presupuesto_id, **cabeceras)
+    elif operacion == "items":
+        respuesta = _reemplazar_items(escenario, presupuesto_id, 1, **cabeceras)
+    else:
+        respuesta = escenario.ms3.post(
+            f"/presupuestos/{presupuesto_id}/modificacion",
+            headers=_cabeceras(**cabeceras),
+        )
+    assert respuesta.status_code == 404
+    assert _datos_guardados(escenario) == antes
+
+
 def test_mecanico_no_asignado_no_registra_compromiso_de_stock_ajeno(
     escenario: SimpleNamespace,
 ) -> None:

@@ -1118,6 +1118,1168 @@
         ]
       }
     },
+    "/api/notificaciones/dispositivos": {
+      "post": {
+        "tags": [
+          "Notificaciones"
+        ],
+        "summary": "Registrar mi dispositivo para push FCM",
+        "description": "Identidad desde JWT, token de registro FCM y plataforma. No devuelve el token. Repetirlo actualiza el registro (200); una cuenta que registra el mismo dispositivo pasa a ser su propietaria. Los avisos anteriores no se transfieren.",
+        "operationId": "registrar_dispositivo",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dispositivo propio registrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispositivoRespuesta"
+                },
+                "examples": {
+                  "dispositivo": {
+                    "summary": "Dispositivo registrado sin exponer el token",
+                    "value": {
+                      "dispositivo_id": "d42fbe85-5942-4dd7-81b3-f22a423a9980",
+                      "plataforma": "android",
+                      "activo": true,
+                      "creado_en": "2026-11-08T10:00:00Z",
+                      "actualizado_en": "2026-11-08T10:00:00Z"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "201": {
+            "description": "Dispositivo propio registrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispositivoRespuesta"
+                },
+                "examples": {
+                  "dispositivo": {
+                    "summary": "Dispositivo registrado sin exponer el token",
+                    "value": {
+                      "dispositivo_id": "d42fbe85-5942-4dd7-81b3-f22a423a9980",
+                      "plataforma": "android",
+                      "activo": true,
+                      "creado_en": "2026-11-08T10:00:00Z",
+                      "actualizado_en": "2026-11-08T10:00:00Z"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT requerido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Registro concurrente; reintentar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "422": {
+            "description": "Token o plataforma inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "404": {
+            "description": "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispositivoRegistrar"
+              },
+              "examples": {
+                "registro": {
+                  "summary": "Token ficticio de pruebas",
+                  "value": {
+                    "token": "token-fcm-de-ejemplo-no-es-una-credencial-real",
+                    "plataforma": "android"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Notificaciones"
+        ],
+        "summary": "Listar mis dispositivos",
+        "description": "Solo registros propios, sin tokens ni claves.",
+        "operationId": "listar_dispositivos",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dispositivos propios.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DispositivoRespuesta"
+                  }
+                },
+                "examples": {
+                  "propios": {
+                    "summary": "Dispositivos propios",
+                    "value": [
+                      {
+                        "dispositivo_id": "d42fbe85-5942-4dd7-81b3-f22a423a9980",
+                        "plataforma": "android",
+                        "activo": true,
+                        "creado_en": "2026-11-08T10:00:00Z",
+                        "actualizado_en": "2026-11-08T10:00:00Z"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT requerido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/notificaciones/dispositivos/{dispositivo_id}": {
+      "delete": {
+        "tags": [
+          "Notificaciones"
+        ],
+        "summary": "Desactivar mi dispositivo",
+        "description": "Baja lógica idempotente; se conserva el historial de intentos. Un registro ajeno devuelve 404.",
+        "operationId": "desactivar_dispositivo",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          },
+          {
+            "name": "dispositivo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Dispositivo desactivado.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT requerido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "UUID inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "404": {
+            "description": "Dispositivo inexistente o ajeno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/notificaciones/{notificacion_id}/entregas": {
+      "get": {
+        "tags": [
+          "Notificaciones"
+        ],
+        "summary": "Consultar mis intentos de correo y push",
+        "description": "Solo el destinatario del aviso. Aceptada significa aceptación por SMTP/FCM, no lectura por la persona. Un reintento no vuelve a enviar canales ya aceptados ni duplica el aviso lógico.",
+        "operationId": "notificacion_entregas",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          },
+          {
+            "name": "notificacion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado e intentos de los canales.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EntregaRespuesta"
+                  }
+                },
+                "examples": {
+                  "canales": {
+                    "summary": "El aviso existe; falta proveedor de correo",
+                    "value": [
+                      {
+                        "entrega_id": 1,
+                        "canal": "correo",
+                        "estado": "sin_configuracion",
+                        "intentos": 1,
+                        "aceptada_en": null,
+                        "ultimo_error": "proveedor_no_configurado",
+                        "intentos_registrados": [
+                          {
+                            "numero": 1,
+                            "iniciado_en": "2026-11-08T10:00:00Z",
+                            "finalizado_en": "2026-11-08T10:00:01Z",
+                            "resultado": "sin_configuracion",
+                            "codigo_error": "proveedor_no_configurado"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT requerido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Identificador inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "404": {
+            "description": "Notificación inexistente o ajena.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/notificaciones/{notificacion_id}/reintentos": {
+      "post": {
+        "tags": [
+          "Notificaciones"
+        ],
+        "summary": "Reintentar canales fallidos de mi aviso",
+        "description": "Solo el destinatario del aviso. Aceptada significa aceptación por SMTP/FCM, no lectura por la persona. Un reintento no vuelve a enviar canales ya aceptados ni duplica el aviso lógico.",
+        "operationId": "notificacion_reintentos",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Identificador opcional para rastrear la petición (letras, números o guiones, hasta 128 caracteres). Si no viene o es inválido, la Gateway genera un UUID.",
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9-]{1,128}$",
+              "example": "abc-123"
+            }
+          },
+          {
+            "name": "notificacion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado e intentos de los canales.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EntregaRespuesta"
+                  }
+                },
+                "examples": {
+                  "canales": {
+                    "summary": "El aviso existe; falta proveedor de correo",
+                    "value": [
+                      {
+                        "entrega_id": 1,
+                        "canal": "correo",
+                        "estado": "sin_configuracion",
+                        "intentos": 1,
+                        "aceptada_en": null,
+                        "ultimo_error": "proveedor_no_configurado",
+                        "intentos_registrados": [
+                          {
+                            "numero": 1,
+                            "iniciado_en": "2026-11-08T10:00:00Z",
+                            "finalizado_en": "2026-11-08T10:00:01Z",
+                            "resultado": "sin_configuracion",
+                            "codigo_error": "proveedor_no_configurado"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "401": {
+            "description": "JWT requerido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                },
+                "examples": {
+                  "token_ausente": {
+                    "$ref": "#/components/examples/detalle_token_ausente"
+                  },
+                  "token_invalido": {
+                    "$ref": "#/components/examples/detalle_token_invalido"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "WWW-Authenticate": {
+                "description": "Esquema de autenticación esperado.",
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Identificador inválido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDetalle"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "404": {
+            "description": "Notificación inexistente o ajena.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "ruta_no_encontrada": {
+                    "$ref": "#/components/examples/error_ruta_no_encontrada"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "502": {
+            "description": "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuesta"
+                },
+                "examples": {
+                  "microservicio_no_disponible": {
+                    "$ref": "#/components/examples/error_microservicio_no_disponible"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              },
+              "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar un GET.",
+                "schema": {
+                  "type": "integer",
+                  "example": 5
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno. Puede provenir del microservicio con ErrorDetalle o de la Gateway con ERROR_INTERNO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorRespuesta"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorDetalle"
+                    }
+                  ]
+                },
+                "examples": {
+                  "error_interno": {
+                    "$ref": "#/components/examples/error_interno_gateway"
+                  },
+                  "error_microservicio": {
+                    "$ref": "#/components/examples/error_microservicio"
+                  }
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de la petición. La Gateway lo genera si el cliente no envía uno válido; es el mismo valor de `error.request_id`.",
+                "schema": {
+                  "type": "string"
+                },
+                "example": "abc-123"
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/GatewaySaturada"
+          },
+          "504": {
+            "$ref": "#/components/responses/TiempoAgotado"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/notificaciones/leer-todas": {
       "patch": {
         "tags": [
@@ -23767,6 +24929,235 @@
         ],
         "title": "ValidationError"
       },
+      "DispositivoRegistrar": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 20,
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          },
+          "plataforma": {
+            "enum": [
+              "android",
+              "ios",
+              "web"
+            ],
+            "title": "Plataforma",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "plataforma"
+        ],
+        "title": "DispositivoRegistrar",
+        "type": "object"
+      },
+      "DispositivoRespuesta": {
+        "properties": {
+          "dispositivo_id": {
+            "format": "uuid",
+            "title": "Dispositivo Id",
+            "type": "string"
+          },
+          "plataforma": {
+            "title": "Plataforma",
+            "type": "string"
+          },
+          "activo": {
+            "title": "Activo",
+            "type": "boolean"
+          },
+          "creado_en": {
+            "format": "date-time",
+            "title": "Creado En",
+            "type": "string"
+          },
+          "actualizado_en": {
+            "format": "date-time",
+            "title": "Actualizado En",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dispositivo_id",
+          "plataforma",
+          "activo",
+          "creado_en",
+          "actualizado_en"
+        ],
+        "title": "DispositivoRespuesta",
+        "type": "object"
+      },
+      "IntentoEntregaRespuesta": {
+        "properties": {
+          "numero": {
+            "title": "Numero",
+            "type": "integer"
+          },
+          "iniciado_en": {
+            "format": "date-time",
+            "title": "Iniciado En",
+            "type": "string"
+          },
+          "finalizado_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalizado En"
+          },
+          "resultado": {
+            "title": "Resultado",
+            "type": "string"
+          },
+          "codigo_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Error"
+          }
+        },
+        "required": [
+          "numero",
+          "iniciado_en",
+          "finalizado_en",
+          "resultado",
+          "codigo_error"
+        ],
+        "title": "IntentoEntregaRespuesta",
+        "type": "object"
+      },
+      "EntregaRespuesta": {
+        "$defs": {
+          "IntentoEntregaRespuesta": {
+            "properties": {
+              "numero": {
+                "title": "Numero",
+                "type": "integer"
+              },
+              "iniciado_en": {
+                "format": "date-time",
+                "title": "Iniciado En",
+                "type": "string"
+              },
+              "finalizado_en": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Finalizado En"
+              },
+              "resultado": {
+                "title": "Resultado",
+                "type": "string"
+              },
+              "codigo_error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Codigo Error"
+              }
+            },
+            "required": [
+              "numero",
+              "iniciado_en",
+              "finalizado_en",
+              "resultado",
+              "codigo_error"
+            ],
+            "title": "IntentoEntregaRespuesta",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "entrega_id": {
+            "title": "Entrega Id",
+            "type": "integer"
+          },
+          "canal": {
+            "enum": [
+              "correo",
+              "push"
+            ],
+            "title": "Canal",
+            "type": "string"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "intentos": {
+            "title": "Intentos",
+            "type": "integer"
+          },
+          "aceptada_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aceptada En"
+          },
+          "ultimo_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultimo Error"
+          },
+          "intentos_registrados": {
+            "items": {
+              "$ref": "#/components/schemas/IntentoEntregaRespuesta"
+            },
+            "title": "Intentos Registrados",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entrega_id",
+          "canal",
+          "estado",
+          "intentos",
+          "aceptada_en",
+          "ultimo_error",
+          "intentos_registrados"
+        ],
+        "title": "EntregaRespuesta",
+        "type": "object"
+      },
       "RegistroSolicitud": {
         "additionalProperties": false,
         "description": "Registro público de un cliente; el rol Cliente se asigna en el servidor.",
@@ -24059,12 +25450,26 @@
             "type": "string"
           },
           "orden_id": {
-            "title": "Orden Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orden Id"
           },
           "vehiculo_id": {
-            "title": "Vehiculo Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vehiculo Id"
           },
           "titulo": {
             "title": "Titulo",
@@ -24099,6 +25504,42 @@
               }
             ],
             "title": "Leida En"
+          },
+          "solicitud_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Solicitud Id"
+          },
+          "presupuesto_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Presupuesto Id"
+          },
+          "repuesto_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Repuesto Id"
           }
         },
         "required": [

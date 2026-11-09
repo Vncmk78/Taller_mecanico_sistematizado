@@ -12,6 +12,7 @@ from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
 from shared.entorno import archivo_entorno
+from shared.direccion_notificaciones import url_notificaciones_por_defecto
 
 
 class Settings(ServiceSettings):
@@ -21,6 +22,12 @@ class Settings(ServiceSettings):
         env_prefix="MS3_",
         extra="ignore",
     )
+
+    MS1_URL: str = Field(default_factory=lambda: url_notificaciones_por_defecto(1))
+    EVENT_SHARED_SECRET: SecretStr | None = Field(default=None,min_length=32)
+    EVENT_WORKER_ENABLED: bool = False
+    EVENT_TIMEOUT_SECONDS: float = Field(default=10,gt=0,le=30)
+    EVENT_POLL_SECONDS: float = Field(default=2,gt=0)
 
     SERVICE_NAME: str = "MS3 — Presupuestos, Repuestos y Proveedores"
     DATABASE_URL: str = (

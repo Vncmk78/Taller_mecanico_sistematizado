@@ -29,8 +29,11 @@ class Notificacion(Base):
         ForeignKey("usuario.usuario_id", ondelete="CASCADE"), index=True, nullable=False
     )
     tipo: Mapped[str] = mapped_column(String(60), nullable=False)
-    orden_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    vehiculo_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    orden_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vehiculo_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    solicitud_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    presupuesto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    repuesto_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     titulo: Mapped[str] = mapped_column(String(120), nullable=False)
     mensaje: Mapped[str] = mapped_column(Text, nullable=False)
     ocurrido_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

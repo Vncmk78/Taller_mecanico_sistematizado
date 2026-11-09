@@ -87,13 +87,21 @@ generación atómica de orden y vínculo (`201`/`200`), y aviso de revisión por
 outbox a la bandeja de MS1. No hay migraciones nuevas en C ni cambios al JSON
 público de notificaciones. Se agrega un receptor interno autenticado por
 servicio, documentado en el acuerdo de coordinación. La integración web C ya está verificada contra servicios reales; la publicación
-y activación se confirman con las verificaciones de la entrega. Correo y push
-requieren proveedor, configuración y validación de entrega, todavía pendientes.
+y activación se confirman con las verificaciones de la entrega. Correo y push tienen adaptadores y cola persistente; SMTP está validado con Mailpit local. Gmail/FCM y el dispositivo móvil requieren configuración externa y validación real.
 
 Antes de publicar 3.0.0 se agregan `leida` y `leida_en` a la bandeja de MS1,
 el filtro `solo_no_leidas` y los PATCH de lectura propia (204 sin cuerpo). La
 migración `0006_lectura_notificaciones_ms1` agrega columnas, sin borrar avisos
 ni cambiar su fecha original. MS1 debe migrarse antes de activar los servicios.
+
+Antes del cierre de 3.0.0 se agregan las cinco operaciones de dispositivos y
+canales de notificación, las referencias anulables de contexto y los avisos
+transversales de presupuestos/stock. Las alertas de stock no tienen orden ni
+vehículo asociados: esos dos campos admiten nulo. MS1 incorpora las migraciones
+0007/0008 y MS3 la 0011, con outbox propia. El umbral general debe configurarse
+antes de activar alertas, conforme a §4.6 y la decisión del usuario. Particular
+prevalece después de ese paso; 0 es válido y la igualdad no dispara aviso.
+Detalles de activación y limitaciones: [notificaciones-canales.md](notificaciones-canales.md).
 
 ### 2.2.1 — Elementos de `mecanicos_sobre_limite` documentados (D-04)
 

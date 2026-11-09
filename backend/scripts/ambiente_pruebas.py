@@ -75,6 +75,8 @@ HOSTS_LOCALES = {"127.0.0.1", "localhost", "::1"}
 # URL de servicio esperada por variable (todas obligatorias en .env.pruebas).
 URLS_ESPERADAS = {
     "MS2_MS1_URL": 8101,
+    "MS3_MS1_URL": 8101,
+    "MS1_MS2_URL": 8102,
     "MS2_MS3_URL": 8103,
     "MS3_MS2_URL": 8102,
     "MS4_MS2_URL": 8102,
@@ -113,8 +115,29 @@ def leer_archivo(ruta: Path) -> dict[str, str]:
     return {k: (v or "") for k, v in dotenv_values(ruta).items()}
 
 
+def completar_configuracion_avisos() -> None:
+    valores=leer_archivo(ARCHIVO)
+    nuevos={}
+    for a,b in [("MS1_MS3_EVENT_SHARED_SECRET","MS3_EVENT_SHARED_SECRET"),("MS1_MS2_NOTIFICATION_SECRET","MS2_NOTIFICATION_LOOKUP_SECRET")]:
+        primero,segundo=valores.get(a),valores.get(b)
+        if primero and segundo and primero!=segundo:
+            raise ErrorAmbiente("Los secretos de un contrato interno no coinciden; no se modifican.")
+        secreto=primero or segundo or secrets.token_urlsafe(32)
+        for nombre in (a,b):
+            if not valores.get(nombre):nuevos[nombre]=secreto
+    for nombre in ("MS3_MS1_URL","MS1_MS2_URL"):
+        if not valores.get(nombre):nuevos[nombre]=f"http://127.0.0.1:{URLS_ESPERADAS[nombre]}"
+    if not valores.get("MS3_EVENT_WORKER_ENABLED"):nuevos["MS3_EVENT_WORKER_ENABLED"]="true"
+    if nuevos:
+        with ARCHIVO.open("a",encoding="utf-8") as f:
+            f.write("\n# Avisos transversales; se conservan los secretos anteriores.\n")
+            for nombre,valor in nuevos.items():f.write(f"{nombre}={valor}\n")
+        print("Se agregaron los campos faltantes de avisos, sin mostrar claves ni cambiar las anteriores.")
+
+
 def configurar() -> int:
     if ARCHIVO.exists():
+        completar_configuracion_avisos()
         print(f"{ARCHIVO} ya existe; se conservan sus credenciales.")
         return 0
     texto = PLANTILLA.read_text(encoding="utf-8")
@@ -123,6 +146,8 @@ def configurar() -> int:
     texto = texto.replace("PRUEBAS_PG_CLAVE=<generar>", f"PRUEBAS_PG_CLAVE={clave_pg}")
     texto = texto.replace("<JWT>", secrets.token_urlsafe(48))
     texto = texto.replace("<EVENTOS>", secrets.token_urlsafe(32))
+    texto = texto.replace("<EVENTOS_MS3>", secrets.token_urlsafe(32))
+    texto = texto.replace("<DESTINOS_NOTIF>", secrets.token_urlsafe(32))
     while "<generar>" in texto:
         texto = texto.replace("<generar>", secrets.token_urlsafe(24), 1)
     ARCHIVO.write_text(texto, encoding="utf-8")

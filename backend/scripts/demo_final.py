@@ -55,6 +55,26 @@ def preparar_perfil() -> None:
     plantilla.write_text(transformar(amb.PLANTILLA.read_text()))
     compose = CARPETA / "compose.yml"
     compose.write_text(transformar(amb.COMPOSE.read_text()).replace("./pruebas/initdb:", "./initdb:"))
+    contenido = compose.read_text()
+    contenido = contenido.replace("\nvolumes:", """
+  correo:
+    image: axllent/mailpit@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    container_name: sgtm_demo_final_correo
+    ports: ["127.0.0.1:1026:1025", "127.0.0.1:8026:8025"]
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 2000
+    volumes: [correo:/data]
+    labels: {sgtm.ambiente: demo-final}
+volumes:
+  correo:
+    name: sgtm_demo_final_correo
+""")
+    compose.write_text(contenido)
+    ajustes = "\nMS1_NOTIFICATION_WORKER_ENABLED=true\nMS1_SMTP_HOST=127.0.0.1\nMS1_SMTP_PORT=1026\nMS1_SMTP_MODO=sin_tls_local\nMS1_SMTP_REMITENTE=notificaciones@example.test\n"
+    if "MS1_SMTP_HOST=" not in plantilla.read_text(): plantilla.write_text(plantilla.read_text()+ajustes)
+    privado = CARPETA / ".env"
+    if privado.exists() and "MS1_SMTP_HOST=" not in privado.read_text(): privado.write_text(privado.read_text()+ajustes)
     amb.ARCHIVO = CARPETA / ".env"
     amb.PLANTILLA = plantilla
     amb.COMPOSE = compose
@@ -67,7 +87,7 @@ def preparar_perfil() -> None:
     amb.PUERTO_MINIO = 9020
     amb.PUERTOS_PROCESOS = {"gateway": 8300, **{f"ms{i}": 8300+i for i in range(1,5)}}
     amb.PUERTO_FRONTEND = 5383
-    amb.PUERTOS_PERMITIDOS = set(amb.PUERTOS_BASES.values()) | {8300,8301,8302,8303,8304,5383,9020,9021}
+    amb.PUERTOS_PERMITIDOS = set(amb.PUERTOS_BASES.values()) | {8300,8301,8302,8303,8304,5383,9020,9021,1026,8026}
     amb.PUERTOS_EXISTENTES |= {5443,5444,5445,5446,8100,8101,8102,8103,8104,9010,9011,5183}
     amb.URLS_ESPERADAS = {k: int(transformar(str(v))) for k,v in amb.URLS_ESPERADAS.items()}
 
@@ -76,6 +96,12 @@ def main() -> int:
     try:
         preparar_perfil()
         print("Perfil: sgtm_demo_final. Configuración: backend/.demo-final/.env. Web: http://127.0.0.1:5383", flush=True)
+        if amb.ARCHIVO.exists():
+            amb.completar_configuracion_avisos()
+        if sys.argv[1:] == ["infra"]:
+            codigo = amb.main()
+            if codigo: return codigo
+            return amb.compose("up", "-d", "--wait", "correo", entorno=amb.entorno_pruebas())
         if sys.argv[1:] == ["sembrar"]:
             codigo = amb.main()
             if codigo: return codigo

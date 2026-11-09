@@ -144,6 +144,7 @@ def test_validar_stock_exacto_alcanza(api: TestClient, db: Session) -> None:
 
 
 def test_llegar_a_cero_activa_la_alerta(api: TestClient, db: Session) -> None:
+    fabricas.umbral_general_vigente(db, valor=1)
     rid = fabricas.nuevo_repuesto(db, stock=2, umbral_particular=1).repuesto_id
     alerta = _movimiento(api, rid, "consumo", 2, fabricas.nuevo_orden_id()).json()["alerta"]
     assert alerta == {"activa": True, "nueva": True}

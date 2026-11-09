@@ -222,3 +222,12 @@ services` con todos los destinos explícitos y las retira al terminar. Las prueb
 S3 usan buckets por prueba, nunca el bucket de una demostración. GitHub Actions
 usa el mismo ejecutor, además de lint, pruebas y build del frontend. Un resultado
 local no se presenta como una ejecución remota de CI.
+
+## Correo capturado en la demostración final
+
+El perfil `scripts/demo_final.py infra` agrega Mailpit local, separado del
+almacenamiento multimedia: consola `http://127.0.0.1:8026`, SMTP 1026.
+Los mensajes se capturan y no se entregan externamente. La web del perfil
+es `http://127.0.0.1:5383`. Los avisos por MS3 y los canales de MS1 requieren
+las nuevas migraciones y pares de secretos que el configurador completa sin
+sobrescribir las claves existentes. Ver [notificaciones-canales.md](notificaciones-canales.md).

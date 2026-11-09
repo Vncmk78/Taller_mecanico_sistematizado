@@ -62,6 +62,8 @@ for n, ruta in [(2, 'ms2_taller'), (3, 'ms3_presupuestos')]:
         command.upgrade(cfg, 'head')
     engine.dispose()
 '''
+    for n in range(1,5):
+        entorno[f'MS{n}_JWT_SECRET_KEY'] = f'clave-secreta-exclusiva-para-pruebas-de-ms{n}-123456'
     migracion_env = dict(entorno)
     for n in range(1,5):
         migracion_env[f'MS{n}_JWT_SECRET_KEY'] = f'clave-secreta-exclusiva-para-pruebas-de-ms{n}-123456'

@@ -42,13 +42,24 @@ Los avisos se consultan con `limite`, `offset` y `solo_no_leidas`; la fecha es
 No acreditan recepción push ni funcionamiento de un APK. Falta el dispositivo/app
 de Integración IV y la configuración del proveedor de push.
 
-## 2. Catálogo de operaciones (33)
+El contrato incluye el registro autenticado de dispositivos, su desactivación
+al cerrar sesión y la consulta/reintento de canales propios. Las alertas de stock
+pueden tener `orden_id`/`vehiculo_id` nulos; las referencias a presupuesto,
+solicitud y repuesto son anulables. Ver [notificaciones-canales.md](notificaciones-canales.md)
+para cuerpos, credenciales, estados y coordinación móvil.
+
+## 2. Catálogo de operaciones (38)
 
 | Flujo | Operación | Cliente | Mecánico |
 |---|---|:-:|:-:|
 | Nuevas atenciones | `POST /api/ordenes/{orden_id}/nueva-atencion` | ✅ | — |
 | Nuevas atenciones | `GET /api/ordenes/nuevas-atenciones` | ✅ | — |
 | Nuevas atenciones | `GET /api/ordenes/nuevas-atenciones/{solicitud_id}` | ✅ | — |
+| Dispositivos | `POST /api/notificaciones/dispositivos` | ✅ | ✅ |
+| Dispositivos | `GET /api/notificaciones/dispositivos` | ✅ | ✅ |
+| Dispositivos | `DELETE /api/notificaciones/dispositivos/{dispositivo_id}` | ✅ | ✅ |
+| Canales | `GET /api/notificaciones/{notificacion_id}/entregas` | ✅ | ✅ |
+| Canales | `POST /api/notificaciones/{notificacion_id}/reintentos` | ✅ | ✅ |
 | Avisos | `GET /api/notificaciones` | ✅ | ✅ |
 | Avisos | `PATCH /api/notificaciones/{notificacion_id}/leer` | ✅ | ✅ |
 | Avisos | `PATCH /api/notificaciones/leer-todas` | ✅ | ✅ |
@@ -173,7 +184,7 @@ debe consumir ninguna ruta no publicada aunque responda:
 | Capacidad | Estado |
 |---|---|
 | Solicitar hora / agendar ingreso (Cliente) | Sin endpoint |
-| Notificaciones push | Sin endpoint |
+| Notificaciones push | Registro propio de dispositivos y resultados de canales implementados; recepción en APK/FCM real pendiente. |
 | Repuestos e inventario desde la app del mecánico | Publicados, pero no forman parte del flujo móvil acordado |
 
 ## 7. Cómo ejecutar la validación

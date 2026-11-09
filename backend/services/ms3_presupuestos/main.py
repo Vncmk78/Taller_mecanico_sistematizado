@@ -17,6 +17,8 @@ Los endpoints de negocio se agregan en routers/ y se registran en ROUTERS.
 """
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -37,7 +39,20 @@ from shared.contratos_decisiones import (
 from services.ms3_presupuestos.persistencia import ErrorDePersistencia
 from services.ms3_presupuestos.routers import ROUTERS
 
+from services.ms3_presupuestos.services.publicador_avisos import ejecutar_worker
+
+@asynccontextmanager
+async def lifespan(_app):
+    tarea=asyncio.create_task(ejecutar_worker()) if settings.EVENT_WORKER_ENABLED else None
+    try:yield
+    finally:
+        if tarea is not None:
+            tarea.cancel()
+            try:await tarea
+            except asyncio.CancelledError:pass
+
 app = FastAPI(
+    lifespan=lifespan,
     title="SGTM — MS3: Presupuestos, Repuestos y Proveedores",
     version="0.1.0",
     # Swagger y ReDoc se sirven abajo con URL RELATIVA al openapi.json: en

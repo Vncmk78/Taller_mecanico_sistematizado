@@ -300,7 +300,7 @@ CONSUMO_WEB: tuple[ConsumoWeb, ...] = (
                {"solicitud": SOLICITUD_NUEVA_ATENCION, "orden": ORDEN}, cuerpo={}),
     ConsumoWeb("NotificationService.getMyNotifications", "get", "/api/notificaciones", "200",
                [{"notificacion_id": "integer", "tipo": "string", "titulo": "string", "mensaje": "string",
-                 "leida": "boolean", "creado_en": "string", "orden_id": "integer"}]),
+                 "leida": "boolean", "creado_en": "string", "orden_id": "?integer"}]),
     ConsumoWeb("NotificationService.markAsRead", "patch", "/api/notificaciones/{notificacion_id}/leer", "204", {}),
     ConsumoWeb("NotificationService.markAllAsRead", "patch", "/api/notificaciones/leer-todas", "204", {}),
     # No lee la respuesta (es una solicitud pendiente, no una orden): después

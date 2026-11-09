@@ -97,8 +97,8 @@ class NotificacionRespuesta(BaseModel):
 
     notificacion_id: int
     tipo: str
-    orden_id: int
-    vehiculo_id: int
+    orden_id: int | None
+    vehiculo_id: int | None
     titulo: str
     mensaje: str
     ocurrido_en: datetime
@@ -106,3 +106,7 @@ class NotificacionRespuesta(BaseModel):
 
     leida: bool
     leida_en: datetime | None
+
+    solicitud_id: int | None = None
+    presupuesto_id: int | None = None
+    repuesto_id: int | None = None

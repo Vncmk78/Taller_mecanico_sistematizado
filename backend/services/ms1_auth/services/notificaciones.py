@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from services.ms1_auth.models.notificacion import Notificacion
 from services.ms1_auth.models.rol import Rol, UsuarioRol
 from services.ms1_auth.models.usuario import Usuario
+from services.ms1_auth.services.entregas_notificaciones import encolar_canales
 from services.ms1_auth.schemas.notificacion import EventoEstadoOrden, EventoRevisionNuevaAtencion, EventoSolicitudNuevaAtencion
 
 
@@ -25,8 +26,8 @@ def recibir_evento_estado_orden(
 ) -> tuple[Notificacion, bool]:
     """Persiste un aviso una vez; reintentos con el mismo evento son inocuos."""
     return _recibir_aviso(db, evento, orden_id=evento.orden_id,
-                         titulo="Actualización de tu orden",
-                         mensaje="El estado de tu orden de trabajo cambió. Consulta el detalle para ver su estado actual.")
+                         titulo=("Vehículo listo para retirar" if evento.estado_nuevo == 6 else "Orden cancelada" if evento.estado_nuevo == 8 else "Actualización de tu orden"),
+                         mensaje=("El taller informó que su vehículo está Listo. Coordine el retiro con el administrador." if evento.estado_nuevo == 6 else "La orden fue cancelada. Consulte el detalle para coordinar la devolución del vehículo." if evento.estado_nuevo == 8 else "El estado de tu orden de trabajo cambió. Consulta el detalle para ver su estado actual."))
 
 
 def recibir_evento_revision_nueva_atencion(
@@ -73,8 +74,11 @@ def _recibir_aviso(
             titulo=titulo,
             mensaje=mensaje,
             ocurrido_en=evento.ocurrido_en,
+            solicitud_id=getattr(evento,"solicitud_id",None),
+            presupuesto_id=getattr(evento,"presupuesto_id",None),
         )
         db.add(notificacion)
+        encolar_canales(db, notificacion)
         db.commit()
         db.refresh(notificacion)
         return notificacion, False
@@ -142,35 +146,28 @@ def contar_notificaciones(db: Session, *, destinatario_id: int) -> tuple[int, in
         raise PersistenciaNotificacionError from exc
 
 
-def recibir_solicitud_nueva_atencion(db: Session, evento: EventoSolicitudNuevaAtencion) -> tuple[int, int]:
-    """Un aviso por administrador activo; UUID derivado estable por destinatario.
+def recibir_solicitud_nueva_atencion(db: Session, evento: EventoSolicitudNuevaAtencion) -> tuple[int,int]:
+    return recibir_aviso_personal(db, evento, orden_id=evento.orden_cancelada_id, vehiculo_id=evento.vehiculo_id,
+        solicitud_id=evento.solicitud_id, titulo="Solicitud de nueva atención pendiente",
+        mensaje=f"El Cliente solicitó una nueva atención (solicitud n° {evento.solicitud_id}, orden cancelada n° {evento.orden_cancelada_id}). Revísela en Nuevas atenciones.")
 
-    Las altas de personal no reenvían eventos históricos ya confirmados. Si una
-    entrega necesita repetirse, cada destinatario sigue teniendo un solo aviso.
-    Toda la distribución se confirma junta dentro de MS1.
-    """
+
+def recibir_aviso_personal(db:Session,evento,*,orden_id=None,vehiculo_id=None,solicitud_id=None,presupuesto_id=None,repuesto_id=None,titulo:str,mensaje:str)->tuple[int,int]:
     try:
-        destinatarios = list(db.scalars(select(Usuario.usuario_id).join(UsuarioRol, UsuarioRol.usuario_id == Usuario.usuario_id).join(Rol, Rol.rol_id == UsuarioRol.rol_id)
-            .where(Usuario.activo.is_(True), Rol.nombre == "administrador").order_by(Usuario.usuario_id)))
-        creadas = existentes = 0
+        destinatarios=list(db.scalars(select(Usuario.usuario_id)
+            .join(UsuarioRol,UsuarioRol.usuario_id==Usuario.usuario_id)
+            .join(Rol,Rol.rol_id==UsuarioRol.rol_id)
+            .where(Usuario.activo.is_(True),Rol.nombre=='administrador').order_by(Usuario.usuario_id)))
+        creadas=existentes=0
         for uid in destinatarios:
-            clave = uuid5(evento.evento_id, f"administrador:{uid}")
-            if db.scalar(select(Notificacion.notificacion_id).where(Notificacion.evento_id == clave)) is not None:
-                existentes += 1
-                continue
-            db.add(Notificacion(evento_id=clave, destinatario_id=uid, tipo=evento.tipo,
-                orden_id=evento.orden_cancelada_id, vehiculo_id=evento.vehiculo_id,
-                titulo="Solicitud de nueva atención pendiente",
-                mensaje=f"El Cliente solicitó una nueva atención (solicitud n° {evento.solicitud_id}, orden cancelada n° {evento.orden_cancelada_id}). Revísela en Nuevas atenciones.",
-                ocurrido_en=evento.ocurrido_en))
-            creadas += 1
-        db.commit()
-        return creadas, existentes
-    except IntegrityError as exc:
-        db.rollback()
-        # Un recibo concurrente puede adelantarse. El productor reintenta el
-        # mismo UUID; no se confirma parcialmente ni se crean avisos nuevos.
-        raise PersistenciaNotificacionError from exc
+            clave=uuid5(evento.evento_id,f'administrador:{uid}')
+            if db.scalar(select(Notificacion.notificacion_id).where(Notificacion.evento_id==clave)) is not None:
+                existentes+=1;continue
+            aviso=Notificacion(evento_id=clave,destinatario_id=uid,tipo=evento.tipo,
+                orden_id=orden_id,vehiculo_id=vehiculo_id,solicitud_id=solicitud_id,
+                presupuesto_id=presupuesto_id,repuesto_id=repuesto_id,
+                titulo=titulo,mensaje=mensaje,ocurrido_en=evento.ocurrido_en)
+            db.add(aviso);encolar_canales(db,aviso);creadas+=1
+        db.commit();return creadas,existentes
     except SQLAlchemyError as exc:
-        db.rollback()
-        raise PersistenciaNotificacionError from exc
+        db.rollback();raise PersistenciaNotificacionError from exc

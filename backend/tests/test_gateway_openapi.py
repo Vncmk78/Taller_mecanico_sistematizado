@@ -81,6 +81,8 @@ from services.ms3_presupuestos.schemas.inventario import (
 from services.ms2_taller.schemas import nueva_atencion as ms2_nuevas_atenciones
 from shared.auth import NombreRol, crear_token_acceso
 from shared.openapi_ordenes import ESTADOS_DOCUMENTADOS
+from gateway.contratos import entregas_notificaciones as contratos_entregas
+from services.ms1_auth.schemas import entrega_notificacion as ms1_entregas
 
 import services.ms3_presupuestos.schemas.catalogo as ms3_catalogo  # noqa: E402
 import services.ms3_presupuestos.schemas.inventario as ms3_inventario  # noqa: E402
@@ -91,6 +93,7 @@ from pydantic import BaseModel  # noqa: E402
 _PARES_MS3 = [
     (getattr(copia, nombre), real_modelo)
     for copia, real in (
+        (contratos_entregas, ms1_entregas),
         (contratos_catalogo, ms3_catalogo),
         (contratos_inventario, ms3_inventario),
         (contratos_presupuestos, ms3_presupuesto),
@@ -108,6 +111,11 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/clientes/perfil", "post"),
     ("/api/clientes/perfil", "get"),
     ("/api/notificaciones", "get"),
+    ("/api/notificaciones/dispositivos", "post"),
+    ("/api/notificaciones/dispositivos", "get"),
+    ("/api/notificaciones/dispositivos/{dispositivo_id}", "delete"),
+    ("/api/notificaciones/{notificacion_id}/entregas", "get"),
+    ("/api/notificaciones/{notificacion_id}/reintentos", "post"),
     ("/api/notificaciones/leer-todas", "patch"),
     ("/api/notificaciones/{notificacion_id}/leer", "patch"),
     ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
@@ -200,6 +208,10 @@ _PROTEGIDOS = {
     "/api/auth/me",
     "/api/clientes/perfil",
     "/api/notificaciones",
+    "/api/notificaciones/dispositivos",
+    "/api/notificaciones/dispositivos/{dispositivo_id}",
+    "/api/notificaciones/{notificacion_id}/entregas",
+    "/api/notificaciones/{notificacion_id}/reintentos",
     "/api/notificaciones/{notificacion_id}/leer",
     "/api/notificaciones/leer-todas",
     "/api/inventario/ordenes/{orden_id}/disponibilidad",
@@ -355,6 +367,9 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
     # En estas operaciones el 404 también puede venir de MS2 (perfil o recurso
     # ausente): su esquema admite ErrorRespuesta y ErrorDetalle.
     operaciones_con_404_ms = {
+        ("/api/notificaciones/dispositivos/{dispositivo_id}", "delete"),
+        ("/api/notificaciones/{notificacion_id}/entregas", "get"),
+        ("/api/notificaciones/{notificacion_id}/reintentos", "post"),
         ("/api/notificaciones/{notificacion_id}/leer", "patch"),
         ("/api/clientes/perfil", "get"),
         ("/api/vehiculos", "post"),

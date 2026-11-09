@@ -748,6 +748,17 @@ _EJEMPLOS_OPERACIONES.update({
         "200": {"solicitud": _ejemplo("Solicitud visible", _SOLICITUD_NUEVA_EJEMPLO)}}},
 })
 
+_DISPOSITIVO_EJEMPLO = {"dispositivo_id":"d42fbe85-5942-4dd7-81b3-f22a423a9980", "plataforma":"android", "activo":True, "creado_en":"2026-11-08T10:00:00Z", "actualizado_en":"2026-11-08T10:00:00Z"}
+_ENTREGA_EJEMPLO = {"entrega_id":1,"canal":"correo","estado":"sin_configuracion","intentos":1,"aceptada_en":None,"ultimo_error":"proveedor_no_configurado","intentos_registrados":[{"numero":1,"iniciado_en":"2026-11-08T10:00:00Z","finalizado_en":"2026-11-08T10:00:01Z","resultado":"sin_configuracion","codigo_error":"proveedor_no_configurado"}]}
+_EJEMPLOS_OPERACIONES.update({
+    ("/api/notificaciones/dispositivos","post"): {
+        "cuerpo":{"registro":_ejemplo("Token ficticio de pruebas",{"token":"token-fcm-de-ejemplo-no-es-una-credencial-real","plataforma":"android"})},
+        "respuestas":{str(c):{"dispositivo":_ejemplo("Dispositivo registrado sin exponer el token",_DISPOSITIVO_EJEMPLO)} for c in (200,201)}},
+    ("/api/notificaciones/dispositivos","get"): {"respuestas":{"200":{"propios":_ejemplo("Dispositivos propios",[_DISPOSITIVO_EJEMPLO])}}},
+    **{(f"/api/notificaciones/{{notificacion_id}}/{sufijo}",metodo):{"respuestas":{"200":{"canales":_ejemplo("El aviso existe; falta proveedor de correo",[_ENTREGA_EJEMPLO])}}}
+       for sufijo,metodo in [("entregas","get"),("reintentos","post")]},
+})
+
 _EJEMPLOS_503_EVIDENCIAS: dict[str, Any] = {
     "almacenamiento_no_disponible": _ref_ejemplo("detalle_almacenamiento_no_disponible"),
     "ordenes_no_disponible": _ref_ejemplo("detalle_ordenes_no_disponible"),

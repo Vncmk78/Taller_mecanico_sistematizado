@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import entregas_notificaciones as contratos_entregas
 from gateway.contratos import clientes as contratos_clientes
 from gateway.contratos import evidencias as contratos_evidencias
 from gateway.contratos import inventario as contratos_inventario
@@ -202,6 +203,10 @@ _TAGS = [
 ]
 
 _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
+    ("DispositivoRegistrar", contratos_entregas.DispositivoRegistrar),
+    ("DispositivoRespuesta", contratos_entregas.DispositivoRespuesta),
+    ("IntentoEntregaRespuesta", contratos_entregas.IntentoEntregaRespuesta),
+    ("EntregaRespuesta", contratos_entregas.EntregaRespuesta),
     ("RegistroSolicitud", contratos_auth.RegistroSolicitud),
     ("LoginSolicitud", contratos_auth.LoginSolicitud),
     ("UsuarioRespuesta", contratos_auth.UsuarioRespuesta),
@@ -703,6 +708,38 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={"401": "JWT ausente o inválido"},
                 requiere_auth=True,
             )
+        },
+        "/api/notificaciones/dispositivos": {
+            "post": _operacion(tag="Notificaciones", resumen="Registrar mi dispositivo para push FCM",
+                descripcion="Identidad desde JWT, token de registro FCM y plataforma. No devuelve el token. Repetirlo actualiza el registro (200); una cuenta que registra el mismo dispositivo pasa a ser su propietaria. Los avisos anteriores no se transfieren.",
+                operation_id="registrar_dispositivo", cuerpo="DispositivoRegistrar", requiere_auth=True,
+                respuestas_ok={str(c): _respuesta("Dispositivo propio registrado.", _ref("DispositivoRespuesta")) for c in (200,201)},
+                errores_ms={"401":"JWT requerido","409":"Registro concurrente; reintentar","422":"Token o plataforma inválidos"}),
+            "get": _operacion(tag="Notificaciones", resumen="Listar mis dispositivos",
+                descripcion="Solo registros propios, sin tokens ni claves.", operation_id="listar_dispositivos",
+                cuerpo=None, requiere_auth=True, respuestas_ok={"200":_respuesta("Dispositivos propios.",{"type":"array","items":_ref("DispositivoRespuesta")})},
+                errores_ms={"401":"JWT requerido"}),
+        },
+        "/api/notificaciones/dispositivos/{dispositivo_id}": {
+            "delete": _operacion(tag="Notificaciones", resumen="Desactivar mi dispositivo",
+                descripcion="Baja lógica idempotente; se conserva el historial de intentos. Un registro ajeno devuelve 404.",
+                operation_id="desactivar_dispositivo", cuerpo=None, requiere_auth=True,
+                parametros_extra=[{"name":"dispositivo_id","in":"path","required":True,"schema":{"type":"string","format":"uuid"}}],
+                respuestas_ok={"204":{"description":"Dispositivo desactivado."}},
+                errores_ms={"401":"JWT requerido","422":"UUID inválido"},
+                descripcion_404="Dispositivo inexistente o ajeno.", esquema_404=error_404_recurso),
+        },
+        **{
+            f"/api/notificaciones/{{notificacion_id}}/{sufijo}": {
+                metodo: _operacion(tag="Notificaciones", resumen=resumen,
+                    descripcion="Solo el destinatario del aviso. Aceptada significa aceptación por SMTP/FCM, no lectura por la persona. Un reintento no vuelve a enviar canales ya aceptados ni duplica el aviso lógico.",
+                    operation_id=f"notificacion_{sufijo}", cuerpo=None, requiere_auth=True,
+                    parametros_extra=[{"name":"notificacion_id","in":"path","required":True,"schema":{"type":"integer","minimum":1}}],
+                    respuestas_ok={"200":_respuesta("Estado e intentos de los canales.",{"type":"array","items":_ref("EntregaRespuesta")})},
+                    errores_ms={"401":"JWT requerido","422":"Identificador inválido"},
+                    descripcion_404="Notificación inexistente o ajena.",esquema_404=error_404_recurso)
+            }
+            for sufijo,metodo,resumen in [("entregas","get","Consultar mis intentos de correo y push"),("reintentos","post","Reintentar canales fallidos de mi aviso")]
         },
         "/api/notificaciones/leer-todas": {
             "patch": _operacion(tag="Notificaciones", resumen="Marcar todos mis avisos como leídos",

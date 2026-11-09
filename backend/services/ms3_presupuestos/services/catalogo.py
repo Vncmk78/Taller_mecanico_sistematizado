@@ -33,6 +33,8 @@ from services.ms3_presupuestos.models import (
     Repuesto,
 )
 from services.ms3_presupuestos.persistencia import ConflictoDeDatos, UnidadDeTrabajo
+from services.ms3_presupuestos.services.inventario import umbral_efectivo,esta_bajo_umbral
+from services.ms3_presupuestos.services.avisos import registrar_alerta
 from services.ms3_presupuestos.persistencia.repositorios import FiltroRepuestos, OrdenRepuestos
 from services.ms3_presupuestos.schemas.catalogo import (
     ProveedorActualizar,
@@ -139,6 +141,8 @@ def crear_repuesto(uow: UnidadDeTrabajo, datos: RepuestoCrear, *, administrador_
                 observacion="Umbral particular inicial",
             ))
             uow.sesion.flush()
+        efectivo=umbral_efectivo(repuesto,umbral_general(uow))
+        if esta_bajo_umbral(repuesto.stock,efectivo):registrar_alerta(uow,repuesto,efectivo)
     return repuesto
 
 
@@ -148,6 +152,8 @@ def actualizar_repuesto(
     enviados = cambios.model_fields_set
     with uow.transaccion():
         repuesto = uow.repuestos.obtener_para_actualizar(repuesto_id)
+        general=umbral_general(uow)
+        estaba_bajo=esta_bajo_umbral(repuesto.stock,umbral_efectivo(repuesto,general))
         proveedor_id = repuesto.proveedor_id
         if "proveedor_id" in enviados and cambios.proveedor_id is not None:
             proveedor_id = uow.proveedores.obtener_o_error(cambios.proveedor_id).proveedor_id
@@ -169,6 +175,8 @@ def actualizar_repuesto(
             repuesto.umbral_particular = cambios.umbral_particular
         uow.sesion.flush()
         uow.sesion.refresh(repuesto)
+        efectivo=umbral_efectivo(repuesto,general)
+        if esta_bajo_umbral(repuesto.stock,efectivo) and not estaba_bajo:registrar_alerta(uow,repuesto,efectivo)
     return repuesto
 
 
@@ -219,7 +227,7 @@ def _exigir_repuesto_libre(
 
 
 def a_repuesto(repuesto: Repuesto, general: int | None) -> RepuestoSalida:
-    efectivo = repuesto.umbral_particular if repuesto.umbral_particular is not None else general
+    efectivo = umbral_efectivo(repuesto,general)
     return RepuestoSalida(
         repuesto_id=repuesto.repuesto_id, nombre=repuesto.nombre,
         proveedor_id=repuesto.proveedor_id, proveedor_nombre=repuesto.proveedor.nombre,

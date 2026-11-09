@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
+import { repuestoService } from '@/infrastructure/api/RepuestoService';
 import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import type { Movimiento, TipoMovimiento } from '@/domain/entities/Inventario';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -36,6 +37,14 @@ export function AdminInventoryMovementsPage() {
     const [mCantidad, setMCantidad] = useState('');
     const [mOrdenId, setMOrdenId] = useState('');
     const [mProveedorId, setMProveedorId] = useState('');
+    const [nombres, setNombres] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        // Nombres de repuestos para mostrar el movimiento con su repuesto, no solo el id.
+        void repuestoService.getRepuestos({ limite: 200 })
+            .then((pagina) => setNombres(Object.fromEntries(pagina.repuestos.map((r) => [r.repuestoId, r.nombre]))))
+            .catch(() => setNombres({}));
+    }, []);
 
     const load = useCallback(async () => {
         setStatus('loading');
@@ -96,7 +105,7 @@ export function AdminInventoryMovementsPage() {
             setMProveedorId('');
             await load();
         } catch (err) {
-            setMovementError(getApiErrorMessage(err, 'No se pudo registrar el movimiento.'));
+            setMovementError(mensajeMovimiento(err));
         } finally {
             setMovementSubmitting(false);
         }
@@ -174,16 +183,20 @@ export function AdminInventoryMovementsPage() {
                                 <TableHeaderCell>Tipo</TableHeaderCell>
                                 <TableHeaderCell className="text-right">Cantidad</TableHeaderCell>
                                 <TableHeaderCell>Orden</TableHeaderCell>
+                                <TableHeaderCell>Responsable</TableHeaderCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
                             {movimientos.map((m) => (
                                 <TableRow key={m.movimientoId}>
                                     <TableCell className="text-text-muted">{new Date(m.fechaHora).toLocaleString('es-CL')}</TableCell>
-                                    <TableCell className="font-medium">#{m.repuestoId}</TableCell>
+                                    <TableCell className="font-medium">
+                                        {nombres[String(m.repuestoId)] ? `${nombres[String(m.repuestoId)]} (#${m.repuestoId})` : `#${m.repuestoId}`}
+                                    </TableCell>
                                     <TableCell>{m.tipo}</TableCell>
                                     <TableCell className="text-right">{m.cantidad}</TableCell>
                                     <TableCell className="text-text-muted">{m.ordenId ?? '-'}</TableCell>
+                                    <TableCell className="text-text-muted">Usuario #{m.registradoPorId}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
@@ -246,4 +259,17 @@ export function AdminInventoryMovementsPage() {
             )}
         </div>
     );
+}
+
+interface FaltanteApi { nombre: string; solicitado: number; disponible: number; faltan: number }
+
+/** Mensaje del rechazo: con stock insuficiente detalla cuánto falta de cada repuesto. */
+function mensajeMovimiento(err: unknown): string {
+    const base = getApiErrorMessage(err, 'No se pudo registrar el movimiento.');
+    const faltantes = (err as { response?: { data?: { faltantes?: FaltanteApi[] } } })?.response?.data?.faltantes;
+    if (!faltantes?.length) return base;
+    const detalle = faltantes
+        .map((f) => `${f.nombre}: faltan ${f.faltan} (disponible ${f.disponible}, solicitado ${f.solicitado})`)
+        .join('; ');
+    return `Stock insuficiente. ${detalle}. No se registró ningún cambio.`;
 }

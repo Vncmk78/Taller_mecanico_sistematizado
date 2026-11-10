@@ -272,7 +272,7 @@ Antes había además 4 `xfail` estrictos que registraban huecos de seguridad
 abiertos (§4.3 y §4.4 de la matriz de autorización): **ya están corregidos**,
 las marcas se retiraron y sus casos quedaron como pruebas de regresión con
 código de rechazo exacto (3 casos nuevos y las 4 antiguas convertidas, más
-las de versiones/inventario de §4.4 → 18 en
+las de versiones/inventario de §4.4 → 25 en
 `test_acceso_indebido_roles.py`). Este documento mantiene todos los estados
 identificados; ninguno se esconde ni se «bendice».
 
@@ -290,19 +290,86 @@ suite. Con todos los servicios levantadas no debería quedar ninguna omitida.
 | `test_decisiones_presupuesto_postgresql.py` | 45 | Dos PostgreSQL locales descartables | Ver el propio archivo (casos SCRUM-397/438) |
 | **Total** | **55** | **MinIO (10) + PostgreSQL (45)** | |
 
-### 2. `xfail` estrictos por hueco de seguridad abierto (4)
+### 2. Casos corregidos de seguridad — registro con evidencia (2026-11)
 
-Son en `test_acceso_indebido_roles.py`. Marcan un comportamiento **no deseado y
-conocido**: hoy la API lo permite y la prueba lo documenta como brecha. Son
-**estrictos** (`strict=True`): si alguien corrige la brecha, la prueba empieza a
-fallar y obliga a retirar la marca, así nadie la deja pasar por alto.
+Cada déficit de seguridad corregido en la rama `DerisA` queda registrado aquí
+con su defecto, su corrección y la prueba reproducible que lo demuestra
+(`cd backend && python -m pytest tests/<archivo>.py -q`).
 
-| Prueba | Brecha que registra |
+#### 2.1 Credenciales vacías o de espacios en el login (MS1)
+
+- **Defecto:** `LoginSolicitud` no imponía longitud mínima a `password`
+  (`services/ms1_auth/schemas/auth.py`), así que una contraseña vacía o de
+  espacios llegaba al caso de uso como si fuera un intento real.
+- **Corrección:** `password: str = Field(min_length=1)` (commit `0e3aaa5`);
+  el rechazo ocurre en la capa de schemas (`422`), sin tocar la base ni sumar
+  intentos fallidos, por lo que tampoco puede bloquear una cuenta.
+- **Evidencia:** `tests/test_credenciales_vacias_y_multirol.py` —
+  `test_login_con_credenciales_vacias_o_invalidas_devuelve_422`,
+  `test_password_vacia_no_cuenta_como_intento_fallido`,
+  `test_password_incorrecta_no_vacia_si_cuenta_como_intento`,
+  `test_registro_con_datos_vacios_o_invalidos_devuelve_422_y_no_crea_cuenta`.
+
+El mismo archivo registra las reglas de **cuentas multirol**, que no era un
+déficit sino verificación reforzada (commit `ef62dc4`): el token lleva todos
+los roles sin duplicados y las reglas de credenciales (mensaje genérico,
+bloqueo, cuenta inactiva, acceso administrativo) se aplican igual que a una
+cuenta de un solo rol — entre otras,
+`test_token_de_cuenta_multirol_lleva_todos_los_roles_sin_duplicados`,
+`test_cuenta_multirol_se_bloquea_igual_que_una_de_un_rol`,
+`test_cuenta_multirol_inactiva_recibe_401_generico`,
+`test_multirol_sin_administrador_no_accede_a_gestion_de_usuarios` y
+`test_multirol_con_administrador_accede_con_token_de_login`.
+
+#### 2.2 Huecos de autorización §4.3 y §4.4 de la matriz de roles
+
+Los 4 `xfail` estrictos que registraban los huecos de
+`test_acceso_indebido_roles.py` se retiraron tras implementar la corrección:
+
+| Antiguo `xfail` | Estado actual |
 |---|---|
-| `test_mecanico_no_asignado_no_crea_presupuesto_de_orden_ajena` | Un mecánico crea presupuesto sobre una orden que no tiene asignada (§4.4 de la matriz) |
-| `test_mecanico_no_crea_presupuesto_de_orden_inexistente` | Variante del §4.4 usando una orden inexistente |
-| `test_administrador_no_asigna_a_un_usuario_inexistente` | `mecanico_id` de la orden sin validar contra MS1 (§4.3 de la matriz) |
-| `test_administrador_no_asigna_a_un_usuario_sin_rol_mecanico` | Variante del §4.3: el id existe pero no tiene rol mecánico |
+| `test_administrador_no_asigna_a_un_usuario_inexistente` | Pasa: `mecanico_id` se valida contra MS1 y el usuario inexistente responde `404` |
+| `test_administrador_no_asigna_a_un_usuario_sin_rol_mecanico` | Pasa: el usuario activo sin rol `mecanico` responde `409` |
+| `test_mecanico_no_asignado_no_crea_presupuesto_de_orden_ajena` | Pasa: MS3 consulta la visibilidad en MS2 y la orden ajena responde `404` |
+| `test_mecanico_no_crea_presupuesto_de_orden_inexistente` | Pasa: la orden inexistente responde `404` |
+
+- **§4.3 (commit `12de38d`):** asignación de mecánico validada fail-closed
+  contra MS1 (`services/ms2_taller/integracion_ms1.py`: `404` usuario
+  inexistente, `409` usuario inactivo o sin rol `mecanico`, `503` con MS1 no
+  disponible y la orden intacta) y creación de presupuesto en MS3 sujeta a la
+  visibilidad que MS2 confirma.
+- **§4.4 (commit `a98046c`):** el mismo alcance del mecánico se aplicó a las
+  versiones y a los movimientos de stock con `orden_id` de MS3
+  (`presupuestos.py` y `inventario.py::registrar`): orden ajena o inexistente
+  `404` indistinguible, MS2 caído `503`, todo fail-closed antes de escribir.
+- **Casos nuevos de evidencia (§4.3):** en `test_acceso_indebido_roles.py`,
+  `test_ms1_caido_no_modifica_reasignacion_ni_historial` (falla cerrada `503`
+  de MS1 con la orden intacta) y `test_mecanico_asignado_crea_presupuesto_con_su_identidad`
+  (mecánico asignado que SÍ presupuesta su orden, `201`); la validación del
+  destino inactivo o sin rol `mecanico` queda expuesta en
+  `test_validacion_referencias_personal.py` (`test_ms1_destino_invalido_se_rechaza`).
+- **Casos nuevos de evidencia (§4.4):**
+  `test_mecanico_no_asignado_no_versiona_ni_edita_presupuesto_ajeno`,
+  `test_mecanico_asignado_versiona_presupuesto_de_su_orden`,
+  `test_mecanico_no_asignado_no_registra_compromiso_de_stock_ajeno`,
+  `test_mecanico_asignado_registra_compromiso_de_su_orden` y
+  `test_compromiso_sin_ms2_no_se_aplica_responde_503`.
+
+#### 2.3 Auditoría de propiedad de vehículos y órdenes (§4.2)
+
+- **Resultado:** no se halló hueco de propiedad: el cliente solo opera sus
+  vehículos/órdenes, el mecánico solo las asignadas (con `404`
+  indistinguible) y la lectura administrativa del parque es intencional y
+  tiene pruebas que la exigen.
+- **Cobertura añadida (commit `c6f9a63`):** `tests/test_vehiculos_api.py` —
+  `test_post_administrador_puro_recibe_403` y
+  `test_patch_administrador_puro_recibe_403`: la escritura exige rol
+  `cliente` y el Administrador puro recibe `403` sin dejar cambios en la fila.
+- **Matriz alineada:** la §4.2 de
+  [`docs/matriz-autorizacion-roles.md`](backend/docs/matriz-autorizacion-roles.md)
+  quedó con el comportamiento real (listado y detalle administrativos del
+  parque completo con pruebas, `GET /api/vehiculos/asignados` solo mecánico,
+  `POST`/`PATCH` solo Cliente).
 
 Referencia completa de huecos y decisiones pendientes:
 [`docs/matriz-autorizacion-roles.md`](backend/docs/matriz-autorizacion-roles.md).

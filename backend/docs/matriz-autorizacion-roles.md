@@ -98,8 +98,9 @@ del `500` que daba hasta la corrección del hallazgo §8.3 de
 
 ### 4.2 Vehículos (MS2)
 
-Todos los endpoints pasan por `resolver_cliente_actual`, que exige rol `cliente` y
-perfil local; sin perfil local responde `404`, no `403`.
+`POST` y `PATCH /{id}` pasan por `resolver_cliente_actual`, que exige rol `cliente`
+y perfil local `Cliente`; con el rol pero sin perfil local responde `404`.
+El listado y el detalle resuelven la visibilidad por rol en el router.
 
 El perfil local se prepara con `POST /api/clientes/perfil` (contrato 2.2.0):
 exige rol `cliente` (`403` en otro caso) y toma la identidad del JWT; el body
@@ -113,21 +114,20 @@ no admite `usuario_id` ni roles. `GET /api/clientes/perfil` usa el mismo
 
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
-| `POST /api/vehiculos` | ✅ | ❌ | ⚠️ * |
-| `GET /api/vehiculos` | ✅ los suyos | ❌ | ⚠️ * |
-| `GET /api/vehiculos/{id}` | ✅ el suyo | ⚠️ solo de sus órdenes asignadas (otro: `404`) | ⚠️ * |
-| `PATCH /api/vehiculos/{id}` | ✅ el suyo | ❌ | ⚠️ * |
-| `GET /api/vehiculos/asignados` | ❌ 403 | ✅ los de sus órdenes asignadas | ❌ 403 ** |
+| `POST /api/vehiculos` | ✅ | ❌ 403 | ❌ 403 |
+| `GET /api/vehiculos` | ✅ los suyos | ❌ 403 | ✅ todo el parque |
+| `GET /api/vehiculos/{id}` | ✅ el suyo | ⚠️ solo con orden asignada | ✅ cualquiera |
+| `PATCH /api/vehiculos/{id}` | ✅ el suyo | ❌ 403 | ❌ 403 |
+| `GET /api/vehiculos/asignados` | ❌ 403 | ✅ los que atiende | ❌ 403 |
 
-\* Solo si la cuenta **además** tiene el rol `cliente` y existe su perfil `Cliente`
-en MS2. El rol `administrador` por sí solo **no** da acceso a vehículos.
-
-\*\* Salvo que la cuenta **además** tenga el rol `mecanico`.
-
-El mecánico lista los vehículos que atiende con `GET /api/vehiculos/asignados`
-(`services/ms2_taller/routers/vehiculos.py`, `listar_vehiculos_para_mecanico`).
-*Corregido en Semana 9: esta sección decía que la ruta no existía
-(observación O-01 de `contratos-integracion-iv.md`).*
+- Con rol `cliente` y sin perfil `Cliente` local, `POST`/`PATCH` y la ruta por
+  rama de cliente responden `404` (perfil no existe), no `403`.
+- En el detalle, un mecánico sin orden asignada sobre ese vehículo recibe `404`
+  indistinguible de un vehículo inexistente, igual que el cliente ajeno.
+- La lectura administrativa del parque completo (listado y detalle) es
+  intencional y está verificada con pruebas; la escritura en cambio exige el
+  rol `cliente`, incluso para el Administrador (`403` de
+  `resolver_cliente_actual`).
 
 ### 4.3 Órdenes de trabajo (MS2)
 
@@ -297,8 +297,8 @@ a esta matriz:
   autoasignarse ni cambiar el responsable de una orden.
 - Ofrecer el cambio de estado solo en órdenes asignadas al mecánico, y sin los pares
   reservados a operaciones específicas (`1 → 2`, `3 → 4/5`, `6 → 7` responden `409`).
-- Para listar los vehículos del mecánico usar `GET /api/vehiculos/asignados`; no
-  usar `GET /api/vehiculos`, que responde `403` al rol `mecanico`.
+- El listado de vehículos para el mecánico es `GET /api/vehiculos/asignados`,
+  limitado a los vehículos con órdenes asignadas a él; otros roles reciben `403`.
 - Ocultar una acción por rol es una medida de experiencia de usuario, **no** de
   seguridad. Cada endpoint que exponga esa acción debe repetir la comprobación en el
   servidor; confiar solo en la interfaz permite saltarse el permiso con `curl`.

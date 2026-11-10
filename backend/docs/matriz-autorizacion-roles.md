@@ -98,22 +98,26 @@ del `500` que daba hasta la corrección del hallazgo §8.3 de
 
 ### 4.2 Vehículos (MS2)
 
-Todos los endpoints pasan por `resolver_cliente_actual`, que exige rol `cliente` y
-perfil local; sin perfil local responde `404`, no `403`.
+`POST` y `PATCH /{id}` pasan por `resolver_cliente_actual`, que exige rol `cliente`
+y perfil local `Cliente`; con el rol pero sin perfil local responde `404`.
+El listado y el detalle resuelven la visibilidad por rol en el router.
 
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
-| `POST /api/vehiculos` | ✅ | ❌ | ⚠️ * |
-| `GET /api/vehiculos` | ✅ los suyos | ❌ | ⚠️ * |
-| `GET /api/vehiculos/{id}` | ✅ el suyo | ❌ | ⚠️ * |
-| `PATCH /api/vehiculos/{id}` | ✅ el suyo | ❌ | ⚠️ * |
-| `GET /api/vehiculos/asignados` | — | — | — |
+| `POST /api/vehiculos` | ✅ | ❌ 403 | ❌ 403 |
+| `GET /api/vehiculos` | ✅ los suyos | ❌ 403 | ✅ todo el parque |
+| `GET /api/vehiculos/{id}` | ✅ el suyo | ⚠️ solo con orden asignada | ✅ cualquiera |
+| `PATCH /api/vehiculos/{id}` | ✅ el suyo | ❌ 403 | ❌ 403 |
+| `GET /api/vehiculos/asignados` | ❌ 403 | ✅ los que atiende | ❌ 403 |
 
-\* Solo si la cuenta **además** tiene el rol `cliente` y existe su perfil `Cliente`
-en MS2. El rol `administrador` por sí solo **no** da acceso a vehículos.
-
-El mecánico **no tiene hoy ninguna forma de listar los vehículos que atiende**: esa
-ruta no existe.
+- Con rol `cliente` y sin perfil `Cliente` local, `POST`/`PATCH` y la ruta por
+  rama de cliente responden `404` (perfil no existe), no `403`.
+- En el detalle, un mecánico sin orden asignada sobre ese vehículo recibe `404`
+  indistinguible de un vehículo inexistente, igual que el cliente ajeno.
+- La lectura administrativa del parque completo (listado y detalle) es
+  intencional y está verificada con pruebas; la escritura en cambio exige el
+  rol `cliente`, incluso para el Administrador (`403` de
+  `resolver_cliente_actual`).
 
 ### 4.3 Órdenes de trabajo (MS2)
 
@@ -269,8 +273,8 @@ a esta matriz:
   autoasignarse ni cambiar el responsable de una orden.
 - No ofrecer acciones de cambio de estado: **no existe endpoint** de cambio general
   de estado. La única transición automática es la que dispara la primera asignación.
-- No ofrecer listado de vehículos al mecánico: `GET /api/vehiculos/asignados` **no
-  existe**.
+- El listado de vehículos para el mecánico es `GET /api/vehiculos/asignados`,
+  limitado a los vehículos con órdenes asignadas a él; otros roles reciben `403`.
 - Ocultar una acción por rol es una medida de experiencia de usuario, **no** de
   seguridad. Cada endpoint que exponga esa acción debe repetir la comprobación en el
   servidor; confiar solo en la interfaz permite saltarse el permiso con `curl`.

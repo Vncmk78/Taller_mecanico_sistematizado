@@ -38,23 +38,48 @@ Comprobaciones adicionales:
   requieren infraestructura externa), incluidas las 10 nuevas de
   `tests/test_inicializar_bd.py`.
 
-## Pendiente de ejecutar en un equipo del grupo
+## Contenedor de migraciones: validación completada en macOS
 
-El contenedor `migraciones` (`docker compose ... run --rm --build migraciones`)
-no se pudo construir en el entorno de validación porque ese entorno no permite
-que `pip` descargue paquetes dentro de `docker build`. El contenedor ejecuta
-exactamente el mismo `scripts/inicializar_bd.py` (vía
-`SGTM_SERVICIO=migraciones`), que sí se validó desde el equipo con las mismas
-bases. Para cerrarlo, en Docker Desktop:
+El pendiente de construir y ejecutar la imagen real quedó cerrado el
+**9 de noviembre de 2026**, sobre `MartinH` (base `83b75de`), con Docker Desktop
+y arquitectura **ARM64**. La validación inicial descrita arriba usó el script
+desde el equipo; esta comprobación adicional ejecutó el `CMD` del Dockerfile:
+`scripts/iniciar_servicio.py` → `SGTM_SERVICIO=migraciones` → `inicializar_bd.py`.
 
-```bash
-docker compose -f despliegue/compose.bd.yml --env-file despliegue/.env.despliegue down --volumes
-docker compose -f despliegue/compose.bd.yml --env-file despliegue/.env.despliegue up -d --wait postgres
-docker compose -f despliegue/compose.bd.yml --env-file despliegue/.env.despliegue run --rm --build migraciones
+Se usó el Compose existente con una sobreescritura local que asigna nombres
+únicos a contenedores, volumen, red e imagen, y un puerto libre en `127.0.0.1`.
+**Cambiar solo `-p` no basta para aislar este Compose:** sus nombres de
+contenedores, volumen y red están fijados explícitamente. Se comprobó que los
+recursos nuevos no existieran antes y se generaron credenciales privadas nuevas.
+Las bases de desarrollo, pruebas, demostración y despliegue existentes no se usaron.
+
+| Comprobación adicional | Resultado |
+|---|---|
+| `docker compose ... build migraciones` | Código 0, 27,9 s; dependencias descargadas dentro de `docker build` |
+| Ejecución de la imagen sin red para inspección | UID 10001; sin `.env`, `.git`, `.pruebas`, `.demo-final` ni el archivo privado del correo |
+| PostgreSQL nuevo | Sano en 6,1 s; cuatro bases sin tablas antes de migrar y cuatro roles propios sin superusuario, createdb, createrole ni bypassrls |
+| Matriz de conexiones | 4 conexiones propias aceptadas y las 12 conexiones cruzadas rechazadas |
+| `docker compose ... run --rm --no-deps migraciones` | Código 0, 2,1 s; aplica las 38 revisiones desde cero en orden MS1 → MS4 |
+| Segunda ejecución del mismo contenedor | Código 0, 1,7 s; 0 revisiones nuevas; columnas, índices, cantidades de filas y revisiones idénticos |
+| `docker compose ... run --rm --no-deps migraciones python scripts/inicializar_bd.py verificar` | Código 0, 1,6 s; cuatro heads correctos y tablas de los modelos presentes |
+| Limpieza del proyecto propio | Contenedores, volumen y red descartables eliminados; etiqueta de imagen propia retirada; todos los contenedores anteriores conservados |
+
+Las ejecuciones terminaron con:
+
+```text
+MS1: OK | BD: 0008_contexto_avisos_ms1
+MS2: OK | BD: 0014_nueva_atencion_ms2
+MS3: OK | BD: 0011_avisos_ms3
+MS4: OK | BD: 0001_ms4
+Base de datos lista: las cuatro bases coinciden con el código.
 ```
 
-Resultado esperado: la última línea es
-`Base de datos lista: las cuatro bases coinciden con el código.` y código 0.
+También pasaron **42 pruebas** de `tests/test_inicializar_bd.py` y
+`tests/test_scripts_despliegue.py` (2 avisos de deprecación de dependencias).
+Se agregó `.pruebas` y `.demo-final` a `.dockerignore` para excluir las carpetas
+privadas del contexto de construcción, además de las copias explícitas del
+Dockerfile. No se modificaron migraciones ni lógica de negocio. Esta ejecución
+no repite la carga de escenarios ni acredita un despliegue público o en AMD64.
 
 ## Cómo repetir esta validación
 

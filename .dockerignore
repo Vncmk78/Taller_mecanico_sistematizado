@@ -6,6 +6,8 @@
 **/node_modules
 **/__pycache__
 **/.pytest_cache
+**/.pruebas
+**/.demo-final
 **/tests
 **/dist
 **/*.log

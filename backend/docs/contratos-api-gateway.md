@@ -29,10 +29,13 @@ Reglas que se aplican a todos los endpoints:
 - Errores propios de la Gateway: `RUTA_NO_ENCONTRADA` (404),
   `MICROSERVICIO_INALCANZABLE` (502), `TIEMPO_AGOTADO` (504),
   `GATEWAY_SATURADA` (503), `CUERPO_DEMASIADO_GRANDE` (413),
+  `RESPUESTA_INVALIDA` (502), `SOLICITUD_INTERRUMPIDA` (400),
   `ERROR_MICROSERVICIO` y `ERROR_INTERNO` (500), todos con el cuerpo
   `{"detail": "...", "error": {"codigo", "estado", "ruta", "request_id"}}`.
   `GATEWAY_SATURADA`, `ERROR_MICROSERVICIO` y `CUERPO_DEMASIADO_GRANDE` son de
-  la Semana 4/5 (mapeo de errores, cabeceras y límites de body).
+  la Semana 4/5 (mapeo de errores, cabeceras y límites de body);
+  `RESPUESTA_INVALIDA` y `SOLICITUD_INTERRUMPIDA` son de la Semana 10 (ver
+  `escenarios-error-gateway.md`).
 - Límites de body por prefijo (checklist 4.2): la Gateway rechaza con `413`
   (`CUERPO_DEMASIADO_GRANDE`, mensaje genérico) los bodies mayores al límite
   del prefijo **antes de leerlos o llamar al microservicio**. El `prefijo`
@@ -65,7 +68,15 @@ Fallo de red del proxy (no llega ninguna respuesta del microservicio):
 | `ConnectError`, `ConnectTimeout` | 502 | `MICROSERVICIO_INALCANZABLE` |
 | `ReadTimeout`, `WriteTimeout` | 504 | `TIEMPO_AGOTADO` |
 | `PoolTimeout` | 503 | `GATEWAY_SATURADA` |
+| `RemoteProtocolError`, `DecodingError` | 502 | `RESPUESTA_INVALIDA` |
 | Otro `RequestError` | 502 | `MICROSERVICIO_INALCANZABLE` |
+
+Respuesta del microservicio que no se puede usar (Semana 10): un `2xx` que
+declara `Content-Type: application/json` pero cuyo body no es JSON válido se
+reemplaza por `502 RESPUESTA_INVALIDA`; el body recibido no se reenvía ni se
+registra. Si el cliente corta la conexión mientras la Gateway lee el body
+(subida interrumpida), responde `400 SOLICITUD_INTERRUMPIDA` sin llamar al
+microservicio.
 
 ### Cabeceras de la respuesta
 

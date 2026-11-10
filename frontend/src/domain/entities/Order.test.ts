@@ -24,7 +24,7 @@ const ESTADOS_SIN_AVANCE_DEL_MECANICO: Record<number, string> = {
     1: 'la primera asignación la realiza el administrador mediante la operación específica',
     2: 'el administrador envía el primer presupuesto',
     3: 'la aprobación del presupuesto la gestiona el cliente',
-    4: 'la disponibilidad depende de un evento MS3 cuyo actor sigue pendiente de definición',
+    4: 'la disponibilidad la confirma el administrador mediante la operación específica de inventario',
     6: 'la entrega física la gestiona el administrador',
     7: 'es terminal (Entregado)',
     8: 'es terminal (Cancelado)',

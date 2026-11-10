@@ -20,7 +20,9 @@ import { orderService } from '@/infrastructure/api/OrderService';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import type { ResultadoDisponibilidad } from '@/domain/entities/Inventario';
+import type { Order } from '@/domain/entities/Order';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
+import { useOrderHistoryStore } from '@/infrastructure/stores/useOrderHistoryStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { EvidenceUploadForm } from '@/presentation/components/evidence/EvidenceUploadForm';
 import { EvidenceList } from '@/presentation/components/evidence/EvidenceList';
@@ -32,6 +34,8 @@ export function AdminOrderDetailPage() {
     );
     const { presupuesto: presupuestoOrden } = useBudgetDetail(id);
     const { isOffline, error, requestId } = useOrderStore();
+    const updateOrder = useOrderStore((s) => s.updateOrder);
+    const refreshOrderHistory = useOrderHistoryStore((s) => s.fetchOrderHistory);
     const vehicles = useVehicleStore((s) => s.vehicles);
     const [evidenciasAbiertas, setEvidenciasAbiertas] = useState(true);
     const [evidenciasRefresh, setEvidenciasRefresh] = useState(0);
@@ -79,6 +83,76 @@ export function AdminOrderDetailPage() {
         } finally {
             setStockSubmitting(false);
         }
+    };
+
+    const handleConfirmarDisponibilidad = async () => {
+        if (!order?.id) return;
+        const orderId = Number(order.id);
+        setStockSubmitting(true);
+        setStockActionError(null);
+        setStockActionSuccess(null);
+        try {
+            await inventarioService.confirmarDisponibilidad(orderId);
+            const actualizado = await recargarOrdenYStock(orderId);
+            if (actualizado?.estadoCodigo === 5) {
+                setStockActionSuccess('Disponibilidad confirmada y orden en reparación.');
+            } else if (!actualizado) {
+                setStockActionSuccess('Disponibilidad confirmada. No se pudo actualizar el detalle de la orden.');
+            } else {
+                setStockActionSuccess('Disponibilidad confirmada. Se actualizó la orden y el historial.');
+            }
+        } catch (err) {
+            const response = (err as {
+                response?: {
+                    status?: number;
+                    data?: { detail?: string | { mensaje?: string; faltantes?: Array<{ repuesto_id: number; requerido: number; disponible: number }> } };
+                };
+            })?.response;
+            const faltantes = typeof response?.data?.detail === 'object'
+                ? response.data.detail.faltantes
+                : undefined;
+
+            if (response?.status === 409 && faltantes?.length) {
+                const detalle = faltantes.map((f) => {
+                    const nombre = disponibilidad?.repuestos.find((r) => r.repuestoId === f.repuesto_id)?.nombre
+                        ?? `Repuesto ${f.repuesto_id}`;
+                    return `${nombre} (faltan ${Math.max(0, f.requerido - f.disponible)})`;
+                }).join(', ');
+                setStockActionError(`Stock insuficiente: ${detalle}`);
+                try {
+                    setDisponibilidad(await inventarioService.getDisponibilidadOrden(orderId));
+                } catch {
+                    // Se conserva el detalle del 409 si el refresco de stock también falla.
+                }
+            } else if (response?.status === 503 || !response?.status) {
+                const actualizado = await recargarOrdenYStock(orderId);
+                if (actualizado?.estadoCodigo === 5) {
+                    setStockActionSuccess('La confirmación se aplicó y la orden ya está en reparación.');
+                } else {
+                    setStockActionError('No se pudo confirmar la respuesta del servidor. La reserva pudo quedar registrada; reintentar es seguro.');
+                }
+            } else {
+                setStockActionError(getApiErrorMessage(err, 'No se pudo confirmar la disponibilidad de repuestos.'));
+            }
+        } finally {
+            setStockSubmitting(false);
+        }
+    };
+
+    const recargarOrdenYStock = async (orderId: number) => {
+        const orderIdString = String(orderId);
+        const [orderResult, , availabilityResult] = await Promise.allSettled([
+            orderService.getOrderById(orderIdString),
+            refreshOrderHistory(orderIdString, orderService.getOrderHistory),
+            inventarioService.getDisponibilidadOrden(orderId),
+        ]);
+        let actualizado: Order | undefined;
+        if (orderResult.status === 'fulfilled') {
+            actualizado = orderResult.value;
+            updateOrder(actualizado);
+        }
+        if (availabilityResult.status === 'fulfilled') setDisponibilidad(availabilityResult.value);
+        return actualizado;
     };
 
     const handleLiberar = async () => {
@@ -183,32 +257,42 @@ export function AdminOrderDetailPage() {
                 </section>
             )}
 
-            {disponibilidad && (
+            {(disponibilidad || order.estadoCodigo === 4) && (
                 <section className="card p-6 mt-6" aria-labelledby="admin-order-stock-title">
                     <h3 id="admin-order-stock-title" className="text-xl font-semibold mb-4">Disponibilidad de repuestos</h3>
-                    <p className="text-sm text-text-muted mb-4">
-                        {disponibilidad.disponible ? 'Stock suficiente para la orden.' : 'Faltan repuestos para completar la orden.'}
-                    </p>
-                    <ul className="space-y-2 mb-4">
-                        {disponibilidad.repuestos.map((r) => (
-                            <li key={r.repuestoId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
-                                <span>{r.nombre}</span>
-                                <span className={r.alcanza ? 'text-status-green' : 'text-status-red'}>
-                                    {r.disponible}/{r.requerido} {r.alcanza ? 'OK' : `faltan ${r.faltan}`}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
+                    {disponibilidad ? (
+                        <>
+                            <p className="text-sm text-text-muted mb-4">
+                                {disponibilidad.disponible ? 'Stock suficiente para la orden.' : 'Faltan repuestos para completar la orden.'}
+                            </p>
+                            <ul className="space-y-2 mb-4">
+                                {disponibilidad.repuestos.map((r) => (
+                                    <li key={r.repuestoId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
+                                        <span>{r.nombre}</span>
+                                        <span className={r.alcanza ? 'text-status-green' : 'text-status-red'}>
+                                            {r.disponible}/{r.requerido} {r.alcanza ? 'OK' : `faltan ${r.faltan}`}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </>
+                    ) : (
+                        <p className="text-sm text-text-muted mb-4">No se pudo cargar la disponibilidad actual.</p>
+                    )}
                     {stockActionError && <p className="text-status-red text-sm mb-3">{stockActionError}</p>}
                     {stockActionSuccess && <p className="text-status-green text-sm mb-3">{stockActionSuccess}</p>}
                     <div className="flex gap-3">
                         <button
                             type="button"
-                            onClick={handleReservar}
+                            onClick={order.estadoCodigo === 4 ? handleConfirmarDisponibilidad : handleReservar}
                             disabled={stockSubmitting}
                             className="px-4 py-2 rounded-lg bg-primary-blue text-white text-sm font-medium disabled:opacity-50"
                         >
-                            {stockSubmitting ? 'Procesando...' : 'Reservar stock'}
+                            {stockSubmitting
+                                ? 'Procesando...'
+                                : order.estadoCodigo === 4
+                                  ? 'Confirmar disponibilidad y pasar a reparación'
+                                  : 'Reservar stock'}
                         </button>
                         <button
                             type="button"

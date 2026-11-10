@@ -313,8 +313,8 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
     });
 
     // La vista ofrece solo acciones cuyo actor está definido para el mecánico.
-    // El envío inicial es administrativo y la disponibilidad posterior depende
-    // de un evento MS3 cuyo actor aún no está definido.
+    // El envío inicial y la confirmación de disponibilidad son operaciones
+    // administrativas específicas, no avances disponibles para el mecánico.
     describe('matriz de estados: qué ofrece el selector en cada uno', () => {
         const ESPERADOS: Record<number, string[]> = {
             1: [],

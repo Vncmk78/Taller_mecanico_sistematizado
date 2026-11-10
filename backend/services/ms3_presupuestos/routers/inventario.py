@@ -18,14 +18,25 @@ se aplica nada de la operación.
 
 Acceso: Mecánico y Administrador leen. Ingresos, ajustes y umbral general:
 solo Administrador. Compromisos, consumos y liberaciones (siempre de una
-orden): Mecánico o Administrador. El cliente no accede (403).
+orden): Mecánico o Administrador; el mecánico solo sobre las órdenes que
+tiene asignadas (MS3 lo confirma con MS2 reenviando su JWT, §4.4). El
+cliente no accede (403).
 """
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 
-from services.ms3_presupuestos.dependencies import obtener_unidad_de_trabajo, requerir_roles
-from services.ms3_presupuestos.persistencia import UnidadDeTrabajo
+from services.ms3_presupuestos.dependencies import (
+    obtener_token_bearer,
+    obtener_unidad_de_trabajo,
+    requerir_roles,
+)
+from services.ms3_presupuestos.integracion_ms2 import (
+    OrdenNoVisible,
+    VerificadorOrdenes,
+    obtener_verificador_ordenes,
+)
+from services.ms3_presupuestos.persistencia import RecursoNoEncontrado, UnidadDeTrabajo
 from services.ms3_presupuestos.persistencia.repositorios import LIMITE_MAXIMO
 from services.ms3_presupuestos.schemas.inventario import (
     CambioUmbral,
@@ -69,15 +80,20 @@ _404_REPUESTOS = status.HTTP_404_NOT_FOUND
     summary="Registrar un movimiento de stock",
     description=(
         "Ingreso y ajuste: Administrador. Compromiso, consumo y liberación: Mecánico o "
-        "Administrador, siempre con `orden_id`. Reenviar la misma `clave_operacion` devuelve "
-        "el movimiento original con 200 y `repetido: true` (no se aplica dos veces)."
+        "Administrador, siempre con `orden_id`; el mecánico solo sobre órdenes que tiene "
+        "asignadas (§4.4). Reenviar la misma `clave_operacion` devuelve el movimiento "
+        "original con 200 y `repetido: true` (no se aplica dos veces)."
     ),
     responses={
         **_401, **_403, **_404,
+        status.HTTP_404_NOT_FOUND: {"description": "Repuesto u orden inexistente (o no asignada al mecánico)"},
         status.HTTP_200_OK: {"description": "Clave repetida: se devuelve el movimiento original"},
         status.HTTP_409_CONFLICT: {"model": RechazoStock,
                                    "description": "Stock insuficiente (con `faltantes`), liberación "
                                                   "mayor a lo comprometido o clave usada con otros datos"},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "MS2 no disponible para validar la orden del mecánico"
+        },
         422: {"description": "Datos inválidos"},
     },
 )
@@ -86,10 +102,25 @@ def registrar(
     response: Response,
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> ResultadoMovimiento:
     if body.tipo in casos.TIPOS_ADMINISTRADOR and NombreRol.ADMINISTRADOR not in principal.roles:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail=f"Solo el administrador registra un {body.tipo}")
+    # §4.4: el mecánico solo mueve stock de las órdenes que tiene asignadas.
+    # La validación va antes de tocar stock: nada se registra sin acceso.
+    if (
+        body.orden_id is not None
+        and NombreRol.ADMINISTRADOR not in principal.roles
+    ):
+        try:
+            # Ser propietario con rol Cliente también da visibilidad en MS2;
+            # esa lectura no sustituye la asignación como Mecánico.
+            verificador.verificar_creacion_presupuesto(body.orden_id, token, principal)
+        except OrdenNoVisible as exc:
+            raise RecursoNoEncontrado(f"Orden {body.orden_id} no existe") from exc
+        # ServicioOrdenesNoDisponible viaja al manejador global de MS3 (503).
     resultado = casos.registrar_movimiento(uow, body, usuario_id=principal.usuario_id)
     if resultado.repetido:
         response.status_code = status.HTTP_200_OK

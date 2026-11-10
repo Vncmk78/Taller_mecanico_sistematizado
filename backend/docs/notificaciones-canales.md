@@ -118,7 +118,10 @@ cíclicos de Vercel. Eso no configura secretos ni proveedores.
 
 ## Proveedores
 
-SMTP usa STARTTLS o SSL con validación de certificados. Las variables están en
+SMTP usa STARTTLS o SSL con validación de certificados. El contexto conserva
+las CA del sistema y agrega las CA públicas de `certifi`, para funcionar también
+en instalaciones de Python de macOS sin almacén de certificados configurado.
+Nunca desactiva la verificación del certificado ni del nombre del servidor. Las variables están en
 `.env.example`: `MS1_SMTP_HOST`, `MS1_SMTP_PORT`, `MS1_SMTP_MODO`,
 `MS1_SMTP_REMITENTE`, `MS1_SMTP_USUARIO`, `MS1_SMTP_CLAVE`.
 `sin_tls_local` se admite exclusivamente en loopback para Mailpit.

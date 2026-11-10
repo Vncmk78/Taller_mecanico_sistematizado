@@ -122,8 +122,13 @@ def _orden_para_el_personal(
     uow: UnidadDeTrabajo, orden_id: int, presupuesto_id: int | None, token: str,
     verificador: VerificadorOrdenes, principal: PrincipalAutenticado,
 ) -> None:
-    """La orden debe ser visible para el mecánico/administrador y seguir abierta."""
-    orden = _exigir_orden_del_cliente(uow, orden_id, presupuesto_id, token, verificador)
+    """Exige asignación al Mecánico (salvo Administrador) y orden abierta."""
+    uow.liberar_conexion()
+    try:
+        orden = verificador.verificar_creacion_presupuesto(orden_id, token, principal)
+    except OrdenNoVisible as exc:
+        recurso = f"Presupuesto {presupuesto_id}" if presupuesto_id else f"Orden {orden_id}"
+        raise RecursoNoEncontrado(f"{recurso} no existe") from exc
     _exigir_orden_abierta(uow, orden, orden_id, principal.usuario_id)
 
 

@@ -189,6 +189,35 @@ def test_usuario_multirol_con_cliente_es_permitido(
     assert respuesta.status_code == 200
 
 
+def test_post_administrador_puro_recibe_403(api_ms2: TestClient):
+    """La visión administrativa es de solo lectura: sin rol `cliente` no escribe."""
+
+    respuesta = api_ms2.post(
+        "/vehiculos",
+        json={"patente": "QQ1111", "marca": "Marca", "modelo": "Modelo"},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 403
+
+
+def test_patch_administrador_puro_recibe_403(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente)
+
+    respuesta = api_ms2.patch(
+        f"/vehiculos/{vehiculo.vehiculo_id}",
+        json={"marca": "Nueva"},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 403
+    assert db_ms2.get(Vehiculo, vehiculo.vehiculo_id).marca == DATOS_VEHICULO["marca"]
+
+
 def test_post_valido_devuelve_201(api_ms2: TestClient, db_ms2: Session):
     cliente = _crear_cliente(db_ms2, usuario_id=1)
 

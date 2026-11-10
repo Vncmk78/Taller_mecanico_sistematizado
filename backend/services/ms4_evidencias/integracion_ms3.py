@@ -21,6 +21,7 @@ from typing import Protocol
 import httpx
 
 from services.ms4_evidencias.config import settings
+from services.ms4_evidencias.services.registro import cabeceras_request_id
 
 
 class PresupuestoNoEncontrado(Exception):
@@ -48,7 +49,7 @@ class VerificadorPresupuestosHttp:
         try:
             respuesta = httpx.get(
                 f"{self.url_base}/presupuestos/{presupuesto_id}",
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {token}", **cabeceras_request_id()},
                 timeout=self.timeout,
             )
         except httpx.HTTPError as exc:

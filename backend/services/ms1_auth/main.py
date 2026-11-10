@@ -14,6 +14,8 @@ from services.ms1_auth.routers import router_auth, router_notificaciones
 
 from services.ms1_auth.routers.entregas_notificaciones import router as router_entregas
 from services.ms1_auth.services.worker_notificaciones import ejecutar_worker
+from shared.correlacion import MiddlewareCorrelacion
+from shared.correlacion import configurar_logs as configurar_logs_correlacion
 
 
 @asynccontextmanager
@@ -31,6 +33,11 @@ async def lifespan(_app):
 
 
 app = FastAPI(lifespan=lifespan, title="SGTM — MS1: Autenticación y Usuarios", version="0.1.0")
+
+# Semana 10 (SCRUM-582): toma el X-Request-ID que reenvía la Gateway, lo
+# devuelve en toda respuesta y deja una línea de log por petición con ese ID.
+configurar_logs_correlacion()
+app.add_middleware(MiddlewareCorrelacion, servicio="ms1_auth")
 app.include_router(router_auth)
 app.include_router(router_notificaciones)
 app.include_router(router_entregas)

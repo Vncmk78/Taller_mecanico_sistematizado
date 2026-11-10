@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import re
 
+from shared.correlacion import cabeceras_correlacion
+
 
 def _origen_despliegue() -> str | None:
     if os.environ.get("VERCEL") != "1":
@@ -29,7 +31,8 @@ def url_ms3_por_defecto() -> str:
 
 
 def cabeceras_para_ms3(url_base: str, token: str) -> dict[str, str]:
-    cabeceras = {"Authorization": f"Bearer {token}"}
+    # Semana 10: mismo X-Request-ID que la petición en curso (si la hay).
+    cabeceras = {"Authorization": f"Bearer {token}", **cabeceras_correlacion()}
     origen = _origen_despliegue()
     secreto = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET", "")
     # El secreto de plataforma nunca se envía a otro host, alias o servicio.

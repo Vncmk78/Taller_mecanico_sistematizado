@@ -63,6 +63,29 @@ describe('InventarioService: contrato HTTP de inventario', () => {
         expect(resultado.reservado).toBe(true);
     });
 
+    it('confirmarDisponibilidad publica el contrato que reserva y continúa la orden', async () => {
+        vi.mocked(apiClient.post).mockResolvedValue({
+            data: {
+                clave_operacion: 'orden-101-v1',
+                orden_id: 101,
+                version_presupuesto: 2,
+                repuestos: [{ repuesto_id: 12, cantidad: 2 }],
+                aplicacion_confirmada: true,
+            },
+        });
+
+        const resultado = await inventarioService.confirmarDisponibilidad(101);
+
+        expect(apiClient.post).toHaveBeenCalledWith('/inventario/ordenes/101/disponibilidad');
+        expect(resultado).toEqual({
+            claveOperacion: 'orden-101-v1',
+            ordenId: 101,
+            versionPresupuesto: 2,
+            repuestos: [{ repuestoId: 12, cantidad: 2 }],
+            aplicacionConfirmada: true,
+        });
+    });
+
     it('reservar mapea faltantes cuando no alcanza stock', async () => {
         vi.mocked(apiClient.post).mockResolvedValue({
             data: {

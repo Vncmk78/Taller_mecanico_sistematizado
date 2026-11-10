@@ -10,6 +10,7 @@ import type {
     PaginaAlertas as PaginaAlertasEntity,
     PaginaMovimientos as PaginaMovimientosEntity,
     ResultadoDisponibilidad as ResultadoDisponibilidadEntity,
+    ResultadoConfirmarDisponibilidad as ResultadoConfirmarDisponibilidadEntity,
     ResultadoMovimiento as ResultadoMovimientoEntity,
     ResultadoOperacionOrden as ResultadoOperacionOrdenEntity,
     ResultadoReserva as ResultadoReservaEntity,
@@ -273,6 +274,23 @@ class InventarioService implements InventarioPort {
                 faltan: f.faltan,
             })),
             movimientos: data.movimientos.map(mapMovimiento),
+        };
+    }
+
+    async confirmarDisponibilidad(ordenId: number): Promise<ResultadoConfirmarDisponibilidadEntity> {
+        const { data } = await apiClient.post<{
+            clave_operacion: string;
+            orden_id: number;
+            version_presupuesto: number;
+            repuestos: Array<{ repuesto_id: number; cantidad: number }>;
+            aplicacion_confirmada: true;
+        }>(`/inventario/ordenes/${ordenId}/disponibilidad`);
+        return {
+            claveOperacion: data.clave_operacion,
+            ordenId: data.orden_id,
+            versionPresupuesto: data.version_presupuesto,
+            repuestos: data.repuestos.map((r) => ({ repuestoId: r.repuesto_id, cantidad: r.cantidad })),
+            aplicacionConfirmada: data.aplicacion_confirmada,
         };
     }
 

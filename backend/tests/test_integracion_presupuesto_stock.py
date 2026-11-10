@@ -173,6 +173,38 @@ def test_cuando_llega_stock_la_reserva_se_completa(entorno) -> None:
     assert _estado_y_historial(entorno)[0] == ESPERANDO_REPUESTOS
 
 
+def test_fallo_al_aplicar_disponibilidad_se_reintenta_sin_duplicar_reserva(entorno) -> None:
+    _decidir(entorno, "aprobado", stock=0)
+    _ingreso(entorno, REQUERIDO)
+    entorno.fallo["modo"] = "antes"  # MS2 no confirma la transición.
+
+    primera = entorno.ms3.post(
+        f"/inventario/ordenes/{entorno.orden_id}/disponibilidad", headers=ADMIN
+    )
+
+    assert primera.status_code == 503, primera.text
+    detalle = primera.json()["detail"]
+    assert detalle["orden_id"] == entorno.orden_id
+    assert detalle["reintento"] == f"/api/inventario/ordenes/{entorno.orden_id}/disponibilidad"
+    assert _estado_y_historial(entorno)[0] == ESPERANDO_REPUESTOS
+    assert _movimientos(entorno) == [
+        ("ingreso", REQUERIDO, None),
+        ("compromiso", REQUERIDO, entorno.orden_id),
+    ]
+
+    entorno.fallo["modo"] = None
+    reintento = entorno.ms3.post(
+        f"/inventario/ordenes/{entorno.orden_id}/disponibilidad", headers=ADMIN
+    )
+
+    assert reintento.status_code == 200, reintento.text
+    assert _estado_y_historial(entorno)[0] == EN_REPARACION
+    assert _movimientos(entorno) == [
+        ("ingreso", REQUERIDO, None),
+        ("compromiso", REQUERIDO, entorno.orden_id),
+    ]
+
+
 def test_otra_orden_que_reservo_antes_deja_a_esta_esperando(entorno) -> None:
     with entorno.db3() as db:
         db.get(Repuesto, entorno.repuesto_id).stock = 3

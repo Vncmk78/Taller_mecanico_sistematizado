@@ -115,6 +115,14 @@ export interface ResultadoReserva {
     movimientos: Movimiento[];
 }
 
+export interface ResultadoConfirmarDisponibilidad {
+    claveOperacion: string;
+    ordenId: number;
+    versionPresupuesto: number;
+    repuestos: Array<{ repuestoId: number; cantidad: number }>;
+    aplicacionConfirmada: true;
+}
+
 export interface ResultadoOperacionOrden {
     ordenId: number;
     movimientos: Movimiento[];

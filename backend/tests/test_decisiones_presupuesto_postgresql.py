@@ -24,7 +24,7 @@ from services.ms2_taller.models import HistorialAsignacion, HistorialEstado, Ord
 from services.ms2_taller.services import ordenes as servicio_ordenes
 from services.ms3_presupuestos.models import DecisionPresupuesto, VersionPresupuesto
 from shared.auth import NombreRol
-from test_ordenes_api import _crear_vehiculo
+from test_ordenes_api import _crear_orden, _crear_vehiculo
 from test_decisiones_presupuesto_integracion import (
     _aplicar, _decidir, _estado_y_historial, _headers, preparar_flujo,
     test_cliente_multirol_solo_decide_presupuesto_de_su_orden as comprobar_multirol,
@@ -353,11 +353,9 @@ def test_decision_de_otra_orden_y_usuario_no_se_aplica(flujo_pg):
     decision_id = _decidir(flujo_pg).json()["decision_id"]
     flujo_pg.fallo["modo"] = None
     with flujo_pg.db2() as db:
-        original = db.get(OrdenTrabajo, flujo_pg.orden_id)
-        otra = OrdenTrabajo(vehiculo_id=original.vehiculo_id, ingreso_id=original.ingreso_id,
-                            creado_por_id=99, estado_codigo=3)
-        db.add(otra)
-        db.commit()
+        # Otra orden del mismo propietario, en otro vehículo: no se preparan
+        # dos órdenes activas sobre el mismo vehículo para probar ownership.
+        otra = _crear_orden(db, usuario_cliente=10, estado_codigo=3)
         otra_id = otra.orden_id
     assert _aplicar(flujo_pg, decision_id, orden_id=otra_id).status_code == 404
     assert _aplicar(flujo_pg, decision_id, headers=_headers(88)).status_code == 404

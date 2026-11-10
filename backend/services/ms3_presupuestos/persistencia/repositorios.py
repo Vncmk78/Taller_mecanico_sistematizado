@@ -16,7 +16,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Generic, Literal, TypeVar
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, select, false
 from sqlalchemy.sql import Select
 from sqlalchemy.orm import Session, lazyload, selectinload
 
@@ -216,7 +216,9 @@ class RepositorioRepuestos(RepositorioBase[Repuesto]):
         if f.con_stock is not None:
             consulta = consulta.where(Repuesto.stock > 0 if f.con_stock else Repuesto.stock == 0)
         if f.solo_bajo_umbral:
-            # Sin umbral general vigente, solo cuentan los umbrales particulares.
+            # Las alertas se activan una vez configurado el umbral general.
+            if f.umbral_general is None:
+                return consulta.where(false())
             efectivo = func.coalesce(Repuesto.umbral_particular, f.umbral_general)
             consulta = consulta.where(efectivo.is_not(None), Repuesto.stock < efectivo)
         return consulta
@@ -248,6 +250,8 @@ class RepositorioRepuestos(RepositorioBase[Repuesto]):
 
     def bajo_umbral(self, umbral_general: int) -> Sequence[Repuesto]:
         """Repuestos con stock < umbral efectivo (particular o, si falta, general)."""
+        if umbral_general is None:
+            return []
         umbral_efectivo = func.coalesce(Repuesto.umbral_particular, umbral_general)
         consulta = select(Repuesto).where(Repuesto.stock < umbral_efectivo).order_by(Repuesto.nombre)
         return self.sesion.scalars(consulta).all()

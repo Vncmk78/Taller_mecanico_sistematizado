@@ -65,8 +65,9 @@ MICROSERVICIOS: tuple[Microservicio, ...] = (
         nombre="ms2_taller",
         descripcion="Vehículos y Órdenes de Trabajo",
         url=settings.MS2_URL,
-        prefijos=("vehiculos", "ordenes"),
-        alias=("vehiculo", "orden", "clientes", "mecanicos"),
+        # `clientes` dejó de ser alias: MS2 publica `/clientes/perfil`.
+        prefijos=("vehiculos", "ordenes", "clientes"),
+        alias=("vehiculo", "orden", "mecanicos"),
         variable_timeout="MS2_TIMEOUT_SECONDS",
     ),
     Microservicio(

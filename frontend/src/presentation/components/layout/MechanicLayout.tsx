@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ClipboardList, RefreshCw, Car } from 'lucide-react';
+import { Bell, LayoutDashboard, ClipboardList, RefreshCw, Car } from 'lucide-react';
 import { RoleLayout } from '@/presentation/components/layout/RoleLayout';
 import { useRoleAccess } from '@/presentation/hooks/useRoleAccess';
 
@@ -11,6 +11,7 @@ const sections = [
       { to: '/mechanic/ordenes', icon: <ClipboardList className="w-5 h-5" />, label: 'Mis Órdenes', roles: ['mecanico' as const] },
       { to: '/mechanic/estados', icon: <RefreshCw className="w-5 h-5" />, label: 'Actualizar Estados', roles: ['mecanico' as const] },
       { to: '/mechanic/vehiculos', icon: <Car className="w-5 h-5" />, label: 'Vehículos Asignados', roles: ['mecanico' as const] },
+      { to: '/mechanic/notificaciones', icon: <Bell className="w-5 h-5" />, label: 'Centro de avisos', roles: ['mecanico' as const] },
     ],
   },
 ];

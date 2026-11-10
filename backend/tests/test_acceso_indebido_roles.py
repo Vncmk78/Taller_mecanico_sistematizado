@@ -372,10 +372,11 @@ def _datos_guardados(escenario):
 @pytest.mark.parametrize("mecanico_id", [12345, 42, 78])
 def test_destino_invalido_no_deja_escrituras(escenario, mecanico_id):
     antes = _datos_guardados(escenario)
-    r = _asignar_mecanico(escenario, mecanico_id, usuario_id=99, roles=NombreRol.ADMINISTRADOR)
+    headers = _cabeceras(99, NombreRol.ADMINISTRADOR)
+    r = escenario.ms2.put(f"/ordenes/{escenario.orden_id}/mecanico", headers=headers, json={"mecanico_id": mecanico_id})
     assert r.status_code == 422
     assert _datos_guardados(escenario) == antes
-    assert escenario.llamadas[0][1] == _cabeceras(99, NombreRol.ADMINISTRADOR)
+    assert escenario.llamadas[0][1] == headers
 
 
 def test_ms1_caido_no_modifica_reasignacion_ni_historial(escenario):

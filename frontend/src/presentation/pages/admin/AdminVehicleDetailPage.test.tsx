@@ -6,6 +6,7 @@ import type { Vehicle } from '@/domain/entities/Vehicle';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { AdminVehicleDetailPage } from './AdminVehicleDetailPage';
 
 vi.mock('@/infrastructure/api/VehicleService', () => ({
@@ -19,7 +20,18 @@ vi.mock('@/infrastructure/api/VehicleService', () => ({
 }));
 
 vi.mock('@/infrastructure/api/OrderService', () => ({
-    orderService: { getVehicleOrderHistory: vi.fn() },
+    orderService: { getVehicleOrderHistory: vi.fn(), crearOrden: vi.fn() },
+}));
+
+vi.mock('@/infrastructure/api/ConfiguracionTallerService', () => ({
+    configuracionTallerService: {
+        obtenerCupoDiario: vi.fn(() =>
+            Promise.resolve({
+                maxIngresosDiarios: 10, actualizadoPorId: '1', actualizadoEn: '2026-11-07T10:00:00-03:00',
+                jornadaLocal: '2026-11-07', ingresosRegistrados: 3, sobreLimite: false,
+            })
+        ),
+    },
 }));
 
 const vehiculo: Vehicle = {
@@ -51,9 +63,11 @@ const axiosNetworkError = { isAxiosError: true };
 function renderPage() {
     return render(
         <MemoryRouter initialEntries={['/admin/vehiculos/1']}>
-            <Routes>
-                <Route path="/admin/vehiculos/:id" element={<AdminVehicleDetailPage />} />
-            </Routes>
+            <ToastProvider>
+                <Routes>
+                    <Route path="/admin/vehiculos/:id" element={<AdminVehicleDetailPage />} />
+                </Routes>
+            </ToastProvider>
         </MemoryRouter>
     );
 }
@@ -74,6 +88,18 @@ describe('AdminVehicleDetailPage: ficha del vehículo', () => {
 
         expect(await screen.findByText('ABCD-12')).toBeInTheDocument();
         expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
+    });
+
+    it('ofrece registrar el ingreso y crear la orden del vehículo de la ficha', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(vehiculo);
+
+        renderPage();
+
+        expect(
+            await screen.findByRole('region', { name: 'Registrar ingreso y crear orden' })
+        ).toBeInTheDocument();
+        expect(screen.getByText('ABCD-12 · Ford Fiesta')).toBeInTheDocument();
+        expect(await screen.findByText(/Ingresos de hoy:/)).toHaveTextContent('3 de 10');
     });
 
     it('muestra el historial y enlaza al detalle de la orden en el portal administrador', async () => {

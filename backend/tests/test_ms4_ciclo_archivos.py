@@ -8,15 +8,16 @@ que se subió:
   bytes. Se sube por `POST /evidencias`, se consulta por listado y detalle, y
   se comprueba que la URL de `/descarga` apunta al objeto de ESA evidencia y
   que los bytes guardados tienen el SHA-256 registrado en la base.
-- **Con MinIO real** (se omiten si MinIO no está levantado): la subida va al
-  bucket privado con el usuario de mínimo privilegio de MS4 y la recuperación
-  se hace siguiendo la URL prefirmada como lo haría el navegador. Se prueban
+- **Con MinIO real** (se omiten sin almacenamiento de prueba configurado): la
+  subida va a un bucket privado exclusivo y desechable de cada prueba
+  (`tests/almacenamiento_s3_desechable.py`), nunca al bucket configurado de MS4,
+  y la recuperación se hace siguiendo la URL prefirmada como lo haría el
+  navegador. Se prueban
   integridad (SHA-256), cabeceras forzadas, metadatos del objeto, subida
   multipart (> 8 MiB), expiración y firma alterada (403), acceso anónimo
   (403) y que una falla de la base no deja archivos huérfanos en el bucket.
 
-Las órdenes de las pruebas con MinIO usan un número aleatorio alto y al final
-se borra su prefijo `ordenes/{orden_id}/`, así no se mezclan con datos reales.
+Al terminar cada prueba con MinIO se elimina su bucket completo y nada más.
 """
 from __future__ import annotations
 
@@ -31,17 +32,12 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
 import pytest
-from botocore.exceptions import (
-    ConnectionClosedError,
-    ConnectTimeoutError,
-    EndpointConnectionError,
-    ReadTimeoutError,
-)
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from services.ms4_evidencias import config as config_ms4
 from services.ms4_evidencias.config import Settings
 from services.ms4_evidencias.db import get_db
 from services.ms4_evidencias.dependencies import obtener_s3, obtener_s3_publico
@@ -50,7 +46,6 @@ from services.ms4_evidencias.main import app
 from services.ms4_evidencias.models import Base
 from services.ms4_evidencias.models.evidencia import Evidencia
 from services.ms4_evidencias.services.almacenamiento import (
-    crear_cliente_s3,
     crear_cliente_s3_publico,
     generar_url_descarga,
 )
@@ -63,16 +58,6 @@ SECRETO = "clave-secreta-exclusiva-para-pruebas-de-ms4-123456"
 MECANICO = 21
 ADMIN = 1
 CLIENTE = 40
-
-_ERRORES_MINIO_APAGADO = (
-    EndpointConnectionError,
-    ConnectTimeoutError,
-    ReadTimeoutError,
-    ConnectionClosedError,
-    ConnectionRefusedError,
-    TimeoutError,
-)
-
 
 # ---------------------------------------------------------------------------
 # Utilidades comunes
@@ -346,26 +331,23 @@ def test_cliente_recupera_solo_lo_visible_para_el(
 
 
 # ---------------------------------------------------------------------------
-# Ciclo con MinIO real (skip si no está levantado)
+# Ciclo con MinIO real, en un bucket exclusivo y desechable de cada prueba
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def minio() -> Generator[tuple[Settings, object, int], None, None]:
-    cfg = Settings()
-    cliente = crear_cliente_s3(cfg)
-    try:
-        cliente.list_objects_v2(Bucket=cfg.S3_BUCKET, MaxKeys=1)
-    except _ERRORES_MINIO_APAGADO:
-        pytest.skip("MinIO no está disponible (docker compose up -d minio minio_init)")
-
+def minio(
+    s3_prueba, almacenamiento, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Settings, object, int]:
+    bucket = almacenamiento.crear_bucket()
+    cfg = s3_prueba.settings(bucket).model_copy(
+        update={"URL_DESCARGA_TTL_SECONDS": config_ms4.settings.URL_DESCARGA_TTL_SECONDS}
+    )
+    # El router de MS4 toma el bucket de su configuración global: durante la
+    # prueba apunta al bucket exclusivo, nunca al configurado (MS4_S3_BUCKET).
+    monkeypatch.setattr(config_ms4.settings, "S3_BUCKET", bucket)
     orden_id = random.randint(900_000_000, 999_999_999)
-    yield cfg, cliente, orden_id
-
-    # Limpieza del prefijo de la orden de prueba.
-    respuesta = cliente.list_objects_v2(Bucket=cfg.S3_BUCKET, Prefix=f"ordenes/{orden_id}/")
-    for objeto in respuesta.get("Contents", []):
-        cliente.delete_object(Bucket=cfg.S3_BUCKET, Key=objeto["Key"])
+    return cfg, s3_prueba.cliente(), orden_id
 
 
 @pytest.fixture

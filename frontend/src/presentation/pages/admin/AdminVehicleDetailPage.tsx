@@ -11,6 +11,7 @@ import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { VehicleOrderHistoryPanel } from '@/presentation/components/orders/VehicleOrderHistoryPanel';
+import { RegistrarIngresoPanel } from '@/presentation/components/orders/RegistrarIngresoPanel';
 
 export function AdminVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -77,10 +78,13 @@ export function AdminVehicleDetailPage() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6">
-        <VehicleInfoPanel
-            vehicle={vehicle}
-            ownerLabel={vehicle.clientId ? `Cliente #${vehicle.clientId}` : undefined}
-        />
+        <div className="flex flex-col gap-6">
+            <VehicleInfoPanel
+                vehicle={vehicle}
+                ownerLabel={vehicle.clientId ? `Cliente #${vehicle.clientId}` : undefined}
+            />
+            <RegistrarIngresoPanel vehiculo={vehicle} />
+        </div>
 
         <VehicleOrderHistoryPanel
             key={vehicle.id}

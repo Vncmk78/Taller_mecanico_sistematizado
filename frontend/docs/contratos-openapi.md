@@ -216,7 +216,7 @@ requieran):
 | `PUT /api/ordenes/{id}/mecanico` | MS2 | Asignación/reasignación de mecánico (Admin). Sin vista aún. |
 | `PATCH /api/vehiculos/{id}` | MS2 | Edición de vehículo. Sin vista aún. |
 | `POST /api/auth/register` | MS1 | Registro de usuario. Sin vista aún. |
-| `POST /api/presupuestos/decisiones/{decision_id}/aplicacion` | MS3 | Reintento de aplicación de una decisión tras `503`. Sin vista dedicada: el flujo actual informa el `503` y conserva el `decision_id`. |
+| `POST /api/presupuestos/decisiones/{decision_id}/aplicacion` | MS3 | Reintento de aplicación de una decisión tras `503`. El detalle del presupuesto permite reintentar solo su aplicación, conservando `decision_id` y sin volver a decidir. |
 
 ## Estados de carga, vacío y error
 
@@ -439,3 +439,25 @@ quedaba pendiente —si el negocio exige el formato chileno o se acepta el que
 envíe el backend— se resolvió a favor del contrato, que es la autoridad: si en
 algún momento se quiere exigir un formato, corresponde declararlo en el backend
 y no solo en el formulario. Ver "Registro de discrepancias", fila D1.
+
+
+## Revisión administrativa de presupuestos y recuperación
+
+`/admin/ordenes/:id/presupuesto` permite revisar las líneas propuestas y completar
+precios. El envío guarda primero esos ítems y después congela la versión. La
+vista del mecánico permite proponer trabajos/repuestos; solo el Administrador
+puede enviar al Cliente, también cuando su cuenta tiene varios roles.
+
+Un 503 con `presupuesto_id` o `decision_id` prueba que MS3 ya conservó el hecho:
+se muestra como registrado con aplicación pendiente. «Confirmar estado de la
+orden» llama respectivamente `POST /presupuestos/{id}/envio-inicial/aplicacion`
+o `POST /presupuestos/decisiones/{id}/aplicacion`; no repite el envío ni la
+decisión. Si la comunicación falla sin confirmación, la web consulta lo guardado
+y bloquea el reenvío hasta revisión explícita. El estado de MS2 se actualiza en
+caché tras una aplicación confirmada. No se anuncia un correo o push entregado.
+
+Los avisos usan `creado_en`, `limite`, `solo_no_leidas` y lectura persistente
+(`leida`, `leida_en`). Los totales llegan en `X-Notificaciones-Total` y
+`X-Notificaciones-No-Leidas`: el contador de la campana no se limita a sus 15
+avisos recientes. Un 404/405/501 de la API ya no se oculta como una lista vacía
+o un marcado exitoso.

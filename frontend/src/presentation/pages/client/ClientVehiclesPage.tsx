@@ -123,7 +123,7 @@ export function ClientVehiclesPage() {
                 description={
                     search.trim()
                         ? 'Pruebe con otra patente, marca o modelo.'
-                        : 'Registre su primer vehículo para poder agendar mantenciones.'
+                        : 'Registre su primer vehículo para consultar sus atenciones en el taller.'
                 }
                 action={
                     !search.trim() && (

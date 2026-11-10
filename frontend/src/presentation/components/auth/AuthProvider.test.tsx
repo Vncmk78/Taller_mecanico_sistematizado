@@ -6,7 +6,8 @@ import {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { StrictMode } from 'react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import type { User } from '@/domain/entities/User';
 import apiClient from '@/infrastructure/config/apiClient';
 import { getToken } from '@/infrastructure/config/tokenStorage';
@@ -125,5 +126,61 @@ describe('AuthProvider: ciclo de sesión frente a errores de la API', () => {
 
     await waitFor(() => expect(screen.getByTestId('access-denied')).toBeInTheDocument());
     expect(screen.queryByTestId('login')).not.toBeInTheDocument();
+  });
+
+  it('conserva la ruta pedida aunque lleguen dos 401 seguidos (StrictMode)', async () => {
+    localStorage.setItem('token', 'token-expirado');
+    useAuthStore.setState({ token: 'token-expirado', isAuthenticated: true, isInitializing: true });
+    apiClient.defaults.adapter = responderConStatus(401);
+
+    function Login() {
+      const location = useLocation();
+      const desde = (location.state as { from?: string } | null)?.from;
+      return <div data-testid="login">Volver a: {desde}</div>;
+    }
+
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={['/admin/configuracion?vista=1']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/admin/configuracion" element={<div>Configuración</div>} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </StrictMode>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('login')).toHaveTextContent('Volver a: /admin/configuracion?vista=1'));
+    // Un 401 posterior estando ya en /login no reemplaza la ruta guardada.
+    await apiClient.get('/auth/me').catch(() => {});
+    expect(screen.getByTestId('login')).toHaveTextContent('Volver a: /admin/configuracion?vista=1');
+  });
+
+  it('restaura la sesión una sola vez aunque StrictMode repita el efecto', async () => {
+    localStorage.setItem('token', 'token-valido');
+    useAuthStore.setState({ token: 'token-valido', isAuthenticated: true, isInitializing: true });
+    let llamadas = 0;
+    apiClient.defaults.adapter = async (config) => {
+      llamadas += 1;
+      return { data: { id: 1, email: 'admin@taller.cl', full_name: 'Admin', roles: ['administrador'], is_active: true },
+        status: 200, statusText: 'OK', headers: {}, config };
+    };
+
+    render(
+      <StrictMode>
+        <MemoryRouter initialEntries={['/admin']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/admin" element={<div>Panel</div>} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </StrictMode>
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().user?.email).toBe('admin@taller.cl'));
+    expect(llamadas).toBe(1);
   });
 });

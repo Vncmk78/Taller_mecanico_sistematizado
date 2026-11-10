@@ -3,6 +3,7 @@ import type { Order } from './Order';
 import {
     accionesDisponibles,
     destinosAvanceMecanico,
+    puedeRegistrarDevolucion,
     type ActorOrden,
 } from './OrderActions';
 
@@ -82,28 +83,40 @@ describe('OrderActions: catálogo centralizado de acciones por estado y rol', ()
     });
 
     describe('administrador', () => {
-        it('en estado 1 ofrece asignar mecánico y cancelar', () => {
-            const acciones = accionesDisponibles(orden(1), ADMIN);
+        it('en estado 1 sin mecánico ofrece asignar mecánico y cancelar', () => {
+            const acciones = accionesDisponibles(orden(1, null), ADMIN);
 
             expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'cancelar']);
-            expect(acciones[0].destinos).toEqual([]);
+            expect(acciones[0]).toMatchObject({ etiqueta: 'Asignar mecánico', destinos: [] });
             expect(acciones[1]).toMatchObject({ destinos: [8], requiereMotivo: false });
         });
 
-        it.each([2, 3])('en estado %i ofrece solo cancelar', (estado) => {
+        it.each([2, 3])('en estado %i ofrece reasignar y cancelar', (estado) => {
             const acciones = accionesDisponibles(orden(estado), ADMIN);
 
-            expect(acciones.map((a) => a.id)).toEqual(['cancelar']);
+            expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'cancelar']);
+            expect(acciones[0]).toMatchObject({ etiqueta: 'Reasignar mecánico', destinos: [] });
         });
 
-        it('en estado 6 ofrece registrar entrega', () => {
+        it('en estado 6 ofrece reasignar y registrar entrega', () => {
             const acciones = accionesDisponibles(orden(6), ADMIN);
 
-            expect(acciones).toHaveLength(1);
-            expect(acciones[0]).toMatchObject({ id: 'registrar_entrega', destinos: [7] });
+            expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'registrar_entrega']);
+            expect(acciones[1]).toMatchObject({ id: 'registrar_entrega', destinos: [7] });
         });
 
-        it.each([4, 5, 7, 8])('no ofrece acciones en estado %i', (estado) => {
+        it.each([4, 5])('en estado %i solo ofrece reasignar (sin cambiar el estado)', (estado) => {
+            const acciones = accionesDisponibles(orden(estado), ADMIN);
+
+            expect(acciones).toHaveLength(1);
+            expect(acciones[0]).toMatchObject({
+                id: 'asignar_mecanico',
+                etiqueta: 'Reasignar mecánico',
+                destinos: [],
+            });
+        });
+
+        it.each([7, 8])('no ofrece acciones en el estado terminal %i', (estado) => {
             expect(accionesDisponibles(orden(estado), ADMIN)).toEqual([]);
         });
     });
@@ -135,5 +148,45 @@ describe('OrderActions: catálogo centralizado de acciones por estado y rol', ()
         accionesDisponibles(o, MECANICO);
 
         expect(JSON.stringify(o)).toBe(antes);
+    });
+
+    describe('devolución del vehículo de una orden cancelada', () => {
+        const cancelada = (devueltoEn: string | null | undefined): Order => ({
+            ...orden(8, null),
+            devueltoEn,
+            devueltoPorId: devueltoEn ? '3' : devueltoEn,
+        });
+
+        it('el administrador puede registrarla si la orden Cancelada aún no la tiene', () => {
+            expect(puedeRegistrarDevolucion(cancelada(null), ['administrador'])).toBe(true);
+        });
+
+        it('una cuenta multirrol con Administrador también puede, sin importar su primer rol', () => {
+            expect(puedeRegistrarDevolucion(cancelada(null), ['cliente', 'administrador'])).toBe(true);
+            expect(puedeRegistrarDevolucion(cancelada(null), ['mecanico', 'administrador'])).toBe(true);
+        });
+
+        it('cliente, mecánico o cliente+mecánico no pueden', () => {
+            for (const roles of [['cliente'], ['mecanico'], ['cliente', 'mecanico']] as const) {
+                expect(puedeRegistrarDevolucion(cancelada(null), roles)).toBe(false);
+            }
+        });
+
+        it('no se ofrece si ya está registrada o si la respuesta no informó la devolución', () => {
+            expect(puedeRegistrarDevolucion(cancelada('2026-11-08T13:00:00Z'), ['administrador'])).toBe(false);
+            expect(puedeRegistrarDevolucion(cancelada(undefined), ['administrador'])).toBe(false);
+        });
+
+        it('solo aplica a órdenes Canceladas: nunca a Entregadas ni activas', () => {
+            for (const estado of [1, 2, 3, 4, 5, 6, 7]) {
+                expect(
+                    puedeRegistrarDevolucion({ ...orden(estado), devueltoEn: null }, ['administrador'])
+                ).toBe(false);
+            }
+        });
+
+        it('el catálogo de transiciones de la orden Cancelada no cambia: la devolución no es un estado', () => {
+            expect(accionesDisponibles(cancelada(null), ADMIN)).toEqual([]);
+        });
     });
 });

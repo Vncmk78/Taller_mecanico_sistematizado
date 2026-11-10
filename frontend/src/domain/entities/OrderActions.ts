@@ -85,15 +85,22 @@ function accionesMecanico(order: Order, actor: ActorOrden): AccionOrden[] {
 function accionesAdministrador(order: Order): AccionOrden[] {
     const acciones: AccionOrden[] = [];
 
-    // La primera asignación saca la orden de "Recibido" (1 -> 2).
-    if (order.estadoCodigo === 1) {
-        acciones.push({
-            id: 'asignar_mecanico',
-            etiqueta: 'Asignar mecánico',
-            destinos: [],
-            requiereMotivo: false,
-            habilitada: true,
-        });
+    // Mismo control y mismo endpoint (PUT /ordenes/{id}/mecanico) para asignar
+    // y reasignar. MS2 decide el efecto: la primera asignación de una orden
+    // Recibida pasa a Esperando diagnóstico; una reasignación conserva el
+    // estado. Las órdenes terminales no admiten cambios de responsable, y la
+    // capacidad la valida MS2 al registrar la operación.
+    if (order.estadoCodigo !== ENTREGADO && order.estadoCodigo !== CANCELADO) {
+        const reasignar = order.mecanicoActualId !== null;
+        if (reasignar || order.estadoCodigo === 1) {
+            acciones.push({
+                id: 'asignar_mecanico',
+                etiqueta: reasignar ? 'Reasignar mecánico' : 'Asignar mecánico',
+                destinos: [],
+                requiereMotivo: false,
+                habilitada: true,
+            });
+        }
     }
 
     if (ESTADOS_CANCELABLES.has(order.estadoCodigo)) {
@@ -118,6 +125,22 @@ function accionesAdministrador(order: Order): AccionOrden[] {
     }
 
     return acciones;
+}
+
+/**
+ * El Administrador puede registrar la devolución física del vehículo de una
+ * orden Cancelada que aún no la tiene. Recibe todos los roles de la cuenta:
+ * una cuenta multirrol con Administrador también puede. Si la respuesta no
+ * informó la devolución (`undefined`), no se ofrece: no se sabe si ya existe.
+ * MS2 conserva la autoridad final (por ejemplo, el 409 de un ingreso
+ * compartido con otra orden activa).
+ */
+export function puedeRegistrarDevolucion(order: Order, roles: readonly RolOrden[]): boolean {
+    return (
+        roles.includes('administrador') &&
+        order.estadoCodigo === CANCELADO &&
+        order.devueltoEn === null
+    );
 }
 
 function accionesCliente(order: Order): AccionOrden[] {

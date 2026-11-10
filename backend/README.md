@@ -169,6 +169,13 @@ Salida esperada del paso 4:
 Las cuatro conexiones responden.
 ```
 
+### Ambiente de pruebas separado
+
+Para validar recorridos con datos sintéticos reproducibles sin tocar este ambiente
+(`docker-compose.yml` + `.env`) existe un ambiente aparte, `sgtm_pruebas`, con
+contenedores, puertos, volúmenes, bucket y secretos propios. Se opera solo con
+`python scripts/ambiente_pruebas.py`; ver [docs/ambiente-pruebas.md](docs/ambiente-pruebas.md).
+
 ## Levantar un servicio
 
 ```bash

@@ -21,12 +21,12 @@ export function ClientDashboardPage() {
             <p className="text-text-muted text-sm">Consulte sus vehículos registrados</p>
         </Link>
         <Link
-            to="/client/agendar"
+            to="/client/nuevas-atenciones"
             className="card w-full p-8 text-center no-underline text-text-main transition-transform hover:-translate-y-1 sm:w-[280px]"
         >
             <CalendarPlus className="w-10 h-10 mx-auto mb-4 text-status-green" aria-hidden />
-            <h3 className="font-semibold mb-1">Agendar Mantención</h3>
-            <p className="text-text-muted text-sm">Solicite una nueva hora de atención</p>
+            <h3 className="font-semibold mb-1">Nuevas Atenciones</h3>
+            <p className="text-text-muted text-sm">Consulte sus solicitudes después de una cancelación</p>
         </Link>
         </div>
     </div>

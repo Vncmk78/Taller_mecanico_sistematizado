@@ -28,6 +28,8 @@ export function LoginPage() {
   const { login, isLoading } = useAuth();
 
   const from = (location.state as { from?: string } | null)?.from;
+  // Llega desde el registro público: se confirma la creación y se precarga el correo.
+  const registro = (location.state as { registro?: { email?: string } } | null)?.registro;
 
   const targetAfterLogin = (role: UserRole | undefined, requested?: string): string => {
     const home = getHomePath(role);
@@ -43,6 +45,7 @@ export function LoginPage() {
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
+    defaultValues: { email: registro?.email ?? '', password: '' },
   });
 
   const onSubmit = async (data: LoginForm) => {
@@ -93,6 +96,12 @@ export function LoginPage() {
             <h2 className="mb-6 text-lg text-text-main font-semibold">
               Iniciar Sesión
             </h2>
+
+            {registro && !errorMessage && (
+              <Alert tone="success" className="mb-6 justify-center">
+                Cuenta de cliente creada. Inicia sesión para continuar.
+              </Alert>
+            )}
 
             <form onSubmit={handleSubmit(onSubmit)} noValidate>
               <Input
@@ -146,6 +155,13 @@ export function LoginPage() {
               )}
             </form>
           </div>
+
+          <p className="mt-6 text-sm text-text-muted">
+            ¿No tienes cuenta?{' '}
+            <Link to="/registro" className="text-primary-blue font-semibold">
+              Crear cuenta de cliente
+            </Link>
+          </p>
         </GlassCard>
       </main>
     </div>

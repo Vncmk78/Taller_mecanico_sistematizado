@@ -22,6 +22,7 @@ from services.ms2_taller.models.orden_trabajo import OrdenTrabajo
 from services.ms2_taller.models.historial_estado import HistorialEstado
 from services.ms2_taller.models.historial_asignacion import HistorialAsignacion
 from services.ms2_taller.models.solicitud_cancelacion import SolicitudCancelacion
+from services.ms2_taller.models.solicitud_nueva_atencion import SolicitudNuevaAtencion
 from services.ms2_taller.models.bitacora_orden import BitacoraOrden, BitacoraRepuesto
 from services.ms2_taller.models.configuracion_capacidad_mecanico import (
     ConfiguracionCapacidadMecanico,
@@ -45,6 +46,7 @@ __all__ = [
     "HistorialEstado",
     "HistorialAsignacion",
     "SolicitudCancelacion",
+    "SolicitudNuevaAtencion",
     "BitacoraOrden",
     "BitacoraRepuesto",
     "ConfiguracionCapacidadMecanico",

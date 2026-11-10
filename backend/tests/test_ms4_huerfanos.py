@@ -10,7 +10,8 @@
 - un fallo al borrar no detiene la pasada y queda para reintentar;
 - sigue la paginación de S3 y reporta filas cuyo archivo ya no existe.
 
-Al final hay una prueba contra MinIO real que se omite si no está levantado.
+Al final hay una prueba contra MinIO real sobre un bucket exclusivo y desechable
+(nunca el de MS4); se omite si no hay almacenamiento de prueba configurado.
 """
 from __future__ import annotations
 
@@ -37,6 +38,7 @@ from services.ms4_evidencias.services.huerfanos import (
     conciliar,
 )
 
+from almacenamiento_s3_desechable import AlmacenamientoDesechable
 from archivos_muestra import JPEG_VALIDO
 from test_ms4_recepcion import BUCKET, sesion  # noqa: F401  (fixture)
 from test_ms4_recepcion_minio import cliente_minio  # noqa: F401  (fixture)
@@ -317,19 +319,35 @@ def test_la_clave_huerfana_de_la_compensacion_se_limpia_despues(
 
 
 # --------------------------------------------------------------------------- #
-# 4) MinIO real (se omite si no está levantado)                               #
+# 4) MinIO real, en un bucket exclusivo y desechable de la prueba            #
 # --------------------------------------------------------------------------- #
 
-def test_conciliacion_contra_minio_real(cliente_minio, sesion: Session) -> None:  # noqa: F811
-    cfg, cliente = cliente_minio
-    orden = 900_000_000 + uuid.uuid4().int % 99_999_999
-    huerfano = f"ordenes/{orden}/{uuid.uuid4().hex}.jpg"
-    con_fila = f"ordenes/{orden}/{uuid.uuid4().hex}.jpg"
-    for clave in (huerfano, con_fila):
-        cliente.put_object(Bucket=cfg.S3_BUCKET, Key=clave, Body=JPEG_VALIDO)
-    _fila(sesion, con_fila)
+def test_conciliacion_contra_minio_real(  # noqa: F811
+    cliente_minio, s3_prueba, sesion: Session
+) -> None:
+    """Borra el huérfano del bucket exclusivo de la prueba y nada fuera de él.
 
+    `conciliar` recorre el bucket completo, así que la prueba le entrega un
+    bucket propio y desechable (nunca el de MS4). Un objeto en un bucket de otra
+    ejecución, que también sería huérfano si la conciliación lo alcanzara, debe
+    quedar intacto.
+    """
+
+    cfg, cliente = cliente_minio
+    otra_ejecucion = AlmacenamientoDesechable(s3_prueba.cliente())
     try:
+        bucket_ajeno = otra_ejecucion.crear_bucket()
+        ajeno = f"ordenes/1/{uuid.uuid4().hex}.jpg"
+        cliente.put_object(Bucket=bucket_ajeno, Key=ajeno, Body=JPEG_VALIDO)
+        etag_ajeno = cliente.head_object(Bucket=bucket_ajeno, Key=ajeno)["ETag"]
+
+        orden = 900_000_000 + uuid.uuid4().int % 99_999_999
+        huerfano = f"ordenes/{orden}/{uuid.uuid4().hex}.jpg"
+        con_fila = f"ordenes/{orden}/{uuid.uuid4().hex}.jpg"
+        for clave in (huerfano, con_fila):
+            cliente.put_object(Bucket=cfg.S3_BUCKET, Key=clave, Body=JPEG_VALIDO)
+        _fila(sesion, con_fila)
+
         resultado = conciliar(
             sesion,
             cliente,
@@ -338,13 +356,16 @@ def test_conciliacion_contra_minio_real(cliente_minio, sesion: Session) -> None:
             eliminar=True,
             ahora=datetime.now(timezone.utc) + timedelta(seconds=5),
         )
-        assert huerfano in resultado.eliminados
+
+        assert resultado.eliminados == [huerfano]
         assert con_fila not in resultado.huerfanos
-        restantes = cliente.list_objects_v2(Bucket=cfg.S3_BUCKET, Prefix=f"ordenes/{orden}/")
+        restantes = cliente.list_objects_v2(Bucket=cfg.S3_BUCKET)
         assert [o["Key"] for o in restantes.get("Contents", [])] == [con_fila]
+        # Lo que está fuera del almacenamiento de la prueba no se toca.
+        assert cliente.head_object(Bucket=bucket_ajeno, Key=ajeno)["ETag"] == etag_ajeno
+        assert cliente.get_object(Bucket=bucket_ajeno, Key=ajeno)["Body"].read() == JPEG_VALIDO
     finally:
-        for clave in (huerfano, con_fila):
-            cliente.delete_object(Bucket=cfg.S3_BUCKET, Key=clave)
+        otra_ejecucion.limpiar()
 
 
 # --------------------------------------------------------------------------- #

@@ -18,11 +18,33 @@ from services.ms2_taller.models.configuracion_cupo_ingresos import (
 from services.ms2_taller.models.ingreso_vehiculo import IngresoVehiculo
 
 
-class CupoDiarioNoConfiguradoError(Exception):
+@dataclass(frozen=True)
+class RechazoCupoIngreso:
+    """Datos de una validación rechazada, tomados en el momento de validar.
+
+    La validación ya no confirma nada por sí misma: quien la llama deshace su
+    transacción y después guarda esta auditoría con `registrar_rechazo_cupo`.
+    """
+
+    vehiculo_id: int
+    jornada_local: date
+    ingresos_registrados: int
+    max_ingresos_diarios: int | None
+    administrador_id: int
+    resultado: str
+
+
+class _RechazoCupoError(Exception):
+    def __init__(self, mensaje: str, rechazo: RechazoCupoIngreso | None = None) -> None:
+        super().__init__(mensaje)
+        self.rechazo = rechazo
+
+
+class CupoDiarioNoConfiguradoError(_RechazoCupoError):
     """El Administrador debe configurar el máximo diario antes de recibir."""
 
 
-class CupoDiarioExcedidoError(Exception):
+class CupoDiarioExcedidoError(_RechazoCupoError):
     """El taller ya alcanzó el máximo diario de ingresos físicos."""
 
 
@@ -155,9 +177,11 @@ def validar_cupo_para_nuevo_ingreso(
 ) -> ValidacionCupoIngreso:
     """Bloquea la fila singleton y valida el cupo antes de crear un ingreso.
 
-    Las validaciones rechazadas se confirman como auditoría aunque no se cree
-    una orden. Las aceptadas se insertan junto con el ingreso y la orden para
-    conservar su atomicidad.
+    No confirma la transacción. Si rechaza, la excepción lleva en `rechazo` los
+    datos de esta validación (jornada, uso y máximo leídos con el bloqueo):
+    quien llama deshace todo y los guarda con `registrar_rechazo_cupo`. Las
+    aceptadas se insertan junto con el ingreso y la orden para conservar su
+    atomicidad.
     """
 
     try:
@@ -169,39 +193,29 @@ def validar_cupo_para_nuevo_ingreso(
         maximo = configuracion.max_ingresos_diarios if configuracion else None
 
         if maximo is None:
-            db.add(
-                HistorialValidacionCupoIngreso(
+            raise CupoDiarioNoConfiguradoError(
+                "Configura el máximo diario de ingresos físicos antes de recibir vehículos",
+                RechazoCupoIngreso(
                     vehiculo_id=vehiculo_id,
                     jornada_local=jornada,
                     ingresos_registrados=cantidad,
                     max_ingresos_diarios=None,
                     administrador_id=administrador_id,
-                    aceptada=False,
                     resultado="cupo_no_configurado",
-                )
+                ),
             )
-            db.commit()
-            raise CupoDiarioNoConfiguradoError(
-                "Configura el máximo diario de ingresos físicos antes de recibir vehículos"
-            )
-
         if cantidad >= maximo:
-            db.add(
-                HistorialValidacionCupoIngreso(
+            raise CupoDiarioExcedidoError(
+                "El taller ya alcanzó el máximo diario de ingresos físicos",
+                RechazoCupoIngreso(
                     vehiculo_id=vehiculo_id,
                     jornada_local=jornada,
                     ingresos_registrados=cantidad,
                     max_ingresos_diarios=maximo,
                     administrador_id=administrador_id,
-                    aceptada=False,
                     resultado="cupo_excedido",
-                )
+                ),
             )
-            db.commit()
-            raise CupoDiarioExcedidoError(
-                "El taller ya alcanzó el máximo diario de ingresos físicos"
-            )
-
         return ValidacionCupoIngreso(
             jornada_local=jornada,
             ingresos_registrados=cantidad,
@@ -215,6 +229,33 @@ def validar_cupo_para_nuevo_ingreso(
         db.rollback()
         raise PersistenciaCupoIngresosError(
             "No fue posible validar el cupo diario de ingresos"
+        ) from exc
+
+
+def registrar_rechazo_cupo(db: Session, rechazo: RechazoCupoIngreso) -> None:
+    """Guarda, en su propia transacción, la auditoría de un rechazo de cupo.
+
+    Se llama después de deshacer la operación rechazada, de modo que no se
+    confirma ningún ingreso, orden ni dato parcial junto con la auditoría.
+    """
+
+    try:
+        db.add(
+            HistorialValidacionCupoIngreso(
+                vehiculo_id=rechazo.vehiculo_id,
+                jornada_local=rechazo.jornada_local,
+                ingresos_registrados=rechazo.ingresos_registrados,
+                max_ingresos_diarios=rechazo.max_ingresos_diarios,
+                administrador_id=rechazo.administrador_id,
+                aceptada=False,
+                resultado=rechazo.resultado,
+            )
+        )
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise PersistenciaCupoIngresosError(
+            "No fue posible registrar la auditoría del cupo diario"
         ) from exc
 
 

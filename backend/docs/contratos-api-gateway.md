@@ -5,9 +5,17 @@ app móvil (Integración IV). La fuente de verdad interactiva está en el Swagge
 de la Gateway: <http://localhost:8000/docs> y su versión JSON en
 <http://localhost:8000/openapi.json>.
 
-**Versión estable del contrato: 2.0.0.** Copia congelada para integrar sin
-levantar la Gateway: [`docs/openapi/sgtm-gateway-2.0.0.json`](openapi/sgtm-gateway-2.0.0.json).
+**Contrato de esta entrega: 3.0.0.** La versión efectiva de cada despliegue debe
+comprobarse en su `/openapi.json`; publicar código no migra automáticamente las bases.
+Copia 3.0.0 para preparar la integración sin
+levantar la Gateway: [`docs/openapi/sgtm-gateway-3.0.0.json`](openapi/sgtm-gateway-3.0.0.json).
 Reglas de versionado e historial: [`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
+
+En 3.0.0, `POST /api/ordenes` responde `409` si el vehículo ya tiene una orden
+activa (cualquier estado salvo Entregado o Cancelado), indicando su número.
+Este rechazo no genera registros. La actualización del despliegue requiere
+coordinar consumidores y aplicar la migración con diagnóstico previo:
+[una orden activa por vehículo](orden-activa-por-vehiculo.md).
 
 Reglas que se aplican a todos los endpoints:
 
@@ -392,7 +400,8 @@ La comprobación es puntual: no constituye una transacción distribuida con MS1.
 
 ### Flujo implementado hasta Semana 3
 
-1. Un Cliente autenticado registra uno o varios vehículos propios.
+1. Un Cliente autenticado (con su perfil preparado mediante
+   `POST /api/clientes/perfil`) registra uno o varios vehículos propios.
 2. Un Administrador confirma el ingreso físico al crear una orden para un
    vehículo registrado. Si ya hay un ingreso abierto, se reutiliza.
 3. La orden se crea en `Recibido`, sin mecánico obligatorio, junto con su
@@ -684,10 +693,49 @@ Esta primera entrega cubre almacenamiento y consulta web de avisos. No afirma
 que correo o push hayan sido enviados: requieren sus canales/proveedores y el
 registro de dispositivos de Integración IV.
 
+## Perfil Cliente (MS2)
+
+MS1 guarda la cuenta (nombre y correo oficiales) y MS2 guarda aparte el perfil
+`Cliente`: referencia lógica al usuario y teléfono opcional (sistematización
+§4.1). El registro público no crea ese perfil; la web y la app lo preparan con
+esta operación después del login de un Cliente y antes de usar vehículos u
+órdenes. Antes de 2.2.0 solo lo creaba `scripts/seed_usuarios_prueba.py`.
+
+### POST `/api/clientes/perfil`
+
+Prepara el perfil Cliente del usuario del JWT. Es idempotente: repetirlo o
+ejecutarlo en paralelo deja un único perfil (restricción única
+`uq_cliente_usuario_id`; la llamada que pierde la carrera recupera el perfil
+ganador). No modifica un perfil existente.
+
+| Atributo | Descripción |
+|---|---|
+| Auth | `Authorization: Bearer <token>` con rol Cliente |
+| Body | `{}` o `{"telefono": string}` (1 a 30 caracteres, sin formato prescrito). No admite `usuario_id`, `cliente_id` ni roles (`422`) |
+| Respuesta OK | `201` si esta llamada creó el perfil · `200` si ya existía (sin cambios) · cuerpo `PerfilClienteRespuesta` |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Cliente · `409` existe con otro teléfono (no se modificó) · `422` body inválido · `500` persistencia (se puede reintentar) · `502/503/504` de infraestructura |
+
+```json
+// Request
+{ "telefono": "+56 9 1234 5678" }
+// Response 201 (o 200 si ya existía)
+{ "cliente_id": 7, "usuario_id": 42, "telefono": "+56 9 1234 5678" }
+```
+
+Un teléfono ausente (`{}`) significa «no lo informo», no «bórralo». Si la
+preparación falla, la cuenta de MS1 ya existe: el cliente reintenta la
+preparación (también tras volver a iniciar sesión) y no se registra otra vez.
+
+### GET `/api/clientes/perfil`
+
+Consulta el perfil del usuario del JWT sin crearlo: `200` con
+`PerfilClienteRespuesta`, `404` si todavía no fue preparado, `403` sin rol
+Cliente. Igual que `GET /api/vehiculos`, una consulta nunca crea el perfil.
+
 ## Vehículos (MS2)
 
 Todas requieren `Authorization: Bearer <token>` con rol Cliente y un perfil
-`Cliente` local en MS2. Una cuenta multirol puede usarlas si incluye Cliente;
+`Cliente` local en MS2 (se prepara con `POST /api/clientes/perfil`). Una cuenta multirol puede usarlas si incluye Cliente;
 el propietario siempre se resuelve desde el JWT y nunca se recibe en el body.
 
 ### POST `/api/vehiculos`
@@ -928,12 +976,81 @@ capacidad. La reasignación solo se confirma si el destino tiene cupo y el cambi
 se serializa junto con las demás asignaciones mediante la fila de configuración.
 Cada validación aceptada o rechazada queda registrada en el historial de MS2.
 
+### Solicitudes de nueva atención (Entrega B)
+
+La solicitud es una entidad propia de MS2, distinta de los ocho estados de una
+orden. No reserva hora ni crea una orden o ingreso, no ocupa capacidad de un
+mecánico y no consume cupo diario. Puede solicitarse antes o después de devolver
+el vehículo. Backend y web integrados localmente en 3.0.0, pendientes de publicación.
+
+El portal Cliente exige `solo_propietario=true` al cargar el antecedente, incluso
+en cuentas multirrol. No ofrece el formulario basándose solo en una copia en caché.
+
+| Operación | Contrato |
+|---|---|
+| `POST /api/ordenes/{orden_id}/nueva-atencion` | Cliente propietario, incluso multirrol. Body `{"descripcion":"..."}`, recortado, no vacío, máximo 2000 caracteres, sin extras. `201` nueva; `200` pendiente con idéntica descripción; `403` sin Cliente; `404` inexistente/ajena; `409` antecedente no Cancelado u otra pendiente/aceptada; `422` datos inválidos. |
+| `GET /api/ordenes/nuevas-atenciones` | Cliente propias; Administrador todas, incluso multirrol; Mecánico sin esos roles recibe `403`. Filtros opcionales `situacion`, `orden_cancelada_id`, `orden_generada_id`. `limit` 1–100 (20 por defecto), `offset` no negativo (0). `200` con `{items,total,limit,offset}`, fecha e ID descendentes. Lista vacía válida; filtros inválidos `422`. |
+| `GET /api/ordenes/nuevas-atenciones/{solicitud_id}` | Cliente propietario o Administrador. `200` entidad; `403` sin esos roles; `404` inexistente/ajena; ID inválido `422`. |
+
+Todas requieren JWT (`401` inválido) y pueden responder `500` de persistencia,
+con rollback completo en el alta. Errores de Gateway conservan su formato.
+Las referencias de usuario y las fechas no se aceptan en el body.
+
+La entidad siempre serializa: `solicitud_id`, `orden_cancelada_id`, `vehiculo_id`,
+`cliente_usuario_id`, `descripcion`, `solicitada_en`, `situacion`, `respuesta`,
+`revisor_id`, `revisada_en`, `orden_generada_id`. Situaciones: `pendiente`,
+`aceptada`, `rechazada`. Los últimos cuatro campos son nulos al crear.
+
+Una pendiente o aceptada bloquea otra sobre el mismo antecedente, aunque la
+aceptada ya tenga orden generada (índice A). Tras un rechazo se permite una
+nueva conservando la anterior. Si una orden generada se cancela, la siguiente
+solicitud corresponde a esa orden, sin reabrir la anterior. La revisión y la
+generación se agregan en C, descrita a continuación.
+
+Tabla nueva: `solicitud_nueva_atencion`, migración `0014_nueva_atencion_ms2`.
+FK físicas solo a orden/vehículo de MS2, `ON DELETE RESTRICT`, con índices.
+Cliente y revisor son IDs lógicos de MS1. Restricciones de descripción, situación,
+revisión y vínculo coherentes; índice único parcial para no rechazadas. El alta
+bloquea vehículo antes que orden para coordinarse con devoluciones y altas.
+La migración no corrige datos existentes y se prueba en bases descartables.
+
+### Revisión y generación administrativa (Entrega C)
+
+Backend local en 3.0.0, pendiente de integración web y publicación. Ambas
+operaciones exigen Administrador, incluso multirrol, y un ID positivo. Admiten
+autorrevisión de Cliente+Administrador. Cliente/Mecánico sin Administrador
+reciben `403`; JWT inválido `401`; solicitud inexistente `404`; datos inválidos
+`422`; fallo de persistencia `500` con rollback.
+
+| Operación | Contrato |
+|---|---|
+| `POST /api/ordenes/nuevas-atenciones/{solicitud_id}/revision` | Body `{"decision":"aceptada","respuesta":"..."}`; también admite `decision: "rechazada"`. Respuesta recortada y no vacía, sin máximo adicional ni campos extra. `200` con la solicitud. Repetición idéntica conserva fecha y revisor; otro contenido confirmado responde `409`. |
+| `POST /api/ordenes/nuevas-atenciones/{solicitud_id}/orden` | Body `{}` obligatorio. `201` con `{solicitud,orden}` guardadas juntas. Reintento `200` con la misma asociación y estado actual de la orden. `409` sin aceptación, antecedente incompatible, otra orden activa o rechazo de cupo. |
+
+La orden nueva nace Recibido y sin mecánico. Se reutiliza el ingreso abierto o
+se valida el cupo para uno nuevo; no se exige devolución previa. Se guardan
+ingreso cuando corresponde, orden, historial inicial, outbox y vínculo en un
+commit. Un rechazo de cupo revierte todo y luego conserva su validación original
+en una transacción propia. No reabre la orden anterior ni asigna mecánico.
+El GET de la solicitud permite comprobar el vínculo ante una respuesta perdida.
+
+La revisión confirma su auditoría del JWT/servidor y un evento de outbox juntos.
+El worker envía `nueva_atencion.revisada` al receptor interno de MS1
+`/interno/eventos/nuevas-atenciones/revision`, con secreto de servicio y UUID de
+idempotencia. MS1 valida Cliente activo y guarda un aviso en su bandeja. La
+respuesta pública de `/api/notificaciones` no cambia; el título informa aceptada
+o rechazada y el mensaje indica la solicitud. No se publica una transición de
+estado ficticia. Si MS1 falla, el worker reintenta sin revertir la revisión ni
+duplicar el aviso lógico. Requiere worker habilitado y despliegue del receptor.
+Correo y push quedan fuera de esta entrega. No hay migraciones nuevas en C.
+
 ### POST `/api/ordenes/{orden_id}/entrega`
 
 Registra la entrega física de una orden que se encuentra en `Listo`. Solo un
 Administrador puede confirmarla. MS2 obtiene el usuario responsable desde el
 JWT y la fecha/hora desde la base de datos; actualiza `OrdenTrabajo`, completa
-`entregado_en` y `entregado_por_id`, y agrega `HistorialEstado` en una sola
+`entregado_en` y `entregado_por_id`, cierra el ingreso con la misma fecha en
+`IngresoVehiculo.salida_en` y agrega `HistorialEstado` en una sola
 transacción. Si la respuesta se pierde y se repite la petición, devuelve el
 registro original sin cambiar la fecha ni duplicar el historial.
 
@@ -942,11 +1059,43 @@ registro original sin cambiar la fecha ni duplicar el historial.
 | Auth | `Authorization: Bearer <token>` con rol Administrador |
 | Body | Opcional: `{ "observacion": "Entregado al cliente" }`; rechaza texto vacío |
 | Respuesta OK | `200` con los campos de `OrdenRespuesta`, `entregado_en`, `entregado_por_id` e `historial_id` |
-| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` estado distinto de `Listo` · `422` observación vacía · `500` persistencia o auditoría inconsistente |
+| Errores | `401` JWT ausente/inválido · `403` sin rol Administrador · `404` orden inexistente · `409` estado distinto de `Listo` o ingreso incompatible con la salida · `422` observación vacía · `500` persistencia o auditoría inconsistente |
 
 Una repetición válida devuelve la misma respuesta de entrega. El `PATCH`
 genérico sigue rechazando `Listo → Entregado`; tampoco permite registrar como
 entregada la devolución física de una orden cancelada.
+
+Una entrega histórica con auditoría válida se devuelve tal como está. Si le
+falta `salida_en`, el reintento no inventa una fecha ni repara ese dato: requiere
+un diagnóstico y una corrección histórica acordada por separado.
+
+### POST `/api/ordenes/{orden_id}/devolucion`
+
+Administrador, incluido multirrol; body obligatorio `{}` sin campos extra.
+La orden debe estar Cancelada (8) y su ingreso abierto sin otra orden activa.
+Guarda `devuelto_en`, `devuelto_por_id` y `IngresoVehiculo.salida_en` en una
+transacción, con la misma fecha de base de datos y la identidad del JWT.
+Conserva Cancelado: no escribe historial de transición ni publica un cambio
+de estado ficticio. Cancelar por sí solo no cierra el ingreso.
+
+`200` devuelve `DevolucionOrdenRespuesta`: todos los campos de `OrdenRespuesta`,
+con `devuelto_en` y `devuelto_por_id` no nulos. El reintento devuelve la fecha
+y responsable originales, incluso si después se creó otra atención en un
+ingreso nuevo. Los GET de detalle, listado e historial por vehículo siempre
+incluyen esos dos campos (nulos cuando no hay devolución).
+
+Errores: `401` JWT inválido; `403` sin Administrador; `404` orden inexistente;
+`409` estado/ingreso incompatible, ingreso cerrado o devolución histórica
+incompleta; `422` identificador no positivo o body inválido; `500` persistencia
+con rollback completo. Si otra orden del mismo ingreso sigue activa, el `409`
+indica su número. Su posterior entrega cierra el ingreso; no se atribuye una
+devolución a las órdenes canceladas que lo compartían.
+
+Alta y salida bloquean primero el vehículo. Así, si gana la salida, la siguiente
+alta crea otro ingreso y valida el cupo; si gana un alta sobre una cancelada,
+reutiliza el ingreso y la devolución queda impedida por la nueva orden activa.
+El cupo cuenta ingresos registrados por jornada: una salida no lo descuenta.
+No se corrigen datos históricos automáticamente.
 
 ### GET y PUT `/api/ordenes/configuracion/capacidad/mecanicos`
 

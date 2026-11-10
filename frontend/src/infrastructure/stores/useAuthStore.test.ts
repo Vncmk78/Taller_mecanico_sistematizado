@@ -39,6 +39,28 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('useAuthStore: estado inicial', () => {
+  it('con un token guardado arranca inicializando, sin usuario todavía', async () => {
+    localStorage.setItem('token', 'token-guardado');
+    vi.resetModules();
+    const { useAuthStore: storeNuevo } = await import('@/infrastructure/stores/useAuthStore');
+
+    expect(storeNuevo.getState()).toMatchObject({
+      token: 'token-guardado',
+      user: null,
+      isAuthenticated: true,
+      isInitializing: true,
+    });
+  });
+
+  it('sin token no queda inicializando', async () => {
+    vi.resetModules();
+    const { useAuthStore: storeNuevo } = await import('@/infrastructure/stores/useAuthStore');
+
+    expect(storeNuevo.getState()).toMatchObject({ token: null, isInitializing: false });
+  });
+});
+
 describe('useAuthStore: flujo funcional de autenticación', () => {
   it('inicia sesión con éxito, guarda el token y autentica al usuario', async () => {
     vi.mocked(authService.login).mockResolvedValue(authResponse);

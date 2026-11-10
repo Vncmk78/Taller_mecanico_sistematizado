@@ -99,7 +99,7 @@ def verificar(servicio: str, entorno: dict[str, str | None]) -> Resultado:
 
 
 def verificar_todas() -> list[Resultado]:
-    entorno = {**dotenv_values(BACKEND_DIR / ".env"), **os.environ}
+    entorno = {**dotenv_values(BACKEND_DIR / (os.environ.get("SGTM_ENV_FILE") or ".env")), **os.environ}
     resultados = [verificar(servicio, entorno) for servicio in SERVICIOS]
     destinos: dict[tuple, list[int]] = {}
     for indice, servicio in enumerate(SERVICIOS):

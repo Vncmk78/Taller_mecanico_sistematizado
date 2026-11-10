@@ -16,7 +16,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // El ambiente de pruebas separado (backend/scripts/ambiente_pruebas.py)
+        // inicia Vite con SGTM_GATEWAY_URL apuntando a su propia Gateway.
+        target: process.env.SGTM_GATEWAY_URL ?? 'http://localhost:8000',
         changeOrigin: true,
       },
     },

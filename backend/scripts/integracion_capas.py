@@ -76,7 +76,7 @@ class Informe:
 
 def _sql(servicio: str, consulta: str, **parametros) -> list[tuple]:
     """Lectura en una transacción de solo lectura sobre la base del servicio."""
-    entorno = {**dotenv_values(BACKEND_DIR / ".env"), **os.environ}
+    entorno = {**dotenv_values(BACKEND_DIR / (os.environ.get("SGTM_ENV_FILE") or ".env")), **os.environ}
     engine = create_engine(entorno[f"{servicio}_DATABASE_URL"], poolclass=NullPool)
     try:
         with engine.connect() as conexion:

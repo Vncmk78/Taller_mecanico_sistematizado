@@ -16,6 +16,7 @@ import httpx
 import pytest
 import respx
 from fastapi.testclient import TestClient
+from httpx._decoders import SUPPORTED_DECODERS
 
 import gateway.cliente_http as cliente_http
 from gateway.cliente_http import obtener_cliente, timeout_para
@@ -298,6 +299,41 @@ def test_cabeceras_que_no_se_reenvian_al_cliente(
     assert "server" not in respuesta.headers
     # El X-Request-ID es el de la Gateway (el suyo, no el del microservicio).
     assert respuesta.headers["x-request-id"] == "abc-123"
+
+
+def test_listado_usuarios_negocia_compresion_compatible_con_la_gateway(
+    gateway: TestClient, api_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Simula HTTPX instalado sin el decodificador opcional de Brotli.
+    monkeypatch.delitem(SUPPORTED_DECODERS, "br", raising=False)
+    monkeypatch.setattr("httpx._client.ACCEPT_ENCODING", "gzip, deflate")
+    usuarios = b'[{"id":42,"roles":["mecanico"],"is_active":true}]'
+    usuarios_brotli = bytes.fromhex(
+        "1b3000b08cd315f123a4b907e2b6d4979fc4d61e44eec3413d68144ba7ab242129"
+        "6c863e62a016e1e4f40b65b9f51d9614e23600fd"
+    )
+
+    def responder_ms1(request: httpx.Request) -> httpx.Response:
+        formatos = request.headers["accept-encoding"]
+        if "br" in formatos:
+            encoding, cuerpo = "br", usuarios_brotli
+        else:
+            assert "gzip" in formatos
+            encoding, cuerpo = "gzip", gzip.compress(usuarios)
+        return httpx.Response(
+            200,
+            content=cuerpo,
+            headers={"Content-Type": "application/json", "Content-Encoding": encoding},
+        )
+
+    api_mock.get(f"{settings.MS1_URL}/auth/usuarios").mock(side_effect=responder_ms1)
+
+    respuesta = gateway.get("/api/auth/usuarios", headers={"Accept-Encoding": "gzip, deflate, br"})
+
+    assert respuesta.status_code == 200
+    assert respuesta.headers["content-type"] == "application/json"
+    assert "content-encoding" not in respuesta.headers
+    assert respuesta.content == usuarios
 
 
 def test_dos_set_cookie_del_ms_llegan_ambas_al_cliente(

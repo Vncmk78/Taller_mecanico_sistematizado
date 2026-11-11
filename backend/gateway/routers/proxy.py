@@ -53,6 +53,10 @@ _CABECERAS_PROHIBIDAS = {
     "upgrade",
 }
 
+# HTTPX anuncia sus propios formatos de compresión. Los del navegador pueden
+# requerir un decodificador opcional que no esté instalado en la Gateway.
+_CABECERAS_SOLICITUD_EXCLUIDAS = _CABECERAS_PROHIBIDAS | {"accept-encoding"}
+
 # Cabeceras de la respuesta del microservicio que no llegan al cliente: las
 # hop-by-hop, las que HTTPX ya procesó (content-encoding: el body viene
 # descomprimido) y las que la propia Gateway reconstruye (content-length,
@@ -155,7 +159,7 @@ async def proxy(ruta: str, request: Request) -> Response:
     cabeceras = {
         clave: valor
         for clave, valor in request.headers.items()
-        if clave.lower() not in _CABECERAS_PROHIBIDAS
+        if clave.lower() not in _CABECERAS_SOLICITUD_EXCLUIDAS
     }
     request_id = getattr(request.state, "request_id", None)
     if request_id:

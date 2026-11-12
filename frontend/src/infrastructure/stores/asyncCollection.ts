@@ -26,6 +26,22 @@ export const initialAsyncStatus: AsyncStatus = {
     requestId: null,
 };
 
+/**
+ * La carga inicial de una colección aún no terminó. Cubre dos estados:
+ * - `loading`: fetchCollection está en curso;
+ * - `idle` sin datos: el store recién se creó y el useEffect de la vista
+ *   todavía no disparó el primer fetch (initialAsyncStatus parte en idle).
+ *
+ * Las vistas deben mostrar el skeleton mientras esto sea true: antes solo se
+ * miraba `status === 'loading'`, y en el primer render (idle previo al
+ * useEffect) eso mostraba un destello del estado vacío o del error previo
+ * antes de que llegara la respuesta. Con datos en caché (`idle` + datos de
+ * otro portal, o `success`) no se bloquea la vista.
+ */
+export function isInitialLoad(status: FetchStatus, hasData: boolean): boolean {
+    return status === 'loading' || (status === 'idle' && !hasData);
+}
+
 export interface FetchItemResult<T> {
     item: T | null;
     /** El backend confirmó con 404 que el recurso no existe. */

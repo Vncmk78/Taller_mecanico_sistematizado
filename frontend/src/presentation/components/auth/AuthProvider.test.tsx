@@ -183,4 +183,62 @@ describe('AuthProvider: ciclo de sesión frente a errores de la API', () => {
     await waitFor(() => expect(useAuthStore.getState().user?.email).toBe('admin@taller.cl'));
     expect(llamadas).toBe(1);
   });
+
+  it('marca sesionExpirada cuando expira el token de una sesión activa', async () => {
+    localStorage.setItem('token', 'token-admin');
+    useAuthStore.setState({
+      // Sin usuario en memoria: restoreSession consulta /auth/me (si ya hubiera
+      // user, hace early return y no habría petición que expirar).
+      token: 'token-admin',
+      isAuthenticated: true,
+      isInitializing: true,
+    });
+    apiClient.defaults.adapter = responderConStatus(401);
+
+    function Login() {
+      const location = useLocation();
+      const expiro = (location.state as { sesionExpirada?: boolean } | null)?.sesionExpirada;
+      return <div data-testid="login">expirada: {String(expiro)}</div>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/admin" element={<div>Panel</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    // La restauración del montaje dispara el 401 con la sesión aún activa.
+    await waitFor(() => expect(screen.getByTestId('login')).toHaveTextContent('expirada: true'));
+  });
+
+  it('un 401 durante la restauración sin sesión activa no marca sesionExpirada', async () => {
+    localStorage.setItem('token', 'token-expirado');
+    useAuthStore.setState({ token: 'token-expirado', isAuthenticated: false, isInitializing: true });
+    apiClient.defaults.adapter = responderConStatus(401);
+
+    function Login() {
+      const location = useLocation();
+      const expiro = (location.state as { sesionExpirada?: boolean } | null)?.sesionExpirada;
+      return <div data-testid="login">expirada: {String(expiro)}</div>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/admin" element={<div>Panel</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    // Abrir la app con un token ya vencido no debe anunciarse como expiración.
+    await waitFor(() => expect(screen.getByTestId('login')).toHaveTextContent('expirada: false'));
+  });
 });

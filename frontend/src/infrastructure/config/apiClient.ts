@@ -19,6 +19,13 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // Techo para peticiones colgadas: sin él, una Gateway que no responde deja
+  // el estado de carga para siempre (el usuario solo ve spinners). Al vencer,
+  // axios rechaza sin respuesta y el manejo global de errores lo presenta
+  // como fallo de conexión con reintento. Generoso para consultas de
+  // inventario pesadas; las subidas de evidencias (FormData) llevan uno
+  // propio mayor en EvidenciaService.
+  timeout: 30000,
 });
 
 apiClient.interceptors.request.use((config) => {

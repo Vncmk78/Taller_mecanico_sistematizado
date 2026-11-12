@@ -6,17 +6,39 @@ import { GlassCard } from '@/presentation/components/ui/GlassCard';
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
+  /**
+   * Al cambiar de valor (p. ej. la ruta actual) se descarta el error capturado
+   * y se vuelve a intentar el render, sin desmontar a los hijos sanos ni perder
+   * el estado de los providers que están por encima.
+   */
+  resetKey?: string | number;
 }
 
 interface ErrorBoundaryState {
   hasError: boolean;
+  /** Última `resetKey` vista, para detectar el cambio de ruta. */
+  resetKey?: string | number;
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false };
 
-  static getDerivedStateFromError(): ErrorBoundaryState {
+  static getDerivedStateFromError(): Partial<ErrorBoundaryState> {
     return { hasError: true };
+  }
+
+  static getDerivedStateFromProps(
+    props: ErrorBoundaryProps,
+    state: ErrorBoundaryState
+  ): Partial<ErrorBoundaryState> | null {
+    // Navegar a otra página debe dar otra oportunidad de render: sin esto, un
+    // error de render dejaba la app inutilizable hasta recargar manualmente.
+    // Se hace aquí (y no con setState en componentDidUpdate) para no encadenar
+    // un segundo render tras cada actualización.
+    if (props.resetKey !== state.resetKey) {
+      return { resetKey: props.resetKey, hasError: false };
+    }
+    return null;
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {

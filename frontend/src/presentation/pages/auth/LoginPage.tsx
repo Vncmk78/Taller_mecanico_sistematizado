@@ -30,6 +30,8 @@ export function LoginPage() {
   const from = (location.state as { from?: string } | null)?.from;
   // Llega desde el registro público: se confirma la creación y se precarga el correo.
   const registro = (location.state as { registro?: { email?: string } } | null)?.registro;
+  // Llega del interceptor 401 cuando expira el token de una sesión activa.
+  const sesionExpirada = (location.state as { sesionExpirada?: boolean } | null)?.sesionExpirada;
 
   const targetAfterLogin = (role: UserRole | undefined, requested?: string): string => {
     const home = getHomePath(role);
@@ -100,6 +102,12 @@ export function LoginPage() {
             {registro && !errorMessage && (
               <Alert tone="success" className="mb-6 justify-center">
                 Cuenta de cliente creada. Inicia sesión para continuar.
+              </Alert>
+            )}
+
+            {sesionExpirada && !registro && !errorMessage && (
+              <Alert tone="warning" className="mb-6 justify-center">
+                Tu sesión ha expirado. Inicia sesión nuevamente para continuar.
               </Alert>
             )}
 

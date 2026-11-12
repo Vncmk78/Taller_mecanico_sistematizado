@@ -28,12 +28,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
+      // La expiración solo se anuncia si había una sesión activa: abrir la app
+      // con un token ya vencido (restauración) no debe presentarse como
+      // "sesión expirada", era una sesión que nunca llegó a existir.
+      const habiaSesion = useAuthStore.getState().isAuthenticated;
       clearSession();
       // Si ya se está en /login (por ejemplo, un segundo 401 de la misma
       // restauración), no se navega otra vez: se perdería la ruta pedida.
       const { pathname, search } = rutaActual.current;
       if (pathname === '/login') return;
-      navigate('/login', { replace: true, state: { from: pathname + search } });
+      navigate('/login', {
+        replace: true,
+        state: { from: pathname + search, sesionExpirada: habiaSesion },
+      });
     });
     setForbiddenHandler((error: AxiosError) => {
       const message = getApiErrorMessage(error, 'No tiene permisos para acceder a este recurso.');

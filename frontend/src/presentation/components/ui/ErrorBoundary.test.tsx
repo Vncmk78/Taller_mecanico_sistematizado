@@ -110,4 +110,59 @@ describe('ErrorBoundary: manejo de errores de render', () => {
     expect(texto).toContain('Request failed with status code 401');
     consoleSpy.mockRestore();
   });
+
+  it('mantiene el fallback cuando resetKey no cambia', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let debeExplotar = true;
+    function Hijo({ etiqueta }: { etiqueta: string }) {
+      if (debeExplotar) throw new Error('boom');
+      return <p>Contenido {etiqueta}</p>;
+    }
+
+    const { rerender } = render(
+      <ErrorBoundary resetKey="/rota">
+        <Hijo etiqueta="primera" />
+      </ErrorBoundary>
+    );
+    expect(screen.getByRole('heading', { name: 'Algo salió mal' })).toBeInTheDocument();
+
+    // El componente ya no explota, pero la ruta (resetKey) sigue igual: el
+    // boundary no descarta el error por un render cualquiera.
+    debeExplotar = false;
+    rerender(
+      <ErrorBoundary resetKey="/rota">
+        <Hijo etiqueta="segunda" />
+      </ErrorBoundary>
+    );
+    expect(screen.getByRole('heading', { name: 'Algo salió mal' })).toBeInTheDocument();
+    consoleSpy.mockRestore();
+  });
+
+  it('descarta el error y vuelve a los hijos cuando cambia resetKey', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let debeExplotar = true;
+    function Hijo({ etiqueta }: { etiqueta: string }) {
+      if (debeExplotar) throw new Error('boom');
+      return <p>Contenido {etiqueta}</p>;
+    }
+
+    const { rerender } = render(
+      <ErrorBoundary resetKey="/rota">
+        <Hijo etiqueta="primera" />
+      </ErrorBoundary>
+    );
+    expect(screen.getByRole('heading', { name: 'Algo salió mal' })).toBeInTheDocument();
+
+    // Navegar a otra página (resetKey distinto) da otra oportunidad de render
+    // sin recargar la app ni remontar los providers de arriba.
+    debeExplotar = false;
+    rerender(
+      <ErrorBoundary resetKey="/sana">
+        <Hijo etiqueta="segunda" />
+      </ErrorBoundary>
+    );
+    expect(screen.getByText('Contenido segunda')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Algo salió mal' })).not.toBeInTheDocument();
+    consoleSpy.mockRestore();
+  });
 });

@@ -8,6 +8,7 @@ import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { OrderListSkeleton } from '@/presentation/components/orders/OrderListSkeleton';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -70,7 +71,7 @@ export function MechanicDashboardPage() {
 
     const isServerError = status === 'error' && !isOffline;
 
-    if (status === 'loading') {
+    if (isInitialLoad(status, myOrders.length > 0)) {
         return (
             <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
                 <h2 className="text-3xl font-bold mb-2">Panel del Mecánico</h2>

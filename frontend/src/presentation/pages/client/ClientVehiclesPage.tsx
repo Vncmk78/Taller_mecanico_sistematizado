@@ -10,6 +10,7 @@ import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 
 export function ClientVehiclesPage() {
@@ -90,7 +91,7 @@ export function ClientVehiclesPage() {
         </Alert>
         )}
 
-        {status === 'loading' ? (
+        {isInitialLoad(status, myVehicles.length > 0) ? (
         <VehicleListSkeleton count={2} />
         ) : isServerError && myVehicles.length === 0 ? (
         <ErrorState

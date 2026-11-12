@@ -86,6 +86,9 @@ class EvidenciaService implements EvidenciaPort {
         // No se fija `Content-Type`: axios lo elimina para FormData y deja que el
         // navegador agregue el boundary del multipart.
         const { data } = await apiClient.post<EvidenciaApi>('/evidencias', form, {
+            // La subida admite archivos de hasta 12 MB: en una red lenta
+            // necesita mucho más que el tope general de apiClient.
+            timeout: 120000,
             onUploadProgress: (evento: AxiosProgressEvent) => {
                 if (!onProgress) return;
                 const total = evento.total ?? 0;

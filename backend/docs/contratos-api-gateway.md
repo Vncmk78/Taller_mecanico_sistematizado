@@ -102,7 +102,7 @@ OpenAPI publica en cada caso el esquema que corresponde.
 | Prefijo | Ejemplos |
 |---|---|
 | `error_*` | Los ocho errores de la Gateway: `error_ruta_no_encontrada` (404), `error_metodo_no_permitido` (405), `error_cuerpo_demasiado_grande` (413), `error_interno_gateway` (500), `error_microservicio` (respuesta no JSON), `error_microservicio_no_disponible` (502), `error_gateway_saturada` (503) y `error_tiempo_agotado` (504) |
-| `detalle_*` | Los errores que responden MS1, MS2 y MS4: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados, los dos `422` de validación y los de evidencias (orden o evidencia no encontrada, tipo de archivo no permitido o contenido distinto al declarado (415), foto demasiado grande (413), archivo vacío o dañado, orden cerrada (409), presupuesto de otra orden, almacenamiento u órdenes no disponibles) |
+| `detalle_*` | Los errores que responden MS1, MS2 y MS4: token ausente, token inválido, credenciales incorrectas, rol insuficiente, vehículo inexistente, perfil Cliente ausente, correo o patente ya registrados, usuario inexistente o rol desconocido, los `422` de validación y los de evidencias (orden o evidencia no encontrada, tipo de archivo no permitido o contenido distinto al declarado (415), foto demasiado grande (413), archivo vacío o dañado, orden cerrada (409), presupuesto de otra orden, almacenamiento u órdenes no disponibles) |
 
 Los mensajes de los errores de la Gateway se importan de `gateway/errores.py`, así
 que el ejemplo no puede divergir del texto que la Gateway responde realmente. Los

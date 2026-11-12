@@ -46,6 +46,10 @@ _EJEMPLO_TOKEN: dict[str, object] = {
     },
 }
 
+_EJEMPLO_ROL: dict[str, object] = {
+    "rol": "administrador",
+}
+
 
 class RegistroSolicitud(BaseModel):
     """Registro público de un cliente; el rol Cliente se asigna en el servidor."""
@@ -94,6 +98,23 @@ class LoginSolicitud(BaseModel):
     )
 
 
+class RolAsignarSolicitud(BaseModel):
+    """Asignación de un rol restringido a un usuario existente."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [_EJEMPLO_ROL]},
+    )
+
+    rol: Rol = Field(
+        description=(
+            "Rol a asignar: cliente, mecanico o administrador. Un valor "
+            "desconocido responde 422."
+        ),
+        examples=["administrador"],
+    )
+
+
 class UsuarioRespuesta(BaseModel):
     """Representación de un usuario expuesta por la API."""
 
@@ -103,7 +124,10 @@ class UsuarioRespuesta(BaseModel):
     email: str = Field(description="Correo del usuario.", examples=["ana@correo.cl"])
     full_name: str = Field(description="Nombre completo.", examples=["Ana Pérez"])
     roles: list[Rol] = Field(
-        description="Roles del usuario (cliente, mecanico o administrador).",
+        description=(
+            "Roles del usuario (cliente, mecanico o administrador). La consulta "
+            "administrativa puede devolver `[]` si la cuenta no tiene roles."
+        ),
         examples=[["cliente"]],
     )
     is_active: bool = Field(description="Si la cuenta está activa.", examples=[True])

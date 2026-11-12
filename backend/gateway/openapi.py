@@ -3,8 +3,8 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los endpoints reales que enruta la Gateway hacia MS1 (Autenticación), MS2
-(Vehículos y Órdenes) y MS4 (Evidencias), con sus esquemas
+los endpoints reales que enruta la Gateway hacia MS1 (Autenticación y Usuarios),
+MS2 (Vehículos y Órdenes) y MS4 (Evidencias), con sus esquemas
 (`gateway/contratos`), la seguridad `bearerAuth` y el formato común de errores
 de la Gateway (`gateway.esquemas`).
 
@@ -48,6 +48,9 @@ servidor, nunca el body).
 2. `POST /api/auth/login` devuelve `access_token` y `token_type: bearer`.
 3. Se envía en cada llamada protegida: `Authorization: Bearer <access_token>`.
 
+La administración de cuentas (`/api/auth/usuarios*`) exige rol Administrador: \
+permite listar y consultar usuarios, asignar un rol restringido y retirarlo.
+
 El botón **Authorize** de Swagger completa esa cabecera por ti. La Gateway no \
 valida el JWT: lo reenvía al microservicio, que responde `401` si falta o expira \
 y `403` si el rol no corresponde. Ante un `401` el frontend debe limpiar la sesión \
@@ -85,7 +88,9 @@ El detalle completo de los contratos está en `docs/contratos-api-gateway.md`.""
 _TAGS = [
     {
         "name": "Autenticación",
-        "description": "Registro, login y usuario actual (MS1).",
+        "description": (
+            "Registro, login, usuario actual y administración de usuarios (MS1)."
+        ),
     },
     {
         "name": "Vehículos",
@@ -121,6 +126,7 @@ _TAGS = [
 _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("RegistroSolicitud", contratos_auth.RegistroSolicitud),
     ("LoginSolicitud", contratos_auth.LoginSolicitud),
+    ("RolAsignarSolicitud", contratos_auth.RolAsignarSolicitud),
     ("UsuarioRespuesta", contratos_auth.UsuarioRespuesta),
     ("TokenRespuesta", contratos_auth.TokenRespuesta),
     ("VehiculoCrear", contratos_vehiculos.VehiculoCrear),
@@ -201,6 +207,26 @@ _PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
     "required": True,
     "description": "Orden de trabajo (MS2) cuyas evidencias se listan.",
     "schema": {"type": "integer", "format": "int64", "minimum": 1, "example": 31},
+}
+
+_PARAMETRO_USUARIO_ID: dict[str, object] = {
+    "name": "usuario_id",
+    "in": "path",
+    "required": True,
+    "description": "Identificador interno del usuario en MS1.",
+    "schema": {"type": "integer", "example": 7},
+}
+
+_PARAMETRO_ROL: dict[str, object] = {
+    "name": "rol",
+    "in": "path",
+    "required": True,
+    "description": "Rol restringido que se retira.",
+    "schema": {
+        "type": "string",
+        "enum": ["cliente", "mecanico", "administrador"],
+        "example": "cliente",
+    },
 }
 
 
@@ -531,6 +557,121 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 },
                 errores_ms={"401": "JWT ausente o inválido"},
                 requiere_auth=True,
+            )
+        },
+        "/api/auth/usuarios": {
+            "get": _operacion(
+                tag="Autenticación",
+                resumen="Listar todos los usuarios",
+                descripcion=(
+                    "Solo un Administrador. Devuelve todas las cuentas de MS1, "
+                    "activas y desactivadas, ordenadas por identificador "
+                    "ascendente. Incluye las cuentas sin roles (`roles: []`)."
+                ),
+                operation_id="listar_usuarios",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Usuarios registrados.",
+                        {"type": "array", "items": _ref("UsuarioRespuesta")},
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                },
+                requiere_auth=True,
+            )
+        },
+        "/api/auth/usuarios/{usuario_id}": {
+            "get": _operacion(
+                tag="Autenticación",
+                resumen="Consultar un usuario por su identificador",
+                descripcion=(
+                    "Solo un Administrador. Devuelve la cuenta indicada, activa "
+                    "o no, incluida una cuenta sin roles. Un identificador que "
+                    "no corresponde a ninguna cuenta responde 404."
+                ),
+                operation_id="consultar_usuario_por_id",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_USUARIO_ID],
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Usuario encontrado.", _ref("UsuarioRespuesta")
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "Identificador de usuario inválido",
+                },
+                requiere_auth=True,
+                descripcion_404=(
+                    "El usuario no existe (MS1) o la ruta no existe en la Gateway."
+                ),
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/auth/usuarios/{usuario_id}/roles": {
+            "post": _operacion(
+                tag="Autenticación",
+                resumen="Asignar un rol restringido a un usuario",
+                descripcion=(
+                    "Solo un Administrador. Asigna cliente, mecanico o "
+                    "administrador a una cuenta existente y devuelve la cuenta "
+                    "actualizada. Es idempotente: repetir un rol ya asignado no "
+                    "lo duplica ni devuelve error. El rol sale del body y el "
+                    "administrador responsable, del token."
+                ),
+                operation_id="asignar_rol_usuario",
+                cuerpo="RolAsignarSolicitud",
+                parametros_extra=[_PARAMETRO_USUARIO_ID],
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Usuario con el rol asignado.", _ref("UsuarioRespuesta")
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "Rol desconocido o datos inválidos",
+                },
+                requiere_auth=True,
+                descripcion_404=(
+                    "El usuario no existe (MS1) o la ruta no existe en la Gateway."
+                ),
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/auth/usuarios/{usuario_id}/roles/{rol}": {
+            "delete": _operacion(
+                tag="Autenticación",
+                resumen="Retirar un rol restringido a un usuario",
+                descripcion=(
+                    "Solo un Administrador. Retira uno de los roles cliente, "
+                    "mecanico o administrador de una cuenta existente. Es "
+                    "idempotente: retirar un rol que la cuenta no tiene no "
+                    "cambia nada. Se permite retirar el último rol; la cuenta "
+                    "queda con `roles: []`."
+                ),
+                operation_id="retirar_rol_usuario",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_USUARIO_ID, _PARAMETRO_ROL],
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Usuario con el rol retirado.", _ref("UsuarioRespuesta")
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "Rol de la ruta desconocido",
+                },
+                requiere_auth=True,
+                descripcion_404=(
+                    "El usuario no existe (MS1) o la ruta no existe en la Gateway."
+                ),
+                esquema_404=error_404_recurso,
             )
         },
         "/api/vehiculos": {
@@ -1044,7 +1185,7 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 22 endpoints de negocio, la seguridad `bearerAuth` y los
+    agrega los 29 endpoints de negocio, la seguridad `bearerAuth` y los
     esquemas de `gateway/contratos` y `gateway/esquemas`.
     """
     if getattr(app, "openapi_schema", None) is not None:

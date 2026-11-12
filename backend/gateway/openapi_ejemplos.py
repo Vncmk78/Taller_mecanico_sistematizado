@@ -197,6 +197,63 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         "409 con el correo ya registrado",
         {"detail": "El correo ya está registrado"},
     ),
+    "detalle_usuario_no_encontrado": _ejemplo(
+        "404 de MS1: la cuenta no existe",
+        {"detail": "El usuario no existe"},
+    ),
+    "detalle_usuario_id_invalido_422": _ejemplo(
+        "422 de MS1: identificador de usuario no numérico",
+        {
+            "detail": [
+                {
+                    "type": "int_parsing",
+                    "loc": ["path", "usuario_id"],
+                    "msg": (
+                        "Input should be a valid integer, unable to parse "
+                        "string as an integer"
+                    ),
+                    "input": "abc",
+                }
+            ]
+        },
+        "Pydantic v2 devuelve una lista de errores; `loc` indica el parámetro.",
+    ),
+    "detalle_rol_body_invalido_422": _ejemplo(
+        "422 de MS1: rol desconocido en el body",
+        {
+            "detail": [
+                {
+                    "type": "literal_error",
+                    "loc": ["body", "rol"],
+                    "msg": (
+                        "Input should be 'cliente', 'mecanico' or "
+                        "'administrador'"
+                    ),
+                    "input": "supervisor",
+                    "ctx": {"expected": "'cliente', 'mecanico' or 'administrador'"},
+                }
+            ]
+        },
+        "El rol solo admite los tres valores de `NombreRol`.",
+    ),
+    "detalle_rol_ruta_invalido_422": _ejemplo(
+        "422 de MS1: rol desconocido en la ruta",
+        {
+            "detail": [
+                {
+                    "type": "literal_error",
+                    "loc": ["path", "rol"],
+                    "msg": (
+                        "Input should be 'cliente', 'mecanico' or "
+                        "'administrador'"
+                    ),
+                    "input": "supervisor",
+                    "ctx": {"expected": "'cliente', 'mecanico' or 'administrador'"},
+                }
+            ]
+        },
+        "El rol de la ruta solo admite los tres valores de `NombreRol`.",
+    ),
     "detalle_validacion_registro_422": _ejemplo(
         "422 de validación del body de registro",
         {
@@ -307,6 +364,23 @@ _USUARIO_EJEMPLO: dict[str, Any] = {
     "full_name": "Ana Pérez",
     "roles": ["cliente"],
     "is_active": True,
+}
+
+_USUARIO_ADMIN_EJEMPLO: dict[str, Any] = {
+    **_USUARIO_EJEMPLO,
+    "id": 9,
+    "email": "leo@correo.cl",
+    "full_name": "Leo Díaz",
+    "roles": ["administrador", "cliente"],
+}
+
+_USUARIO_SIN_ROLES_EJEMPLO: dict[str, Any] = {
+    **_USUARIO_EJEMPLO,
+    "id": 11,
+    "email": "sin.roles@correo.cl",
+    "full_name": "Cuenta sin roles",
+    "roles": [],
+    "is_active": False,
 }
 
 _VEHICULO_EJEMPLO: dict[str, Any] = {
@@ -428,6 +502,84 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
                 }
             },
             "401": _EJEMPLOS_AUTENTICACION,
+        },
+    },
+    ("/api/auth/usuarios", "get"): {
+        "respuestas": {
+            "200": {
+                "lista": {
+                    "summary": "Cuentas activa y desactivada (esta última sin roles)",
+                    "value": [_USUARIO_EJEMPLO, _USUARIO_SIN_ROLES_EJEMPLO],
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+        },
+    },
+    ("/api/auth/usuarios/{usuario_id}", "get"): {
+        "respuestas": {
+            "200": {
+                "usuario": {
+                    "summary": "Cuenta consultada por un Administrador",
+                    "value": _USUARIO_EJEMPLO,
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+            "404": {
+                "usuario_no_encontrado": _ref_ejemplo(
+                    "detalle_usuario_no_encontrado"
+                )
+            },
+            "422": {
+                "id_invalido": _ref_ejemplo("detalle_usuario_id_invalido_422")
+            },
+        },
+    },
+    ("/api/auth/usuarios/{usuario_id}/roles", "post"): {
+        "cuerpo": {
+            "asignacion_rol": {
+                "summary": "Rol restringido a asignar",
+                "value": {"rol": "administrador"},
+            }
+        },
+        "respuestas": {
+            "200": {
+                "usuario_actualizado": {
+                    "summary": "Cuenta con el rol recién asignado",
+                    "value": _USUARIO_ADMIN_EJEMPLO,
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+            "404": {
+                "usuario_no_encontrado": _ref_ejemplo(
+                    "detalle_usuario_no_encontrado"
+                )
+            },
+            "422": {
+                "rol_invalido": _ref_ejemplo("detalle_rol_body_invalido_422")
+            },
+        },
+    },
+    ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"): {
+        "respuestas": {
+            "200": {
+                "usuario_actualizado": {
+                    "summary": "Cuenta sin el rol retirado (queda sin roles)",
+                    "value": _USUARIO_SIN_ROLES_EJEMPLO,
+                }
+            },
+            "401": _EJEMPLOS_AUTENTICACION,
+            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
+            "404": {
+                "usuario_no_encontrado": _ref_ejemplo(
+                    "detalle_usuario_no_encontrado"
+                )
+            },
+            "422": {
+                "rol_invalido": _ref_ejemplo("detalle_rol_ruta_invalido_422")
+            },
         },
     },
     ("/api/vehiculos", "post"): {

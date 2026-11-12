@@ -49,18 +49,18 @@ Medida sobre el OpenAPI que publica la Gateway (no supuesta):
 
 | Prefijo | Operaciones | Microservicio |
 |---|---:|---|
-| `auth` | 3 | MS1 |
+| `auth` | 7 | MS1 |
 | `vehiculos` | 5 | MS2 |
 | `ordenes` | 11 | MS2 |
 | `evidencias` | 4 | MS4 |
 | `presupuestos` (solo decisiones) | 2 | MS3 |
 | `health` | 2 | Gateway |
 | índice `GET /` | 1 | Gateway |
-| **Total** | **28** | — |
+| **Total** | **32** | — |
 
-De esos 28, **25 son operaciones de negocio** (las de `health` y el índice no
+De esos 32, **29 son operaciones de negocio** (las de `health` y el índice no
 lo son; `test_gateway_openapi.py` compara contra `_ENDPOINTS_ESPERADOS`, que
-tiene exactamente esas 25 entradas).
+tiene exactamente esas 29 entradas).
 
 ### 2.3 Enrutado pero no publicado
 
@@ -274,7 +274,7 @@ el contrato antes (sobre todo el alcance de MS3).
   `matriz-autorizacion-roles.md`.
 - **No cubre** evolución/versionado del contrato, compatibilidad hacia atrás,
   rendimiento ni UX.
-- Las cifras (28 operaciones, 14 prefijos, conteos de pruebas) se midieron
+- Las cifras (32 operaciones, 14 prefijos, conteos de pruebas) se midieron
   sobre el árbol de la rama `DerisA`; si el OpenAPI o los tests cambian, deben
   volverse a medir.
 

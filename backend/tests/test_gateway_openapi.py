@@ -1,6 +1,6 @@
 """Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 22 endpoints reales de Auth,
+Verifican que `/openapi.json` publica los 29 endpoints reales de Auth,
 Vehículos, Órdenes y Evidencias con sus contratos y seguridad, que el proxy
 genérico no aparece, y que las copias de `gateway/contratos` no se
 desactualizan respecto a los esquemas reales de MS1, MS2 y MS4.
@@ -20,6 +20,7 @@ from gateway.main import app
 from services.ms1_auth.schemas.auth import (
     LoginSolicitud as Ms1LoginSolicitud,
     RegistroClienteSolicitud as Ms1RegistroClienteSolicitud,
+    RolAsignarSolicitud as Ms1RolAsignarSolicitud,
     TokenRespuesta as Ms1TokenRespuesta,
     UsuarioRespuesta as Ms1UsuarioRespuesta,
 )
@@ -59,6 +60,10 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/auth/register", "post"),
     ("/api/auth/login", "post"),
     ("/api/auth/me", "get"),
+    ("/api/auth/usuarios", "get"),
+    ("/api/auth/usuarios/{usuario_id}", "get"),
+    ("/api/auth/usuarios/{usuario_id}/roles", "post"),
+    ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"),
     ("/api/vehiculos", "post"),
     ("/api/vehiculos", "get"),
     ("/api/vehiculos/asignados", "get"),
@@ -86,6 +91,10 @@ _ENDPOINTS_ESPERADOS = {
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
 _PROTEGIDOS = {
     "/api/auth/me",
+    "/api/auth/usuarios",
+    "/api/auth/usuarios/{usuario_id}",
+    "/api/auth/usuarios/{usuario_id}/roles",
+    "/api/auth/usuarios/{usuario_id}/roles/{rol}",
     "/api/vehiculos",
     "/api/vehiculos/asignados",
     "/api/vehiculos/{vehiculo_id}",
@@ -186,6 +195,9 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}/estado", "patch"),
         ("/api/ordenes/{orden_id}/entrega", "post"),
         ("/api/ordenes/{orden_id}/cancelacion", "post"),
+        ("/api/auth/usuarios/{usuario_id}", "get"),
+        ("/api/auth/usuarios/{usuario_id}/roles", "post"),
+        ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"),
         ("/api/evidencias", "post"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
@@ -235,6 +247,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
     con_cuerpo = {
         ("/api/auth/register", "post"): "RegistroSolicitud",
         ("/api/auth/login", "post"): "LoginSolicitud",
+        ("/api/auth/usuarios/{usuario_id}/roles", "post"): "RolAsignarSolicitud",
         ("/api/vehiculos", "post"): "VehiculoCrear",
         ("/api/vehiculos/{vehiculo_id}", "patch"): "VehiculoActualizar",
         ("/api/ordenes", "post"): "OrdenCrear",
@@ -255,6 +268,9 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         assert esquema_cuerpo["$ref"] == f"#/components/schemas/{ref}"
     for (ruta, metodo) in (
         ("/api/auth/me", "get"),
+        ("/api/auth/usuarios", "get"),
+        ("/api/auth/usuarios/{usuario_id}", "get"),
+        ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos/asignados", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
@@ -287,6 +303,7 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
     [
         (contratos_auth.RegistroSolicitud, Ms1RegistroClienteSolicitud),
         (contratos_auth.LoginSolicitud, Ms1LoginSolicitud),
+        (contratos_auth.RolAsignarSolicitud, Ms1RolAsignarSolicitud),
         (contratos_auth.UsuarioRespuesta, Ms1UsuarioRespuesta),
         (contratos_auth.TokenRespuesta, Ms1TokenRespuesta),
         (contratos_vehiculos.VehiculoCrear, Ms2VehiculoCrear),
@@ -388,6 +405,7 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
     for nombre in (
         "RegistroSolicitud",
         "LoginSolicitud",
+        "RolAsignarSolicitud",
         "UsuarioRespuesta",
         "TokenRespuesta",
         "VehiculoCrear",

@@ -50,6 +50,22 @@ describe('Alert: notificación contextual', () => {
     expect(handleRetry).toHaveBeenCalled();
   });
 
+  it('marca aria-atomic para anunciar siempre el mensaje completo', () => {
+    render(<Alert tone="error">No se pudo guardar.</Alert>);
+
+    expect(screen.getByRole('alert')).toHaveAttribute('aria-atomic', 'true');
+  });
+
+  it('acepta un id para asociarlo desde el campo que lo origina', () => {
+    render(
+      <Alert tone="error" id="campo-error">
+        Revisa el campo.
+      </Alert>
+    );
+
+    expect(document.getElementById('campo-error')).toHaveTextContent('Revisa el campo.');
+  });
+
   const toneCases: Array<[AlertTone, string, string]> = [
     ['error', 'text-status-red', 'alert'],
     ['warning', 'text-status-yellow', 'alert'],

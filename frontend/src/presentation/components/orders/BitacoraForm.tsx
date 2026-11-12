@@ -10,10 +10,10 @@ import { useOrderBitacoraStore } from '@/infrastructure/stores/useOrderBitacoraS
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
+import { Input } from '@/presentation/components/ui/Input';
+import { Select } from '@/presentation/components/ui/Select';
+import { Textarea } from '@/presentation/components/ui/Textarea';
 import { useToast } from '@/presentation/components/ui/toastContext';
-
-const INPUT_CLASS =
-    'w-full py-2.5 px-3 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue';
 
 const repuestoSchema = z.object({
     nombre: z
@@ -124,30 +124,28 @@ export function BitacoraForm({ ordenId, onSuccess, className }: BitacoraFormProp
                 </Alert>
             )}
 
-            <label className="mb-4 block text-sm">
-                <span className="mb-1 block text-text-muted">Tipo</span>
-                <select aria-label="Tipo de entrada" className={INPUT_CLASS} {...register('tipo')}>
-                    <option value="accion">Acción</option>
-                    <option value="observacion">Observación</option>
-                </select>
-            </label>
+            <Select
+                id="bitacora-tipo"
+                label="Tipo"
+                aria-label="Tipo de entrada"
+                containerClassName="mb-4"
+                {...register('tipo')}
+            >
+                <option value="accion">Acción</option>
+                <option value="observacion">Observación</option>
+            </Select>
 
-            <label className="mb-4 block text-sm">
-                <span className="mb-1 block text-text-muted">Descripción</span>
-                <textarea
-                    rows={3}
-                    aria-label="Descripción de la entrada"
-                    aria-invalid={errors.descripcion ? true : undefined}
-                    placeholder="Describe la observación o la acción realizada..."
-                    className={`${INPUT_CLASS} ${errors.descripcion ? 'border-status-red' : ''}`}
-                    {...register('descripcion')}
-                />
-                {errors.descripcion && (
-                    <p role="alert" className="mt-1 text-sm text-status-red">
-                        {errors.descripcion.message}
-                    </p>
-                )}
-            </label>
+            <Textarea
+                id="bitacora-descripcion"
+                label="Descripción"
+                rows={3}
+                aria-label="Descripción de la entrada"
+                required
+                placeholder="Describe la observación o la acción realizada..."
+                containerClassName="mb-4"
+                error={errors.descripcion?.message}
+                {...register('descripcion')}
+            />
 
             {tipoSeleccionado === 'accion' && (
                 <fieldset className="mb-4">
@@ -158,34 +156,28 @@ export function BitacoraForm({ ordenId, onSuccess, className }: BitacoraFormProp
                         {fields.map((field, index) => (
                             <div key={field.id} className="flex items-start gap-2">
                                 <div className="flex-1">
-                                    <input
+                                    <Input
+                                        id={`bitacora-repuesto-${index}-nombre`}
                                         aria-label={`Nombre del repuesto ${index + 1}`}
-                                        aria-invalid={errors.repuestos?.[index]?.nombre ? true : undefined}
+                                        required
                                         placeholder="Nombre del repuesto"
-                                        className={INPUT_CLASS}
+                                        containerClassName="mb-0"
+                                        error={errors.repuestos?.[index]?.nombre?.message}
                                         {...register(`repuestos.${index}.nombre`)}
                                     />
-                                    {errors.repuestos?.[index]?.nombre && (
-                                        <p role="alert" className="mt-1 text-sm text-status-red">
-                                            {errors.repuestos[index]?.nombre?.message}
-                                        </p>
-                                    )}
                                 </div>
                                 <div className="w-24">
-                                    <input
+                                    <Input
+                                        id={`bitacora-repuesto-${index}-cantidad`}
                                         type="number"
                                         min={1}
                                         inputMode="numeric"
                                         aria-label={`Cantidad del repuesto ${index + 1}`}
-                                        aria-invalid={errors.repuestos?.[index]?.cantidad ? true : undefined}
-                                        className={INPUT_CLASS}
+                                        required
+                                        containerClassName="mb-0"
+                                        error={errors.repuestos?.[index]?.cantidad?.message}
                                         {...register(`repuestos.${index}.cantidad`)}
                                     />
-                                    {errors.repuestos?.[index]?.cantidad && (
-                                        <p role="alert" className="mt-1 text-xs text-status-red">
-                                            {errors.repuestos[index]?.cantidad?.message}
-                                        </p>
-                                    )}
                                 </div>
                                 <Button
                                     variant="danger"

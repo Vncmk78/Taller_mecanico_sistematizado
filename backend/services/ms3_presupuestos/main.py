@@ -17,6 +17,8 @@ Los endpoints de negocio se agregan en routers/ y se registran en ROUTERS.
 """
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -25,12 +27,32 @@ from sqlalchemy.orm import Session
 
 from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
-from services.ms3_presupuestos.integracion_ms2 import DecisionAplicacionPendienteError, ServicioOrdenesNoDisponible
-from shared.contratos_decisiones import DecisionAplicacionPendiente
+from services.ms3_presupuestos.integracion_ms2 import (
+    DecisionAplicacionPendienteError,
+    EnvioPresupuestoAplicacionPendienteError,
+    ServicioOrdenesNoDisponible,
+)
+from shared.contratos_decisiones import (
+    DecisionAplicacionPendiente,
+    EnvioPresupuestoAplicacionPendiente,
+)
 from services.ms3_presupuestos.persistencia import ErrorDePersistencia
 from services.ms3_presupuestos.routers import ROUTERS
 
+from services.ms3_presupuestos.services.publicador_avisos import ejecutar_worker
+
+@asynccontextmanager
+async def lifespan(_app):
+    tarea=asyncio.create_task(ejecutar_worker()) if settings.EVENT_WORKER_ENABLED else None
+    try:yield
+    finally:
+        if tarea is not None:
+            tarea.cancel()
+            try:await tarea
+            except asyncio.CancelledError:pass
+
 app = FastAPI(
+    lifespan=lifespan,
     title="SGTM — MS3: Presupuestos, Repuestos y Proveedores",
     version="0.1.0",
     # Swagger y ReDoc se sirven abajo con URL RELATIVA al openapi.json: en
@@ -73,7 +95,12 @@ def _error_de_persistencia(_: Request, exc: ErrorDePersistencia) -> JSONResponse
 
     Nunca devuelve SQL ni parámetros: solo el mensaje pensado para el cliente.
     """
-    return JSONResponse(status_code=exc.codigo_http, content={"detail": exc.mensaje})
+    contenido: dict = {"detail": exc.mensaje}
+    # Rechazo por stock insuficiente: detalle de lo que falta por repuesto.
+    faltantes = getattr(exc, "faltantes", None)
+    if faltantes:
+        contenido["faltantes"] = [f.model_dump() for f in faltantes]
+    return JSONResponse(status_code=exc.codigo_http, content=contenido)
 
 
 @app.exception_handler(ServicioOrdenesNoDisponible)
@@ -93,6 +120,22 @@ def _decision_aplicacion_pendiente(_: Request, exc: DecisionAplicacionPendienteE
         decision_id=exc.decision_id, orden_id=exc.orden_id,
         reintento=f"/api/presupuestos/decisiones/{exc.decision_id}/aplicacion",
         estado_ms2=exc.estado_ms2, detalle_ms2=exc.detalle_ms2,
+    )
+    return JSONResponse(status_code=503, content=respuesta.model_dump())
+
+
+@app.exception_handler(EnvioPresupuestoAplicacionPendienteError)
+def _envio_aplicacion_pendiente(
+    _: Request, exc: EnvioPresupuestoAplicacionPendienteError,
+) -> JSONResponse:
+    respuesta = EnvioPresupuestoAplicacionPendiente(
+        detail="El presupuesto quedó enviado; no se pudo confirmar su aplicación en MS2. "
+               "Reintente la aplicación del envío inicial.",
+        presupuesto_id=exc.presupuesto_id,
+        orden_id=exc.orden_id,
+        reintento=f"/api/presupuestos/{exc.presupuesto_id}/envio-inicial/aplicacion",
+        estado_ms2=exc.estado_ms2,
+        detalle_ms2=exc.detalle_ms2,
     )
     return JSONResponse(status_code=503, content=respuesta.model_dump())
 

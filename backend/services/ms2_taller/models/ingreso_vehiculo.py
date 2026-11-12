@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from services.ms2_taller.db import Base
@@ -31,6 +31,7 @@ class IngresoVehiculo(Base):
     __tablename__ = "ingreso_vehiculo"
 
     __table_args__ = (
+        Index("ix_ingreso_vehiculo_fecha_hora", "fecha_hora"),
         CheckConstraint("registrado_por_id > 0", name="registrado_por_positivo"),
         # La salida no puede ser anterior a la entrada.
         CheckConstraint(

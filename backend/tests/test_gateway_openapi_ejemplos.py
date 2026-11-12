@@ -241,14 +241,12 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
     esquema: dict,
 ) -> None:
     operaciones = _operaciones_de_negocio(esquema)
-    assert set(operaciones) == {
+    assert set(operaciones) >= {
         ("/api/auth/login", "post"),
         ("/api/auth/me", "get"),
         ("/api/auth/register", "post"),
-        ("/api/auth/usuarios", "get"),
-        ("/api/auth/usuarios/{usuario_id}", "get"),
-        ("/api/auth/usuarios/{usuario_id}/roles", "post"),
-        ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"),
+        ("/api/notificaciones", "get"),
+        ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/ordenes", "get"),
         ("/api/ordenes", "post"),
         ("/api/ordenes/{orden_id}", "get"),
@@ -257,17 +255,27 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
         ("/api/presupuestos/decisiones/{decision_id}", "get"),
         ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "post"),
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/{orden_id}/entrega", "post"),
         ("/api/ordenes/{orden_id}/cancelacion", "post"),
+        ("/api/ordenes/cancelaciones/pendientes", "get"),
+        ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
+        ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
+        ("/api/ordenes/configuracion/capacidad/mecanicos", "put"),
+        ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
+        ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "put"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos", "post"),
         ("/api/vehiculos/asignados", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
         ("/api/vehiculos/{vehiculo_id}", "patch"),
     } | _OPERACIONES_EVIDENCIAS
+    # Semana 7: el resto de MS1, la coordinación MS3 -> MS2 y todo MS3 también
+    # documentan las respuestas comunes.
+    assert len(operaciones) >= 70
     for (ruta, metodo), operacion in operaciones.items():
         respuestas = operacion["responses"]
         etiqueta = f"{metodo.upper()} {ruta}"
@@ -284,8 +292,9 @@ def test_las_operaciones_de_negocio_documentan_las_respuestas_comunes(
                 "ordenes_no_disponible",
                 "gateway_saturada",
             } <= set(respuestas["503"]["content"][_JSON]["examples"]), etiqueta
-        elif ruta in {"/api/ordenes/{orden_id}/decisiones-presupuesto",
-                      "/api/presupuestos/decisiones/{decision_id}/aplicacion"}:
+        elif "$ref" not in respuestas["503"]:
+            # 503 propio del microservicio (p. ej. MS3 sin poder validar en MS2):
+            # admite su cuerpo y también el GATEWAY_SATURADA de la Gateway.
             refs = respuestas["503"]["content"][_JSON]["schema"]["oneOf"]
             assert {item["$ref"] for item in refs} >= {"#/components/schemas/ErrorRespuesta"}
         else:
@@ -310,6 +319,10 @@ def test_los_ejemplos_de_autenticacion_y_vehiculos_cubren_los_cuerpos(
         if cuerpo:
             assert cuerpo.get("examples"), f"{etiqueta} sin ejemplo de body"
         respuesta_exito = "201" if "201" in operacion["responses"] else "200"
+        if respuesta_exito not in operacion["responses"]:
+            # 204 sin contenido (DELETE de MS3): no hay cuerpo que ejemplificar.
+            assert "204" in operacion["responses"], etiqueta
+            continue
         ejemplos = operacion["responses"][respuesta_exito]["content"][_JSON]
         assert ejemplos.get("examples"), f"{etiqueta} {respuesta_exito} sin ejemplo"
 

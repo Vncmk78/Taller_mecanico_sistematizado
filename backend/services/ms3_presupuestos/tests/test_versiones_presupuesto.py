@@ -18,7 +18,11 @@ from sqlalchemy.orm import Session
 from services.ms3_presupuestos import datos_prueba as datos
 from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
-from services.ms3_presupuestos.integracion_ms2 import obtener_coordinador_ordenes, obtener_verificador_ordenes
+from services.ms3_presupuestos.integracion_ms2 import (
+    obtener_coordinador_envios_presupuesto,
+    obtener_coordinador_ordenes,
+    obtener_verificador_ordenes,
+)
 from services.ms3_presupuestos.main import app
 from services.ms3_presupuestos.models import (
     ItemPresupuesto,
@@ -29,7 +33,10 @@ from services.ms3_presupuestos.models import (
 )
 from services.ms3_presupuestos.tests import fabricas
 from shared.auth import NombreRol, crear_token_acceso
-from shared.contratos_decisiones import AplicacionDecisionRespuesta
+from shared.contratos_decisiones import (
+    AplicacionDecisionRespuesta,
+    AplicacionEnvioPresupuestoRespuesta,
+)
 
 
 def _cabecera(rol: NombreRol, usuario_id: int) -> dict[str, str]:
@@ -46,15 +53,23 @@ CLIENTE = _cabecera(NombreRol.CLIENTE, datos.CLIENTE_ID)
 
 
 class _OrdenesDelCliente:
+    """Hace de MS2: el personal ve todas las órdenes; el cliente, solo `propias`."""
+
     def __init__(self) -> None:
         self.propias: set[int] = set()
 
-    def verificar_acceso(self, orden_id: int, token: str) -> None:
-        from services.ms3_presupuestos.integracion_ms2 import OrdenNoVisible
-        if orden_id not in self.propias:
+    def verificar_acceso(self, orden_id: int, token: str):
+        from services.ms3_presupuestos.integracion_ms2 import OrdenNoVisible, OrdenVisible
+        personal = token in (ADMIN["Authorization"][7:], MECANICO["Authorization"][7:])
+        if not personal and orden_id not in self.propias:
             raise OrdenNoVisible(orden_id)
+        return OrdenVisible(orden_id)
 
     verificar_propiedad = verificar_acceso
+
+    def verificar_creacion_presupuesto(self, orden_id: int, token: str, _principal):
+        """El personal de este escenario tiene asignación; se prueba el versionado."""
+        return self.verificar_acceso(orden_id, token)
 
 
 @pytest.fixture
@@ -71,9 +86,18 @@ def api(db: Session, ms2: _OrdenesDelCliente) -> Iterator[TestClient]:
             return AplicacionDecisionRespuesta(decision_id=decision_id, orden_id=orden_id,
                                                estado_aplicado=destino, historial_id=1)
 
+    class CoordinadorEnviosFalso:
+        """MS2 aplica el envío inicial (Esperando aprobación de presupuesto = 3)."""
+
+        def aplicar(self, orden_id: int, presupuesto_id: int, token: str
+                    ) -> AplicacionEnvioPresupuestoRespuesta:
+            return AplicacionEnvioPresupuestoRespuesta(
+                presupuesto_id=presupuesto_id, orden_id=orden_id, estado_aplicado=3, historial_id=1)
+
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[obtener_verificador_ordenes] = lambda: ms2
     app.dependency_overrides[obtener_coordinador_ordenes] = CoordinadorFalso
+    app.dependency_overrides[obtener_coordinador_envios_presupuesto] = CoordinadorEnviosFalso
     try:
         with TestClient(app) as cliente:
             yield cliente
@@ -81,6 +105,7 @@ def api(db: Session, ms2: _OrdenesDelCliente) -> Iterator[TestClient]:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(obtener_verificador_ordenes, None)
         app.dependency_overrides.pop(obtener_coordinador_ordenes, None)
+        app.dependency_overrides.pop(obtener_coordinador_envios_presupuesto, None)
 
 
 def _foto(db: Session, presupuesto_id: int) -> list[tuple]:

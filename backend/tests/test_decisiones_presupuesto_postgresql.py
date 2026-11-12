@@ -24,7 +24,7 @@ from services.ms2_taller.models import HistorialAsignacion, HistorialEstado, Ord
 from services.ms2_taller.services import ordenes as servicio_ordenes
 from services.ms3_presupuestos.models import DecisionPresupuesto, VersionPresupuesto
 from shared.auth import NombreRol
-from test_ordenes_api import _crear_vehiculo
+from test_ordenes_api import _crear_orden, _crear_vehiculo
 from test_decisiones_presupuesto_integracion import (
     _aplicar, _decidir, _estado_y_historial, _headers, preparar_flujo,
     test_cliente_multirol_solo_decide_presupuesto_de_su_orden as comprobar_multirol,
@@ -37,6 +37,11 @@ from test_decisiones_presupuesto_integracion import (
     test_stock_del_reintento_no_cambia_la_rama_persistida as comprobar_stock,
     test_aprobacion_historica_sin_snapshot_no_inventa_stock as comprobar_historica,
     test_ms2_sin_confirmacion_de_propiedad_no_deja_decision_guardada as comprobar_ms2_anterior,
+    test_cancelacion_integrada_solicita_confirma_y_reintenta_sin_duplicados as comprobar_cancelacion,
+    test_cancelacion_rechaza_aprobacion_persistida_aunque_ms2_no_haya_avanzado as comprobar_aprobacion_cancelacion,
+    test_cancelacion_sin_verificacion_ms3_conserva_solicitud_pendiente as comprobar_ms3_cancelacion,
+    test_cancelacion_fallo_tras_flush_revierte_confirmacion_estado_historial_y_evento as comprobar_rollback_cancelacion,
+    test_cancelacion_cliente_y_mecanico_no_pueden_confirmar_ni_listar_pendientes as comprobar_roles_cancelacion,
 )
 
 
@@ -85,7 +90,7 @@ def bases_pg():
 
 
 @pytest.fixture
-def flujo_pg(bases_pg, monkeypatch):
+def flujo_pg(bases_pg, monkeypatch, mecanicos_validos):
     yield from preparar_flujo(monkeypatch, bases_pg.ms2, bases_pg.ms3)
 
 
@@ -337,9 +342,10 @@ def test_cancelacion_exige_motivo_en_postgresql(flujo_pg, body):
         headers=_headers(99, rol=NombreRol.ADMINISTRADOR),
     )
     valida = body.get("observacion") == "Motivo válido"
-    assert respuesta.status_code == (200 if valida else 422)
+    # Un motivo válido no sustituye la solicitud del Cliente y su confirmación.
+    assert respuesta.status_code == (409 if valida else 422)
     estado, historial = _estado_y_historial(flujo_pg)
-    assert estado == (8 if valida else 3) and len(historial) == int(valida)
+    assert estado == 3 and historial == []
 
 
 def test_decision_de_otra_orden_y_usuario_no_se_aplica(flujo_pg):
@@ -347,11 +353,9 @@ def test_decision_de_otra_orden_y_usuario_no_se_aplica(flujo_pg):
     decision_id = _decidir(flujo_pg).json()["decision_id"]
     flujo_pg.fallo["modo"] = None
     with flujo_pg.db2() as db:
-        original = db.get(OrdenTrabajo, flujo_pg.orden_id)
-        otra = OrdenTrabajo(vehiculo_id=original.vehiculo_id, ingreso_id=original.ingreso_id,
-                            creado_por_id=99, estado_codigo=3)
-        db.add(otra)
-        db.commit()
+        # Otra orden del mismo propietario, en otro vehículo: no se preparan
+        # dos órdenes activas sobre el mismo vehículo para probar ownership.
+        otra = _crear_orden(db, usuario_cliente=10, estado_codigo=3)
         otra_id = otra.orden_id
     assert _aplicar(flujo_pg, decision_id, orden_id=otra_id).status_code == 404
     assert _aplicar(flujo_pg, decision_id, headers=_headers(88)).status_code == 404
@@ -451,3 +455,28 @@ def test_nuevas_migraciones_reversibles_en_esquemas_descartables(bases_pg):
             assert columna not in {c["name"] for c in inspect(conexion).get_columns(tabla)}
             command.upgrade(config, "head")
             assert columna in {c["name"] for c in inspect(conexion).get_columns(tabla)}
+
+
+@pytest.mark.parametrize("estado_inicial", [1, 2, 3])
+def test_cancelacion_completa_e_idempotente_en_postgresql(flujo_pg, estado_inicial):
+    comprobar_cancelacion(flujo_pg, estado_inicial)
+
+
+@pytest.mark.parametrize("solicitud_previa", [False, True])
+def test_cancelacion_con_aprobacion_persistida_es_rechazada_en_postgresql(
+    flujo_pg, solicitud_previa,
+):
+    comprobar_aprobacion_cancelacion(flujo_pg, solicitud_previa)
+
+
+def test_cancelacion_con_ms3_no_disponible_no_cambia_estado_en_postgresql(flujo_pg):
+    comprobar_ms3_cancelacion(flujo_pg)
+
+
+def test_cancelacion_fallida_revierte_toda_la_transaccion_en_postgresql(flujo_pg, monkeypatch):
+    comprobar_rollback_cancelacion(flujo_pg, monkeypatch)
+
+
+@pytest.mark.parametrize("usuario,rol", [(42, NombreRol.CLIENTE), (50, NombreRol.MECANICO)])
+def test_cancelacion_respeta_separacion_de_roles_en_postgresql(flujo_pg, usuario, rol):
+    comprobar_roles_cancelacion(flujo_pg, usuario, rol)

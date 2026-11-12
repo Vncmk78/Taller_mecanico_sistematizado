@@ -63,7 +63,8 @@ def _sembrar_catalogo(db, admin_id: int) -> dict[str, Repuesto]:
     for prov in datos.CATALOGO:
         proveedor = db.scalar(select(Proveedor).where(Proveedor.nombre == prov.nombre))
         if proveedor is None:
-            proveedor = Proveedor(nombre=prov.nombre, contacto=prov.contacto)
+            proveedor = Proveedor(nombre=prov.nombre, contacto=prov.contacto,
+                                  tipo_distribuidor=prov.tipo_distribuidor)
             db.add(proveedor)
             db.flush()
             print(f"  + Proveedor: {prov.nombre}")
@@ -73,6 +74,9 @@ def _sembrar_catalogo(db, admin_id: int) -> dict[str, Repuesto]:
             if repuesto is None:
                 repuesto = Repuesto(proveedor=proveedor, nombre=nombre, stock=stock,
                                     umbral_particular=umbral)
+                # Trazabilidad: el alta queda en el historial de proveedores.
+                repuesto.registrado_por_id_traza = admin_id
+                repuesto.observacion_traza = "Alta del repuesto (semilla)"
                 db.add(repuesto)
                 db.flush()
                 print(f"  + Repuesto: {nombre} (stock {stock})")

@@ -48,7 +48,7 @@ export function ClientVehiclesPage() {
     const isServerError = status === 'error' && !isOffline;
 
     return (
-    <div className="p-10 animate-fade-in">
+    <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
         <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
         <div>
             <h1 className="text-3xl font-bold mb-1">Mis Vehículos</h1>
@@ -62,14 +62,16 @@ export function ClientVehiclesPage() {
         </Link>
         </div>
 
-        <div className="relative w-full sm:w-[320px] mb-6">
+        <div role="search" aria-label="Buscar vehículos" className="relative w-full sm:w-[320px] mb-6">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden />
         <input
-            type="text"
+            type="search"
+            name="buscar-vehiculos"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
             aria-label="Buscar por patente, marca o modelo"
+            autoComplete="off"
             className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
         />
         </div>
@@ -121,7 +123,7 @@ export function ClientVehiclesPage() {
                 description={
                     search.trim()
                         ? 'Pruebe con otra patente, marca o modelo.'
-                        : 'Registre su primer vehículo para poder agendar mantenciones.'
+                        : 'Registre su primer vehículo para consultar sus atenciones en el taller.'
                 }
                 action={
                     !search.trim() && (

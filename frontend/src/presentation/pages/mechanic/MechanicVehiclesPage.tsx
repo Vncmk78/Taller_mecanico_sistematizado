@@ -48,20 +48,22 @@ export function MechanicVehiclesPage() {
     const isServerError = status === 'error' && !isOffline;
 
     return (
-    <div className="animate-fade-in p-10">
+    <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
         <h2 className="text-3xl font-bold mb-2">Vehículos en Mis Órdenes Asignadas</h2>
         <p className="text-text-muted mb-6">
         Ficha técnica de solo lectura de los vehículos que tiene actualmente asignados.
         </p>
 
-        <div className="relative w-full sm:w-[320px] mb-6">
+        <div role="search" aria-label="Buscar vehículos asignados" className="relative w-full sm:w-[320px] mb-6">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden="true" />
         <input
-            type="text"
+            type="search"
+            name="buscar-vehiculos-asignados"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
             aria-label="Buscar por patente, marca o modelo"
+            autoComplete="off"
             className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
         />
         </div>

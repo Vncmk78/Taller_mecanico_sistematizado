@@ -158,8 +158,9 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
   `/mechanic/ordenes/:id`: no tiene ruta propia. El mecánico registra
   observaciones y acciones (con repuestos) contra `POST /api/ordenes/{id}/bitacora`
   y todos los roles la consultan con `GET /api/ordenes/{id}/bitacora`.
-- `MechanicHistoryPage.tsx` y `MechanicPortalPage.tsx` se eliminaron por ser
-  código muerto (sin rutas asociadas). `ClientPortalPage.tsx` sigue huérfana.
+- `MechanicHistoryPage.tsx`, `MechanicPortalPage.tsx` y `ClientPortalPage.tsx`
+  se eliminaron por no tener rutas asociadas. El inicio del cliente utiliza
+  `ClientDashboardPage.tsx`.
 - El portal del mecánico acota sus datos en dos barreras: la Gateway ya devuelve
   solo lo asignado al mecánico, y las vistas comparan contra `user.id`
   (`mechanicScope.ts`). Además `logout`/`clearSession` purgan las cachés

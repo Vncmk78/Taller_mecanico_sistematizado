@@ -2,10 +2,12 @@
 
 from services.ms2_taller.services.clientes import (
     ClienteDuplicadoError,
+    PerfilClienteConflictoError,
     PersistenciaClienteError,
     asegurar_cliente,
     buscar_cliente_por_usuario_id,
     crear_cliente,
+    preparar_perfil_cliente,
 )
 from services.ms2_taller.services.ordenes import (
     OrdenNoEncontradaError,
@@ -39,9 +41,11 @@ __all__ = [
     "VehiculoOrdenNoEncontradoError",
     "actualizar_vehiculo_propio",
     "asignar_mecanico",
+    "PerfilClienteConflictoError",
     "asegurar_cliente",
     "buscar_cliente_por_usuario_id",
     "crear_cliente",
+    "preparar_perfil_cliente",
     "crear_orden",
     "crear_vehiculo",
     "listar_vehiculos",

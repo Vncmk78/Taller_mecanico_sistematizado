@@ -3,13 +3,14 @@
 El proxy reenvía `/api/*` sin conocer los contratos, por eso el Swagger por
 defecto solo mostraría `/`, `/api/health` y un `/api/{ruta}` genérico. Aquí se
 reescribe el `openapi.json` que expone la app (`app.openapi`) para documentar
-los endpoints reales que enruta la Gateway hacia MS1 (Autenticación y Usuarios),
-MS2 (Vehículos y Órdenes) y MS4 (Evidencias), con sus esquemas
-(`gateway/contratos`), la seguridad `bearerAuth` y el formato común de errores
-de la Gateway (`gateway.esquemas`).
+los endpoints reales que enruta la Gateway hacia los cuatro microservicios:
+MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 (Presupuestos,
+Repuestos, Proveedores e Inventario, en `gateway/openapi_ms3.py`) y MS4
+(Evidencias), con sus esquemas (`gateway/contratos`), la seguridad `bearerAuth`
+y el formato común de errores de la Gateway (`gateway.esquemas`).
 
-Incluye el contrato mínimo de decisiones MS3–MS2; los contratos generales de
-presupuestos e integración con facturación conservan su alcance previo.
+`tests/test_gateway_openapi.py` compara este documento con el OpenAPI real de
+los cuatro servicios: un endpoint nuevo sin documentar hace fallar la prueba.
 """
 from __future__ import annotations
 
@@ -18,8 +19,12 @@ from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import entregas_notificaciones as contratos_entregas
+from gateway.contratos import clientes as contratos_clientes
 from gateway.contratos import evidencias as contratos_evidencias
+from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
+from gateway.contratos import nuevas_atenciones as contratos_nuevas_atenciones
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.esquemas import DetalleError, ErrorRespuesta
 from gateway.openapi_ejemplos import agregar_ejemplos_gateway
@@ -27,13 +32,22 @@ from shared.openapi_ordenes import agregar_ejemplos_ordenes
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta, DecisionAplicacionPendiente,
     DecisionOrdenSolicitud, DecisionPresupuestoVerificada,
+    EnvioPresupuestoSolicitud,
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "0.1.0"
+_VERSION = "3.0.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
-Documenta los endpoints reales que la Gateway enruta hacia MS1 (Autenticación y \
-Usuarios), MS2 (Vehículos y Órdenes) y MS4 (Evidencias multimedia).
+Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
+microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
+(Presupuestos, Repuestos, Proveedores e Inventario) y MS4 (Evidencias multimedia).
+
+| Prefijo | Microservicio |
+|---|---|
+| `/api/auth` | MS1 — Autenticación y Usuarios |
+| `/api/vehiculos`, `/api/ordenes`, `/api/clientes` | MS2 — Vehículos y Órdenes de Trabajo |
+| `/api/presupuestos`, `/api/repuestos`, `/api/proveedores`, `/api/inventario` | MS3 — Presupuestos e Inventario |
+| `/api/evidencias` | MS4 — Evidencia Multimedia |
 
 ## URL base
 
@@ -47,9 +61,9 @@ body, el query string ni la cabecera `Authorization`.
 servidor, nunca el body).
 2. `POST /api/auth/login` devuelve `access_token` y `token_type: bearer`.
 3. Se envía en cada llamada protegida: `Authorization: Bearer <access_token>`.
-
-La administración de cuentas (`/api/auth/usuarios*`) exige rol Administrador: \
-permite listar y consultar usuarios, asignar un rol restringido y retirarlo.
+4. Con rol Cliente, `POST /api/clientes/perfil` prepara el perfil Cliente de MS2 \
+antes de usar vehículos u órdenes. Es idempotente: se puede llamar tras cada login \
+y reintentar si falla, sin registrar la cuenta otra vez.
 
 El botón **Authorize** de Swagger completa esa cabecera por ti. La Gateway no \
 valida el JWT: lo reenvía al microservicio, que responde `401` si falta o expira \
@@ -77,19 +91,58 @@ de validación, `detail` es una lista de errores de Pydantic.
 Las respuestas `401`, `500`, `502`, `503` y `504` también están publicadas como \
 respuestas reutilizables en `components.responses`.
 
+Los errores de la Gateway llevan `Cache-Control: no-store`, y los `502`, `503` y \
+`504` además `Retry-After` (segundos). Web y móvil solo deben reintentar \
+automáticamente un `GET`, como máximo 2 veces, respetando esa espera; nunca un \
+`POST`, `PUT` o `PATCH` (las escrituras de MS3 tienen su propia ruta de \
+reintento idempotente).
+
 ## X-Request-ID
 
 Se puede enviar `X-Request-ID` (letras, números y guiones) para rastrear una \
 petición; si no llega o es inválida, la Gateway genera un UUID y lo devuelve en la \
 respuesta. Es la misma clave que aparece en `error.request_id`.
 
+## Versión del contrato
+
+`info.version` sigue versionado semántico. **1.0.0 es la primera versión \
+estable** para integración (frontend web y app móvil de Integración IV); su copia \
+congelada está en `backend/docs/openapi/sgtm-gateway-1.0.0.json`.
+
+- **PATCH** (1.0.x): descripciones, ejemplos o estados de error que ya respondía \
+el servicio y faltaban documentar.
+- **MINOR** (1.x.0): operaciones, campos opcionales o valores nuevos; ningún \
+cliente existente se rompe.
+- **MAJOR** (2.0.0): quitar o renombrar rutas o campos, volver obligatorio un \
+campo, cambiar tipos o el significado de un estado.
+
+El historial de cambios y la política completa están en \
+`docs/versionado-contrato-openapi.md`.
+
 El detalle completo de los contratos está en `docs/contratos-api-gateway.md`."""
+
+_DESCRIPCION += (
+    f"\n\nVersión vigente: **{_VERSION}**. Copia congelada: "
+    f"`backend/docs/openapi/sgtm-gateway-{_VERSION}.json`."
+)
 
 _TAGS = [
     {
         "name": "Autenticación",
+        "description": "Registro, login y usuario actual (MS1).",
+    },
+    {
+        "name": "Usuarios",
         "description": (
-            "Registro, login, usuario actual y administración de usuarios (MS1)."
+            "Consulta de cuentas y asignación o retiro de roles restringidos "
+            "(MS1, solo Administrador)."
+        ),
+    },
+    {
+        "name": "Clientes",
+        "description": (
+            "Preparación idempotente y consulta del perfil Cliente local que "
+            "MS2 necesita para vehículos y órdenes (MS2)."
         ),
     },
     {
@@ -102,8 +155,8 @@ _TAGS = [
         "name": "Órdenes",
         "description": (
             "Creación, consulta, historial, bitácora de trabajo, cambio de "
-            "estado, asignación inicial, entrega física y cancelación del "
-            "cliente (MS2)."
+            "estado, asignación inicial, entrega física y solicitudes de "
+            "cancelación con revisión administrativa (MS2)."
         ),
     },
     {
@@ -114,8 +167,34 @@ _TAGS = [
         ),
     },
     {
+        "name": "Notificaciones",
+        "description": "Bandeja personal de notificaciones (MS1).",
+    },
+    {
         "name": "Presupuestos",
-        "description": "Consulta y reintento de la decisión inicial de presupuesto (MS3).",
+        "description": (
+            "Presupuesto único por orden con versiones inmutables una vez "
+            "enviadas, ítems, envío al cliente, decisión y coordinación con "
+            "MS2 (MS3)."
+        ),
+    },
+    {
+        "name": "Repuestos",
+        "description": (
+            "Catálogo de repuestos, umbral particular y trazabilidad "
+            "repuesto–proveedor (MS3)."
+        ),
+    },
+    {
+        "name": "Proveedores",
+        "description": "Proveedores (distribuidores) de repuestos y su trazabilidad (MS3).",
+    },
+    {
+        "name": "Inventario",
+        "description": (
+            "Movimientos de stock idempotentes, disponibilidad, reservas, "
+            "consumos y alertas de stock bajo (MS3)."
+        ),
     },
     {
         "name": "Gateway",
@@ -124,11 +203,23 @@ _TAGS = [
 ]
 
 _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
+    ("DispositivoRegistrar", contratos_entregas.DispositivoRegistrar),
+    ("DispositivoRespuesta", contratos_entregas.DispositivoRespuesta),
+    ("IntentoEntregaRespuesta", contratos_entregas.IntentoEntregaRespuesta),
+    ("EntregaRespuesta", contratos_entregas.EntregaRespuesta),
     ("RegistroSolicitud", contratos_auth.RegistroSolicitud),
     ("LoginSolicitud", contratos_auth.LoginSolicitud),
-    ("RolAsignarSolicitud", contratos_auth.RolAsignarSolicitud),
     ("UsuarioRespuesta", contratos_auth.UsuarioRespuesta),
     ("TokenRespuesta", contratos_auth.TokenRespuesta),
+    ("NotificacionRespuesta", contratos_auth.NotificacionRespuesta),
+    ("RepuestoReservado", contratos_inventario.RepuestoReservado),
+    (
+        "DisponibilidadRepuestosRespuesta",
+        contratos_inventario.DisponibilidadRepuestosRespuesta,
+    ),
+    ("RolAsignarSolicitud", contratos_auth.RolAsignarSolicitud),
+    ("PerfilClientePreparar", contratos_clientes.PerfilClientePreparar),
+    ("PerfilClienteRespuesta", contratos_clientes.PerfilClienteRespuesta),
     ("VehiculoCrear", contratos_vehiculos.VehiculoCrear),
     ("VehiculoActualizar", contratos_vehiculos.VehiculoActualizar),
     ("VehiculoRespuesta", contratos_vehiculos.VehiculoRespuesta),
@@ -137,12 +228,43 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
         "AsignacionMecanicoActualizar",
         contratos_ordenes.AsignacionMecanicoActualizar,
     ),
+    (
+        "CapacidadMecanicoActualizar",
+        contratos_ordenes.CapacidadMecanicoActualizar,
+    ),
+    (
+        "CapacidadMecanicoRespuesta",
+        contratos_ordenes.CapacidadMecanicoRespuesta,
+    ),
+    (
+        "CupoDiarioIngresosActualizar",
+        contratos_ordenes.CupoDiarioIngresosActualizar,
+    ),
+    (
+        "CupoDiarioIngresosRespuesta",
+        contratos_ordenes.CupoDiarioIngresosRespuesta,
+    ),
     ("OrdenRespuesta", contratos_ordenes.OrdenRespuesta),
+    (
+        "HistorialOrdenesVehiculoRespuesta",
+        contratos_ordenes.HistorialOrdenesVehiculoRespuesta,
+    ),
     ("CambioEstadoSolicitud", contratos_ordenes.CambioEstadoSolicitud),
     ("EntregaSolicitud", contratos_ordenes.EntregaSolicitud),
+    ("EntregaOrdenRespuesta", contratos_ordenes.EntregaOrdenRespuesta),
+    ("DevolucionSolicitud", contratos_ordenes.DevolucionSolicitud),
+    ("DevolucionOrdenRespuesta", contratos_ordenes.DevolucionOrdenRespuesta),
+    ("NuevaAtencionSolicitud", contratos_nuevas_atenciones.NuevaAtencionSolicitud),
+    ("SolicitudNuevaAtencionRespuesta", contratos_nuevas_atenciones.SolicitudNuevaAtencionRespuesta),
+    ("SolicitudesNuevaAtencionRespuesta", contratos_nuevas_atenciones.SolicitudesNuevaAtencionRespuesta),
+    ("RevisionNuevaAtencionSolicitud", contratos_nuevas_atenciones.RevisionNuevaAtencionSolicitud),
+    ("GeneracionNuevaAtencionSolicitud", contratos_nuevas_atenciones.GeneracionNuevaAtencionSolicitud),
+    ("GeneracionNuevaAtencionRespuesta", contratos_nuevas_atenciones.GeneracionNuevaAtencionRespuesta),
     ("CancelacionClienteSolicitud", contratos_ordenes.CancelacionClienteSolicitud),
+    ("SolicitudCancelacionRespuesta", contratos_ordenes.SolicitudCancelacionRespuesta),
     ("HistorialEstadoRespuesta", contratos_ordenes.HistorialEstadoRespuesta),
     ("RepuestoBitacoraEntrada", contratos_ordenes.RepuestoBitacoraEntrada),
+    ("MecanicoSobreLimite", contratos_ordenes.MecanicoSobreLimite),
     ("RepuestoBitacoraRespuesta", contratos_ordenes.RepuestoBitacoraRespuesta),
     ("BitacoraCrear", contratos_ordenes.BitacoraCrear),
     ("BitacoraRespuesta", contratos_ordenes.BitacoraRespuesta),
@@ -153,6 +275,7 @@ _CONTRATOS: list[tuple[str, type[BaseModel]]] = [
     ("DecisionPresupuestoVerificada", DecisionPresupuestoVerificada),
     ("AplicacionDecisionRespuesta", AplicacionDecisionRespuesta),
     ("DecisionAplicacionPendiente", DecisionAplicacionPendiente),
+    ("EnvioPresupuestoSolicitud", EnvioPresupuestoSolicitud),
 ]
 
 _PARAMETRO_X_REQUEST_ID: dict[str, object] = {
@@ -209,25 +332,25 @@ _PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
     "schema": {"type": "integer", "format": "int64", "minimum": 1, "example": 31},
 }
 
-_PARAMETRO_USUARIO_ID: dict[str, object] = {
-    "name": "usuario_id",
-    "in": "path",
-    "required": True,
-    "description": "Identificador interno del usuario en MS1.",
-    "schema": {"type": "integer", "example": 7},
-}
-
-_PARAMETRO_ROL: dict[str, object] = {
-    "name": "rol",
-    "in": "path",
-    "required": True,
-    "description": "Rol restringido que se retira.",
-    "schema": {
-        "type": "string",
-        "enum": ["cliente", "mecanico", "administrador"],
-        "example": "cliente",
+_PARAMETROS_NOTIFICACIONES: list[dict[str, object]] = [
+    {"name": "solo_no_leidas", "in": "query", "required": False,
+     "schema": {"type": "boolean", "default": False},
+     "description": "Filtrar solo avisos sin leer del usuario autenticado."},
+    {
+        "name": "limite",
+        "in": "query",
+        "required": False,
+        "description": "Cantidad máxima de notificaciones a devolver (1–100).",
+        "schema": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100},
     },
-}
+    {
+        "name": "offset",
+        "in": "query",
+        "required": False,
+        "description": "Cantidad de notificaciones que se omiten al paginar.",
+        "schema": {"type": "integer", "default": 0, "minimum": 0},
+    },
+]
 
 
 def _ref(nombre: str) -> dict[str, object]:
@@ -260,10 +383,12 @@ def _operacion(
     con_orden_id: bool = False,
     parametros_extra: list[dict[str, object]] | None = None,
     cuerpo_multipart: str | None = None,
+    cuerpo_requerido: bool = True,
     descripcion_404: str = (
         "Ruta no encontrada en la Gateway (RUTA_NO_ENCONTRADA)."
     ),
     esquema_404: dict[str, object] | None = None,
+    descripcion_503: str | None = None,
 ) -> dict[str, object]:
     parametros: list[dict[str, object]] = [_PARAMETRO_X_REQUEST_ID]
     if con_vehiculo_id:
@@ -286,10 +411,18 @@ def _operacion(
         # verifica que esas respuestas distingan el esquema propio del de cada
         # microservicio. Los 503 y 504 sí son idénticos en todas las operaciones y
         # se referencian desde `components.responses`.
-        "502": _respuesta(
-            "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
-            _ref("ErrorRespuesta"),
-        ),
+        "502": {
+            **_respuesta(
+                "Microservicio no disponible (MICROSERVICIO_INALCANZABLE).",
+                _ref("ErrorRespuesta"),
+            ),
+            "headers": {
+                "Retry-After": {
+                    "description": "Segundos sugeridos antes de reintentar un GET.",
+                    "schema": {"type": "integer", "example": 5},
+                }
+            },
+        },
         "500": _respuesta(
             (
                 "Error interno. Puede provenir del microservicio con "
@@ -300,6 +433,12 @@ def _operacion(
         "503": {"$ref": "#/components/responses/GatewaySaturada"},
         "504": {"$ref": "#/components/responses/TiempoAgotado"},
     }
+
+    if descripcion_503 is not None:
+        errores["503"] = _respuesta(
+            descripcion_503 + "; o pool de la Gateway agotado.",
+            {"oneOf": [_ref("ErrorDetalle"), _ref("ErrorRespuesta")]},
+        )
 
     # MS1 y MS2 acompañan el 401 con `WWW-Authenticate: Bearer` y la Gateway lo
     # reenvía; se documenta en cada operación protegida.
@@ -322,7 +461,7 @@ def _operacion(
     }
     if cuerpo is not None:
         operacion["requestBody"] = {
-            "required": True,
+            "required": cuerpo_requerido,
             "content": {"application/json": {"schema": _ref(cuerpo)}},
         }
     if cuerpo_multipart is not None:
@@ -541,7 +680,18 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 respuestas_ok={
                     "200": _respuesta("Token de acceso y usuario.", _ref("TokenRespuesta"))
                 },
-                errores_ms={"401": "Credenciales inválidas"},
+                errores_ms={
+                    "401": "Credenciales inválidas",
+                    "403": (
+                        "Credenciales correctas, pero la cuenta no tiene roles: "
+                        "no puede emitirse un token"
+                    ),
+                    "422": "Body inválido (correo con formato inválido o campos ausentes)",
+                    "429": (
+                        "Demasiados intentos fallidos: la cuenta queda bloqueada "
+                        "temporalmente. `Retry-After` indica los segundos restantes"
+                    ),
+                },
                 requiere_auth=False,
             )
         },
@@ -559,120 +709,215 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 requiere_auth=True,
             )
         },
-        "/api/auth/usuarios": {
+        "/api/notificaciones/dispositivos": {
+            "post": _operacion(tag="Notificaciones", resumen="Registrar mi dispositivo para push FCM",
+                descripcion="Identidad desde JWT, token de registro FCM y plataforma. No devuelve el token. Repetirlo actualiza el registro (200); una cuenta que registra el mismo dispositivo pasa a ser su propietaria. Los avisos anteriores no se transfieren.",
+                operation_id="registrar_dispositivo", cuerpo="DispositivoRegistrar", requiere_auth=True,
+                respuestas_ok={str(c): _respuesta("Dispositivo propio registrado.", _ref("DispositivoRespuesta")) for c in (200,201)},
+                errores_ms={"401":"JWT requerido","409":"Registro concurrente; reintentar","422":"Token o plataforma inválidos"}),
+            "get": _operacion(tag="Notificaciones", resumen="Listar mis dispositivos",
+                descripcion="Solo registros propios, sin tokens ni claves.", operation_id="listar_dispositivos",
+                cuerpo=None, requiere_auth=True, respuestas_ok={"200":_respuesta("Dispositivos propios.",{"type":"array","items":_ref("DispositivoRespuesta")})},
+                errores_ms={"401":"JWT requerido"}),
+        },
+        "/api/notificaciones/dispositivos/{dispositivo_id}": {
+            "delete": _operacion(tag="Notificaciones", resumen="Desactivar mi dispositivo",
+                descripcion="Baja lógica idempotente; se conserva el historial de intentos. Un registro ajeno devuelve 404.",
+                operation_id="desactivar_dispositivo", cuerpo=None, requiere_auth=True,
+                parametros_extra=[{"name":"dispositivo_id","in":"path","required":True,"schema":{"type":"string","format":"uuid"}}],
+                respuestas_ok={"204":{"description":"Dispositivo desactivado."}},
+                errores_ms={"401":"JWT requerido","422":"UUID inválido"},
+                descripcion_404="Dispositivo inexistente o ajeno.", esquema_404=error_404_recurso),
+        },
+        **{
+            f"/api/notificaciones/{{notificacion_id}}/{sufijo}": {
+                metodo: _operacion(tag="Notificaciones", resumen=resumen,
+                    descripcion="Solo el destinatario del aviso. Aceptada significa aceptación por SMTP/FCM, no lectura por la persona. Un reintento no vuelve a enviar canales ya aceptados ni duplica el aviso lógico.",
+                    operation_id=f"notificacion_{sufijo}", cuerpo=None, requiere_auth=True,
+                    parametros_extra=[{"name":"notificacion_id","in":"path","required":True,"schema":{"type":"integer","minimum":1}}],
+                    respuestas_ok={"200":_respuesta("Estado e intentos de los canales.",{"type":"array","items":_ref("EntregaRespuesta")})},
+                    errores_ms={"401":"JWT requerido","422":"Identificador inválido"},
+                    descripcion_404="Notificación inexistente o ajena.",esquema_404=error_404_recurso)
+            }
+            for sufijo,metodo,resumen in [("entregas","get","Consultar mis intentos de correo y push"),("reintentos","post","Reintentar canales fallidos de mi aviso")]
+        },
+        "/api/notificaciones/leer-todas": {
+            "patch": _operacion(tag="Notificaciones", resumen="Marcar todos mis avisos como leídos",
+                descripcion="Solo la bandeja propia. Conserva la fecha de la primera lectura ante reintentos.",
+                operation_id="leer_todas", cuerpo=None, requiere_auth=True,
+                respuestas_ok={"204": {"description": "Avisos propios marcados como leídos."}},
+                errores_ms={"401": "JWT ausente o inválido"}),
+        },
+        "/api/notificaciones/{notificacion_id}/leer": {
+            "patch": _operacion(tag="Notificaciones", resumen="Marcar un aviso propio como leído",
+                descripcion="Idempotente. Un aviso inexistente o ajeno devuelve 404.",
+                operation_id="leer_notificacion", cuerpo=None, requiere_auth=True,
+                parametros_extra=[{"name": "notificacion_id", "in": "path", "required": True,
+                                   "schema": {"type": "integer", "minimum": 1}}],
+                respuestas_ok={"204": {"description": "Aviso marcado como leído."}},
+                errores_ms={"401": "JWT ausente o inválido", "422": "Identificador inválido"},
+                descripcion_404="Notificación no encontrada", esquema_404=error_404_recurso),
+        },
+        "/api/notificaciones": {
             "get": _operacion(
-                tag="Autenticación",
-                resumen="Listar todos los usuarios",
+                tag="Notificaciones",
+                resumen="Consultar mis notificaciones",
                 descripcion=(
-                    "Solo un Administrador. Devuelve todas las cuentas de MS1, "
-                    "activas y desactivadas, ordenadas por identificador "
-                    "ascendente. Incluye las cuentas sin roles (`roles: []`)."
+                    "Devuelve la bandeja del usuario autenticado, ordenada de "
+                    "más reciente a más antigua. Cada usuario solo puede ver "
+                    "sus propias notificaciones."
                 ),
-                operation_id="listar_usuarios",
+                operation_id="consultar_notificaciones",
                 cuerpo=None,
+                parametros_extra=_PARAMETROS_NOTIFICACIONES,
                 respuestas_ok={
                     "200": _respuesta(
-                        "Usuarios registrados.",
-                        {"type": "array", "items": _ref("UsuarioRespuesta")},
-                    )
+                        "Notificaciones del usuario.",
+                        {"type": "array", "items": _ref("NotificacionRespuesta")},
+                    ) | {
+                        "headers": {
+                            "X-Notificaciones-Total": {"description": "Total de avisos propios que cumplen el filtro, antes de paginar.", "schema": {"type": "integer", "minimum": 0}},
+                            "X-Notificaciones-No-Leidas": {"description": "Total de avisos propios sin leer, antes de paginar.", "schema": {"type": "integer", "minimum": 0}},
+                        },
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": _ref("NotificacionRespuesta"),
+                                },
+                                "examples": {
+                                    "bandeja_vacia": {
+                                        "summary": "Sin notificaciones",
+                                        "description": "La bandeja aún no contiene avisos.",
+                                        "value": [],
+                                    }
+                                },
+                            }
+                        }
+                    }
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
-                    "403": "Se requiere rol Administrador",
+                    "422": "Parámetros de paginación inválidos",
                 },
                 requiere_auth=True,
             )
         },
-        "/api/auth/usuarios/{usuario_id}": {
-            "get": _operacion(
-                tag="Autenticación",
-                resumen="Consultar un usuario por su identificador",
-                descripcion=(
-                    "Solo un Administrador. Devuelve la cuenta indicada, activa "
-                    "o no, incluida una cuenta sin roles. Un identificador que "
-                    "no corresponde a ninguna cuenta responde 404."
-                ),
-                operation_id="consultar_usuario_por_id",
-                cuerpo=None,
-                parametros_extra=[_PARAMETRO_USUARIO_ID],
-                respuestas_ok={
-                    "200": _respuesta(
-                        "Usuario encontrado.", _ref("UsuarioRespuesta")
-                    )
-                },
-                errores_ms={
-                    "401": "JWT ausente o inválido",
-                    "403": "Se requiere rol Administrador",
-                    "422": "Identificador de usuario inválido",
-                },
-                requiere_auth=True,
-                descripcion_404=(
-                    "El usuario no existe (MS1) o la ruta no existe en la Gateway."
-                ),
-                esquema_404=error_404_recurso,
-            )
-        },
-        "/api/auth/usuarios/{usuario_id}/roles": {
+        "/api/inventario/ordenes/{orden_id}/disponibilidad": {
             "post": _operacion(
-                tag="Autenticación",
-                resumen="Asignar un rol restringido a un usuario",
+                tag="Inventario",
+                resumen="Confirmar disponibilidad y reservar repuestos",
                 descripcion=(
-                    "Solo un Administrador. Asigna cliente, mecanico o "
-                    "administrador a una cuenta existente y devuelve la cuenta "
-                    "actualizada. Es idempotente: repetir un rol ya asignado no "
-                    "lo duplica ni devuelve error. El rol sale del body y el "
-                    "administrador responsable, del token."
+                    "Solo Administrador. MS3 reserva las unidades enteras del "
+                    "alcance aprobado si el stock libre las cubre, descontando "
+                    "compromisos de otras órdenes. Luego coordina con MS2 el "
+                    "cambio auditado a En reparación. Una respuesta 503 indica "
+                    "que la reserva quedó persistida y se debe repetir la misma "
+                    "operación para confirmar su aplicación."
                 ),
-                operation_id="asignar_rol_usuario",
-                cuerpo="RolAsignarSolicitud",
-                parametros_extra=[_PARAMETRO_USUARIO_ID],
+                operation_id="confirmar_disponibilidad_repuestos",
+                cuerpo=None,
+                con_orden_id=True,
                 respuestas_ok={
                     "200": _respuesta(
-                        "Usuario con el rol asignado.", _ref("UsuarioRespuesta")
-                    )
+                        "Reserva confirmada y transición aplicada.",
+                        _ref("DisponibilidadRepuestosRespuesta"),
+                    ) | {
+                        "content": {
+                            "application/json": {
+                                "schema": _ref("DisponibilidadRepuestosRespuesta"),
+                                "examples": {
+                                    "reserva_confirmada": {
+                                        "summary": "Reserva confirmada",
+                                        "description": (
+                                            "El presupuesto aprobado quedó reservado "
+                                            "y la orden inició su reparación."
+                                        ),
+                                        "value": {
+                                            "clave_operacion": "disp:31:4",
+                                            "orden_id": 31,
+                                            "version_presupuesto": 4,
+                                            "repuestos": [
+                                                {"repuesto_id": 8, "cantidad": 2}
+                                            ],
+                                            "aplicacion_confirmada": True,
+                                        },
+                                    }
+                                },
+                            }
+                        }
+                    }
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "422": "Rol desconocido o datos inválidos",
+                    "409": "Stock libre insuficiente o estado incompatible",
+                    "422": "Cantidad de repuesto fraccionaria",
+                    "503": "MS2 no confirmó la transición; reintentar con la misma clave",
                 },
                 requiere_auth=True,
-                descripcion_404=(
-                    "El usuario no existe (MS1) o la ruta no existe en la Gateway."
-                ),
-                esquema_404=error_404_recurso,
+                descripcion_404="Orden o presupuesto inexistente.",
+                esquema_404={
+                    "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")]
+                },
             )
         },
-        "/api/auth/usuarios/{usuario_id}/roles/{rol}": {
-            "delete": _operacion(
-                tag="Autenticación",
-                resumen="Retirar un rol restringido a un usuario",
+        "/api/clientes/perfil": {
+            "post": _operacion(
+                tag="Clientes",
+                resumen="Preparar mi perfil Cliente",
                 descripcion=(
-                    "Solo un Administrador. Retira uno de los roles cliente, "
-                    "mecanico o administrador de una cuenta existente. Es "
-                    "idempotente: retirar un rol que la cuenta no tiene no "
-                    "cambia nada. Se permite retirar el último rol; la cuenta "
-                    "queda con `roles: []`."
+                    "Crea el perfil Cliente de MS2 del usuario autenticado si "
+                    "todavía no existe. Es el paso que sigue al registro "
+                    "público y al login: sin él, vehículos responde 404. Es "
+                    "idempotente: repetirlo o hacerlo en paralelo deja un único "
+                    "perfil (`201` si esta llamada lo creó, `200` si ya existía). "
+                    "La identidad sale del JWT; el body no admite `usuario_id` "
+                    "ni roles. Nunca sobrescribe el teléfono guardado."
                 ),
-                operation_id="retirar_rol_usuario",
+                operation_id="preparar_perfil_cliente",
+                cuerpo="PerfilClientePreparar",
+                respuestas_ok={
+                    "201": _respuesta(
+                        "Perfil creado por esta llamada.",
+                        _ref("PerfilClienteRespuesta"),
+                    ),
+                    "200": _respuesta(
+                        "El perfil ya existía; se devuelve sin cambios.",
+                        _ref("PerfilClienteRespuesta"),
+                    ),
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Cliente",
+                    "409": "El perfil ya existe con otro teléfono; no se modificó",
+                    "422": "Body inválido (campos no permitidos o teléfono vacío o largo)",
+                },
+                requiere_auth=True,
+            ),
+            "get": _operacion(
+                tag="Clientes",
+                resumen="Consultar mi perfil Cliente",
+                descripcion=(
+                    "Devuelve el perfil Cliente de MS2 del usuario autenticado. "
+                    "Solo consulta: si aún no fue preparado responde 404 y no "
+                    "lo crea."
+                ),
+                operation_id="consultar_perfil_cliente",
                 cuerpo=None,
-                parametros_extra=[_PARAMETRO_USUARIO_ID, _PARAMETRO_ROL],
                 respuestas_ok={
                     "200": _respuesta(
-                        "Usuario con el rol retirado.", _ref("UsuarioRespuesta")
+                        "Perfil Cliente del usuario.", _ref("PerfilClienteRespuesta")
                     )
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
-                    "403": "Se requiere rol Administrador",
-                    "422": "Rol de la ruta desconocido",
+                    "403": "Se requiere rol Cliente",
                 },
                 requiere_auth=True,
-                descripcion_404=(
-                    "El usuario no existe (MS1) o la ruta no existe en la Gateway."
-                ),
+                descripcion_404="El perfil Cliente todavía no fue preparado en MS2.",
                 esquema_404=error_404_recurso,
-            )
+            ),
         },
         "/api/vehiculos": {
             "post": _operacion(
@@ -695,7 +940,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
-                descripcion_404="No existe el perfil Cliente local en MS2.",
+                descripcion_404=(
+                    "No existe el perfil Cliente local en MS2; se prepara con "
+                    "POST /api/clientes/perfil."
+                ),
                 esquema_404=error_404_recurso,
             ),
             "get": _operacion(
@@ -719,7 +967,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "403": "Se requiere rol Cliente o Administrador",
                 },
                 requiere_auth=True,
-                descripcion_404="No existe el perfil Cliente local en MS2.",
+                descripcion_404=(
+                    "No existe el perfil Cliente local en MS2; se prepara con "
+                    "POST /api/clientes/perfil."
+                ),
                 esquema_404=error_404_recurso,
             ),
         },
@@ -760,7 +1011,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 respuestas_ok={
                     "200": _respuesta("Vehículo encontrado.", _ref("VehiculoRespuesta"))
                 },
-                errores_ms={"401": "JWT ausente o inválido"},
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador de vehículo inválido",
+                },
                 requiere_auth=True,
                 con_vehiculo_id=True,
                 descripcion_404=(
@@ -797,14 +1051,115 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 esquema_404=error_404_recurso,
             ),
         },
+        "/api/ordenes/nuevas-atenciones": {
+            "get": _operacion(
+                tag="Órdenes", resumen="Listar solicitudes de nueva atención visibles",
+                descripcion=(
+                    "Cliente ve las propias; Administrador todas, incluso multirrol. "
+                    "Mecánico sin esos roles recibe 403. Orden descendente por fecha e ID. "
+                    "Una lista vacía devuelve 200. No crea órdenes ni consume cupo."
+                ),
+                operation_id="listar_nuevas_atenciones", cuerpo=None,
+                respuestas_ok={"200": _respuesta("Página de solicitudes visibles.", _ref("SolicitudesNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente o Administrador", "422": "Filtros o paginación inválidos"},
+                requiere_auth=True,
+                parametros_extra=[
+                    {"name": "situacion", "in": "query", "required": False,
+                     "schema": {"type": "string", "enum": ["pendiente", "aceptada", "rechazada"]}},
+                    *[{"name": campo, "in": "query", "required": False, "schema": {"type": "integer", "minimum": 1}}
+                      for campo in ("orden_cancelada_id", "orden_generada_id")],
+                    {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100}},
+                    {"name": "offset", "in": "query", "required": False, "schema": {"type": "integer", "default": 0, "minimum": 0}},
+                ],
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}": {
+            "get": _operacion(
+                tag="Órdenes", resumen="Consultar una solicitud de nueva atención visible",
+                descripcion="Cliente propietario o Administrador. Inexistente y ajena responden el mismo 404.",
+                operation_id="consultar_nueva_atencion", cuerpo=None,
+                respuestas_ok={"200": _respuesta("Solicitud visible.", _ref("SolicitudNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente o Administrador", "422": "Identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud de nueva atención inexistente o ajena.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Confirmar revisión administrativa de nueva atención",
+                descripcion=(
+                    "Solo Administrador, incluida autorrevisión multirrol. Respuesta recortada "
+                    "y no vacía. Identidad del JWT, fecha del servidor. Una revisión confirmada "
+                    "no se edita; repetir exactamente decisión y respuesta devuelve la original. "
+                    "Guarda un evento de aviso junto con la revisión; un fallo de MS1 no la revierte."
+                ),
+                operation_id="revisar_nueva_atencion", cuerpo="RevisionNuevaAtencionSolicitud",
+                respuestas_ok={"200": _respuesta("Revisión confirmada o repetición idéntica.", _ref("SolicitudNuevaAtencionRespuesta"))},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                            "409": "Revisión confirmada con otro contenido", "422": "Body o identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud no encontrada.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Generar orden vinculada a solicitud aceptada",
+                descripcion=(
+                    "Administrador, body vacío obligatorio. Crea una orden Recibido sin mecánico "
+                    "y su vínculo en una sola transacción. Aplica una orden activa por vehículo; "
+                    "reutiliza el ingreso abierto o valida cupo para uno nuevo. Repetir devuelve "
+                    "la asociación existente y la orden en su estado actual. No reabre el antecedente. "
+                    "El rechazo de cupo se audita aparte después del rollback."
+                ),
+                operation_id="generar_orden_nueva_atencion", cuerpo="GeneracionNuevaAtencionSolicitud",
+                respuestas_ok={
+                    "201": _respuesta("Orden y vínculo creados.", _ref("GeneracionNuevaAtencionRespuesta")),
+                    "200": _respuesta("Asociación ya existente; no se crea otra orden.", _ref("GeneracionNuevaAtencionRespuesta")),
+                },
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                            "409": "Solicitud/antecedente incompatible, orden activa o rechazo de cupo", "422": "Body o identificador inválido"},
+                requiere_auth=True,
+                parametros_extra=[{"name": "solicitud_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+                descripcion_404="Solicitud no encontrada.", esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/nueva-atencion": {
+            "post": _operacion(
+                tag="Órdenes", resumen="Solicitar nueva atención de una orden cancelada propia",
+                descripcion=(
+                    "Cliente propietario, incluso multirrol. Descripción recortada, no vacía, "
+                    "máximo 2000 caracteres. 201 al crear; 200 si ya hay una pendiente con la "
+                    "misma descripción. 409 si el antecedente no está Cancelado o existe otra "
+                    "pendiente/aceptada, aunque ya haya generado orden. Un rechazo permite "
+                    "otra solicitud conservando la anterior. No exige devolución previa, "
+                    "no reserva hora y no crea orden, ingreso ni validación de cupo."
+                ),
+                operation_id="solicitar_nueva_atencion", cuerpo="NuevaAtencionSolicitud",
+                respuestas_ok={
+                    "201": _respuesta("Solicitud creada.", _ref("SolicitudNuevaAtencionRespuesta")),
+                    "200": _respuesta("Pendiente idéntica ya registrada.", _ref("SolicitudNuevaAtencionRespuesta")),
+                },
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Cliente",
+                    "409": "Orden no cancelada o solicitud pendiente/aceptada existente", "422": "Body o identificador inválido"},
+                requiere_auth=True, con_orden_id=True,
+                descripcion_404="Orden inexistente o ajena.", esquema_404=error_404_recurso,
+            )
+        },
         "/api/ordenes": {
             "post": _operacion(
                 tag="Órdenes",
                 resumen="Crear una orden de trabajo",
                 descripcion=(
                     "Solo un Administrador crea la orden para un vehículo "
-                    "registrado. Se asocia o crea el ingreso físico, la orden "
-                    "comienza en Recibido y puede quedar sin mecánico."
+                    "registrado. Si no hay un ingreso abierto, valida el cupo "
+                    "diario antes de crearlo; reutilizar un ingreso abierto no "
+                    "consume otro cupo. La orden comienza en Recibido y puede "
+                    "quedar sin mecánico. Solo se permite una orden activa por "
+                    "vehículo (estado distinto de Entregado o Cancelado). Si ya "
+                    "existe una, responde 409 con su número sin crear ingreso, "
+                    "orden, historial ni validación de cupo."
                 ),
                 operation_id="crear_orden",
                 cuerpo="OrdenCrear",
@@ -814,6 +1169,7 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
+                    "409": "Vehículo con orden activa, cupo diario agotado o aún no configurado",
                     "422": "Datos inválidos",
                 },
                 requiere_auth=True,
@@ -873,7 +1229,10 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                     "asignación cambia Recibido a Esperando diagnóstico y "
                     "registra los historiales de asignación y estado. Una "
                     "reasignación conserva el estado; Entregado y Cancelado "
-                    "rechazan la operación."
+                    "rechazan la operación. MS2 consulta MS1 con el JWT del "
+                    "Administrador: el destino debe existir, estar activo y "
+                    "tener rol Mecánico (422 en otro caso). Si MS1 no permite "
+                    "validarlo, responde 503 sin guardar cambios."
                 ),
                 operation_id="asignar_mecanico",
                 cuerpo="AsignacionMecanicoActualizar",
@@ -883,12 +1242,168 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "409": "Autoasignación o estado terminal",
-                    "422": "Datos inválidos",
+                    "409": "Autoasignación, estado terminal o capacidad excedida/no configurada",
+                    "422": "Destino inexistente, inactivo, sin rol Mecánico o datos inválidos",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
                 descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+                descripcion_503="No fue posible validar el mecánico con MS1",
+            )
+        },
+        "/api/ordenes/configuracion/capacidad/mecanicos": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar la capacidad máxima por mecánico",
+                descripcion=(
+                    "Solo Administrador. Devuelve el máximo configurado y, si "
+                    "se redujo por debajo del uso actual, informa los mecánicos "
+                    "que superan el nuevo límite. Un valor nulo indica que aún "
+                    "no se ha configurado capacidad."
+                ),
+                operation_id="consultar_capacidad_mecanicos",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Configuración de capacidad.",
+                        _ref("CapacidadMecanicoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                },
+                requiere_auth=True,
+            ),
+            "put": _operacion(
+                tag="Órdenes",
+                resumen="Configurar el máximo de órdenes activas por mecánico",
+                descripcion=(
+                    "Solo Administrador. El valor debe ser un entero positivo. "
+                    "Cada cambio guarda el valor anterior y el nuevo, el actor "
+                    "y la fecha. Si hay mecánicos sobre el nuevo límite, se "
+                    "informan sin cancelar ni desasignar órdenes existentes."
+                ),
+                operation_id="actualizar_capacidad_mecanicos",
+                cuerpo="CapacidadMecanicoActualizar",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Configuración actualizada.",
+                        _ref("CapacidadMecanicoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "El máximo debe ser un entero positivo",
+                },
+                requiere_auth=True,
+            ),
+        },
+        "/api/ordenes/configuracion/capacidad/ingresos-diarios": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar el cupo diario de ingresos físicos",
+                descripcion=(
+                    "Solo Administrador. Devuelve el límite y el número de "
+                    "ingresos físicos de la jornada local actual. Cuenta nuevas "
+                    "estancias, no órdenes que reutilizan un ingreso abierto."
+                ),
+                operation_id="consultar_cupo_diario_ingresos",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Cupo diario y uso de la jornada.",
+                        _ref("CupoDiarioIngresosRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                },
+                requiere_auth=True,
+            ),
+            "put": _operacion(
+                tag="Órdenes",
+                resumen="Configurar el máximo diario de ingresos físicos",
+                descripcion=(
+                    "Solo Administrador. El máximo debe ser un entero positivo. "
+                    "Se auditan valor anterior, nuevo, administrador y fecha. "
+                    "Si la jornada ya supera el límite reducido, se informa sin "
+                    "eliminar ingresos; se bloquean nuevos ingresos físicos."
+                ),
+                operation_id="actualizar_cupo_diario_ingresos",
+                cuerpo="CupoDiarioIngresosActualizar",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Cupo diario actualizado.",
+                        _ref("CupoDiarioIngresosRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "El máximo debe ser un entero positivo",
+                },
+                requiere_auth=True,
+            ),
+        },
+        "/api/ordenes/vehiculo/{vehiculo_id}/historial": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Consultar historial paginado de órdenes por vehículo",
+                descripcion=(
+                    "Filtro en MS2 por vehículo y página ordenada por creación "
+                    "descendente, con ID descendente como desempate. Administrador "
+                    "ve todas; Cliente solo un vehículo propio; Mecánico solo sus "
+                    "órdenes actualmente asignadas. Un vehículo visible sin órdenes "
+                    "devuelve items vacío y total 0."
+                ),
+                operation_id="consultar_historial_ordenes_vehiculo",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Página del historial del vehículo.",
+                        _ref("HistorialOrdenesVehiculoRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Identificador o parámetros de página inválidos",
+                    "404": "Vehículo inexistente o fuera de visibilidad",
+                    "500": "No fue posible consultar el historial",
+                },
+                requiere_auth=True,
+                con_vehiculo_id=True,
+                parametros_extra=[
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": False,
+                        "description": (
+                            "Cantidad de elementos: 20 por defecto, entre 1 y 100."
+                        ),
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                        },
+                    },
+                    {
+                        "name": "offset",
+                        "in": "query",
+                        "required": False,
+                        "description": "Índice inicial, desde cero.",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "default": 0,
+                        },
+                    },
+                ],
+                descripcion_404="Vehículo inexistente o no visible.",
                 esquema_404=error_404_recurso,
             )
         },
@@ -990,20 +1505,21 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 descripcion=(
                     "Cambia el estado validando rol, catálogo oficial y "
                     "transición declarada por el dominio. La primera asignación (1 → 2) "
-                    "requiere PUT /api/ordenes/{orden_id}/mecanico; la primera aprobación "
-                    "(3 → 4/5) requiere POST /api/ordenes/{orden_id}/decisiones-presupuesto "
-                    "con una decisión verificada de MS3; y la entrega física (6 → 7) "
-                    "requiere POST /api/ordenes/{orden_id}/entrega. "
-                    "El PATCH directo responde 409 en esos tres pares, también para "
-                    "Administrador y usuarios multirrol. "
-                    "Los otros pares mantienen su comportamiento y las brechas de "
-                    "precondiciones de envío, stock posterior, finalización y "
-                    "cancelación siguen pendientes. Administrador por rol; "
-                    "Mecánico solo en órdenes que tiene asignadas. Una orden "
-                    "Entregada o Cancelada es terminal y rechaza cualquier "
-                    "cambio. Pasar a Cancelado exige una observación o motivo no vacío; "
-                    "en los demás destinos es opcional. Registra el historial "
-                    "en la misma transacción."
+                    "requiere PUT /api/ordenes/{orden_id}/mecanico; el envío inicial "
+                    "(2 → 3) requiere POST /api/presupuestos/{presupuesto_id}/versiones/"
+                    "{numero}/envio, que coordina la aplicación con MS2; la primera "
+                    "decisión (3 → 4/5/8) requiere POST /api/ordenes/{orden_id}/"
+                    "decisiones-presupuesto con una decisión verificada de MS3. El PATCH "
+                    "directo responde 409 para esos pares, también para usuarios "
+                    "multirrol. Bloquea además 4 → 5 hasta verificar disponibilidad, "
+                    "6 → 7 hasta registrar la entrega y cualquier destino Cancelado "
+                    "genérico; bloquearlos no implementa esos flujos. Solo permite "
+                    "5 → 6 al Mecánico asignado; devuelve 403 a otros actores. Esa "
+                    "operación todavía no acredita que el trabajo autorizado haya "
+                    "terminado. Entregado y Cancelado son terminales. Pasar a Cancelado "
+                    "exige un motivo no vacío; en otros destinos es opcional. Los "
+                    "rechazos no modifican estado ni historial y el cambio permitido "
+                    "guarda ambos en la misma transacción local."
                 ),
                 operation_id="cambiar_estado_orden",
                 cuerpo="CambioEstadoSolicitud",
@@ -1028,21 +1544,56 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 resumen="Registrar la entrega física de una orden lista",
                 descripcion=(
                     "Cierra el ciclo normal (6 → 7): registra la fecha de entrega "
-                    "y la identidad que la autorizó. Solo el Administrador puede "
+                    "y la identidad que la autorizó, y cierra el ingreso físico "
+                    "en la misma transacción. Solo el Administrador puede "
                     "invocarla y reemplaza al PATCH directo 6 → 7, que responde 409. "
-                    "Una orden que no está Lista o ya es terminal responde 409. "
-                    "Registra el historial en la misma transacción."
+                    "Repetir una entrega válida devuelve el registro original sin "
+                    "duplicar historial. Otro estado responde 409; una entrega "
+                    "histórica sin auditoría completa responde 500. No se corrigen "
+                    "automáticamente fechas de salida históricas desconocidas."
                 ),
                 operation_id="registrar_entrega_orden",
                 cuerpo="EntregaSolicitud",
+                cuerpo_requerido=False,
                 respuestas_ok={
-                    "200": _respuesta("Orden entregada.", _ref("OrdenRespuesta"))
+                    "200": _respuesta("Orden entregada; un reintento conserva la entrega original.", _ref("EntregaOrdenRespuesta"))
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Administrador",
-                    "409": "La orden no está Lista o ya es terminal",
+                    "409": "La orden no está Lista o el ingreso no permite la salida",
                     "422": "Observación de entrega vacía",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/{orden_id}/devolucion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Registrar la devolución física de una orden cancelada",
+                descripcion=(
+                    "Solo Administrador. Body vacío obligatorio. Conserva Cancelado "
+                    "y registra fecha del servidor y responsable del JWT. Cierra el "
+                    "ingreso en la misma transacción sin agregar historial de estado. "
+                    "Repetir conserva los datos originales. Rechaza con 409 si otra "
+                    "orden del ingreso sigue activa o el ingreso ya está cerrado."
+                ),
+                operation_id="registrar_devolucion_orden",
+                cuerpo="DevolucionSolicitud",
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Devolución registrada; un reintento conserva la original.",
+                        _ref("DevolucionOrdenRespuesta"),
+                    )
+                },
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "409": "Estado o ingreso incompatible con la devolución",
+                    "422": "Body o identificador inválido",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
@@ -1053,28 +1604,68 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
         "/api/ordenes/{orden_id}/cancelacion": {
             "post": _operacion(
                 tag="Órdenes",
-                resumen="Cancelar una orden a solicitud de su cliente propietario",
+                resumen="Solicitar la cancelación administrativa de una orden",
                 descripcion=(
-                    "El cliente dueño del vehículo cancela una orden no terminal "
-                    "(1/2/3 → 8). El motivo es obligatorio y se audita en el "
-                    "historial junto con el estado. Una orden inexistente o ajena "
-                    "responde 404 sin revelar cuál; una orden ya avanzada o "
-                    "terminal responde 409."
+                    "El Cliente propietario registra un motivo auditable sin cambiar "
+                    "el estado. Un Administrador debe revisar y confirmar por la "
+                    "operación específica. MS2 verifica en MS3 que no exista una "
+                    "aprobación inicial. Repetir el mismo motivo devuelve la solicitud "
+                    "pendiente existente."
                 ),
-                operation_id="cancelar_orden_cliente",
+                operation_id="solicitar_cancelacion_orden",
                 cuerpo="CancelacionClienteSolicitud",
                 respuestas_ok={
-                    "200": _respuesta("Orden cancelada.", _ref("OrdenRespuesta"))
+                    "201": _respuesta("Solicitud pendiente de revisión.", _ref("SolicitudCancelacionRespuesta")),
+                    "200": _respuesta("Solicitud pendiente existente.", _ref("SolicitudCancelacionRespuesta")),
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Cliente",
-                    "409": "La orden ya avanzó o es terminal",
+                    "409": "Orden no cancelable, solicitud existente o aprobación inicial registrada",
                     "422": "Motivo de cancelación vacío o datos inválidos",
+                    "503": "No fue posible verificar MS3",
                 },
                 requiere_auth=True,
                 con_orden_id=True,
                 descripcion_404="Orden no encontrada o ajena.",
+                esquema_404=error_404_recurso,
+            )
+        },
+        "/api/ordenes/cancelaciones/pendientes": {
+            "get": _operacion(
+                tag="Órdenes",
+                resumen="Listar solicitudes pendientes de cancelación",
+                descripcion="Solo Administrador. Devuelve los datos necesarios para revisar la solicitud.",
+                operation_id="listar_cancelaciones_pendientes",
+                cuerpo=None,
+                respuestas_ok={"200": _respuesta(
+                    "Solicitudes pendientes.",
+                    {"type": "array", "items": _ref("SolicitudCancelacionRespuesta")},
+                )},
+                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador"},
+                requiere_auth=True,
+            )
+        },
+        "/api/ordenes/{orden_id}/cancelacion/confirmacion": {
+            "post": _operacion(
+                tag="Órdenes",
+                resumen="Confirmar administrativamente una cancelación",
+                descripcion=(
+                    "Solo Administrador. Vuelve a comprobar en MS3 que no exista "
+                    "aprobación inicial y registra el estado Cancelado con el "
+                    "Administrador confirmante e historial en una transacción."
+                ),
+                operation_id="confirmar_cancelacion_orden",
+                cuerpo=None,
+                respuestas_ok={"200": _respuesta("Orden cancelada.", _ref("OrdenRespuesta"))},
+                errores_ms={
+                    "401": "JWT ausente o inválido", "403": "Se requiere rol Administrador",
+                    "409": "No hay solicitud pendiente o existe una aprobación inicial",
+                    "503": "No fue posible verificar MS3",
+                },
+                requiere_auth=True,
+                con_orden_id=True,
+                descripcion_404="Orden no encontrada.",
                 esquema_404=error_404_recurso,
             )
         },
@@ -1091,7 +1682,193 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
         },
     }
     caminos.update(_caminos_decisiones(error_404_recurso))
+    caminos.update(_caminos_usuarios())
+    caminos["/api/ordenes/{orden_id}/envios-presupuesto"] = {
+        "post": _operacion_envio_presupuesto(error_404_recurso)
+    }
     return caminos
+
+
+_PARAMETRO_USUARIO_ID: dict[str, object] = {
+    "name": "usuario_id",
+    "in": "path",
+    "required": True,
+    "description": "Identificador del usuario (MS1).",
+    "schema": {"type": "integer", "example": 7},
+}
+
+_PARAMETRO_ROL: dict[str, object] = {
+    "name": "rol",
+    "in": "path",
+    "required": True,
+    "description": "Rol a retirar.",
+    "schema": {
+        "type": "string",
+        "enum": ["cliente", "mecanico", "administrador"],
+        "example": "mecanico",
+    },
+}
+
+_EJEMPLO_USUARIO_MECANICO: dict[str, object] = {
+    "id": 7,
+    "email": "ana@correo.cl",
+    "full_name": "Ana Pérez",
+    "roles": ["cliente", "mecanico"],
+    "is_active": True,
+}
+
+_ERROR_404_USUARIO: dict[str, object] = {
+    "oneOf": [_ref("ErrorRespuesta"), _ref("ErrorDetalle")],
+}
+
+
+def _operacion_usuarios(*, ejemplo: object, **kwargs: object) -> dict[str, object]:
+    """Operación de administración de usuarios (MS1) con su ejemplo de éxito."""
+    operacion = _operacion(tag="Usuarios", requiere_auth=True, **kwargs)  # type: ignore[arg-type]
+    operacion["responses"]["200"]["content"]["application/json"]["examples"] = {
+        "ejemplo": {"value": ejemplo}
+    }
+    return operacion
+
+
+def _caminos_usuarios() -> dict[str, dict[str, object]]:
+    """Administración de usuarios y roles de MS1 (solo Administrador)."""
+    errores_admin = {
+        "401": "JWT ausente o inválido",
+        "403": "Se requiere rol Administrador",
+    }
+    asignar = _operacion_usuarios(
+        resumen="Asignar un rol restringido a un usuario",
+        descripcion=(
+            "Solo Administrador. Asigna un rol a una cuenta existente; un rol "
+            "desconocido responde 422. La asignación queda registrada con el "
+            "administrador que la hizo."
+        ),
+        operation_id="asignar_rol_usuario",
+        cuerpo="RolAsignarSolicitud",
+        parametros_extra=[_PARAMETRO_USUARIO_ID],
+        respuestas_ok={
+            "200": _respuesta("Usuario con el rol asignado.", _ref("UsuarioRespuesta"))
+        },
+        errores_ms={**errores_admin, "422": "Rol desconocido o body inválido"},
+        descripcion_404="El usuario no existe.",
+        esquema_404=_ERROR_404_USUARIO,
+        ejemplo=_EJEMPLO_USUARIO_MECANICO,
+    )
+    asignar["requestBody"]["content"]["application/json"]["examples"] = {
+        "mecanico": {"value": {"rol": "mecanico"}}
+    }
+    return {
+        "/api/auth/usuarios": {
+            "get": _operacion_usuarios(
+                resumen="Listar todos los usuarios",
+                descripcion=(
+                    "Solo Administrador. Una cuenta sin roles se lista con `roles: []`."
+                ),
+                operation_id="listar_usuarios",
+                cuerpo=None,
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Usuarios registrados.",
+                        {"type": "array", "items": _ref("UsuarioRespuesta")},
+                    )
+                },
+                errores_ms=errores_admin,
+                ejemplo=[_EJEMPLO_USUARIO_MECANICO],
+            )
+        },
+        "/api/auth/usuarios/{usuario_id}": {
+            "get": _operacion_usuarios(
+                resumen="Consultar un usuario por su identificador",
+                descripcion="Solo Administrador.",
+                operation_id="consultar_usuario",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_USUARIO_ID],
+                respuestas_ok={
+                    "200": _respuesta("Usuario encontrado.", _ref("UsuarioRespuesta"))
+                },
+                errores_ms={**errores_admin, "422": "Identificador inválido"},
+                descripcion_404="El usuario no existe.",
+                esquema_404=_ERROR_404_USUARIO,
+                ejemplo=_EJEMPLO_USUARIO_MECANICO,
+            )
+        },
+        "/api/auth/usuarios/{usuario_id}/roles": {"post": asignar},
+        "/api/auth/usuarios/{usuario_id}/roles/{rol}": {
+            "delete": _operacion_usuarios(
+                resumen="Retirar un rol restringido a un usuario",
+                descripcion=(
+                    "Solo Administrador. Si era el último rol, la cuenta queda con "
+                    "`roles: []` y la respuesta no falla."
+                ),
+                operation_id="retirar_rol_usuario",
+                cuerpo=None,
+                parametros_extra=[_PARAMETRO_USUARIO_ID, _PARAMETRO_ROL],
+                respuestas_ok={
+                    "200": _respuesta(
+                        "Usuario sin el rol retirado.", _ref("UsuarioRespuesta")
+                    )
+                },
+                errores_ms={
+                    **errores_admin,
+                    "422": "Rol desconocido o identificador inválido",
+                },
+                descripcion_404="El usuario no existe.",
+                esquema_404=_ERROR_404_USUARIO,
+                ejemplo={**_EJEMPLO_USUARIO_MECANICO, "roles": ["cliente"]},
+            )
+        },
+    }
+
+
+def _operacion_envio_presupuesto(error_404: dict[str, object]) -> dict[str, object]:
+    """Coordinación MS3 -> MS2 del primer envío de presupuesto (orden 2 -> 3)."""
+    operacion = _operacion(
+        tag="Órdenes",
+        resumen="Aplicar el envío inicial de presupuesto verificado en MS3",
+        descripcion=(
+            "Solo Administrador; lo invoca MS3 al enviar la primera versión. Recibe "
+            "solo `presupuesto_id`, verifica el envío en MS3 con el JWT original y "
+            "deriva la transición 2 -> 3; no acepta actor ni estado destino. Es "
+            "idempotente: repetir la referencia devuelve la aplicación registrada."
+        ),
+        operation_id="aplicar_envio_presupuesto",
+        cuerpo="EnvioPresupuestoSolicitud",
+        respuestas_ok={
+            "200": _respuesta(
+                "Transición aplicada (o ya aplicada).",
+                _ref("AplicacionEnvioPresupuestoRespuesta"),
+            )
+        },
+        errores_ms={
+            "401": "JWT ausente o inválido",
+            "403": "Se requiere rol Administrador",
+            "409": "Estado incompatible con el envío inicial",
+            "422": "Datos inválidos",
+        },
+        requiere_auth=True,
+        con_orden_id=True,
+        descripcion_404="Orden o envío inicial no encontrado.",
+        esquema_404=error_404,
+    )
+    operacion["requestBody"]["content"]["application/json"]["examples"] = {
+        "referencia": {"value": {"presupuesto_id": 7}}
+    }
+    operacion["responses"]["200"]["content"]["application/json"]["examples"] = {
+        "ejemplo": {
+            "value": {
+                "presupuesto_id": 7,
+                "orden_id": 31,
+                "estado_aplicado": 3,
+                "historial_id": 40,
+            }
+        }
+    }
+    operacion["responses"]["503"] = _respuesta(
+        "No fue posible verificar el envío en MS3; o pool de la Gateway agotado.",
+        {"oneOf": [_ref("ErrorDetalle"), _ref("ErrorRespuesta")]},
+    )
+    return operacion
 
 
 def _caminos_decisiones(error_404: dict[str, object]) -> dict[str, dict[str, object]]:
@@ -1181,13 +1958,54 @@ def _esquemas_documentados() -> dict[str, dict[str, object]]:
     return esquemas
 
 
+def _exigir_campos_siempre_serializados(
+    esquemas: dict[str, dict[str, object]], modelos: list[type[BaseModel]]
+) -> None:
+    """Marca obligatorios los campos con valor por defecto de las respuestas.
+
+    Los esquemas se generan en modo validación, donde un campo con valor por
+    defecto es opcional. En una respuesta, en cambio, FastAPI serializa siempre
+    todos los campos: el cliente los recibe siempre. Los modelos de respuesta
+    que lo declaran con `json_schema_serialization_defaults_required=True` (igual
+    que su original en el microservicio) publican esos campos como obligatorios.
+    Diferencia D-02 de `docs/diferencias-contrato-consumo-real.md`.
+    """
+    for modelo in modelos:
+        if not modelo.model_config.get("json_schema_serialization_defaults_required"):
+            continue
+        definicion = esquemas.get(modelo.__name__)
+        if definicion is None:
+            raise ValueError(f"El modelo '{modelo.__name__}' no está en components.schemas")
+        obligatorios = list(definicion.get("required", []))
+        for nombre, campo in modelo.model_fields.items():
+            clave = campo.alias or nombre
+            if clave not in obligatorios:
+                obligatorios.append(clave)
+        definicion["required"] = obligatorios
+
+
+def _documentar_bloqueo_login(esquema: dict[str, object]) -> None:
+    """El `429` de login trae `Retry-After` con los segundos de bloqueo (MS1)."""
+    respuesta = esquema["paths"]["/api/auth/login"]["post"]["responses"]["429"]
+    respuesta["headers"] = {
+        "Retry-After": {
+            "description": "Segundos que faltan para que expire el bloqueo.",
+            "schema": {"type": "integer", "example": 900},
+        }
+    }
+
+
 def construir_openapi(app: FastAPI) -> dict[str, object]:
     """Arma el esquema OpenAPI de la Gateway con los contratos documentados.
 
     Parte del esquema autogenerado por FastAPI (índice y healthcheck) y le
-    agrega los 29 endpoints de negocio, la seguridad `bearerAuth` y los
-    esquemas de `gateway/contratos` y `gateway/esquemas`.
+    agrega los endpoints de negocio de los cuatro microservicios, la
+    seguridad `bearerAuth` y los esquemas de `gateway/contratos` y
+    `gateway/esquemas`.
     """
+    # Import diferido: `openapi_ms3` reutiliza los ayudantes de este módulo.
+    from gateway.openapi_ms3 import CONTRATOS_MS3, caminos_ms3, esquemas_ms3
+
     if getattr(app, "openapi_schema", None) is not None:
         return app.openapi_schema
 
@@ -1198,11 +2016,11 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         routes=app.routes,
         tags=_TAGS,
     )
-    esquema["paths"] = {
-        **esquema["paths"],
-        **_caminos_documentados(),
-        **_caminos_evidencias(),
-    }
+    # Una misma ruta puede publicar métodos de módulos distintos (p. ej.
+    # GET de disponibilidad y POST de reserva). Conservar ambos métodos.
+    for caminos in (_caminos_documentados(), _caminos_evidencias(), caminos_ms3()):
+        for ruta, operaciones in caminos.items():
+            esquema["paths"].setdefault(ruta, {}).update(operaciones)
 
     componentes = esquema.setdefault("components", {})
     componentes["securitySchemes"] = {
@@ -1216,7 +2034,15 @@ def construir_openapi(app: FastAPI) -> dict[str, object]:
         **componentes.get("schemas", {}),
         **_esquemas_documentados(),
     }
+    for nombre, definicion in esquemas_ms3().items():
+        existente = componentes["schemas"].setdefault(nombre, definicion)
+        if existente.get("properties") != definicion.get("properties"):
+            raise ValueError(f"Esquema '{nombre}' de MS3 choca con otro contrato")
 
+    _exigir_campos_siempre_serializados(
+        componentes["schemas"], [modelo for _, modelo in _CONTRATOS] + list(CONTRATOS_MS3)
+    )
+    _documentar_bloqueo_login(esquema)
     agregar_ejemplos_ordenes(esquema, prefijo="/api")
     agregar_ejemplos_gateway(esquema)
     app.openapi_schema = esquema

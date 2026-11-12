@@ -1,6 +1,6 @@
 """Pruebas de la documentación OpenAPI/Swagger de la Gateway.
 
-Verifican que `/openapi.json` publica los 29 endpoints reales de Auth,
+Verifican que `/openapi.json` publica los endpoints reales de Auth,
 Vehículos, Órdenes y Evidencias con sus contratos y seguridad, que el proxy
 genérico no aparece, y que las copias de `gateway/contratos` no se
 desactualizan respecto a los esquemas reales de MS1, MS2 y MS4.
@@ -13,21 +13,34 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from gateway.contratos import auth as contratos_auth
+from gateway.contratos import clientes as contratos_clientes
 from gateway.contratos import evidencias as contratos_evidencias
+from gateway.contratos import inventario as contratos_inventario
 from gateway.contratos import ordenes as contratos_ordenes
+from gateway.contratos import nuevas_atenciones as contratos_nuevas_atenciones
 from gateway.contratos import vehiculos as contratos_vehiculos
 from gateway.main import app
+from gateway.contratos import catalogo as contratos_catalogo
+from gateway.contratos import inventario as contratos_inventario
+from gateway.contratos import presupuestos as contratos_presupuestos
 from services.ms1_auth.schemas.auth import (
     LoginSolicitud as Ms1LoginSolicitud,
-    RegistroClienteSolicitud as Ms1RegistroClienteSolicitud,
     RolAsignarSolicitud as Ms1RolAsignarSolicitud,
+    RegistroClienteSolicitud as Ms1RegistroClienteSolicitud,
     TokenRespuesta as Ms1TokenRespuesta,
     UsuarioRespuesta as Ms1UsuarioRespuesta,
+)
+from services.ms1_auth.schemas.notificacion import (
+    NotificacionRespuesta as Ms1NotificacionRespuesta,
 )
 from services.ms2_taller.config import settings as ms2_settings
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as ms2_app
 from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN
+from services.ms2_taller.schemas.cliente import (
+    PerfilClientePreparar as Ms2PerfilClientePreparar,
+    PerfilClienteRespuesta as Ms2PerfilClienteRespuesta,
+)
 from services.ms2_taller.schemas.vehiculo import (
     VehiculoActualizar as Ms2VehiculoActualizar,
     VehiculoCrear as Ms2VehiculoCrear,
@@ -35,9 +48,17 @@ from services.ms2_taller.schemas.vehiculo import (
 )
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar as Ms2AsignacionMecanicoActualizar,
+    CapacidadMecanicoActualizar as Ms2CapacidadMecanicoActualizar,
+    CapacidadMecanicoRespuesta as Ms2CapacidadMecanicoRespuesta,
+    MecanicoSobreLimite as Ms2MecanicoSobreLimite,
+    CupoDiarioIngresosActualizar as Ms2CupoDiarioIngresosActualizar,
+    CupoDiarioIngresosRespuesta as Ms2CupoDiarioIngresosRespuesta,
     CambioEstadoSolicitud as Ms2CambioEstadoSolicitud,
     CancelacionClienteSolicitud as Ms2CancelacionClienteSolicitud,
+    SolicitudCancelacionRespuesta as Ms2SolicitudCancelacionRespuesta,
     EntregaSolicitud as Ms2EntregaSolicitud,
+    DevolucionSolicitud as Ms2DevolucionSolicitud,
+    DevolucionOrdenRespuesta as Ms2DevolucionOrdenRespuesta,
     HistorialEstadoRespuesta as Ms2HistorialEstadoRespuesta,
     OrdenCrear as Ms2OrdenCrear,
     OrdenRespuesta as Ms2OrdenRespuesta,
@@ -53,17 +74,51 @@ from services.ms4_evidencias.schemas.evidencia import (
     EvidenciaLeida as Ms4EvidenciaLeida,
     UrlDescarga as Ms4UrlDescarga,
 )
+from services.ms3_presupuestos.schemas.inventario import (
+    RepuestoReservado as Ms3RepuestoReservado,
+    DisponibilidadRepuestosRespuesta as Ms3DisponibilidadRepuestosRespuesta,
+)
+from services.ms2_taller.schemas import nueva_atencion as ms2_nuevas_atenciones
 from shared.auth import NombreRol, crear_token_acceso
 from shared.openapi_ordenes import ESTADOS_DOCUMENTADOS
+from gateway.contratos import entregas_notificaciones as contratos_entregas
+from services.ms1_auth.schemas import entrega_notificacion as ms1_entregas
+
+import services.ms3_presupuestos.schemas.catalogo as ms3_catalogo  # noqa: E402
+import services.ms3_presupuestos.schemas.inventario as ms3_inventario  # noqa: E402
+import services.ms3_presupuestos.schemas.presupuesto as ms3_presupuesto  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
+
+# Cada modelo de MS3 tiene su copia con el mismo nombre en gateway/contratos.
+_PARES_MS3 = [
+    (getattr(copia, nombre), real_modelo)
+    for copia, real in (
+        (contratos_entregas, ms1_entregas),
+        (contratos_catalogo, ms3_catalogo),
+        (contratos_inventario, ms3_inventario),
+        (contratos_presupuestos, ms3_presupuesto),
+    )
+    for nombre, real_modelo in vars(real).items()
+    if isinstance(real_modelo, type)
+    and issubclass(real_modelo, BaseModel)
+    and real_modelo.__module__ == real.__name__
+]
 
 _ENDPOINTS_ESPERADOS = {
     ("/api/auth/register", "post"),
     ("/api/auth/login", "post"),
     ("/api/auth/me", "get"),
-    ("/api/auth/usuarios", "get"),
-    ("/api/auth/usuarios/{usuario_id}", "get"),
-    ("/api/auth/usuarios/{usuario_id}/roles", "post"),
-    ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"),
+    ("/api/clientes/perfil", "post"),
+    ("/api/clientes/perfil", "get"),
+    ("/api/notificaciones", "get"),
+    ("/api/notificaciones/dispositivos", "post"),
+    ("/api/notificaciones/dispositivos", "get"),
+    ("/api/notificaciones/dispositivos/{dispositivo_id}", "delete"),
+    ("/api/notificaciones/{notificacion_id}/entregas", "get"),
+    ("/api/notificaciones/{notificacion_id}/reintentos", "post"),
+    ("/api/notificaciones/leer-todas", "patch"),
+    ("/api/notificaciones/{notificacion_id}/leer", "patch"),
+    ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
     ("/api/vehiculos", "post"),
     ("/api/vehiculos", "get"),
     ("/api/vehiculos/asignados", "get"),
@@ -73,12 +128,25 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/ordenes", "get"),
     ("/api/ordenes/{orden_id}", "get"),
     ("/api/ordenes/{orden_id}/mecanico", "put"),
+    ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
+    ("/api/ordenes/configuracion/capacidad/mecanicos", "put"),
+    ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
+    ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "put"),
     ("/api/ordenes/{orden_id}/historial", "get"),
+    ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
     ("/api/ordenes/{orden_id}/bitacora", "get"),
     ("/api/ordenes/{orden_id}/bitacora", "post"),
     ("/api/ordenes/{orden_id}/estado", "patch"),
     ("/api/ordenes/{orden_id}/entrega", "post"),
+    ("/api/ordenes/{orden_id}/devolucion", "post"),
+    ("/api/ordenes/{orden_id}/nueva-atencion", "post"),
+    ("/api/ordenes/nuevas-atenciones", "get"),
+    ("/api/ordenes/nuevas-atenciones/{solicitud_id}", "get"),
+    ("/api/ordenes/nuevas-atenciones/{solicitud_id}/revision", "post"),
+    ("/api/ordenes/nuevas-atenciones/{solicitud_id}/orden", "post"),
     ("/api/ordenes/{orden_id}/cancelacion", "post"),
+    ("/api/ordenes/cancelaciones/pendientes", "get"),
+    ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
     ("/api/evidencias", "post"),
     ("/api/evidencias", "get"),
     ("/api/evidencias/{evidencia_id}", "get"),
@@ -88,31 +156,94 @@ _ENDPOINTS_ESPERADOS = {
     ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
 }
 
+# Semana 7: MS1 usuarios, coordinación MS3 -> MS2 y MS3 completo. Todos exigen
+# Bearer y su 404 puede venir de la Gateway o del microservicio.
+_ENDPOINTS_SEMANA_7 = {
+    ("/api/auth/usuarios", "get"),
+    ("/api/auth/usuarios/{usuario_id}", "get"),
+    ("/api/auth/usuarios/{usuario_id}/roles", "post"),
+    ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"),
+    ("/api/ordenes/{orden_id}/envios-presupuesto", "post"),
+    ("/api/presupuestos", "post"),
+    ("/api/presupuestos", "get"),
+    ("/api/presupuestos/ordenes/{orden_id}/primera-aprobacion", "get"),
+    ("/api/presupuestos/{presupuesto_id}", "get"),
+    ("/api/presupuestos/{presupuesto_id}/versiones/{numero}", "get"),
+    ("/api/presupuestos/{presupuesto_id}/versiones", "post"),
+    ("/api/presupuestos/{presupuesto_id}/modificacion", "post"),
+    ("/api/presupuestos/{presupuesto_id}/versiones/{numero}/items", "put"),
+    ("/api/presupuestos/{presupuesto_id}/versiones/{numero}/envio", "post"),
+    ("/api/presupuestos/{presupuesto_id}/envio-inicial", "get"),
+    ("/api/presupuestos/{presupuesto_id}/envio-inicial/aplicacion", "post"),
+    ("/api/presupuestos/{presupuesto_id}/versiones/{numero}/decision", "post"),
+    ("/api/repuestos", "get"),
+    ("/api/repuestos", "post"),
+    ("/api/repuestos/{repuesto_id}", "get"),
+    ("/api/repuestos/{repuesto_id}", "patch"),
+    ("/api/repuestos/{repuesto_id}", "delete"),
+    ("/api/repuestos/{repuesto_id}/trazabilidad", "get"),
+    ("/api/proveedores", "get"),
+    ("/api/proveedores", "post"),
+    ("/api/proveedores/{proveedor_id}", "get"),
+    ("/api/proveedores/{proveedor_id}", "patch"),
+    ("/api/proveedores/{proveedor_id}", "delete"),
+    ("/api/proveedores/{proveedor_id}/trazabilidad", "get"),
+    ("/api/inventario/movimientos", "post"),
+    ("/api/inventario/movimientos", "get"),
+    ("/api/inventario/stock/{repuesto_id}", "get"),
+    ("/api/inventario/alertas", "get"),
+    ("/api/inventario/umbral-general", "get"),
+    ("/api/inventario/umbral-general", "put"),
+    ("/api/inventario/historial-umbral", "get"),
+    ("/api/inventario/disponibilidad", "post"),
+    ("/api/inventario/ordenes/{orden_id}/disponibilidad", "get"),
+    ("/api/inventario/ordenes/{orden_id}/reserva", "post"),
+    ("/api/inventario/ordenes/{orden_id}/consumos", "post"),
+    ("/api/inventario/ordenes/{orden_id}/liberacion", "post"),
+}
+_ENDPOINTS_ESPERADOS |= _ENDPOINTS_SEMANA_7
+
 _PUBLICOS = {"/api/auth/register", "/api/auth/login"}
 _PROTEGIDOS = {
     "/api/auth/me",
-    "/api/auth/usuarios",
-    "/api/auth/usuarios/{usuario_id}",
-    "/api/auth/usuarios/{usuario_id}/roles",
-    "/api/auth/usuarios/{usuario_id}/roles/{rol}",
+    "/api/clientes/perfil",
+    "/api/notificaciones",
+    "/api/notificaciones/dispositivos",
+    "/api/notificaciones/dispositivos/{dispositivo_id}",
+    "/api/notificaciones/{notificacion_id}/entregas",
+    "/api/notificaciones/{notificacion_id}/reintentos",
+    "/api/notificaciones/{notificacion_id}/leer",
+    "/api/notificaciones/leer-todas",
+    "/api/inventario/ordenes/{orden_id}/disponibilidad",
     "/api/vehiculos",
     "/api/vehiculos/asignados",
     "/api/vehiculos/{vehiculo_id}",
     "/api/ordenes",
     "/api/ordenes/{orden_id}",
     "/api/ordenes/{orden_id}/mecanico",
+    "/api/ordenes/configuracion/capacidad/mecanicos",
+    "/api/ordenes/configuracion/capacidad/ingresos-diarios",
     "/api/ordenes/{orden_id}/historial",
+    "/api/ordenes/vehiculo/{vehiculo_id}/historial",
     "/api/ordenes/{orden_id}/bitacora",
     "/api/ordenes/{orden_id}/estado",
     "/api/ordenes/{orden_id}/entrega",
+    "/api/ordenes/{orden_id}/devolucion",
+    "/api/ordenes/{orden_id}/nueva-atencion",
+    "/api/ordenes/nuevas-atenciones",
+    "/api/ordenes/nuevas-atenciones/{solicitud_id}",
+    "/api/ordenes/nuevas-atenciones/{solicitud_id}/revision",
+    "/api/ordenes/nuevas-atenciones/{solicitud_id}/orden",
     "/api/ordenes/{orden_id}/cancelacion",
+    "/api/ordenes/cancelaciones/pendientes",
+    "/api/ordenes/{orden_id}/cancelacion/confirmacion",
     "/api/evidencias",
     "/api/evidencias/{evidencia_id}",
     "/api/evidencias/{evidencia_id}/descarga",
     "/api/ordenes/{orden_id}/decisiones-presupuesto",
     "/api/presupuestos/decisiones/{decision_id}",
     "/api/presupuestos/decisiones/{decision_id}/aplicacion",
-}
+} | {ruta for ruta, _ in _ENDPOINTS_SEMANA_7}
 
 
 @pytest.fixture
@@ -140,13 +271,67 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
 
 def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["info"]["title"] == "SGTM — API Gateway"
-    assert esquema["info"]["version"] == "0.1.0"
+    assert esquema["info"]["version"] == "3.0.0"
     assert esquema["openapi"].startswith("3.")
 
 
 def test_estan_los_endpoints_con_sus_metodos(esquema: dict) -> None:
     operaciones = set(_operaciones_documentadas(esquema))
     assert operaciones == _ENDPOINTS_ESPERADOS
+
+
+def _operaciones_reales_via_gateway() -> set[tuple[str, str]]:
+    """(ruta pública, método) de todos los endpoints de negocio de MS1..MS4."""
+    from services.ms1_auth.main import app as ms1_app
+    from services.ms3_presupuestos.main import app as ms3_app
+    from services.ms4_evidencias.main import app as ms4_app
+
+    reales: set[tuple[str, str]] = set()
+    for servicio in (ms1_app, ms2_app, ms3_app, ms4_app):
+        for ruta, item in servicio.openapi()["paths"].items():
+            if ruta.startswith("/interno/"):
+                continue  # Contrato MS2→MS1 autenticado por servicio, fuera de Gateway.
+            if ruta.startswith("/health") or ruta in {"/docs", "/redoc", "/openapi.json"}:
+                continue
+            for metodo in ("get", "post", "put", "patch", "delete"):
+                if metodo in item:
+                    reales.add((f"/api{ruta}", metodo))
+    return reales
+
+
+def test_cada_endpoint_de_los_cuatro_microservicios_esta_documentado(
+    esquema: dict,
+) -> None:
+    """El Swagger de la Gateway cubre exactamente lo que publican MS1..MS4.
+
+    Si un microservicio agrega, renombra o elimina un endpoint, esta prueba
+    falla hasta que se actualice `gateway/openapi.py` u `openapi_ms3.py`.
+    """
+    documentadas = set(_operaciones_documentadas(esquema))
+    reales = _operaciones_reales_via_gateway()
+    assert reales - documentadas == set(), "endpoints sin documentar en la Gateway"
+    assert documentadas - reales == set(), "endpoints documentados que no existen"
+
+
+def test_documentacion_ms3_usa_los_parametros_reales(esquema: dict) -> None:
+    """Los parámetros de path y query documentados existen en MS3."""
+    from services.ms3_presupuestos.main import app as ms3_app
+
+    real = ms3_app.openapi()["paths"]
+    for ruta, item in real.items():
+        if ruta.startswith("/health") or ruta in {"/docs", "/redoc", "/openapi.json"}:
+            continue
+        for metodo, operacion in item.items():
+            if metodo not in ("get", "post", "put", "patch", "delete"):
+                continue
+            esperados = {(p["name"], p["in"]) for p in operacion.get("parameters", [])}
+            documentada = esquema["paths"][f"/api{ruta}"][metodo]
+            publicados = {
+                (p["name"], p["in"])
+                for p in documentada["parameters"]
+                if p["name"] != "X-Request-ID"
+            }
+            assert publicados == esperados, f"{metodo.upper()} {ruta}"
 
 
 def test_proxy_generico_no_aparece(esquema: dict) -> None:
@@ -182,6 +367,11 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
     # En estas operaciones el 404 también puede venir de MS2 (perfil o recurso
     # ausente): su esquema admite ErrorRespuesta y ErrorDetalle.
     operaciones_con_404_ms = {
+        ("/api/notificaciones/dispositivos/{dispositivo_id}", "delete"),
+        ("/api/notificaciones/{notificacion_id}/entregas", "get"),
+        ("/api/notificaciones/{notificacion_id}/reintentos", "post"),
+        ("/api/notificaciones/{notificacion_id}/leer", "patch"),
+        ("/api/clientes/perfil", "get"),
         ("/api/vehiculos", "post"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
@@ -190,22 +380,27 @@ def test_errores_404_y_500_distinguen_gateway_de_microservicio(esquema: dict) ->
         ("/api/ordenes/{orden_id}", "get"),
         ("/api/ordenes/{orden_id}/mecanico", "put"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "post"),
         ("/api/ordenes/{orden_id}/estado", "patch"),
         ("/api/ordenes/{orden_id}/entrega", "post"),
+        ("/api/ordenes/{orden_id}/devolucion", "post"),
+        ("/api/ordenes/{orden_id}/nueva-atencion", "post"),
+        ("/api/ordenes/nuevas-atenciones/{solicitud_id}", "get"),
+        ("/api/ordenes/nuevas-atenciones/{solicitud_id}/revision", "post"),
+        ("/api/ordenes/nuevas-atenciones/{solicitud_id}/orden", "post"),
         ("/api/ordenes/{orden_id}/cancelacion", "post"),
-        ("/api/auth/usuarios/{usuario_id}", "get"),
-        ("/api/auth/usuarios/{usuario_id}/roles", "post"),
-        ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"),
+        ("/api/ordenes/{orden_id}/cancelacion/confirmacion", "post"),
         ("/api/evidencias", "post"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
         ("/api/evidencias/{evidencia_id}/descarga", "get"),
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"),
+        ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/presupuestos/decisiones/{decision_id}", "get"),
         ("/api/presupuestos/decisiones/{decision_id}/aplicacion", "post"),
-    }
+    } | (_ENDPOINTS_SEMANA_7 - {("/api/auth/usuarios", "get")})
     for ruta, metodo in _ENDPOINTS_ESPERADOS:
         respuestas = operaciones[(ruta, metodo)]["responses"]
         for estado in ("404", "502", "500"):
@@ -239,6 +434,18 @@ def test_errores_de_los_microservicios_usan_formato_detalle(esquema: dict) -> No
             esquema_respuesta = respuestas[estado]["content"]["application/json"][
                 "schema"
             ]
+            if estado == "409" and (ruta, metodo) in {
+                ("/api/inventario/movimientos", "post"),
+                ("/api/inventario/ordenes/{orden_id}/consumos", "post"),
+            }:
+                # El 409 por stock insuficiente de MS3 trae `faltantes`.
+                referencias = (
+                    {item["$ref"] for item in esquema_respuesta["oneOf"]}
+                    if "oneOf" in esquema_respuesta
+                    else {esquema_respuesta["$ref"]}
+                )
+                assert "#/components/schemas/RechazoStock" in referencias
+                continue
             assert esquema_respuesta["$ref"] == "#/components/schemas/ErrorDetalle"
 
 
@@ -247,7 +454,7 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
     con_cuerpo = {
         ("/api/auth/register", "post"): "RegistroSolicitud",
         ("/api/auth/login", "post"): "LoginSolicitud",
-        ("/api/auth/usuarios/{usuario_id}/roles", "post"): "RolAsignarSolicitud",
+        ("/api/clientes/perfil", "post"): "PerfilClientePreparar",
         ("/api/vehiculos", "post"): "VehiculoCrear",
         ("/api/vehiculos/{vehiculo_id}", "patch"): "VehiculoActualizar",
         ("/api/ordenes", "post"): "OrdenCrear",
@@ -255,8 +462,20 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
             "/api/ordenes/{orden_id}/mecanico",
             "put",
         ): "AsignacionMecanicoActualizar",
+        (
+            "/api/ordenes/configuracion/capacidad/mecanicos",
+            "put",
+        ): "CapacidadMecanicoActualizar",
+        (
+            "/api/ordenes/configuracion/capacidad/ingresos-diarios",
+            "put",
+        ): "CupoDiarioIngresosActualizar",
         ("/api/ordenes/{orden_id}/estado", "patch"): "CambioEstadoSolicitud",
         ("/api/ordenes/{orden_id}/entrega", "post"): "EntregaSolicitud",
+        ("/api/ordenes/{orden_id}/devolucion", "post"): "DevolucionSolicitud",
+        ("/api/ordenes/{orden_id}/nueva-atencion", "post"): "NuevaAtencionSolicitud",
+        ("/api/ordenes/nuevas-atenciones/{solicitud_id}/revision", "post"): "RevisionNuevaAtencionSolicitud",
+        ("/api/ordenes/nuevas-atenciones/{solicitud_id}/orden", "post"): "GeneracionNuevaAtencionSolicitud",
         ("/api/ordenes/{orden_id}/cancelacion", "post"): "CancelacionClienteSolicitud",
         ("/api/ordenes/{orden_id}/bitacora", "post"): "BitacoraCrear",
         ("/api/ordenes/{orden_id}/decisiones-presupuesto", "post"): "DecisionOrdenSolicitud",
@@ -268,15 +487,20 @@ def test_body_obligatorio_donde_corresponde(esquema: dict) -> None:
         assert esquema_cuerpo["$ref"] == f"#/components/schemas/{ref}"
     for (ruta, metodo) in (
         ("/api/auth/me", "get"),
-        ("/api/auth/usuarios", "get"),
-        ("/api/auth/usuarios/{usuario_id}", "get"),
-        ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"),
+        ("/api/clientes/perfil", "get"),
+        ("/api/notificaciones", "get"),
+    ("/api/notificaciones/leer-todas", "patch"),
+    ("/api/notificaciones/{notificacion_id}/leer", "patch"),
+        ("/api/inventario/ordenes/{orden_id}/disponibilidad", "post"),
         ("/api/vehiculos", "get"),
         ("/api/vehiculos/asignados", "get"),
         ("/api/vehiculos/{vehiculo_id}", "get"),
         ("/api/ordenes", "get"),
         ("/api/ordenes/{orden_id}", "get"),
+        ("/api/ordenes/configuracion/capacidad/mecanicos", "get"),
+        ("/api/ordenes/configuracion/capacidad/ingresos-diarios", "get"),
         ("/api/ordenes/{orden_id}/historial", "get"),
+        ("/api/ordenes/vehiculo/{vehiculo_id}/historial", "get"),
         ("/api/ordenes/{orden_id}/bitacora", "get"),
         ("/api/evidencias", "get"),
         ("/api/evidencias/{evidencia_id}", "get"),
@@ -303,16 +527,46 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
     [
         (contratos_auth.RegistroSolicitud, Ms1RegistroClienteSolicitud),
         (contratos_auth.LoginSolicitud, Ms1LoginSolicitud),
-        (contratos_auth.RolAsignarSolicitud, Ms1RolAsignarSolicitud),
         (contratos_auth.UsuarioRespuesta, Ms1UsuarioRespuesta),
         (contratos_auth.TokenRespuesta, Ms1TokenRespuesta),
+        (contratos_auth.NotificacionRespuesta, Ms1NotificacionRespuesta),
+        (contratos_inventario.RepuestoReservado, Ms3RepuestoReservado),
+        (
+            contratos_inventario.DisponibilidadRepuestosRespuesta,
+            Ms3DisponibilidadRepuestosRespuesta,
+        ),
+        (contratos_clientes.PerfilClientePreparar, Ms2PerfilClientePreparar),
+        (contratos_clientes.PerfilClienteRespuesta, Ms2PerfilClienteRespuesta),
         (contratos_vehiculos.VehiculoCrear, Ms2VehiculoCrear),
         (contratos_vehiculos.VehiculoActualizar, Ms2VehiculoActualizar),
         (contratos_vehiculos.VehiculoRespuesta, Ms2VehiculoRespuesta),
         (contratos_ordenes.OrdenCrear, Ms2OrdenCrear),
+        *[(getattr(contratos_nuevas_atenciones, nombre), getattr(ms2_nuevas_atenciones, nombre)) for nombre in ("NuevaAtencionSolicitud", "SolicitudNuevaAtencionRespuesta", "SolicitudesNuevaAtencionRespuesta", "RevisionNuevaAtencionSolicitud", "GeneracionNuevaAtencionSolicitud", "GeneracionNuevaAtencionRespuesta")],
+        (contratos_ordenes.DevolucionSolicitud, Ms2DevolucionSolicitud),
+        (contratos_ordenes.DevolucionOrdenRespuesta, Ms2DevolucionOrdenRespuesta),
         (
             contratos_ordenes.AsignacionMecanicoActualizar,
             Ms2AsignacionMecanicoActualizar,
+        ),
+        (
+            contratos_ordenes.CapacidadMecanicoActualizar,
+            Ms2CapacidadMecanicoActualizar,
+        ),
+        (
+            contratos_ordenes.CapacidadMecanicoRespuesta,
+            Ms2CapacidadMecanicoRespuesta,
+        ),
+        (
+            contratos_ordenes.MecanicoSobreLimite,
+            Ms2MecanicoSobreLimite,
+        ),
+        (
+            contratos_ordenes.CupoDiarioIngresosActualizar,
+            Ms2CupoDiarioIngresosActualizar,
+        ),
+        (
+            contratos_ordenes.CupoDiarioIngresosRespuesta,
+            Ms2CupoDiarioIngresosRespuesta,
         ),
         (contratos_ordenes.OrdenRespuesta, Ms2OrdenRespuesta),
         (
@@ -326,6 +580,10 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         (
             contratos_ordenes.CancelacionClienteSolicitud,
             Ms2CancelacionClienteSolicitud,
+        ),
+        (
+            contratos_ordenes.SolicitudCancelacionRespuesta,
+            Ms2SolicitudCancelacionRespuesta,
         ),
         (
             contratos_ordenes.HistorialEstadoRespuesta,
@@ -343,6 +601,8 @@ def test_docs_y_swagger_cargan(gateway: TestClient) -> None:
         ),
         (contratos_evidencias.EvidenciaRespuesta, Ms4EvidenciaLeida),
         (contratos_evidencias.UrlDescargaRespuesta, Ms4UrlDescarga),
+        (contratos_auth.RolAsignarSolicitud, Ms1RolAsignarSolicitud),
+        *_PARES_MS3,
     ],
 )
 def test_contrato_coincide_con_esquema_real(contrato, real) -> None:
@@ -405,9 +665,11 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
     for nombre in (
         "RegistroSolicitud",
         "LoginSolicitud",
-        "RolAsignarSolicitud",
         "UsuarioRespuesta",
         "TokenRespuesta",
+        "NotificacionRespuesta",
+        "RepuestoReservado",
+        "DisponibilidadRepuestosRespuesta",
         "VehiculoCrear",
         "VehiculoActualizar",
         "VehiculoRespuesta",
@@ -417,11 +679,13 @@ def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
         "CambioEstadoSolicitud",
         "EntregaSolicitud",
         "CancelacionClienteSolicitud",
+        "SolicitudCancelacionRespuesta",
         "HistorialEstadoRespuesta",
         "BitacoraCrear",
         "BitacoraRespuesta",
         "RepuestoBitacoraEntrada",
         "RepuestoBitacoraRespuesta",
+        "MecanicoSobreLimite",
         "EvidenciaSubida",
         "EvidenciaRespuesta",
         "UrlDescargaRespuesta",
@@ -490,6 +754,12 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     assert "reasignación conserva el estado" in descripcion_asignacion
     assert "Entregado y Cancelado" in descripcion_asignacion
 
+    descripcion_capacidad = paths[
+        "/api/ordenes/configuracion/capacidad/mecanicos"
+    ]["put"]["description"]
+    assert "entero positivo" in descripcion_capacidad
+    assert "valor anterior y el nuevo" in descripcion_capacidad
+
     cambio = schemas["CambioEstadoSolicitud"]
     assert cambio["additionalProperties"] is False
     assert cambio["properties"]["estado_destino"]["exclusiveMinimum"] == 0
@@ -497,13 +767,14 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
     assert "Obligatoria al pasar a Cancelado" in (
         cambio["properties"]["observacion"]["description"]
     )
-    assert "Cancelado exige una observación" in (
+    assert "exige un motivo no vacío" in (
         paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
     )
     descripcion_cambio = paths["/api/ordenes/{orden_id}/estado"]["patch"]["description"]
-    assert "1 → 2" in descripcion_cambio and "3 → 4/5" in descripcion_cambio
+    assert "1 → 2" in descripcion_cambio and "3 → 4/5/8" in descripcion_cambio
     assert "operaciones" in descripcion_cambio or "decisión verificada" in descripcion_cambio
-    assert "siguen pendientes" in descripcion_cambio
+    assert "bloquearlos no implementa esos flujos" in descripcion_cambio
+    assert "5 → 6 al Mecánico asignado" in descripcion_cambio
     assert "operación específica" in paths["/api/ordenes/{orden_id}/estado"]["patch"]["responses"]["409"]["description"]
     assert paths["/api/ordenes/{orden_id}/estado"]["patch"]["requestBody"][
         "content"
@@ -519,6 +790,12 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
             "content"
         ]["application/json"]["schema"]["items"]["$ref"]
         == "#/components/schemas/HistorialEstadoRespuesta"
+    )
+    assert (
+        paths["/api/ordenes/vehiculo/{vehiculo_id}/historial"]["get"]["responses"][
+            "200"
+        ]["content"]["application/json"]["schema"]["$ref"]
+        == "#/components/schemas/HistorialOrdenesVehiculoRespuesta"
     )
 
 
@@ -631,6 +908,24 @@ def test_openapi_historial_publica_lista_protegida_y_errores(aplicacion, prefijo
     assert respuesta["type"] == "array"
     assert respuesta["items"] == {"$ref": "#/components/schemas/HistorialEstadoRespuesta"}
     assert {"200", "401", "404", "422", "500"} <= set(operacion["responses"])
+
+
+def test_openapi_ms2_documenta_coordinacion_idempotente_de_envio_inicial() -> None:
+    operacion = ms2_app.openapi()["paths"][
+        "/ordenes/{orden_id}/envios-presupuesto"
+    ]["post"]
+    assert "únicamente presupuesto_id" in operacion["description"]
+    assert "idempotente el reintento" in operacion["description"]
+    assert {"403", "409", "503"} <= set(operacion["responses"])
+
+
+def test_openapi_ms2_patch_distingue_rechazo_inicial_de_cancelacion_generica() -> None:
+    descripcion = ms2_app.openapi()["paths"]["/ordenes/{orden_id}/estado"]["patch"][
+        "description"
+    ]
+    assert "3 → 4/5/8" in descripcion
+    assert "rechazo inicial verificado" in descripcion
+    assert "no por cancelación genérica" in descripcion
 
 
 

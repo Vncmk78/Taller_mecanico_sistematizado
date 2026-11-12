@@ -1,34 +1,17 @@
 # 🧪 TAREA 8: Pruebas Unitarias y de Integración
 
-**Status:** ✅ COMPLETADA  
+**Carácter:** registro de pruebas y de resultados de una ejecución anterior
 **Framework:** pytest + FastAPI TestClient  
 **Coverage:** Autenticación, Autorización, JWT, Gateway, Propiedad de Recursos
 
 ---
 
-> ⚠️ **Corrección de estado — la versión anterior de este documento afirmaba un
-> resultado que no ocurría**
->
-> Decía «Framework: Jest + Supertest · Total: 50+ test cases · `npm test` → 50+
-> passed». Ejecutando `npm test` en la raíz **ninguna suite llega a cargar**: las
-> cinco fallan al resolver sus imports.
->
-> ```
-> Cannot find module '../../src/utils/jwt.util'   from '__tests__/unit/jwt.test.js'
-> Cannot find module '../../src/models/User'      from '__tests__/unit/user.test.js'
-> Cannot find module '../../src/index'            from '__tests__/integration/*.test.js'
-> ```
->
-> La causa es que los tests apuntan a `<raíz>/src/`, pero el código Node está en
-> `backend/src/`; y además `src/models/User.js` **no existe en el repositorio**,
-> aunque `backend/src/database/users.db.js:1` lo importa. Es decir, el monolito
-> Node está incompleto, no solo sus pruebas.
->
-> Ese monolito **no es el sistema en ejecución**: la arquitectura vigente son los
-> microservicios FastAPI de `backend/services/*` con la Gateway de
-> `backend/gateway/`. La cobertura que esta tarea pide **sí existe**, pero en
-> Python y con otra escala. A partir de aquí el documento describe la suite real;
-> al final se conserva el inventario de la suite Jest como registro histórico.
+> Los conteos y resultados de este documento corresponden a la ejecución
+> registrada originalmente; no acreditan el estado de una revisión posterior.
+> El backend Node y su suite Jest se retiraron del árbol activo por no estar
+> conectados con el sistema FastAPI. Sus fuentes anteriores permanecen en Git.
+> Las pruebas actuales se ejecutan desde `backend/` con pytest y desde
+> `frontend/` con Vitest.
 
 ---
 
@@ -42,7 +25,6 @@ La suite vigente cubre, con **1150 pruebas** en 55 archivos:
 - ✅ Propiedad de recursos y acceso cruzado, con `404` indistinguible
 - ✅ Acceso indebido entre roles y recursos ajenos del mismo rol
 - ✅ Autenticación por canales web y móvil
-- ✅ Credenciales vacías o inválidas y cuentas con roles múltiples
 - ✅ API Gateway: enrutamiento, formato de errores, OpenAPI, CORS, evidencias, health
 - ✅ Integración real del JWT emitido por MS1 validado en MS2 a través de la Gateway
 - ✅ Contratos de MS3 (presupuestos, aislamiento, persistencia) y MS4 (evidencias, ciclo de archivos, huérfanos)
@@ -84,7 +66,6 @@ backend/
 │   ├── test_autenticacion_canales.py               (10)  Autenticación por canales web/móvil
 │   ├── test_auth_api.py                            (8)  Registro, login, /auth/me
 │   ├── test_autorizacion.py                        (6)  401 vs 403, multirol
-│   ├── test_credenciales_vacias_y_multirol.py       (29)  Credenciales vacías/inválidas y cuentas multirol
 │   ├── test_decisiones_presupuesto_integracion.py  (28)  Decisiones de presupuesto
 │   ├── test_decisiones_presupuesto_postgresql.py   (45)  Decisiones en PostgreSQL (se omiten sin PG)
 │   ├── test_gateway_errores_proxy.py               (28)  Errores del proxy
@@ -143,165 +124,6 @@ por defecto, así que la suite corre sin `.env` y sin PostgreSQL. 55 pruebas se
 omiten si no hay servicios externos: 10 de MinIO
 (`docker compose up -d minio minio_init`) y 45 de PostgreSQL descartable; ver
 la sección «Casos pendientes».
-
-### Suite histórica (Jest) — no ejecutable
-
-Se conserva el inventario original como registro. **No se ejecuta** y no debe
-usarse como evidencia de cobertura; ver el aviso de la cabecera.
-
-```
-backend/
-├── __tests__/
-│   ├── unit/
-│   │   ├── jwt.test.js              (9 tests)
-│   │   └── user.test.js             (10 tests)
-│   │
-│   └── integration/
-│       ├── auth.integration.test.js  (15 tests)
-│       ├── authorization.integration.test.js (11 tests)
-│       └── ownership.integration.test.js (13 tests)
-│
-├── jest.config.js                   (Configuración)
-└── package.json                     (Scripts de test)
-```
-
----
-
-## 🧪 PRUEBAS UNITARIAS
-
-### 1. JWT Utils (`__tests__/unit/jwt.test.js`)
-
-**9 tests:**
-
-```javascript
-✅ Generate token with correct payload
-✅ Verify valid token
-✅ Reject invalid token
-✅ Extract token from Authorization header
-✅ Reject header without Bearer prefix
-✅ Reject missing Authorization header
-✅ Decode token without verification
-✅ Token contains expiration claim
-```
-
-**Qué prueba:**
-- Generación correcta de JWT
-- Verificación de tokens válidos/inválidos
-- Extracción de headers Authorization
-- Claims correctos (id, email, role, exp)
-
----
-
-### 2. User Model (`__tests__/unit/user.test.js`)
-
-**10 tests:**
-
-```javascript
-✅ Validate correct email format
-✅ Reject invalid email format
-✅ Validate password with requirements
-✅ Reject password too short
-✅ Reject password without uppercase
-✅ Reject password without number
-✅ Hash password correctly
-✅ Compare passwords correctly
-✅ Reject wrong password
-✅ User toJSON does not include password
-```
-
-**Qué prueba:**
-- Validación de email (regex)
-- Validación de password (8+, mayús, número)
-- Bcryptjs hashing funciona
-- Comparación segura de contraseñas
-- No expone passwordHash en JSON
-
----
-
-## 🔗 PRUEBAS DE INTEGRACIÓN
-
-### 1. Authentication Endpoints (`auth.integration.test.js`)
-
-**15 tests:**
-
-```javascript
-✅ POST /api/auth/register - Register new user (201)
-✅ POST /api/auth/register - Reject invalid email (400)
-✅ POST /api/auth/register - Reject weak password (400)
-✅ POST /api/auth/register - Reject duplicate email (400)
-✅ POST /api/auth/login - Login successfully (200)
-✅ POST /api/auth/login - Reject wrong password (401)
-✅ POST /api/auth/login - Generic error for non-existent (401)
-✅ GET /api/auth/profile - Get with valid token (200)
-✅ GET /api/auth/profile - Reject missing token (401)
-✅ GET /api/auth/profile - Reject invalid token (401)
-✅ GET /api/auth/verify - Verify valid token (200)
-```
-
-**Qué prueba:**
-- Registro funciona correctamente
-- Validaciones se ejecutan
-- Login con credenciales correctas
-- Errores genéricos (no revela qué falla)
-- Acceso a rutas protegidas requiere token válido
-
----
-
-### 2. Authorization by Roles (`authorization.integration.test.js`)
-
-**11 tests:**
-
-```javascript
-✅ Admin can access /users (200)
-✅ Cliente cannot access /users (403)
-✅ Mecánico cannot access /users (403)
-
-✅ Admin can access /users/:role (200)
-✅ Cliente cannot access /users/:role (403)
-✅ Mecánico cannot access /users/:role (403)
-
-✅ Reject request without token (401)
-✅ Reject request with invalid token (401)
-
-✅ All roles can access /profile (200)
-```
-
-**Qué prueba:**
-- Roles tienen permisos correctos
-- Admin solo accede a /users
-- Cliente/Mecánico no pueden listar usuarios
-- Token requerido en rutas protegidas
-- Middleware de autorización funciona
-
----
-
-### 3. Resource Ownership (`ownership.integration.test.js`)
-
-**13 tests:**
-
-```javascript
-✅ Cliente can access their own order (200)
-✅ Cliente cannot access another's order (403)
-
-✅ Cliente sees only their orders
-✅ Admin can access any order (200)
-✅ Admin can see all orders (200)
-
-✅ Mecánico cannot access unassigned order (403)
-
-✅ Cliente cannot update other's order (403)
-✅ Mecánico cannot update unassigned (403)
-✅ Admin can update any order (200)
-```
-
-**Qué prueba:**
-- Verificación de propiedad funciona
-- Cliente solo ve sus órdenes
-- Admin accede a todo sin restricción
-- Prevención de acceso cruzado
-- PATCH solo por propietario o admin
-
----
 
 ## 🚀 CÓMO EJECUTAR LAS PRUEBAS
 
@@ -371,7 +193,6 @@ python verificar_conexion.py     # requiere los 4 servicios de DB levantados
 |---|---|---|
 | `shared/auth.py` — emisión y validación de JWT | `test_jwt.py` (11), `test_integridad_token_jwt.py` (12) | 23 |
 | `services/ms1_auth` — registro, login, `/auth/me`, roles, seguridad, canales web/móvil | `test_auth_api.py` (8), `test_autorizacion.py` (6), `test_usuarios_roles.py` (43), `test_historial_roles.py` (6), `test_login_intentos_fallidos.py` (2), `test_autenticacion_canales.py` (10), `test_normalizacion_401_403.py` (14), `test_seguridad_autenticacion.py` (12) | 101 |
-| `services/ms1_auth` — credenciales vacías o inválidas y cuentas con roles múltiples | `test_credenciales_vacias_y_multirol.py` | 29 |
 | `services/ms2_taller` — vehículos | `test_vehiculos_api.py` | 58 |
 | `services/ms2_taller` — órdenes y asignación de mecánico | `test_ordenes_api.py` (142), `test_asignacion_ordenes_api.py` (24) | 166 |
 | `services/ms2_taller` — validadores de dominio | `test_validadores_orden.py` | 22 |
@@ -398,11 +219,6 @@ y cuentan como pruebas que pasan.
   estado, responsable ni fechas.
 - Rollback: los fallos de persistencia no dejan escrituras parciales.
 - Idempotencia: repetir la misma asignación no crea historial duplicado.
-- Credenciales vacías o solo espacios: el `422` se resuelve en la capa de
-  schemas, **sin** contar como intento fallido (no puede bloquear la cuenta);
-  la contraseña incorrecta no vacía sí cuenta y bloquea al agotar los intentos,
-  con el mismo mensaje genérico. Las reglas de credenciales aplican igual a una
-  cuenta con varios roles que a una de un rol.
 
 No se publica un porcentaje de cobertura de líneas: la suite no se ejecuta con
 `--cov`, así que cualquier cifra en este documento estaría sin respaldo. Para
@@ -412,19 +228,6 @@ obtenerla:
 python -m pip install pytest-cov
 python -m pytest tests --cov=services --cov=gateway --cov=shared
 ```
-
-### Cobertura de la suite histórica (no vigente)
-
-Se lista solo como registro de lo que la suite Jest pretendía cubrir; varios de
-esos archivos no existen en el repositorio.
-
-- `jwt.util.js` · `models/User.js` — **no existen**
-- `middleware/auth.middleware.js`, `middleware/ownership.middleware.js`,
-  `controllers/auth.controller.js`, `controllers/orders.controller.js`,
-  `routes/auth.routes.js`, `routes/orders.routes.js` — existen en
-  `backend/src/`, pero el módulo `models/User` del que dependen no
-
----
 
 ## 🔍 EJEMPLOS DE PRUEBAS (suite vigente)
 
@@ -448,65 +251,6 @@ def test_get_detalle_cliente_ajeno_recibe_404(...):
 
 ---
 
-## 🔍 EJEMPLOS DE PRUEBAS (suite histórica, Jest)
-
-### Ejemplo 1: JWT Generation
-```javascript
-test('Generate token with correct payload', () => {
-  const payload = { id: 'usr_123', email: 'test@test.cl', role: 'cliente' };
-  const token = JWTUtil.generateToken(payload);
-  
-  expect(token).toBeTruthy();
-  expect(token.split('.').length).toBe(3); // JWT = header.payload.signature
-});
-```
-
-### Ejemplo 2: Password Validation
-```javascript
-test('Reject password without uppercase', () => {
-  const noUppercase = 'password@123';
-  const result = User.validatePassword(noUppercase);
-  
-  expect(result.valid).toBe(false);
-  expect(result.message).toContain('mayúscula');
-});
-```
-
-### Ejemplo 3: Authorization
-```javascript
-test('Admin can access /users', async () => {
-  const res = await request(app)
-    .get('/api/auth/users')
-    .set('Authorization', `Bearer ${adminToken}`);
-
-  expect(res.statusCode).toBe(200);
-  expect(res.body.users).toBeDefined();
-});
-
-test('Cliente cannot access /users', async () => {
-  const res = await request(app)
-    .get('/api/auth/users')
-    .set('Authorization', `Bearer ${clienteToken}`);
-
-  expect(res.statusCode).toBe(403);
-  expect(res.body.error).toContain('Acceso denegado');
-});
-```
-
-### Ejemplo 4: Resource Ownership
-```javascript
-test('Cliente cannot access another clients order', async () => {
-  const res = await request(app)
-    .get(`/api/orders/${orden1Id}`)
-    .set('Authorization', `Bearer ${cliente2Token}`);
-
-  expect(res.statusCode).toBe(403);
-  expect(res.body.error).toContain('No tienes permiso');
-});
-```
-
----
-
 ## ✅ RESULTADOS ESPERADOS
 
 ### Suite vigente — resultado verificado
@@ -520,61 +264,6 @@ Reproducir con `cd backend && python -m pytest tests -q`. De las 1150 pruebas,
 descartable) y **0 fallan**; ya no queda ningún `xfail`: los huecos de seguridad
 §4.3 y §4.4 están corregidos (detalle en la sección «Casos pendientes»).
 
-### Suite histórica (Jest) — resultado real
-
-La salida que sigue **no** es la de este repositorio. `npm test` falla al
-cargar las cinco suites, por lo que estas líneas no deben usarse como evidencia
-de cobertura:
-
-```
-
-```
- PASS  __tests__/unit/jwt.test.js (150ms)
-  JWTUtil - JWT Generation and Verification
-    ✓ Generate token with correct payload (5ms)
-    ✓ Verify valid token (3ms)
-    ✓ Reject invalid token (2ms)
-    ✓ Extract token from Authorization header (2ms)
-    ✓ Reject header without Bearer prefix (2ms)
-    ✓ Reject missing Authorization header (2ms)
-    ✓ Decode token without verification (2ms)
-    ✓ Token contains expiration claim (2ms)
-    ✓ Token has correct structure (2ms)
-
- PASS  __tests__/unit/user.test.js (250ms)
-  User Model - Validation and Hashing
-    ✓ Validate correct email format (2ms)
-    ✓ Reject invalid email format (3ms)
-    ✓ Validate password with correct requirements (2ms)
-    ✓ Reject password too short (2ms)
-    ✓ Reject password without uppercase (2ms)
-    ✓ Reject password without number (2ms)
-    ✓ Hash password correctly (75ms)
-    ✓ Compare passwords correctly (85ms)
-    ✓ Reject wrong password (80ms)
-    ✓ User toJSON does not include password (2ms)
-
- PASS  __tests__/integration/auth.integration.test.js (450ms)
-  Authentication Endpoints Integration
-    ✓ POST /api/auth/register - Register new user (120ms)
-    ✓ POST /api/auth/register - Reject invalid email (30ms)
-    ✓ POST /api/auth/register - Reject weak password (30ms)
-    ✓ POST /api/auth/register - Reject duplicate email (100ms)
-    ✓ POST /api/auth/login - Login successfully (110ms)
-    ✓ POST /api/auth/login - Reject wrong password (80ms)
-    ✓ POST /api/auth/login - Generic error for non-existent user (80ms)
-    ✓ GET /api/auth/profile - Get user profile with valid token (100ms)
-    ✓ GET /api/auth/profile - Reject missing token (20ms)
-    ✓ GET /api/auth/profile - Reject invalid token (20ms)
-    ✓ GET /api/auth/verify - Verify valid token (100ms)
-
-Tests:       50+ passed, 0 failed
-Snapshots:   0 total
-Time:        1.234s
-```
-
----
-
 ## ⏳ CASOS PENDIENTES
 
 De las 1150 pruebas de la suite vigente, **1095 pasan**. Las restantes **55 no
@@ -583,7 +272,7 @@ Antes había además 4 `xfail` estrictos que registraban huecos de seguridad
 abiertos (§4.3 y §4.4 de la matriz de autorización): **ya están corregidos**,
 las marcas se retiraron y sus casos quedaron como pruebas de regresión con
 código de rechazo exacto (3 casos nuevos y las 4 antiguas convertidas, más
-las de versiones/inventario de §4.4 → 18 en
+las de versiones/inventario de §4.4 → 25 en
 `test_acceso_indebido_roles.py`). Este documento mantiene todos los estados
 identificados; ninguno se esconde ni se «bendice».
 
@@ -653,11 +342,12 @@ Los 4 `xfail` estrictos que registraban los huecos de
   versiones y a los movimientos de stock con `orden_id` de MS3
   (`presupuestos.py` y `inventario.py::registrar`): orden ajena o inexistente
   `404` indistinguible, MS2 caído `503`, todo fail-closed antes de escribir.
-- **Casos nuevos de evidencia (§4.3):**
-  `test_asignacion_a_un_mecanico_inactivo_responde_409`,
-  `test_asignacion_sin_ms1_responde_503_y_deja_la_orden_intacta` y
-  `test_mecanico_asignado_crea_presupuesto_de_su_orden` (mecánico asignado que
-  SÍ presupuesta su orden, `201`).
+- **Casos nuevos de evidencia (§4.3):** en `test_acceso_indebido_roles.py`,
+  `test_ms1_caido_no_modifica_reasignacion_ni_historial` (falla cerrada `503`
+  de MS1 con la orden intacta) y `test_mecanico_asignado_crea_presupuesto_con_su_identidad`
+  (mecánico asignado que SÍ presupuesta su orden, `201`); la validación del
+  destino inactivo o sin rol `mecanico` queda expuesta en
+  `test_validacion_referencias_personal.py` (`test_ms1_destino_invalido_se_rechaza`).
 - **Casos nuevos de evidencia (§4.4):**
   `test_mecanico_no_asignado_no_versiona_ni_edita_presupuesto_ajeno`,
   `test_mecanico_asignado_versiona_presupuesto_de_su_orden`,
@@ -700,6 +390,7 @@ ningún archivo de esa suite en este registro.
 
 ---
 
+
 ## 🛠️ CONFIGURACIÓN
 
 ### Suite vigente
@@ -707,29 +398,6 @@ ningún archivo de esa suite en este registro.
 No requiere archivo de configuración: `pytest` descubre `tests/` por convención
 y `tests/conftest.py` fija las variables de entorno de pruebas. Las dependencias
 de prueba se instalan con `requirements-dev.txt` (`pytest`, `httpx`, `respx`).
-
-### Suite histórica (jest.config.js) — no vigente
-
-```javascript
-module.exports = {
-  testEnvironment: 'node',
-  testMatch: ['**/__tests__/**/*.test.js'],
-  collectCoverageFrom: [
-    'src/**/*.js',      // ← ruta inexistente: el código Node está en backend/src/
-    '!src/index.js'
-  ],
-  coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'html'],
-  testTimeout: 10000,
-  verbose: true
-};
-```
-
-Los tres caminos que fallan —`src/**/*.js`, `main: "src/index.js"` en
-`package.json` y los `require('../../src/...')` de `__tests__/`— apuntan a
-`<raíz>/src/`, que no existe. Por eso la suite histórica no arranca.
-
----
 
 ## 📈 BENEFICIOS
 
@@ -746,19 +414,15 @@ Los tres caminos que fallan —`src/**/*.js`, `main: "src/index.js"` en
 **Pruebas completas y verificadas sobre el sistema en ejecución:**
 - 1150 pruebas: 1095 pasan, 55 se omiten por servicios externos (10 MinIO y 45 PostgreSQL descartable), 0 fallos y 0 `xfail` (los huecos §4.3/§4.4 ya están corregidos)
 - Autenticación verificada
-- Credenciales vacías/inválidas y cuentas con roles múltiples verificadas
 - Autorización verificada, con `401` y `403` diferenciados
 - Propiedad de recursos y acceso cruzado verificados, con `404` indistinguible
 - Contrato de claims del JWT verificado contra `shared/auth.py`
 - Gateway verificada: enrutamiento, reenvío de `Authorization`, errores, OpenAPI
 - Integración real JWT de MS1 → Gateway → MS2 verificada
 
-**Pendiente de decisión del equipo:** la suite Jest de la raíz
-(`__tests__/`, `jest.config.js`, `package.json`) no es ejecutable y su código
-(`backend/src/`) está incompleto por el `models/User` ausente. Recomiendo
-retirarla cuando el sistema FastAPI sea el único vigente, pero **no se ha
-tocado ningún archivo de esa suite** en este cambio: es una decisión del equipo,
-no una corrección silenciosa.
+El código Node y su suite Jest fueron retirados. Esta retirada no elimina
+pruebas de `backend/tests/` ni de `frontend/src/`, que verifican el sistema
+vigente. Los ejemplos de endpoints del monolito no son contratos disponibles.
 
 **TAREA 8: COMPLETADA** ✅
 

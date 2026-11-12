@@ -46,7 +46,7 @@ def _nombre(base: str) -> str:
 
 
 @pytest.fixture
-def api(db: Session) -> Iterator[TestClient]:
+def api(db: Session, ordenes_verificadas_para_persistencia) -> Iterator[TestClient]:
     app.dependency_overrides[get_db] = lambda: db
     try:
         with TestClient(app) as cliente:
@@ -139,6 +139,7 @@ def test_no_se_elimina_un_proveedor_con_repuestos(api: TestClient, db: Session, 
 def test_alta_de_repuesto_con_stock_inicial_deja_un_ingreso(
     api: TestClient, db: Session, proveedor: dict
 ) -> None:
+    fabricas.umbral_general_vigente(db, valor=5)
     rep = _crear_repuesto(api, proveedor["proveedor_id"], stock_inicial=12, umbral_particular=4)
     assert rep["stock"] == 12 and rep["umbral_efectivo"] == 4 and rep["bajo_umbral"] is False
     assert rep["proveedor_nombre"] == proveedor["nombre"]
@@ -197,6 +198,7 @@ def test_datos_invalidos_de_repuesto_son_422(api: TestClient, proveedor: dict, c
 
 
 def test_cambiar_umbral_queda_en_el_historial(api: TestClient, db: Session, proveedor: dict) -> None:
+    fabricas.umbral_general_vigente(db, valor=1)
     rep = _crear_repuesto(api, proveedor["proveedor_id"], stock_inicial=3)
     rid = rep["repuesto_id"]
     r = api.patch(f"/repuestos/{rid}", headers=ADMIN,

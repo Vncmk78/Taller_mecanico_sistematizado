@@ -15,6 +15,8 @@ export interface NavSection {
 
 interface AppNavLinkProps extends NavItem {
   variant: 'sidebar' | 'topnav';
+  /** Se invoca al elegir el enlace (por ejemplo, para cerrar el menú móvil). */
+  onNavigate?: () => void;
 }
 
 const baseClasses: Record<AppNavLinkProps['variant'], string> = {
@@ -26,20 +28,21 @@ const baseClasses: Record<AppNavLinkProps['variant'], string> = {
 
 const activeClasses: Record<AppNavLinkProps['variant'], string> = {
   sidebar:
-    'bg-primary-blue text-white shadow-[0_4px_15px_rgba(21,40,63,0.25)] translate-x-[5px]',
-  topnav: 'bg-primary-blue text-white shadow-[0_4px_15px_rgba(21,40,63,0.25)]',
+    'bg-primary-orange text-white shadow-[0_4px_15px_rgba(144,24,38,0.5)] translate-x-[5px]',
+  topnav: 'bg-primary-orange text-white shadow-[0_4px_15px_rgba(144,24,38,0.35)]',
 };
 
 const idleClasses: Record<AppNavLinkProps['variant'], string> = {
-  sidebar: 'text-text-muted hover:bg-bg-secondary hover:text-primary-blue hover:translate-x-[5px]',
-  topnav: 'text-text-muted hover:bg-bg-secondary hover:text-primary-blue',
+  sidebar: 'text-[#CBD5E1] hover:bg-white/5 hover:text-white hover:translate-x-[5px]',
+  topnav: 'text-[#CBD5E1] hover:text-white',
 };
 
-export function AppNavLink({ to, label, icon, end, variant }: AppNavLinkProps) {
+export function AppNavLink({ to, label, icon, end, variant, onNavigate }: AppNavLinkProps) {
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={onNavigate}
       className={({ isActive }) =>
         `${baseClasses[variant]} ${isActive ? activeClasses[variant] : idleClasses[variant]}`
       }

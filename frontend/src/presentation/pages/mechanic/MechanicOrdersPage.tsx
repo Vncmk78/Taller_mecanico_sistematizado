@@ -73,7 +73,7 @@ export function MechanicOrdersPage() {
           : 'No tiene órdenes asignadas por el momento.';
 
     return (
-        <div className="animate-fade-in p-10">
+        <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
             <h2 className="text-3xl font-bold mb-2">Mis Órdenes</h2>
             <p className="text-text-muted mb-6">Órdenes de trabajo asignadas a tu cuenta</p>
 

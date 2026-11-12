@@ -6,7 +6,7 @@ OpenAPI comparan sus campos y obligatoriedad con los esquemas reales de MS2.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +27,8 @@ _EJEMPLO_RESPUESTA: dict[str, object] = {
     "creado_por_id": 99,
     "creado_en": "2026-09-28T10:30:00-03:00",
     "actualizado_en": "2026-09-28T10:30:00-03:00",
+    "devuelto_en": None,
+    "devuelto_por_id": None,
 }
 
 _EJEMPLO_CAMBIAR_ESTADO: dict[str, object] = {
@@ -92,6 +94,113 @@ class AsignacionMecanicoActualizar(BaseModel):
     )
 
 
+class CapacidadMecanicoActualizar(BaseModel):
+    """Límite de órdenes activas que un Administrador configura por mecánico."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"max_ordenes_activas": 5}]},
+    )
+
+    max_ordenes_activas: int = Field(
+        gt=0,
+        strict=True,
+        description="Máximo positivo de órdenes asignadas no terminales por mecánico.",
+        examples=[5],
+    )
+
+
+class MecanicoSobreLimite(BaseModel):
+    """Mecánico cuya carga activa supera el máximo configurado."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"mecanico_id": 12, "ordenes_activas": 6}]}
+    )
+
+    mecanico_id: int = Field(description="Referencia lógica al usuario Mecánico de MS1.")
+    ordenes_activas: int = Field(
+        description="Órdenes asignadas que no están Entregadas ni Canceladas."
+    )
+
+
+class CapacidadMecanicoRespuesta(BaseModel):
+    """Configuración vigente e información de mecánicos sobre el nuevo límite."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "max_ordenes_activas": 5,
+                    "actualizado_por_id": 99,
+                    "actualizado_en": "2026-10-20T10:00:00-03:00",
+                    "mecanicos_sobre_limite": [],
+                }
+            ]
+        }
+    )
+
+    max_ordenes_activas: int | None = Field(
+        description="Nulo hasta que un Administrador configure el límite."
+    )
+    actualizado_por_id: int | None = Field(
+        description="Referencia lógica al Administrador que configuró el valor."
+    )
+    actualizado_en: datetime = Field(description="Fecha y hora de la configuración.")
+    mecanicos_sobre_limite: list[MecanicoSobreLimite] = Field(
+        description="Mecánicos cuya carga actual supera el máximo recién configurado."
+    )
+
+
+class CupoDiarioIngresosActualizar(BaseModel):
+    """Límite de ingresos físicos que un Administrador configura por jornada."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"max_ingresos_diarios": 12}]},
+    )
+
+    max_ingresos_diarios: int = Field(
+        gt=0,
+        strict=True,
+        description="Máximo positivo de ingresos físicos en una jornada local.",
+        examples=[12],
+    )
+
+
+class CupoDiarioIngresosRespuesta(BaseModel):
+    """Límite diario vigente, jornada y número de ingresos registrados."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "max_ingresos_diarios": 12,
+                    "actualizado_por_id": 99,
+                    "actualizado_en": "2026-10-23T10:00:00-03:00",
+                    "jornada_local": "2026-10-23",
+                    "ingresos_registrados": 4,
+                    "sobre_limite": False,
+                }
+            ]
+        }
+    )
+
+    max_ingresos_diarios: int | None = Field(
+        description="Nulo hasta que un Administrador configure el límite."
+    )
+    actualizado_por_id: int | None = Field(
+        description="Referencia lógica al Administrador que configuró el valor."
+    )
+    actualizado_en: datetime
+    jornada_local: date
+    ingresos_registrados: int = Field(
+        description="Ingresos físicos registrados en la jornada local actual."
+    )
+    sobre_limite: bool = Field(
+        description="Indica si el uso actual excede el límite configurado."
+    )
+
+
 class OrdenRespuesta(BaseModel):
     """Representación inicial de una orden expuesta por MS2."""
 
@@ -119,6 +228,52 @@ class OrdenRespuesta(BaseModel):
     actualizado_en: datetime = Field(
         description="Fecha y hora de la última actualización de la orden."
     )
+    devuelto_en: datetime | None = Field(
+        description="Fecha y hora de devolución física; nula si no se registró."
+    )
+    devuelto_por_id: int | None = Field(
+        description="Responsable de la devolución en MS1; nulo si no se registró."
+    )
+
+
+class DevolucionSolicitud(BaseModel):
+    """Body vacío obligatorio: fecha y responsable los obtiene MS2."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{}]})
+
+
+class DevolucionOrdenRespuesta(OrdenRespuesta):
+    """Conserva Cancelado y confirma la auditoría original de devolución."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [{
+        **_EJEMPLO_RESPUESTA, "estado_codigo": 8,
+        "devuelto_en": "2026-09-28T15:00:00-03:00", "devuelto_por_id": 99,
+    }]})
+
+    devuelto_en: datetime
+    devuelto_por_id: int = Field(gt=0)
+
+
+class HistorialOrdenesVehiculoRespuesta(BaseModel):
+    """Página del historial de órdenes visibles de un vehículo."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "items": [_EJEMPLO_RESPUESTA],
+                    "total": 1,
+                    "limit": 20,
+                    "offset": 0,
+                }
+            ]
+        }
+    )
+
+    items: list[OrdenRespuesta] = Field(description="Órdenes de la página actual.")
+    total: int = Field(description="Cantidad total de órdenes visibles del vehículo.")
+    limit: int = Field(description="Máximo de elementos solicitado para la página.")
+    offset: int = Field(description="Índice del primer elemento de la página.")
 
 
 class CambioEstadoSolicitud(BaseModel):
@@ -145,6 +300,14 @@ class CambioEstadoSolicitud(BaseModel):
     )
 
 
+class EntregaOrdenRespuesta(OrdenRespuesta):
+    """Orden completa y confirmación auditable de entrega, también ante reintentos."""
+
+    entregado_en: datetime
+    entregado_por_id: int
+    historial_id: int
+
+
 class EntregaSolicitud(BaseModel):
     """Datos controlables al registrar la entrega física de una orden."""
 
@@ -163,7 +326,7 @@ class EntregaSolicitud(BaseModel):
 
 
 class CancelacionClienteSolicitud(BaseModel):
-    """Motivo obligatorio con el que el cliente cancela su orden."""
+    """Motivo obligatorio con el que el cliente solicita cancelar su orden."""
 
     model_config = ConfigDict(
         str_strip_whitespace=True,
@@ -176,6 +339,29 @@ class CancelacionClienteSolicitud(BaseModel):
         description="Motivo de la cancelación; no puede estar vacío.",
         examples=["El cliente ya no desea el servicio"],
     )
+
+
+class SolicitudCancelacionRespuesta(BaseModel):
+    """Solicitud auditable que el Administrador debe revisar."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{
+            "solicitud_id": 12, "orden_id": 31, "cliente_usuario_id": 42,
+            "estado_al_solicitar": 3, "motivo": "El cliente no continuará",
+            "estado": "pendiente", "solicitada_en": "2026-10-23T10:30:00-03:00",
+            "administrador_id": None, "confirmada_en": None,
+        }]}
+    )
+
+    solicitud_id: int
+    orden_id: int
+    cliente_usuario_id: int
+    estado_al_solicitar: int
+    motivo: str
+    estado: Literal["pendiente", "confirmada"]
+    solicitada_en: datetime
+    administrador_id: int | None
+    confirmada_en: datetime | None
 
 
 class HistorialEstadoRespuesta(BaseModel):
@@ -298,7 +484,12 @@ class RepuestoBitacoraRespuesta(BaseModel):
 class BitacoraRespuesta(BaseModel):
     """Entrada de la bitácora de trabajo de una orden expuesta por MS2."""
 
-    model_config = ConfigDict(json_schema_extra={"examples": [_EJEMPLO_BITACORA]})
+    # Todo campo con valor por defecto se serializa siempre: el esquema de
+    # salida lo marca obligatorio (contrato 2.0.1, diferencia D-02).
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [_EJEMPLO_BITACORA]},
+        json_schema_serialization_defaults_required=True,
+    )
 
     bitacora_id: int = Field(
         description="Identificador de la entrada de la bitácora.", examples=[77]

@@ -113,6 +113,20 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         expect(within(selector).getByRole('option', { name: 'Listo' })).toBeInTheDocument();
     });
 
+    it('marca el destino como obligatorio y expone ids estables en los campos', async () => {
+        vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
+
+        renderPage();
+
+        const selector = await screen.findByLabelText('Siguiente estado de la orden 101');
+        expect(selector).toHaveAttribute('id', 'orden-101-destino');
+        expect(selector).toHaveAttribute('aria-required', 'true');
+
+        const observacion = screen.getByLabelText('Observación de la orden 101');
+        expect(observacion).toHaveAttribute('id', 'orden-101-observacion');
+        expect(observacion).toHaveAttribute('name', 'observacion');
+    });
+
     it('pide confirmación antes de avanzar y recién entonces llama a cambiarEstado', async () => {
         vi.mocked(orderService.getOrders).mockResolvedValue([ordEnReparacion]);
         vi.mocked(orderService.cambiarEstado).mockResolvedValue({
@@ -298,14 +312,15 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         expect(screen.queryByLabelText('Siguiente estado de la orden 102')).not.toBeInTheDocument();
     });
 
-    // La vista no sustituye operaciones específicas. Los avances de envío y
-    // stock posterior se conservan con sus precondiciones funcionales pendientes.
+    // La vista ofrece solo acciones cuyo actor está definido para el mecánico.
+    // El envío inicial y la confirmación de disponibilidad son operaciones
+    // administrativas específicas, no avances disponibles para el mecánico.
     describe('matriz de estados: qué ofrece el selector en cada uno', () => {
         const ESPERADOS: Record<number, string[]> = {
             1: [],
-            2: ['Esperando aprobación de presupuesto'],
+            2: [],
             3: [],
-            4: ['En reparación'],
+            4: [],
             5: ['Listo'],
             6: [],
             7: [],
@@ -357,12 +372,9 @@ describe('MechanicStatusPage: actualización de estados de las órdenes', () => 
         });
     });
 
-    // Los tres avances conservados en AVANCES_MECANICO, y no solo el 5->6 que
-    // ya cubría la suite.
+    // El único avance del mecánico confirmado por la sistematización.
     describe('avances permitidos por el mecánico', () => {
         it.each([
-            [2, 3, 'Esperando aprobación de presupuesto'],
-            [4, 5, 'En reparación'],
             [5, 6, 'Listo'],
         ])('avanza de %i a %i ("%s") con su observación', async (origen, destino, etiqueta) => {
             vi.mocked(orderService.getOrders).mockResolvedValue([orden('101', origen)]);

@@ -6,7 +6,10 @@ que funcione igual en local, en tests y en funciones serverless; el lifespan
 de la app solo lo cierra al apagar (`cerrar_cliente`, ver `gateway/main.py`).
 
 Los timeouts se configuran por fase (decisión 1 de `estudio-httpx-proxy.md`) y
-el prefijo `evidencias` usa read/write más largos porque sube archivos.
+por servicio (decisión R1 de `estudio-resiliencia-timeouts-retries.md`): cada
+microservicio puede tener su propio read/write (`GATEWAY_MS<n>_TIMEOUT_SECONDS`);
+si no lo tiene, rigen los generales y el prefijo `evidencias` usa read/write
+más largos porque sube archivos.
 """
 from __future__ import annotations
 
@@ -15,6 +18,7 @@ import asyncio
 import httpx
 
 from gateway.config import settings
+from gateway.rutas import servicio_de
 
 # Referencias del cliente compartido y del event loop en que se creó.
 _cliente: httpx.AsyncClient | None = None
@@ -23,26 +27,39 @@ _loop: asyncio.AbstractEventLoop | None = None
 _LIMITES = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 
 
-def timeout_para(prefijo: str) -> httpx.Timeout:
-    """Timeout por fase para un prefijo; `evidencias` usa un plazo mayor.
+def timeout_servicio(prefijo: str) -> float | None:
+    """Timeout propio del servicio que atiende `prefijo`, o `None` si no tiene.
 
-    read y write se amplían para el prefijo de archivos; connect y pool se
-    mantienen en los valores generales. No se define `total`: cada fase tiene
+    Se lee de `settings` en cada llamada (no al importar) para que cambiar la
+    configuración en caliente o en un test tenga efecto.
+    """
+    servicio = servicio_de(prefijo)
+    if servicio is None or not servicio.variable_timeout:
+        return None
+    return getattr(settings, servicio.variable_timeout, None)
+
+
+def timeout_para(prefijo: str) -> httpx.Timeout:
+    """Timeout por fase para un prefijo.
+
+    Prioridad de read/write: 1) el timeout propio del servicio destino
+    (`GATEWAY_MS<n>_TIMEOUT_SECONDS`); 2) `TIMEOUT_ARCHIVOS_SECONDS` para el
+    prefijo `evidencias`; 3) los generales. connect y pool son siempre los
+    generales: no dependen del servicio. No se define `total`: cada fase tiene
     su propio techo.
     """
-    archivos = prefijo == "evidencias"
+    propio = timeout_servicio(prefijo)
+    if propio is not None:
+        lectura = escritura = propio
+    elif prefijo == "evidencias":
+        lectura = escritura = settings.TIMEOUT_ARCHIVOS_SECONDS
+    else:
+        lectura = settings.TIMEOUT_READ_SECONDS
+        escritura = settings.TIMEOUT_WRITE_SECONDS
     return httpx.Timeout(
         connect=settings.TIMEOUT_CONNECT_SECONDS,
-        read=(
-            settings.TIMEOUT_ARCHIVOS_SECONDS
-            if archivos
-            else settings.TIMEOUT_READ_SECONDS
-        ),
-        write=(
-            settings.TIMEOUT_ARCHIVOS_SECONDS
-            if archivos
-            else settings.TIMEOUT_WRITE_SECONDS
-        ),
+        read=lectura,
+        write=escritura,
         pool=settings.TIMEOUT_POOL_SECONDS,
     )
 

@@ -19,12 +19,12 @@ presupuesto para que dos peticiones simultáneas no creen dos "versión 3".
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from services.ms3_presupuestos.services.avisos import registrar_hecho
+
 from collections.abc import Iterable, Sequence
 from decimal import Decimal
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import object_session
 
 from services.ms3_presupuestos.models import (
     DecisionPresupuesto,
@@ -38,7 +38,6 @@ from services.ms3_presupuestos.persistencia import (
     ReglaDeDatosViolada,
     UnidadDeTrabajo,
 )
-from services.ms3_presupuestos.persistencia.repositorios import RepositorioMovimientos
 from services.ms3_presupuestos.schemas.presupuesto import (
     DecisionSalida,
     ItemEntrada,
@@ -49,7 +48,63 @@ from services.ms3_presupuestos.schemas.presupuesto import (
     ResultadoOperacion,
     VersionDetalle,
 )
-from shared.contratos_decisiones import DecisionPresupuestoVerificada
+from services.ms3_presupuestos.services import disponibilidad, reservas
+from shared.contratos_decisiones import (
+    DecisionPresupuestoVerificada,
+    EnvioPresupuestoVerificado,
+)
+
+
+# ------------------------------------------------- conexión con la orden --
+# El estado de la orden vive en MS2 (§8). MS3 lo lee al verificar la orden
+# (GET /ordenes/{id}) y aplica estas reglas ANTES de escribir nada.
+
+ESTADOS_ORDEN = {
+    1: "Recibido", 2: "Esperando diagnóstico", 3: "Esperando aprobación de presupuesto",
+    4: "Esperando repuestos", 5: "En reparación", 6: "Listo", 7: "Entregado", 8: "Cancelado",
+}
+ESPERANDO_APROBACION = 3
+ESTADOS_CERRADOS = frozenset({7, 8})  # Entregado, Cancelado
+
+
+def nombre_estado(estado: int | None) -> str:
+    return ESTADOS_ORDEN.get(estado, "desconocido") if estado is not None else "desconocido"
+
+
+def orden_cerrada(estado: int | None) -> bool:
+    return estado in ESTADOS_CERRADOS
+
+
+def exigir_orden_abierta(orden_id: int, estado: int | None) -> None:
+    """Una orden Entregada o Cancelada ya no admite presupuestos, versiones ni decisiones."""
+    if orden_cerrada(estado):
+        raise ConflictoDeDatos(
+            f"La orden {orden_id} está {nombre_estado(estado)}: su presupuesto ya no admite "
+            "cambios ni decisiones"
+        )
+
+
+def exigir_estado_para_decidir(orden_id: int, estado: int | None, *, primera: bool) -> None:
+    """La primera decisión solo cabe si la orden espera la aprobación (estado 3).
+
+    Si MS2 no informó el estado (None) se deja pasar: MS2 valida al aplicar.
+    """
+    exigir_orden_abierta(orden_id, estado)
+    if primera and estado is not None and estado != ESPERANDO_APROBACION:
+        raise ConflictoDeDatos(
+            f"La orden {orden_id} no está esperando la aprobación del presupuesto "
+            f"(estado actual: {nombre_estado(estado)})"
+        )
+
+
+def liberar_reservas_de_orden_cerrada(uow: UnidadDeTrabajo, orden_id: int, *, usuario_id: int) -> int:
+    """Libera lo que una orden cerrada aún tenía reservado. Idempotente.
+
+    Devuelve cuántas unidades se liberaron (0 si no tenía reservas o ya se hizo).
+    """
+    resultado = reservas.liberar_orden(uow, orden_id, usuario_id=usuario_id,
+                                       clave_operacion=f"cierre-orden-{orden_id}")
+    return 0 if resultado.repetido else sum(m.cantidad for m in resultado.movimientos)
 
 
 # ---------------------------------------------------------------- escritura --
@@ -82,6 +137,11 @@ def reemplazar_items(
         uow.presupuestos.obtener_para_actualizar(presupuesto_id)
         version = uow.presupuestos.version(presupuesto_id, numero)
         uow.sesion.refresh(version)
+        if version.bloqueada:
+            raise ConflictoDeDatos(
+                f"La versión {numero} está aprobada y bloqueada; para modificarla cree una "
+                f"nueva versión (POST /presupuestos/{presupuesto_id}/modificacion)"
+            )
         if not version.editable:
             raise ConflictoDeDatos(
                 f"La versión {numero} ya fue enviada y no se puede modificar; "
@@ -112,7 +172,10 @@ def crear_version(
     - Una corrección de una versión enviada sin decisión la REEMPLAZA: el
       cliente ya no puede decidir sobre la anterior (queda en el historial).
     - Tras una aprobación, la nueva versión es una MODIFICACIÓN
-      (es_modificacion = true): mientras no se apruebe, manda la vigente.
+      (es_modificacion = true): mientras no se apruebe, manda la vigente. La
+      base lo exige (trigger 0009_ms3).
+    - Sin `items` ni `copiar_de` se copia la última versión, salvo que el
+      cliente haya rechazado esa modificación: entonces se copia la aprobada.
     - Los ítems se copian como filas nuevas; jamás se mueven ni se editan
       los de otra versión (además lo impiden los triggers de 0003_ms3).
     """
@@ -135,8 +198,14 @@ def crear_version(
         if items is not None:
             nuevos_items = _construir_items(uow, items)
         else:
-            base = (uow.presupuestos.version(presupuesto_id, copiar_de)
-                    if copiar_de is not None else ultima)
+            if copiar_de is not None:
+                base = uow.presupuestos.version(presupuesto_id, copiar_de)
+            elif vigente is not None and decision is not None and decision.decision == "rechazado":
+                # El cliente rechazó la modificación: se parte de lo APROBADO,
+                # no de la propuesta rechazada.
+                base = vigente
+            else:
+                base = ultima
             nuevos_items = [_copiar_item(i) for i in sorted(base.items, key=lambda i: i.item_id)]
 
         nueva = VersionPresupuesto(
@@ -148,6 +217,33 @@ def crear_version(
         presupuesto.versiones.append(nueva)
         uow.sesion.flush()
     return nueva
+
+
+def crear_modificacion(
+    uow: UnidadDeTrabajo,
+    *,
+    presupuesto_id: int,
+    creado_por_id: int,
+    items: Sequence[ItemEntrada] | None = None,
+) -> VersionPresupuesto:
+    """Modificar el presupuesto APROBADO: siempre una versión nueva (§4.3).
+
+    La versión aprobada queda bloqueada y sigue mandando hasta que el cliente
+    apruebe la modificación. Sin `items`, la nueva versión parte como copia
+    de la aprobada vigente. Sin versión aprobada → 409 (se corrige con una
+    nueva versión normal).
+    """
+    presupuesto = uow.presupuestos.obtener_o_error(presupuesto_id)
+    vigente = presupuesto.version_vigente
+    if vigente is None:
+        raise ConflictoDeDatos(
+            f"El presupuesto {presupuesto_id} no tiene una versión aprobada; las correcciones "
+            f"se hacen con una nueva versión (POST /presupuestos/{presupuesto_id}/versiones)"
+        )
+    return crear_version(
+        uow, presupuesto_id=presupuesto_id, creado_por_id=creado_por_id, items=items,
+        copiar_de=None if items is not None else vigente.numero,
+    )
 
 
 def _copiar_item(item: ItemPresupuesto) -> ItemPresupuesto:
@@ -201,7 +297,24 @@ def enviar_version(uow: UnidadDeTrabajo, *, presupuesto_id: int, numero: int) ->
         uow.sesion.flush()
         uow.sesion.refresh(version)
         efecto = None if presupuesto.version_vigente else "esperando_aprobacion"
+        registrar_hecho(uow,'presupuesto.enviado',presupuesto_id=presupuesto_id,orden_id=presupuesto.orden_id,version=numero)
     return ResultadoOperacion(presupuesto=a_detalle(presupuesto), efecto_en_orden=efecto)
+
+
+def consultar_envio_inicial(
+    uow: UnidadDeTrabajo, *, presupuesto_id: int,
+) -> EnvioPresupuestoVerificado:
+    """Devuelve a MS2 el hecho de envío inicial persistido por este servicio."""
+    presupuesto = obtener_presupuesto(uow, presupuesto_id)
+    if not any(v.numero == 1 and v.enviada for v in presupuesto.versiones):
+        raise ConflictoDeDatos(
+            "La primera versión del presupuesto aún no fue enviada"
+        )
+    return EnvioPresupuestoVerificado(
+        presupuesto_id=presupuesto.presupuesto_id,
+        orden_id=presupuesto.orden_id,
+        envio_inicial_confirmado=True,
+    )
 
 
 def decidir_version(
@@ -222,6 +335,9 @@ def decidir_version(
     - Rechazar una modificación posterior conserva la aprobación vigente.
     - Aprobar bloquea la versión (trigger) y, según el stock de los repuestos,
       la orden pasa a "En reparación" o a "Esperando repuestos".
+    - Con stock suficiente, aprobar RESERVA lo que falta usar (compromisos de
+      la orden, services/reservas.py) en la misma transacción; sin stock no se
+      reserva nada y la orden espera repuestos.
     """
     with uow.transaccion():
         presupuesto = uow.presupuestos.obtener_para_actualizar(presupuesto_id)
@@ -239,7 +355,15 @@ def decidir_version(
                 "servicio; confirme con confirmar_cancelacion=true"
             )
 
-        faltantes = _repuestos_faltantes(version) if decision == "aprobado" else []
+        faltantes = _repuestos_faltantes(uow, version) if decision == "aprobado" else []
+        reservados: dict[int, int] = {}
+        if decision == "aprobado" and not faltantes:
+            # Regla de reserva: con stock suficiente, las unidades quedan
+            # comprometidas para la orden en esta misma transacción.
+            pendientes = _pendientes(uow, version)
+            reservas.ajustar_reserva(
+                uow, presupuesto.orden_id, pendientes, usuario_id=cliente_usuario_id)
+            reservados = {rid: n for rid, n in pendientes.items() if n}
         registro = DecisionPresupuesto(
             version=version, cliente_usuario_id=cliente_usuario_id,
             decision=decision, motivo=motivo or None,
@@ -249,13 +373,15 @@ def decidir_version(
         uow.sesion.flush()
         uow.sesion.refresh(version)  # bloqueada_en lo completa el trigger al aprobar
 
+        registrar_hecho(uow,'presupuesto.decidido',presupuesto_id=presupuesto_id,orden_id=presupuesto.orden_id,
+            version=numero,decision_id=registro.decision_id,decision=decision)
         if decision == "aprobado":
             efecto = "esperando_repuestos" if faltantes else "en_reparacion"
         else:
             efecto = "cancelado" if primera_decision else None
     return ResultadoOperacion(
         presupuesto=a_detalle(presupuesto), efecto_en_orden=efecto,
-        repuestos_faltantes=faltantes,
+        repuestos_faltantes=faltantes, repuestos_reservados=reservados,
         decision_id=registro.decision_id,
     )
 
@@ -268,29 +394,31 @@ def _exigir_ultima(presupuesto: Presupuesto, version: VersionPresupuesto) -> Non
         )
 
 
-def _repuestos_faltantes(version: VersionPresupuesto) -> list[RepuestoFaltante]:
-    """Repuestos de la versión cuya disponibilidad no cubre lo presupuestado.
+def _pendientes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> dict[int, int]:
+    """Unidades de cada repuesto que la orden todavía tiene que usar con esta versión."""
+    consumido = disponibilidad.consumido_por_orden(uow, version.presupuesto.orden_id)
+    return {rid: max(0, cantidad - consumido.get(rid, 0))
+            for rid, cantidad in disponibilidad.requeridos_de_version(version).items()}
 
-    Disponible para la orden = stock − lo comprometido por OTRAS órdenes
-    (§4.6: no ofrecer a la vez las mismas unidades a dos órdenes).
+
+def _repuestos_faltantes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> list[RepuestoFaltante]:
+    """Repuestos de la versión cuya disponibilidad no cubre lo que falta usar.
+
+    Usa la validación de disponibilidad (services/disponibilidad.py): para la
+    orden cuenta su propia reserva, pero no lo comprometido por OTRAS órdenes
+    (§4.6). Los repuestos quedan bloqueados (FOR UPDATE) hasta el commit de la
+    decisión, así dos aprobaciones simultáneas no cuentan las mismas unidades.
     """
-    movimientos = RepositorioMovimientos(object_session(version))
-    orden_id = version.presupuesto.orden_id
-    requerido: dict[int, Decimal] = defaultdict(Decimal)
-    repuestos = {}
-    for item in version.items:
-        if item.repuesto is not None:
-            requerido[item.repuesto_id] += item.cantidad
-            repuestos[item.repuesto_id] = item.repuesto
-    faltantes = []
-    for rid, cantidad in sorted(requerido.items()):
-        de_otras = sum(c for o, c in movimientos.comprometido_por_orden(rid).items() if o != orden_id)
-        disponible = repuestos[rid].stock - de_otras
-        if disponible < cantidad:
-            faltantes.append(RepuestoFaltante(
-                repuesto_id=rid, nombre=repuestos[rid].nombre,
-                requerido=_dos_decimales(cantidad), disponible=disponible))
-    return faltantes
+    pendientes = _pendientes(uow, version)
+    if not pendientes:
+        return []
+    resultado = disponibilidad.evaluar(
+        uow, pendientes, orden_id=version.presupuesto.orden_id, bloquear=True)
+    return [
+        RepuestoFaltante(repuesto_id=d.repuesto_id, nombre=d.nombre,
+                         requerido=_dos_decimales(Decimal(d.requerido)), disponible=d.disponible)
+        for d in resultado.repuestos if not d.alcanza
+    ]
 
 
 # ----------------------------------------------------------------- lectura --
@@ -328,6 +456,23 @@ def consultar_decision(
         primera_decision=primera, repuestos_disponibles=registro.repuestos_disponibles,
         motivo=registro.motivo,
     )
+
+
+def existe_aprobacion_inicial(
+    uow: UnidadDeTrabajo, *, orden_id: int,
+) -> bool:
+    """Comprueba la decisión inicial persistida, incluso si MS2 no aplicó el efecto."""
+    return uow.sesion.scalar(
+        select(DecisionPresupuesto.decision_id)
+        .join(VersionPresupuesto, DecisionPresupuesto.version_id == VersionPresupuesto.version_id)
+        .join(Presupuesto, VersionPresupuesto.presupuesto_id == Presupuesto.presupuesto_id)
+        .where(
+            Presupuesto.orden_id == orden_id,
+            VersionPresupuesto.es_modificacion.is_(False),
+            DecisionPresupuesto.decision == "aprobado",
+        )
+        .limit(1)
+    ) is not None
 
 
 def obtener_version(
@@ -370,6 +515,7 @@ def a_version_detalle(version: VersionPresupuesto) -> VersionDetalle:
         creado_en=version.creado_en,
         enviado_en=version.enviado_en,
         bloqueada_en=version.bloqueada_en,
+        vigente=version.presupuesto.version_vigente is version,
         total=total_version(version),
         items=[_a_item(i) for i in sorted(version.items, key=lambda i: i.item_id)],
         decision=DecisionSalida.model_validate(version.decision) if version.decision else None,

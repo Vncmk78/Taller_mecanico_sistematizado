@@ -25,10 +25,12 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     SmallInteger,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -74,6 +76,14 @@ class OrdenTrabajo(Base):
             "and (entregado_en is null or entregado_en >= creado_en) "
             "and (devuelto_en is null or devuelto_en >= creado_en)",
             name="fechas_coherentes",
+        ),
+        # Carga de trabajo del mecánico (0008_ms2). Estaba solo en la migración:
+        # declararlo aquí deja el modelo igual a la base.
+        Index("ix_orden_mecanico_estado", "mecanico_actual_id", "estado_codigo"),
+        Index(
+            "uq_orden_activa_por_vehiculo", "vehiculo_id", unique=True,
+            postgresql_where=text("estado_codigo NOT IN (7, 8)"),
+            sqlite_where=text("estado_codigo NOT IN (7, 8)"),
         ),
     )
 

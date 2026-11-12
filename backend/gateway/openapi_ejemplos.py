@@ -185,6 +185,11 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         {"detail": "Vehículo no encontrado"},
         "Un vehículo de otro cliente y uno inexistente responden lo mismo.",
     ),
+    "detalle_perfil_cliente_conflicto": _ejemplo(
+        "409: el perfil Cliente ya existe con otro teléfono",
+        {"detail": "El perfil Cliente ya existe con otro teléfono; no se modificó"},
+        "Preparar el perfil nunca sobrescribe datos guardados.",
+    ),
     "detalle_perfil_cliente_ausente": _ejemplo(
         "404 sin perfil Cliente local en MS2",
         {"detail": "El usuario autenticado no tiene un perfil Cliente en MS2"},
@@ -196,63 +201,6 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
     "detalle_correo_registrado": _ejemplo(
         "409 con el correo ya registrado",
         {"detail": "El correo ya está registrado"},
-    ),
-    "detalle_usuario_no_encontrado": _ejemplo(
-        "404 de MS1: la cuenta no existe",
-        {"detail": "El usuario no existe"},
-    ),
-    "detalle_usuario_id_invalido_422": _ejemplo(
-        "422 de MS1: identificador de usuario no numérico",
-        {
-            "detail": [
-                {
-                    "type": "int_parsing",
-                    "loc": ["path", "usuario_id"],
-                    "msg": (
-                        "Input should be a valid integer, unable to parse "
-                        "string as an integer"
-                    ),
-                    "input": "abc",
-                }
-            ]
-        },
-        "Pydantic v2 devuelve una lista de errores; `loc` indica el parámetro.",
-    ),
-    "detalle_rol_body_invalido_422": _ejemplo(
-        "422 de MS1: rol desconocido en el body",
-        {
-            "detail": [
-                {
-                    "type": "literal_error",
-                    "loc": ["body", "rol"],
-                    "msg": (
-                        "Input should be 'cliente', 'mecanico' or "
-                        "'administrador'"
-                    ),
-                    "input": "supervisor",
-                    "ctx": {"expected": "'cliente', 'mecanico' or 'administrador'"},
-                }
-            ]
-        },
-        "El rol solo admite los tres valores de `NombreRol`.",
-    ),
-    "detalle_rol_ruta_invalido_422": _ejemplo(
-        "422 de MS1: rol desconocido en la ruta",
-        {
-            "detail": [
-                {
-                    "type": "literal_error",
-                    "loc": ["path", "rol"],
-                    "msg": (
-                        "Input should be 'cliente', 'mecanico' or "
-                        "'administrador'"
-                    ),
-                    "input": "supervisor",
-                    "ctx": {"expected": "'cliente', 'mecanico' or 'administrador'"},
-                }
-            ]
-        },
-        "El rol de la ruta solo admite los tres valores de `NombreRol`.",
     ),
     "detalle_validacion_registro_422": _ejemplo(
         "422 de validación del body de registro",
@@ -343,6 +291,50 @@ _EJEMPLOS_ERROR_MICROSERVICIO: dict[str, dict[str, Any]] = {
         "503 de MS4: MS2 no respondió al verificar la orden",
         {"detail": "El servicio de órdenes no está disponible"},
     ),
+    "detalle_cuenta_sin_roles": _ejemplo(
+        "403 de login: credenciales correctas, pero la cuenta no tiene roles",
+        {"detail": "El usuario no posee roles"},
+    ),
+    "detalle_cuenta_bloqueada": _ejemplo(
+        "429 de login: cuenta bloqueada por intentos fallidos",
+        {"detail": "Demasiados intentos fallidos. Inténtalo de nuevo más tarde"},
+        "MS1 envía Retry-After con los segundos que faltan para el desbloqueo.",
+    ),
+    "detalle_validacion_login_422": _ejemplo(
+        "422 de validación del body de login",
+        {
+            "detail": [
+                {
+                    "type": "missing",
+                    "loc": ["body", "email"],
+                    "msg": "Field required",
+                    "input": {},
+                },
+                {
+                    "type": "missing",
+                    "loc": ["body", "password"],
+                    "msg": "Field required",
+                    "input": {},
+                },
+            ]
+        },
+    ),
+    "detalle_validacion_id_vehiculo_422": _ejemplo(
+        "422 con un identificador de vehículo no numérico",
+        {
+            "detail": [
+                {
+                    "type": "int_parsing",
+                    "loc": ["path", "vehiculo_id"],
+                    "msg": (
+                        "Input should be a valid integer, unable to parse string "
+                        "as an integer"
+                    ),
+                    "input": "abc",
+                }
+            ]
+        },
+    ),
     "detalle_validacion_vehiculo_422": _ejemplo(
         "422 de validación del body de vehículo",
         {
@@ -366,23 +358,6 @@ _USUARIO_EJEMPLO: dict[str, Any] = {
     "is_active": True,
 }
 
-_USUARIO_ADMIN_EJEMPLO: dict[str, Any] = {
-    **_USUARIO_EJEMPLO,
-    "id": 9,
-    "email": "leo@correo.cl",
-    "full_name": "Leo Díaz",
-    "roles": ["administrador", "cliente"],
-}
-
-_USUARIO_SIN_ROLES_EJEMPLO: dict[str, Any] = {
-    **_USUARIO_EJEMPLO,
-    "id": 11,
-    "email": "sin.roles@correo.cl",
-    "full_name": "Cuenta sin roles",
-    "roles": [],
-    "is_active": False,
-}
-
 _VEHICULO_EJEMPLO: dict[str, Any] = {
     "vehiculo_id": 12,
     "cliente_id": 7,
@@ -391,6 +366,12 @@ _VEHICULO_EJEMPLO: dict[str, Any] = {
     "modelo": "Corolla",
     "anio": 2018,
     "kilometraje": 45000,
+}
+
+_PERFIL_CLIENTE_EJEMPLO: dict[str, Any] = {
+    "cliente_id": 7,
+    "usuario_id": 42,
+    "telefono": "+56 9 1234 5678",
 }
 
 _VEHICULO_ACTUALIZADO_EJEMPLO: dict[str, Any] = {
@@ -439,7 +420,107 @@ _EJEMPLOS_AUTENTICACION: dict[str, Any] = {
 # (ruta, método) -> {"cuerpo": ejemplos, "respuestas": {código: ejemplos}}.
 # `/api/ordenes` no aparece a propósito: sus ejemplos son de
 # `shared.openapi_ordenes.py` y esta función nunca los pisa.
+_BITACORA_EJEMPLO: dict[str, Any] = {
+    "bitacora_id": 77,
+    "orden_id": 31,
+    "autor_usuario_id": 50,
+    "tipo": "accion",
+    "descripcion": "Se reemplazaron las pastillas delanteras",
+    "creado_en": "2026-09-28T12:15:00-03:00",
+    "repuestos": [{"nombre": "Pastillas de freno", "cantidad": 2}],
+}
+_BITACORA_OBSERVACION_EJEMPLO: dict[str, Any] = {
+    "bitacora_id": 76,
+    "orden_id": 31,
+    "autor_usuario_id": 50,
+    "tipo": "observacion",
+    "descripcion": "Ruido al frenar en el eje delantero",
+    "creado_en": "2026-09-28T11:40:00-03:00",
+    "repuestos": [],
+}
+_SOLICITUD_CANCELACION_EJEMPLO: dict[str, Any] = {
+    "solicitud_id": 12,
+    "orden_id": 31,
+    "cliente_usuario_id": 42,
+    "estado_al_solicitar": 3,
+    "motivo": "El cliente no continuará",
+    "estado": "pendiente",
+    "solicitada_en": "2026-10-23T10:30:00-03:00",
+    "administrador_id": None,
+    "confirmada_en": None,
+}
+
+_SOLICITUD_NUEVA_EJEMPLO = {
+    "solicitud_id": 9, "orden_cancelada_id": 31, "vehiculo_id": 12,
+    "cliente_usuario_id": 7, "descripcion": "Revisar frenos nuevamente",
+    "solicitada_en": "2026-11-08T10:00:00Z", "situacion": "pendiente",
+    "respuesta": None, "revisor_id": None, "revisada_en": None, "orden_generada_id": None,
+}
+
 _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
+    ("/api/ordenes/{orden_id}/bitacora", "get"): {
+        "respuestas": {
+            "200": {
+                "bitacora": {
+                    "summary": "Bitácora con una observación y una acción",
+                    "value": [_BITACORA_OBSERVACION_EJEMPLO, _BITACORA_EJEMPLO],
+                },
+                "sin_registros": {
+                    "summary": "Orden visible sin registros",
+                    "value": [],
+                },
+            }
+        },
+    },
+    ("/api/ordenes/{orden_id}/bitacora", "post"): {
+        "cuerpo": {
+            "accion": {
+                "summary": "Acción con repuestos utilizados",
+                "value": {
+                    "tipo": "accion",
+                    "descripcion": "Se reemplazaron las pastillas delanteras",
+                    "repuestos": [{"nombre": "Pastillas de freno", "cantidad": 2}],
+                },
+            },
+            "observacion": {
+                "summary": "Observación sin repuestos",
+                "value": {
+                    "tipo": "observacion",
+                    "descripcion": "Ruido al frenar en el eje delantero",
+                },
+            },
+        },
+        "respuestas": {
+            "201": {
+                "registrada": {
+                    "summary": "Entrada registrada por el mecánico asignado",
+                    "value": _BITACORA_EJEMPLO,
+                }
+            }
+        },
+    },
+    ("/api/ordenes/{orden_id}/cancelacion", "post"): {
+        "cuerpo": {
+            "solicitud": {
+                "summary": "Motivo de la solicitud del cliente",
+                "value": {"motivo": "El cliente no continuará"},
+            }
+        },
+        "respuestas": {
+            "201": {
+                "solicitud_creada": {
+                    "summary": "Solicitud pendiente de revisión",
+                    "value": _SOLICITUD_CANCELACION_EJEMPLO,
+                }
+            },
+            "200": {
+                "solicitud_existente": {
+                    "summary": "Mismo motivo repetido: devuelve la solicitud pendiente",
+                    "value": _SOLICITUD_CANCELACION_EJEMPLO,
+                }
+            },
+        },
+    },
     ("/api/auth/register", "post"): {
         "cuerpo": {
             "registro": {
@@ -491,6 +572,9 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
                     "detalle_credenciales_invalidas"
                 )
             },
+            "403": {"cuenta_sin_roles": _ref_ejemplo("detalle_cuenta_sin_roles")},
+            "422": {"datos_invalidos": _ref_ejemplo("detalle_validacion_login_422")},
+            "429": {"cuenta_bloqueada": _ref_ejemplo("detalle_cuenta_bloqueada")},
         },
     },
     ("/api/auth/me", "get"): {
@@ -504,81 +588,49 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
             "401": _EJEMPLOS_AUTENTICACION,
         },
     },
-    ("/api/auth/usuarios", "get"): {
-        "respuestas": {
-            "200": {
-                "lista": {
-                    "summary": "Cuentas activa y desactivada (esta última sin roles)",
-                    "value": [_USUARIO_EJEMPLO, _USUARIO_SIN_ROLES_EJEMPLO],
-                }
-            },
-            "401": _EJEMPLOS_AUTENTICACION,
-            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
-        },
-    },
-    ("/api/auth/usuarios/{usuario_id}", "get"): {
-        "respuestas": {
-            "200": {
-                "usuario": {
-                    "summary": "Cuenta consultada por un Administrador",
-                    "value": _USUARIO_EJEMPLO,
-                }
-            },
-            "401": _EJEMPLOS_AUTENTICACION,
-            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
-            "404": {
-                "usuario_no_encontrado": _ref_ejemplo(
-                    "detalle_usuario_no_encontrado"
-                )
-            },
-            "422": {
-                "id_invalido": _ref_ejemplo("detalle_usuario_id_invalido_422")
-            },
-        },
-    },
-    ("/api/auth/usuarios/{usuario_id}/roles", "post"): {
+    ("/api/clientes/perfil", "post"): {
         "cuerpo": {
-            "asignacion_rol": {
-                "summary": "Rol restringido a asignar",
-                "value": {"rol": "administrador"},
-            }
+            "con_telefono": {
+                "summary": "Preparar el perfil con teléfono de contacto",
+                "value": {"telefono": "+56 9 1234 5678"},
+            },
+            "sin_datos": {
+                "summary": "Preparar el perfil sin teléfono (reintento tras login)",
+                "value": {},
+            },
         },
         "respuestas": {
+            "201": {
+                "perfil_creado": {
+                    "summary": "Perfil creado por esta llamada",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
+                }
+            },
             "200": {
-                "usuario_actualizado": {
-                    "summary": "Cuenta con el rol recién asignado",
-                    "value": _USUARIO_ADMIN_EJEMPLO,
+                "perfil_existente": {
+                    "summary": "El perfil ya existía; se devuelve sin cambios",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
                 }
             },
             "401": _EJEMPLOS_AUTENTICACION,
             "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
-            "404": {
-                "usuario_no_encontrado": _ref_ejemplo(
-                    "detalle_usuario_no_encontrado"
-                )
-            },
-            "422": {
-                "rol_invalido": _ref_ejemplo("detalle_rol_body_invalido_422")
+            "409": {
+                "telefono_distinto": _ref_ejemplo("detalle_perfil_cliente_conflicto")
             },
         },
     },
-    ("/api/auth/usuarios/{usuario_id}/roles/{rol}", "delete"): {
+    ("/api/clientes/perfil", "get"): {
         "respuestas": {
             "200": {
-                "usuario_actualizado": {
-                    "summary": "Cuenta sin el rol retirado (queda sin roles)",
-                    "value": _USUARIO_SIN_ROLES_EJEMPLO,
+                "perfil": {
+                    "summary": "Perfil Cliente del usuario autenticado",
+                    "value": _PERFIL_CLIENTE_EJEMPLO,
                 }
             },
             "401": _EJEMPLOS_AUTENTICACION,
             "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
             "404": {
-                "usuario_no_encontrado": _ref_ejemplo(
-                    "detalle_usuario_no_encontrado"
-                )
-            },
-            "422": {
-                "rol_invalido": _ref_ejemplo("detalle_rol_ruta_invalido_422")
+                "perfil_cliente_ausente": _ref_ejemplo("detalle_perfil_cliente_ausente")
             },
         },
     },
@@ -649,9 +701,13 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
                 }
             },
             "401": _EJEMPLOS_AUTENTICACION,
-            "403": {"rol_insuficiente": _ref_ejemplo("detalle_rol_insuficiente")},
             "404": {
                 "vehiculo_no_encontrado": _ref_ejemplo("detalle_vehiculo_no_encontrado")
+            },
+            "422": {
+                "identificador_invalido": _ref_ejemplo(
+                    "detalle_validacion_id_vehiculo_422"
+                )
             },
         },
     },
@@ -680,6 +736,28 @@ _EJEMPLOS_OPERACIONES: dict[tuple[str, str], dict[str, Any]] = {
         },
     },
 }
+
+_EJEMPLOS_OPERACIONES.update({
+    ("/api/ordenes/{orden_id}/nueva-atencion", "post"): {
+        "cuerpo": {"solicitud": _ejemplo("Nueva atención", {"descripcion": "Revisar frenos nuevamente"})},
+        "respuestas": {str(c): {"pendiente": _ejemplo("Solicitud pendiente", _SOLICITUD_NUEVA_EJEMPLO)} for c in (200, 201)},
+    },
+    ("/api/ordenes/nuevas-atenciones", "get"): {"respuestas": {
+        "200": {"pagina": _ejemplo("Solicitudes visibles", {"items": [_SOLICITUD_NUEVA_EJEMPLO], "total": 1, "limit": 20, "offset": 0})}}},
+    ("/api/ordenes/nuevas-atenciones/{solicitud_id}", "get"): {"respuestas": {
+        "200": {"solicitud": _ejemplo("Solicitud visible", _SOLICITUD_NUEVA_EJEMPLO)}}},
+})
+
+_DISPOSITIVO_EJEMPLO = {"dispositivo_id":"d42fbe85-5942-4dd7-81b3-f22a423a9980", "plataforma":"android", "activo":True, "creado_en":"2026-11-08T10:00:00Z", "actualizado_en":"2026-11-08T10:00:00Z"}
+_ENTREGA_EJEMPLO = {"entrega_id":1,"canal":"correo","estado":"sin_configuracion","intentos":1,"aceptada_en":None,"ultimo_error":"proveedor_no_configurado","intentos_registrados":[{"numero":1,"iniciado_en":"2026-11-08T10:00:00Z","finalizado_en":"2026-11-08T10:00:01Z","resultado":"sin_configuracion","codigo_error":"proveedor_no_configurado"}]}
+_EJEMPLOS_OPERACIONES.update({
+    ("/api/notificaciones/dispositivos","post"): {
+        "cuerpo":{"registro":_ejemplo("Token ficticio de pruebas",{"token":"token-fcm-de-ejemplo-no-es-una-credencial-real","plataforma":"android"})},
+        "respuestas":{str(c):{"dispositivo":_ejemplo("Dispositivo registrado sin exponer el token",_DISPOSITIVO_EJEMPLO)} for c in (200,201)}},
+    ("/api/notificaciones/dispositivos","get"): {"respuestas":{"200":{"propios":_ejemplo("Dispositivos propios",[_DISPOSITIVO_EJEMPLO])}}},
+    **{(f"/api/notificaciones/{{notificacion_id}}/{sufijo}",metodo):{"respuestas":{"200":{"canales":_ejemplo("El aviso existe; falta proveedor de correo",[_ENTREGA_EJEMPLO])}}}
+       for sufijo,metodo in [("entregas","get"),("reintentos","post")]},
+})
 
 _EJEMPLOS_503_EVIDENCIAS: dict[str, Any] = {
     "almacenamiento_no_disponible": _ref_ejemplo("detalle_almacenamiento_no_disponible"),
@@ -798,7 +876,7 @@ _CABECERA_WWW_AUTHENTICATE: dict[str, Any] = {
 _CABECERA_RETRY_AFTER: dict[str, Any] = {
     "description": "Segundos que el cliente puede esperar antes de reintentar.",
     "schema": {"type": "integer"},
-    "example": 1,
+    "example": 5,
 }
 
 _CABECERA_CACHE_CONTROL: dict[str, Any] = {
@@ -856,6 +934,7 @@ _RESPUESTAS_REUTILIZABLES: dict[str, dict[str, Any]] = {
                 "error_microservicio_no_disponible"
             )
         },
+        cabeceras={"Retry-After": _CABECERA_RETRY_AFTER},
     ),
     "GatewaySaturada": _respuesta_comun(
         descripcion="503: el pool de conexiones de la Gateway está agotado.",
@@ -867,6 +946,7 @@ _RESPUESTAS_REUTILIZABLES: dict[str, dict[str, Any]] = {
         descripcion="504: el microservicio tardó demasiado en responder.",
         esquema={"$ref": "#/components/schemas/ErrorRespuesta"},
         ejemplos={"tiempo_agotado": _ref_ejemplo("error_tiempo_agotado")},
+        cabeceras={"Retry-After": _CABECERA_RETRY_AFTER},
     ),
 }
 
@@ -902,6 +982,71 @@ _EJEMPLO_SERVICIOS_DEGRADADO: dict[str, Any] = {
         },
     },
 }
+
+
+_EJEMPLO_DIAGNOSTICO_OK: dict[str, Any] = {
+    "summary": "MS4 con proceso, base y almacenamiento en orden",
+    "value": {
+        "servicio": "ms4_evidencias",
+        "descripcion": "Evidencia Multimedia",
+        "estado": "ok",
+        "comprobaciones": {
+            "proceso": {"estado": "ok", "latencia_ms": 2},
+            "base": {"estado": "ok", "latencia_ms": 6},
+            "almacenamiento": {"estado": "ok", "latencia_ms": 11},
+        },
+        "prefijos": ["/api/evidencia", "/api/evidencias"],
+        "timeouts": {"conexion": 3.0, "lectura": 60.0, "escritura": 60.0, "health": 2.0},
+        "comprobado_en": "2026-10-31T23:40:00+00:00",
+    },
+}
+
+_EJEMPLO_DIAGNOSTICO_DEGRADADO: dict[str, Any] = {
+    "summary": "503: MS3 levanta pero su base no responde",
+    "value": {
+        "servicio": "ms3_presupuestos",
+        "descripcion": "Presupuestos, Repuestos, Proveedores e Inventario",
+        "estado": "degradado",
+        "comprobaciones": {
+            "proceso": {"estado": "ok", "latencia_ms": 3},
+            "base": {"estado": "error", "latencia_ms": 15, "codigo_http": 500},
+        },
+        "prefijos": [
+            "/api/inventario",
+            "/api/presupuesto",
+            "/api/presupuestos",
+            "/api/proveedores",
+            "/api/repuestos",
+        ],
+        "timeouts": {"conexion": 3.0, "lectura": 15.0, "escritura": 15.0, "health": 2.0},
+        "comprobado_en": "2026-10-31T23:40:00+00:00",
+    },
+}
+
+_EJEMPLO_DIAGNOSTICO_CAIDO: dict[str, Any] = {
+    "summary": "503: MS2 no responde ni al health check del proceso",
+    "value": {
+        "servicio": "ms2_taller",
+        "descripcion": "Vehículos y Órdenes de Trabajo",
+        "estado": "caido",
+        "comprobaciones": {
+            "proceso": {"estado": "caido"},
+            "base": {"estado": "caido"},
+        },
+        "prefijos": [
+            "/api/clientes",
+            "/api/mecanicos",
+            "/api/orden",
+            "/api/ordenes",
+            "/api/vehiculo",
+            "/api/vehiculos",
+        ],
+        "timeouts": {"conexion": 3.0, "lectura": 15.0, "escritura": 15.0, "health": 2.0},
+        "comprobado_en": "2026-10-31T23:40:00+00:00",
+    },
+}
+
+_SERVICIOS_DIAGNOSTICO = ["ms1_auth", "ms2_taller", "ms3_presupuestos", "ms4_evidencias"]
 
 
 def _componentes(esquema: dict[str, Any]) -> dict[str, Any]:
@@ -1049,6 +1194,45 @@ def _documentar_health(esquema: dict[str, Any]) -> None:
     )
 
 
+def _documentar_diagnostico(esquema: dict[str, Any]) -> None:
+    """Ejemplos y parámetro de `GET /api/health/servicios/{servicio}`."""
+    diagnostico = esquema.get("paths", {}).get("/api/health/servicios/{servicio}", {}).get("get")
+    if not isinstance(diagnostico, dict):
+        return
+    for parametro in diagnostico.get("parameters", []):
+        if parametro.get("name") == "servicio":
+            parametro["description"] = "Nombre público del microservicio."
+            parametro["schema"] = {
+                "type": "string",
+                "enum": list(_SERVICIOS_DIAGNOSTICO),
+                "example": "ms3_presupuestos",
+            }
+    respuestas = diagnostico.setdefault("responses", {})
+    for codigo, ejemplos in (
+        ("200", {"diagnostico_ok": _EJEMPLO_DIAGNOSTICO_OK}),
+        (
+            "503",
+            {
+                "diagnostico_degradado": _EJEMPLO_DIAGNOSTICO_DEGRADADO,
+                "diagnostico_caido": _EJEMPLO_DIAGNOSTICO_CAIDO,
+            },
+        ),
+    ):
+        respuesta = respuestas.setdefault(codigo, {"description": ""})
+        media = respuesta.setdefault("content", {}).setdefault(_JSON, {})
+        media.setdefault("schema", {"type": "object"})
+        _agregar_cabecera(respuesta, {"Cache-Control": _CABECERA_CACHE_CONTROL})
+        _agregar_ejemplos(media, ejemplos)
+    no_encontrado = respuestas.get("404")
+    if isinstance(no_encontrado, dict):
+        no_encontrado["content"] = {
+            _JSON: {
+                "schema": {"$ref": "#/components/schemas/ErrorRespuesta"},
+                "examples": {"servicio_desconocido": _ref_ejemplo("error_ruta_no_encontrada")},
+            }
+        }
+
+
 def _documentar_x_request_id(esquema: dict[str, Any]) -> None:
     """Declara la cabecera `X-Request-ID` en todas las respuestas de `/api`."""
     for ruta, item in esquema.get("paths", {}).items():
@@ -1075,4 +1259,5 @@ def agregar_ejemplos_gateway(esquema: dict[str, Any]) -> None:
     _aplicar_ejemplos_operaciones(esquema)
     _aplicar_ejemplos_errores_comunes(esquema)
     _documentar_health(esquema)
+    _documentar_diagnostico(esquema)
     _documentar_x_request_id(esquema)

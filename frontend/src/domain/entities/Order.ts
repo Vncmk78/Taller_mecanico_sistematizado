@@ -22,11 +22,10 @@ export function ordenStatusLabel(codigo: number): string {
 // cliente y el administrador, y cancelar corresponde al cliente. El backend
 // conserva la autoridad final sobre permisos, operaciones y precondiciones.
 // La primera asignación (1 -> 2) usa la operación administrativa específica.
-// Los flujos de envío (2 -> 3) y stock posterior (4 -> 5) siguen pendientes
-// de sus contratos funcionales; mostrarlos no garantiza esas precondiciones.
+// El envío inicial (2 -> 3) y la confirmación de disponibilidad posterior
+// (4 -> 5) corresponden a operaciones administrativas específicas.
+// Ninguno de esos flujos se ofrece como acción del mecánico.
 export const AVANCES_MECANICO: Record<number, number[]> = {
-    2: [3], // Esperando diagnóstico -> Esperando aprobación de presupuesto
-    4: [5], // Esperando repuestos -> En reparación
     5: [6], // En reparación -> Listo
 };
 
@@ -44,6 +43,14 @@ export interface Order {
     creadoPorId: string;
     creadoEn: string;
     actualizadoEn: string;
+    /**
+     * Devolución física del vehículo de una orden Cancelada (fecha ISO con
+     * zona y usuario responsable, decididos por MS2). `null` en ambos cuando no
+     * hay devolución. `undefined` cuando la respuesta no informó estos campos:
+     * entonces no se sabe si hubo devolución y no se ofrece registrarla.
+     */
+    devueltoEn?: string | null;
+    devueltoPorId?: string | null;
     patente?: string;
     vehiculo?: string;
     mecanicoNombre?: string;

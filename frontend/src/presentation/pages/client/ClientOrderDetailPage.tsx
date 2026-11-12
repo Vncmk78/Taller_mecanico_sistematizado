@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, ClipboardX } from 'lucide-react';
 import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPanel';
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
+import { NuevaAtencionSection } from '@/presentation/components/nuevaAtencion/NuevaAtencionSection';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -17,14 +19,17 @@ import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 
 export function ClientOrderDetailPage() {
     const { id } = useParams<{ id: string }>();
-    const { order, loading, notFound, failed, refetch } = useOrderDetail(id, (oid) =>
-        orderService.getOrderById(oid)
-    );
+    const [ordenPropiaVerificada, setOrdenPropiaVerificada] = useState<string | null>(null);
+    const { order, loading, notFound, failed, refetch } = useOrderDetail(id, async (oid) => {
+        const propia = await orderService.getOrderById(oid, { soloPropietario: true });
+        setOrdenPropiaVerificada(oid);
+        return propia;
+    });
     const { isOffline, error, requestId } = useOrderStore();
     const vehicles = useVehicleStore((s) => s.vehicles);
 
     if (loading) {
-        return <LoadingState message="Cargando detalle de la orden..." className="p-10" />;
+        return <LoadingState message="Cargando detalle de la orden..." className="p-4 sm:p-6 lg:p-10" />;
     }
 
     // El fetch falló y no hay copia local: se muestra un error reintentable en
@@ -32,7 +37,7 @@ export function ClientOrderDetailPage() {
     if (failed) {
         return (
             <ErrorState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 title="No se pudo cargar el detalle de la orden"
                 message={error}
                 requestId={requestId}
@@ -49,7 +54,7 @@ export function ClientOrderDetailPage() {
     if (!order || notFound) {
         return (
             <EmptyState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 icon={ClipboardX}
                 title="Orden no encontrada."
                 description="Verifique el número de orden o que la orden siga disponible."
@@ -63,7 +68,7 @@ export function ClientOrderDetailPage() {
     }
 
     return (
-        <div className="animate-fade-in p-10">
+        <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
             <Link
                 to="/client/ordenes"
                 className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
@@ -89,6 +94,11 @@ export function ClientOrderDetailPage() {
             <OrderStatusAndHistory order={order} />
 
             <OrderActionsPanel order={order} className="mt-6" />
+
+            {/* Una copia administrativa en caché no acredita propiedad para solicitar. */}
+            {ordenPropiaVerificada === order.id && (
+                <NuevaAtencionSection key={order.id} order={order} className="mt-6" />
+            )}
         </div>
     );
 }

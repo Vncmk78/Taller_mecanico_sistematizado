@@ -35,30 +35,32 @@ export function AdminVehiclesPage() {
 
     return (
     <div className="animate-fade-in">
-        <div className="flex justify-between items-center px-10 pt-10 pb-6">
+        <div className="flex flex-wrap justify-between items-center gap-4 px-4 sm:px-6 lg:px-10 pt-10 pb-6">
         <div>
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Catálogo de Vehículos Registrados</h2>
             <p className="text-text-muted text-lg">Trazabilidad completa: fichas técnicas e historial por patente</p>
         </div>
-        <div className="relative w-[320px]">
+        <div role="search" aria-label="Buscar vehículos" className="relative w-full sm:w-[320px]">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" aria-hidden />
             <input
-            type="text"
+            type="search"
+            name="buscar-vehiculos-catalogo"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por patente, marca o modelo..."
             aria-label="Buscar por patente, marca o modelo"
+            autoComplete="off"
             className="w-full py-3 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
             />
         </div>
         </div>
 
-        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} requestId={requestId} className="mx-10 mb-6" />}
+        {isOffline && <OfflineBanner message={error} onRetry={loadVehicles} requestId={requestId} className="mx-4 sm:mx-6 lg:mx-10 mb-6" />}
 
         {isServerError && filtered.length > 0 && (
         <Alert
             tone="error"
-            className="mx-10 mb-6"
+            className="mx-4 sm:mx-6 lg:mx-10 mb-6"
             action={<RetryButton tone="error" onClick={loadVehicles} />}
         >
             {error ?? 'No se pudieron cargar los vehículos.'} Se muestran los últimos datos disponibles.
@@ -66,17 +68,17 @@ export function AdminVehiclesPage() {
         )}
 
         {status === 'loading' ? (
-        <VehicleListSkeleton className="px-10 pb-10" />
+        <VehicleListSkeleton className="px-4 sm:px-6 lg:px-10 pb-10" />
         ) : isServerError && filtered.length === 0 ? (
         <ErrorState
-            className="px-10 pb-10"
+            className="px-4 sm:px-6 lg:px-10 pb-10"
             title="No se pudieron cargar los vehículos"
             message={error}
             requestId={requestId}
             onRetry={loadVehicles}
         />
         ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-10 pb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-4 sm:px-6 lg:px-10 pb-10">
             {filtered.map((vehicle) => (
             <VehicleCard
                 key={vehicle.id}

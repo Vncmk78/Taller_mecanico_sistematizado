@@ -13,13 +13,15 @@ from typing import Annotated
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from shared.entorno import archivo_entorno
+
 
 class GatewaySettings(BaseSettings):
     """Configuración del API Gateway."""
 
     model_config = SettingsConfigDict(
         env_prefix="GATEWAY_",
-        env_file=".env",
+        env_file=archivo_entorno(),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -43,6 +45,19 @@ class GatewaySettings(BaseSettings):
     TIMEOUT_POOL_SECONDS: float = 5.0
     # Prefijo "evidencias": read/write ampliados porque sube archivos (fotos).
     TIMEOUT_ARCHIVOS_SECONDS: float = 60.0
+    # Timeout de lectura/escritura POR SERVICIO (Semana 7, decisión R1 de
+    # estudio-resiliencia-timeouts-retries.md). Opcionales: si no se definen,
+    # rigen los generales de arriba (y 60 s para "evidencias"). Regla: el de un
+    # servicio debe superar la suma de los timeouts de ese servicio hacia sus
+    # dependencias (p. ej. MS3 -> MS2 = 3 s). connect y pool siguen globales.
+    # env: GATEWAY_MS1_TIMEOUT_SECONDS ... GATEWAY_MS4_TIMEOUT_SECONDS
+    MS1_TIMEOUT_SECONDS: float | None = Field(default=None, gt=0, le=300)
+    MS2_TIMEOUT_SECONDS: float | None = Field(default=None, gt=0, le=300)
+    MS3_TIMEOUT_SECONDS: float | None = Field(default=None, gt=0, le=300)
+    MS4_TIMEOUT_SECONDS: float | None = Field(default=None, gt=0, le=300)
+    # Segundos que la Gateway sugiere esperar (cabecera Retry-After) en sus
+    # 502, 503 y 504 (decisión R3).
+    RETRY_AFTER_SECONDS: int = Field(default=5, ge=1, le=3600)
     # Timeout por servicio del health check (GET /api/health/servicios). Corto
     # a propósito: un servicio caído no debe bloquear la respuesta agregada.
     HEALTH_TIMEOUT_SECONDS: float = 2.0

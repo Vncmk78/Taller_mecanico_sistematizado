@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ClipboardList, SearchX } from 'lucide-react';
+import { ArrowLeft, SearchX } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -10,6 +10,7 @@ import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleDetail } from '@/presentation/hooks/useVehicleDetail';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { VehicleOrderHistoryPanel } from '@/presentation/components/orders/VehicleOrderHistoryPanel';
 
 export function MechanicVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
@@ -22,7 +23,7 @@ export function MechanicVehicleDetailPage() {
     // solo se muestra lo que quedó en la caché de esa misma respuesta.
 
     if (loading) {
-    return <LoadingState message="Cargando ficha del vehículo..." className="p-10" />;
+    return <LoadingState message="Cargando ficha del vehículo..." className="p-4 sm:p-6 lg:p-10" />;
     }
 
     // El fetch falló y no hay copia local: se muestra un error reintentable en
@@ -30,7 +31,7 @@ export function MechanicVehicleDetailPage() {
     if (failed) {
     return (
         <ErrorState
-            className="p-10"
+            className="p-4 sm:p-6 lg:p-10"
             title="No se pudo cargar la ficha del vehículo"
             message={error}
             requestId={requestId}
@@ -47,7 +48,7 @@ export function MechanicVehicleDetailPage() {
     if (!vehicle || notFound) {
     return (
         <EmptyState
-            className="p-10"
+            className="p-4 sm:p-6 lg:p-10"
             icon={SearchX}
             title="Vehículo no encontrado o no está entre sus órdenes asignadas."
             description="Verifique la patente o que el vehículo siga asignado a su cuenta."
@@ -61,7 +62,7 @@ export function MechanicVehicleDetailPage() {
     }
 
     return (
-    <div className="animate-fade-in p-10">
+    <div className="animate-fade-in p-4 sm:p-6 lg:p-10">
         <Link
         to="/mechanic/vehiculos"
         className="inline-flex items-center gap-2 text-text-muted hover:text-primary-blue mb-6 no-underline"
@@ -83,16 +84,12 @@ export function MechanicVehicleDetailPage() {
             vehicle={vehicle}
             ownerLabel={vehicle.clientId ? `Cliente #${vehicle.clientId}` : undefined}
           />
-        <div className="card">
-            <h3 className="text-xl font-semibold flex items-center gap-2 mb-4 pb-4 border-b border-border-custom">
-            <ClipboardList className="w-5 h-5 text-text-muted" />
-            Historial de Órdenes
-            </h3>
-            <p className="text-text-muted text-sm">
-            MS2 no expone un historial de órdenes por vehículo. Podés consultarlo desde
-            Mis Órdenes, filtrando por la patente de este vehículo.
-            </p>
-        </div>
+        <VehicleOrderHistoryPanel
+            key={vehicle.id}
+            vehicleId={vehicle.id}
+            detailPathPrefix="/mechanic/ordenes"
+            vehicleLabel={`${vehicle.brand} ${vehicle.model}`}
+        />
         </div>
     </div>
     );

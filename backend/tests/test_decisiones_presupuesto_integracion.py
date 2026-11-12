@@ -21,7 +21,10 @@ from services.ms2_taller.config import settings as settings_ms2
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as app_ms2
 from services.ms2_taller.models import (
-    Base as BaseMS2, Cliente, EstadoOrden, HistorialEstado, IngresoVehiculo, OrdenTrabajo, Vehiculo,
+    Base as BaseMS2, Cliente, ConfiguracionCapacidadMecanico,
+    ConfiguracionCupoIngresos, EstadoOrden,
+    EventoOutbox, HistorialEstado, IngresoVehiculo, OrdenTrabajo,
+    SolicitudCancelacion, Vehiculo,
 )
 from services.ms2_taller.models.estado_orden import (
     CANCELADO, EN_REPARACION, ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS,
@@ -60,7 +63,7 @@ def _sesion_por_peticion(fabrica):
 
 
 @pytest.fixture
-def flujo(monkeypatch):
+def flujo(monkeypatch, mecanicos_validos):
     yield from preparar_flujo(
         monkeypatch, _base_aislada(BaseMS2), _base_aislada(BaseMS3),
     )
@@ -73,6 +76,18 @@ def preparar_flujo(monkeypatch, base2, base3):
     with fabrica2() as db:
         if not db.scalar(select(func.count()).select_from(EstadoOrden)):
             db.add_all([EstadoOrden(estado_codigo=c, nombre=n) for c, n in ESTADOS_ORDEN.items()])
+        capacidad = db.get(ConfiguracionCapacidadMecanico, 1)
+        if capacidad is None:
+            capacidad = ConfiguracionCapacidadMecanico(configuracion_id=1)
+            db.add(capacidad)
+        capacidad.max_ordenes_activas = 5
+        capacidad.actualizado_por_id = 99
+        cupo = db.get(ConfiguracionCupoIngresos, 1)
+        if cupo is None:
+            cupo = ConfiguracionCupoIngresos(configuracion_id=1)
+            db.add(cupo)
+        cupo.max_ingresos_diarios = 100
+        cupo.actualizado_por_id = 99
         cliente = Cliente(usuario_id=42)
         vehiculo = Vehiculo(cliente=cliente, patente="TEST438", marca="Marca", modelo="Modelo")
         db.add(vehiculo)
@@ -100,7 +115,6 @@ def preparar_flujo(monkeypatch, base2, base3):
         presupuesto_id, repuesto_id = presupuesto.presupuesto_id, repuesto.repuesto_id
 
     monkeypatch.setattr(settings_ms3, "JWT_SECRET_KEY", settings_ms2.JWT_SECRET_KEY)
-    monkeypatch.setattr(settings_ms2, "MS1_URL", "http://ms1-prueba")
     monkeypatch.setattr(settings_ms2, "MS3_URL", "http://ms3-prueba")
     monkeypatch.setattr(settings_ms3, "MS2_URL", "http://ms2-prueba")
     app_ms2.dependency_overrides[get_db_ms2] = _sesion_por_peticion(fabrica2)
@@ -110,13 +124,6 @@ def preparar_flujo(monkeypatch, base2, base3):
     with TestClient(app_ms2) as ms2, TestClient(app_ms3) as ms3:
         def get(url, *, headers, timeout):
             llamadas.append(("GET", url, headers))
-            if url.startswith("http://ms1-prueba"):
-                return httpx.Response(
-                    200,
-                    json={"id": 50, "email": "mecanico@prueba.cl", "full_name": "Mecánico 50",
-                          "roles": ["mecanico"], "is_active": True},
-                    request=httpx.Request("GET", url),
-                )
             if url.startswith("http://ms3-prueba"):
                 if fallo["modo"] == "verificacion":
                     raise httpx.ConnectError("MS3 no disponible")
@@ -165,9 +172,104 @@ def _aplicar(flujo, decision_id, *, orden_id=None, headers=None, **extras):
                           headers=_headers() if headers is None else headers)
 
 
+def _enviar_presupuesto_inicial(flujo, *, headers=None):
+    """Devuelve la fixture a la etapa documentada antes del primer envío."""
+    with flujo.db2() as db:
+        db.get(OrdenTrabajo, flujo.orden_id).estado_codigo = 2
+        db.commit()
+    with flujo.db3() as db:
+        db.scalar(select(VersionPresupuesto)).enviado_en = None
+        db.commit()
+    return flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones/1/envio",
+        headers=_headers(99, NombreRol.ADMINISTRADOR) if headers is None else headers,
+    )
+
+
 def _estado_y_historial(flujo):
     with flujo.db2() as db:
         return db.get(OrdenTrabajo, flujo.orden_id).estado_codigo, list(db.scalars(select(HistorialEstado)))
+
+
+def _firma_historial(registros):
+    return tuple(
+        (registro.historial_id, registro.estado_anterior, registro.estado_nuevo,
+         registro.actor_usuario_id, registro.origen, registro.observacion,
+         registro.decision_presupuesto_id, registro.envio_presupuesto_id,
+         registro.fecha_hora)
+        for registro in registros
+    )
+
+
+def test_ms3_informa_aprobacion_inicial_persistida_a_ms2(flujo):
+    ruta = f"/presupuestos/ordenes/{flujo.orden_id}/primera-aprobacion"
+    sin_aprobacion = flujo.ms3.get(ruta, headers=_headers())
+    assert sin_aprobacion.status_code == 200, sin_aprobacion.text
+    assert sin_aprobacion.json() == {
+        "orden_id": flujo.orden_id,
+        "aprobacion_registrada": False,
+    }
+
+    with flujo.db3() as db:
+        version = db.scalar(select(VersionPresupuesto))
+        db.add(DecisionPresupuesto(
+            version=version, cliente_usuario_id=42,
+            decision="aprobado", repuestos_disponibles=True,
+        ))
+        db.commit()
+
+    aprobada = flujo.ms3.get(ruta, headers=_headers(99, NombreRol.ADMINISTRADOR))
+    assert aprobada.status_code == 200, aprobada.text
+    assert aprobada.json()["aprobacion_registrada"] is True
+    assert flujo.ms3.get(ruta, headers=_headers(88)).status_code == 404
+
+
+def test_envio_inicial_coordina_estado_historial_y_actor_administrador(flujo):
+    # El mismo token que usa la petición: generar otro después podía cambiar
+    # de segundo (iat/exp) y la comparación fallaba de forma intermitente.
+    cabecera = _headers(99, NombreRol.ADMINISTRADOR)
+    respuesta = _enviar_presupuesto_inicial(flujo, headers=cabecera)
+    assert respuesta.status_code == 200, respuesta.text
+    body = respuesta.json()
+    aplicacion = body["aplicacion_en_orden"]
+    assert body["efecto_en_orden"] == "esperando_aprobacion"
+    assert aplicacion["estado_aplicado"] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert aplicacion["presupuesto_id"] == flujo.presupuesto_id
+    estado, historial = _estado_y_historial(flujo)
+    assert estado == ESPERANDO_APROBACION_PRESUPUESTO and len(historial) == 1
+    registro = historial[0]
+    assert (registro.estado_anterior, registro.estado_nuevo) == (2, 3)
+    assert registro.envio_presupuesto_id == flujo.presupuesto_id
+    assert registro.actor_usuario_id == 99 and registro.origen == "usuario"
+    assert registro.decision_presupuesto_id is None
+    assert registro.fecha_hora is not None
+    assert all(headers["Authorization"] == cabecera["Authorization"]
+               for _, _, headers in flujo.llamadas)
+
+
+@pytest.mark.parametrize("fallo,historias_antes", [("antes", 0), ("verificacion", 0), ("despues", 1)])
+def test_fallo_de_ms2_deja_envio_guardado_y_reintento_idempotente(flujo, fallo, historias_antes):
+    flujo.fallo["modo"] = fallo
+    respuesta = _enviar_presupuesto_inicial(flujo)
+    assert respuesta.status_code == 503, respuesta.text
+    body = respuesta.json()
+    assert body["envio_confirmado"] is True and body["aplicacion_confirmada"] is False
+    assert body["presupuesto_id"] == flujo.presupuesto_id
+    assert body["reintento"] == (
+        f"/api/presupuestos/{flujo.presupuesto_id}/envio-inicial/aplicacion"
+    )
+    with flujo.db3() as db:
+        assert db.scalar(select(VersionPresupuesto)).enviado_en is not None
+    assert len(_estado_y_historial(flujo)[1]) == historias_antes
+    flujo.fallo["modo"] = None
+    reintento = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/envio-inicial/aplicacion",
+        headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert reintento.status_code == 200, reintento.text
+    assert reintento.json()["estado_aplicado"] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert _estado_y_historial(flujo)[0] == ESPERANDO_APROBACION_PRESUPUESTO
+    assert len(_estado_y_historial(flujo)[1]) == 1
 
 
 @pytest.mark.parametrize("decision,stock,esperado,motivo", [
@@ -266,18 +368,39 @@ def test_fallo_despues_del_flush_revierte_estado_e_historial_juntos(flujo):
 @pytest.mark.parametrize("decision", ["aprobado", "rechazado"])
 def test_modificacion_conserva_comportamiento_y_no_reaplica_transicion_inicial(flujo, decision):
     assert _decidir(flujo).status_code == 201
+    estado_aprobado, historial_aprobado = _estado_y_historial(flujo)
+    assert estado_aprobado == EN_REPARACION and len(historial_aprobado) == 1
+    historial_aprobado = _firma_historial(historial_aprobado)
     with flujo.db3() as db:
-        # Fixture de una aprobación previa: SQLite no ejecuta el trigger de MS3.
+        # PostgreSQL marca la versión vigente con un trigger al aprobar; SQLite
+        # no ejecuta ese trigger, así que el fixture reproduce su efecto.
         db.scalar(select(VersionPresupuesto)).bloqueada_en = datetime.now(timezone.utc)
-        version = VersionPresupuesto(
-            presupuesto_id=flujo.presupuesto_id, numero=2, creado_por_id=50,
-            es_modificacion=True,
-        )
-        db.add(version)
-        db.flush()
-        version.enviado_en = func.now()
         db.commit()
+
+    nueva_version = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones",
+        json={}, headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert nueva_version.status_code == 201, nueva_version.text
+    version = next(
+        version for version in nueva_version.json()["versiones"]
+        if version["numero"] == 2
+    )
+    assert version["es_modificacion"] is True
+
     llamadas_antes = len([llamada for llamada in flujo.llamadas if llamada[0] == "POST"])
+    envio = flujo.ms3.post(
+        f"/presupuestos/{flujo.presupuesto_id}/versiones/2/envio",
+        headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert envio.status_code == 200, envio.text
+    assert envio.json()["efecto_en_orden"] is None
+    assert envio.json()["aplicacion_en_orden"] is None
+    assert len([llamada for llamada in flujo.llamadas if llamada[0] == "POST"]) == llamadas_antes
+    estado_actual, historial_actual = _estado_y_historial(flujo)
+    assert estado_actual == estado_aprobado
+    assert _firma_historial(historial_actual) == historial_aprobado
+
     body = {"decision": decision, "motivo": "Rechazo el trabajo adicional"}
     respuesta = flujo.ms3.post(
         f"/presupuestos/{flujo.presupuesto_id}/versiones/2/decision",
@@ -292,8 +415,9 @@ def test_modificacion_conserva_comportamiento_y_no_reaplica_transicion_inicial(f
     assert _aplicar(flujo, decision_id).status_code == 409
     assert flujo.ms3.post(f"/presupuestos/decisiones/{decision_id}/aplicacion",
                          headers=_headers()).status_code == 409
-    assert _estado_y_historial(flujo)[0] == EN_REPARACION
-    assert len(_estado_y_historial(flujo)[1]) == 1
+    estado_actual, historial_actual = _estado_y_historial(flujo)
+    assert estado_actual == estado_aprobado
+    assert _firma_historial(historial_actual) == historial_aprobado
 
 
 def test_stock_del_reintento_no_cambia_la_rama_persistida(flujo):
@@ -404,15 +528,21 @@ def test_ms2_sin_confirmacion_de_propiedad_no_deja_decision_guardada(flujo, monk
     assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
 
 
-def test_estado_incompatible_deja_decision_persistida_y_no_escribe_historial(flujo):
+def test_estado_incompatible_no_registra_decision_ni_historial(flujo):
+    """SCRUM-525: MS3 lee el estado de la orden en MS2 antes de guardar la decisión.
+
+    Con la orden fuera de "Esperando aprobación de presupuesto" responde 409 y no
+    deja una decisión huérfana que MS2 nunca podría aplicar. (Si el estado cambia
+    entre la verificación y la aplicación, sigue el camino 503 + reintento.)
+    """
     with flujo.db2() as db:
         db.get(OrdenTrabajo, flujo.orden_id).estado_codigo = RECIBIDO
         db.commit()
     respuesta = _decidir(flujo)
-    assert respuesta.status_code == 503
-    assert respuesta.json()["estado_ms2"] == 409
-    assert "no permitido" in respuesta.json()["detalle_ms2"]
-    assert _aplicar(flujo, respuesta.json()["decision_id"]).status_code == 409
+    assert respuesta.status_code == 409
+    assert "no está esperando la aprobación" in respuesta.json()["detail"]
+    with flujo.db3() as db:
+        assert db.scalar(select(func.count()).select_from(DecisionPresupuesto)) == 0
     assert _estado_y_historial(flujo) == (RECIBIDO, [])
 
 
@@ -438,3 +568,179 @@ def test_aprobacion_historica_sin_snapshot_no_inventa_stock(flujo):
     assert consulta.status_code == 409
     assert _aplicar(flujo, decision_id).status_code == 409
     assert _estado_y_historial(flujo)[1] == []
+
+
+@pytest.mark.parametrize("estado_inicial", [1, 2, 3])
+def test_cancelacion_integrada_solicita_confirma_y_reintenta_sin_duplicados(
+    flujo, estado_inicial,
+):
+    with flujo.db2() as db:
+        db.get(OrdenTrabajo, flujo.orden_id).estado_codigo = estado_inicial
+        db.commit()
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    solicitud = flujo.ms2.post(ruta, json={"motivo": " No continuar "}, headers=_headers())
+    assert solicitud.status_code == 201, solicitud.text
+    assert _estado_y_historial(flujo) == (estado_inicial, [])
+    assert solicitud.json()["cliente_usuario_id"] == 42
+    assert solicitud.json()["motivo"] == "No continuar"
+
+    repetida = flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers())
+    assert repetida.status_code == 200
+    assert repetida.json() == solicitud.json()
+    admin = _headers(99, NombreRol.ADMINISTRADOR)
+    primera = flujo.ms2.post(f"{ruta}/confirmacion", headers=admin)
+    segunda = flujo.ms2.post(f"{ruta}/confirmacion", headers=admin)
+    assert primera.status_code == segunda.status_code == 200
+    assert segunda.json() == primera.json()
+    estado, historial = _estado_y_historial(flujo)
+    assert estado == CANCELADO
+    assert len(historial) == 1
+    assert (historial[0].estado_anterior, historial[0].estado_nuevo) == (estado_inicial, CANCELADO)
+    assert historial[0].actor_usuario_id == 99
+    assert historial[0].observacion == "No continuar"
+    with flujo.db2() as db:
+        registro = db.scalar(select(SolicitudCancelacion))
+        assert registro.cliente_usuario_id == 42
+        assert registro.administrador_id == 99
+        assert registro.estado == "confirmada" and registro.confirmada_en is not None
+        eventos = list(db.scalars(select(EventoOutbox)))
+        assert len(eventos) == 1
+        assert eventos[0].payload["estado_nuevo"] == CANCELADO
+        assert eventos[0].payload["cliente_usuario_id"] == 42
+    pendientes = flujo.ms2.get("/ordenes/cancelaciones/pendientes", headers=admin)
+    assert pendientes.status_code == 200 and pendientes.json() == []
+    assert any("/primera-aprobacion" in url for _, url, _ in flujo.llamadas)
+
+
+@pytest.mark.parametrize("solicitud_previa", [False, True])
+def test_cancelacion_rechaza_aprobacion_persistida_aunque_ms2_no_haya_avanzado(
+    flujo, solicitud_previa,
+):
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    if solicitud_previa:
+        solicitud = flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers())
+        assert solicitud.status_code == 201
+    flujo.fallo["modo"] = "antes"
+    aprobacion = _decidir(flujo)
+    assert aprobacion.status_code == 503
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+    # MS3 ya confirmó una aprobación; el estado rezagado de MS2 no habilita cancelar.
+    if solicitud_previa:
+        respuesta = flujo.ms2.post(
+            f"{ruta}/confirmacion", headers=_headers(99, NombreRol.ADMINISTRADOR),
+        )
+    else:
+        respuesta = flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers())
+    assert respuesta.status_code == 409, respuesta.text
+    assert "aprobación inicial" in respuesta.json()["detail"]
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+    with flujo.db2() as db:
+        registro = db.scalar(select(SolicitudCancelacion))
+        if solicitud_previa:
+            assert registro.estado == "pendiente" and registro.administrador_id is None
+        else:
+            assert registro is None
+        assert db.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+
+
+def test_cancelacion_sin_verificacion_ms3_conserva_solicitud_pendiente(flujo):
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    assert flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers()).status_code == 201
+    flujo.fallo["modo"] = "verificacion"
+    respuesta = flujo.ms2.post(
+        f"{ruta}/confirmacion", headers=_headers(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 503
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+    with flujo.db2() as db:
+        registro = db.scalar(select(SolicitudCancelacion))
+        assert registro.estado == "pendiente" and registro.confirmada_en is None
+        assert db.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+
+
+def test_cancelacion_fallo_tras_flush_revierte_confirmacion_estado_historial_y_evento(
+    flujo, monkeypatch,
+):
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    assert flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers()).status_code == 201
+    registrar = servicio_ordenes.registrar_historial_estado
+
+    def fallar_tras_escribir(db, **datos):
+        registrar(db, **datos)
+        db.flush()
+        raise SQLAlchemyError("Fallo simulado después de escribir todos los registros")
+
+    monkeypatch.setattr(servicio_ordenes, "registrar_historial_estado", fallar_tras_escribir)
+    admin = _headers(99, NombreRol.ADMINISTRADOR)
+    respuesta = flujo.ms2.post(f"{ruta}/confirmacion", headers=admin)
+    assert respuesta.status_code == 500
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+    with flujo.db2() as db:
+        registro = db.scalar(select(SolicitudCancelacion))
+        assert registro.estado == "pendiente"
+        assert registro.administrador_id is None and registro.confirmada_en is None
+        assert db.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+    monkeypatch.setattr(servicio_ordenes, "registrar_historial_estado", registrar)
+    assert flujo.ms2.post(f"{ruta}/confirmacion", headers=admin).status_code == 200
+
+
+@pytest.mark.parametrize("usuario,rol", [(42, NombreRol.CLIENTE), (50, NombreRol.MECANICO)])
+def test_cancelacion_cliente_y_mecanico_no_pueden_confirmar_ni_listar_pendientes(
+    flujo, usuario, rol,
+):
+    ruta = f"/ordenes/{flujo.orden_id}/cancelacion"
+    assert flujo.ms2.post(ruta, json={"motivo": "No continuar"}, headers=_headers()).status_code == 201
+    headers = _headers(usuario, rol)
+    assert flujo.ms2.post(f"{ruta}/confirmacion", headers=headers).status_code == 403
+    assert flujo.ms2.get("/ordenes/cancelaciones/pendientes", headers=headers).status_code == 403
+    assert _estado_y_historial(flujo) == (ESPERANDO_APROBACION_PRESUPUESTO, [])
+
+
+def _usar_ingreso_publico_ms3(monkeypatch, *, protegido=False):
+    """Simula solo el ingreso de Vercel; las APIs y bases de MS2/MS3 siguen siendo reales."""
+    from services.ms2_taller.direccion_ms3 import url_ms3_por_defecto
+
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("VERCEL_URL", "taller-preview.vercel.app")
+    base = url_ms3_por_defecto()
+    monkeypatch.setattr(settings_ms2, "MS3_URL", base)
+    transporte = httpx.get
+    llamadas = []
+
+    def get(url, *, headers, timeout):
+        if url.startswith(base + "/"):
+            llamadas.append((url, headers))
+            if protegido and headers.get("x-vercel-protection-bypass") != "secreto-plataforma-prueba":
+                return httpx.Response(401)
+            url = "http://ms3-prueba" + url.removeprefix(base)
+        return transporte(url, headers=headers, timeout=timeout)
+
+    monkeypatch.setattr(httpx, "get", get)
+    return llamadas
+
+
+@pytest.mark.parametrize("protegido", [False, True])
+def test_envio_y_decision_completan_el_flujo_con_ms3_por_https_publico(flujo, monkeypatch, protegido):
+    monkeypatch.delenv("VERCEL_AUTOMATION_BYPASS_SECRET", raising=False)
+    if protegido:
+        monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "secreto-plataforma-prueba")
+    llamadas = _usar_ingreso_publico_ms3(monkeypatch, protegido=protegido)
+    enviada = _enviar_presupuesto_inicial(flujo)
+    assert enviada.status_code == 200, enviada.text
+    aprobada = _decidir(flujo)
+    assert aprobada.status_code == 201, aprobada.text
+    estado, historial = _estado_y_historial(flujo)
+    assert estado == EN_REPARACION
+    assert [(h.estado_anterior, h.estado_nuevo) for h in historial] == [(2, 3), (3, 5)]
+    assert llamadas
+    assert all(headers["Authorization"].startswith("Bearer ") for _, headers in llamadas)
+    assert "secreto-plataforma-prueba" not in enviada.text + aprobada.text
+
+
+def test_proteccion_vercel_sin_credencial_no_omite_validacion_de_ms3(flujo, monkeypatch):
+    monkeypatch.delenv("VERCEL_AUTOMATION_BYPASS_SECRET", raising=False)
+    llamadas = _usar_ingreso_publico_ms3(monkeypatch, protegido=True)
+    r = _enviar_presupuesto_inicial(flujo)
+    assert r.status_code == 503
+    assert llamadas
+    assert _estado_y_historial(flujo) == (2, [])

@@ -6,7 +6,14 @@ from typing import Protocol
 import httpx
 
 from services.ms2_taller.config import settings
-from shared.contratos_decisiones import DecisionPresupuestoVerificada
+from services.ms2_taller.direccion_ms3 import cabeceras_para_ms3
+from shared.contratos_decisiones import (
+    DisponibilidadRepuestosSolicitud,
+    DisponibilidadRepuestosVerificada,
+    AprobacionInicialOrdenVerificada,
+    DecisionPresupuestoVerificada,
+    EnvioPresupuestoVerificado,
+)
 
 
 class DecisionNoVisibleError(Exception):
@@ -21,8 +28,70 @@ class ServicioPresupuestosNoDisponibleError(Exception):
     """No se pudo obtener una decisión verificable desde MS3."""
 
 
+class DisponibilidadRepuestosNoVisibleError(Exception):
+    """La reserva de repuestos no existe o no corresponde a la orden."""
+
+
+class DisponibilidadRepuestosNoAplicableError(Exception):
+    """MS3 no confirmó la reserva para esa orden."""
+
+
+class VerificadorDisponibilidadRepuestos(Protocol):
+    def consultar(
+        self, orden_id: int, clave_operacion: str, token: str,
+    ) -> DisponibilidadRepuestosVerificada: ...
+
+
 class VerificadorDecisiones(Protocol):
     def consultar(self, decision_id: int, token: str) -> DecisionPresupuestoVerificada: ...
+
+
+class VerificadorAprobacionInicial(Protocol):
+    def consultar(self, orden_id: int, token: str) -> AprobacionInicialOrdenVerificada: ...
+
+
+class EnvioPresupuestoNoVisibleError(Exception):
+    """El presupuesto no existe o no tiene un envío inicial verificable."""
+
+
+class EnvioPresupuestoNoAplicableError(Exception):
+    """La versión inicial de ese presupuesto todavía no fue enviada."""
+
+
+class VerificadorEnviosPresupuesto(Protocol):
+    def consultar(self, presupuesto_id: int, token: str) -> EnvioPresupuestoVerificado: ...
+
+
+class VerificadorEnviosPresupuestoHttp:
+    def __init__(self, url_base: str, timeout: float) -> None:
+        self.url_base = url_base.rstrip("/")
+        self.timeout = timeout
+
+    def consultar(self, presupuesto_id: int, token: str) -> EnvioPresupuestoVerificado:
+        try:
+            respuesta = httpx.get(
+                f"{self.url_base}/presupuestos/{presupuesto_id}/envio-inicial",
+                headers=cabeceras_para_ms3(self.url_base, token), timeout=self.timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise ServicioPresupuestosNoDisponibleError("No fue posible consultar MS3") from exc
+        if respuesta.status_code in (403, 404):
+            raise EnvioPresupuestoNoVisibleError("Envío inicial no encontrado")
+        if respuesta.status_code == 409:
+            raise EnvioPresupuestoNoAplicableError("La primera versión aún no fue enviada")
+        if respuesta.status_code != 200:
+            raise ServicioPresupuestosNoDisponibleError(
+                "MS3 no devolvió un envío inicial verificable"
+            )
+        try:
+            envio = EnvioPresupuestoVerificado.model_validate(respuesta.json())
+        except ValueError as exc:
+            raise ServicioPresupuestosNoDisponibleError("Respuesta inválida de MS3") from exc
+        if envio.presupuesto_id != presupuesto_id:
+            raise ServicioPresupuestosNoDisponibleError(
+                "La referencia devuelta por MS3 no coincide"
+            )
+        return envio
 
 
 class VerificadorDecisionesHttp:
@@ -34,7 +103,7 @@ class VerificadorDecisionesHttp:
         try:
             respuesta = httpx.get(
                 f"{self.url_base}/presupuestos/decisiones/{decision_id}",
-                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+                headers=cabeceras_para_ms3(self.url_base, token), timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise ServicioPresupuestosNoDisponibleError("No fue posible consultar MS3") from exc
@@ -53,5 +122,89 @@ class VerificadorDecisionesHttp:
         return decision
 
 
+class VerificadorAprobacionInicialHttp:
+    def __init__(self, url_base: str, timeout: float) -> None:
+        self.url_base = url_base.rstrip("/")
+        self.timeout = timeout
+
+    def consultar(self, orden_id: int, token: str) -> AprobacionInicialOrdenVerificada:
+        try:
+            respuesta = httpx.get(
+                f"{self.url_base}/presupuestos/ordenes/{orden_id}/primera-aprobacion",
+                headers=cabeceras_para_ms3(self.url_base, token), timeout=self.timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise ServicioPresupuestosNoDisponibleError("No fue posible consultar MS3") from exc
+        if respuesta.status_code in (403, 404):
+            raise DecisionNoVisibleError("Orden no encontrada")
+        if respuesta.status_code != 200:
+            raise ServicioPresupuestosNoDisponibleError(
+                "MS3 no devolvió una verificación de aprobación inicial"
+            )
+        try:
+            resultado = AprobacionInicialOrdenVerificada.model_validate(respuesta.json())
+        except ValueError as exc:
+            raise ServicioPresupuestosNoDisponibleError("Respuesta inválida de MS3") from exc
+        if resultado.orden_id != orden_id:
+            raise ServicioPresupuestosNoDisponibleError("La referencia devuelta por MS3 no coincide")
+        return resultado
+
+
 def obtener_verificador_decisiones() -> VerificadorDecisiones:
     return VerificadorDecisionesHttp(settings.MS3_URL, settings.MS3_TIMEOUT_SEGUNDOS)
+
+
+def obtener_verificador_aprobacion_inicial() -> VerificadorAprobacionInicial:
+    return VerificadorAprobacionInicialHttp(settings.MS3_URL, settings.MS3_TIMEOUT_SEGUNDOS)
+
+
+def obtener_verificador_envios_presupuesto() -> VerificadorEnviosPresupuesto:
+    return VerificadorEnviosPresupuestoHttp(settings.MS3_URL, settings.MS3_TIMEOUT_SEGUNDOS)
+
+
+class VerificadorDisponibilidadRepuestosHttp:
+    def __init__(self, url_base: str, timeout: float) -> None:
+        self.url_base = url_base.rstrip("/")
+        self.timeout = timeout
+
+    def consultar(
+        self, orden_id: int, clave_operacion: str, token: str,
+    ) -> DisponibilidadRepuestosVerificada:
+        try:
+            respuesta = httpx.get(
+                f"{self.url_base}/inventario/ordenes/{orden_id}/disponibilidad/{clave_operacion}",
+                headers=cabeceras_para_ms3(self.url_base, token), timeout=self.timeout,
+            )
+        except httpx.HTTPError as exc:
+            raise ServicioPresupuestosNoDisponibleError(
+                "No fue posible verificar la reserva en MS3"
+            ) from exc
+        if respuesta.status_code in (403, 404):
+            raise DisponibilidadRepuestosNoVisibleError(
+                "Reserva de repuestos no encontrada"
+            )
+        if respuesta.status_code == 409:
+            raise DisponibilidadRepuestosNoAplicableError(
+                "MS3 no confirmó la reserva de repuestos"
+            )
+        if respuesta.status_code != 200:
+            raise ServicioPresupuestosNoDisponibleError(
+                "MS3 no devolvió una reserva verificable"
+            )
+        try:
+            hecho = DisponibilidadRepuestosVerificada.model_validate(respuesta.json())
+        except ValueError as exc:
+            raise ServicioPresupuestosNoDisponibleError(
+                "Respuesta inválida de MS3"
+            ) from exc
+        if hecho.orden_id != orden_id or hecho.clave_operacion != clave_operacion:
+            raise ServicioPresupuestosNoDisponibleError(
+                "La reserva devuelta por MS3 no coincide"
+            )
+        return hecho
+
+
+def obtener_verificador_disponibilidad_repuestos() -> VerificadorDisponibilidadRepuestos:
+    return VerificadorDisponibilidadRepuestosHttp(
+        settings.MS3_URL, settings.MS3_TIMEOUT_SEGUNDOS
+    )

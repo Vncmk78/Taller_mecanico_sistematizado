@@ -1,6 +1,7 @@
 import type {
   AuthResponse,
   LoginRequest,
+  RegisterRequest,
   User,
   UserRole,
   UsuarioListado,
@@ -22,18 +23,40 @@ interface ApiAuthResponse {
   user: ApiUser;
 }
 
+const ROLES_VALIDOS: readonly UserRole[] = ['cliente', 'mecanico', 'administrador'];
+
+function esRolValido(rol: string): rol is UserRole {
+  return (ROLES_VALIDOS as readonly string[]).includes(rol);
+}
+
+// `roles` es una lista y los roles se acumulan: se conservan todos para que las
+// guardas (getUserRoles / hasAnyRole) den acceso a cada portal de la cuenta. El
+// primero sigue definiendo el portal de ingreso (diferencia D-03).
 function toDomainUser(apiUser: ApiUser): User {
-  const role = (apiUser.roles?.[0] ?? 'cliente') as UserRole;
+  const roles = (apiUser.roles ?? []).filter(esRolValido);
+  const role = roles[0] ?? 'cliente';
   return {
     id: String(apiUser.id),
     email: apiUser.email,
     full_name: apiUser.full_name,
     role,
+    roles: roles.length > 0 ? roles : [role],
     is_active: apiUser.is_active,
   };
 }
 
 class AuthService implements AuthPort {
+  async register(data: RegisterRequest): Promise<User> {
+    // Solo se envían los tres campos del contrato: MS1 asigna el rol Cliente y
+    // responde 422 ante cualquier campo extra (por ejemplo, un rol).
+    const { data: usuario } = await apiClient.post<ApiUser>('/auth/register', {
+      email: data.email,
+      password: data.password,
+      full_name: data.full_name,
+    });
+    return toDomainUser(usuario);
+  }
+
   async login(credentials: LoginRequest): Promise<AuthResponse> {
     const { data } = await apiClient.post<ApiAuthResponse>('/auth/login', credentials);
     return {

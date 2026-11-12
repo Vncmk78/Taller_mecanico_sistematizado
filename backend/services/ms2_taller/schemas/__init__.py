@@ -8,9 +8,14 @@ from services.ms2_taller.schemas.bitacora import (
 )
 from services.ms2_taller.schemas.orden import (
     AsignacionMecanicoActualizar,
+    CapacidadMecanicoActualizar,
+    CapacidadMecanicoRespuesta,
+    CupoDiarioIngresosActualizar,
+    CupoDiarioIngresosRespuesta,
     HistorialEstadoRespuesta,
     OrdenCrear,
     OrdenRespuesta,
+    SolicitudCancelacionRespuesta,
 )
 from services.ms2_taller.schemas.vehiculo import (
     VehiculoActualizar,
@@ -22,9 +27,14 @@ __all__ = [
     "AsignacionMecanicoActualizar",
     "BitacoraCrear",
     "BitacoraRespuesta",
+    "CapacidadMecanicoActualizar",
+    "CapacidadMecanicoRespuesta",
+    "CupoDiarioIngresosActualizar",
+    "CupoDiarioIngresosRespuesta",
     "HistorialEstadoRespuesta",
     "OrdenCrear",
     "OrdenRespuesta",
+    "SolicitudCancelacionRespuesta",
     "RepuestoBitacoraEntrada",
     "RepuestoBitacoraRespuesta",
     "VehiculoActualizar",

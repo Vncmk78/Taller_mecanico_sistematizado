@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AppBrand } from '@/presentation/components/layout/AppBrand';
 import { AppNavLink, type NavSection } from '@/presentation/components/layout/AppNavLink';
+import { NotificationBell } from '@/presentation/components/notifications/NotificationBell';
 import { SidebarNav } from '@/presentation/components/layout/SidebarNav';
 import { TopBar } from '@/presentation/components/layout/TopBar';
 import { UserMenu } from '@/presentation/components/layout/UserMenu';
@@ -27,6 +28,17 @@ export function RoleLayout({
   headerLeft,
   headerRightPrepend,
 }: RoleLayoutProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [menuOpen]);
+
   if (variant === 'topnav') {
     return (
       <div className="min-h-screen flex flex-col animate-fade-in">
@@ -36,7 +48,7 @@ export function RoleLayout({
         >
           Saltar al contenido principal
         </a>
-        <header className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-10 py-4 border-b border-border-custom bg-surface sticky top-0 z-50">
+        <header className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-10 py-4 border-b-3 border-b-primary-orange bg-[#111318] sticky top-0 z-50 text-white shadow-[0_4px_14px_rgba(0,0,0,0.25)]">
           <div className="flex items-center gap-2.5 shrink-0">
             <AppBrand />
             {badge && (
@@ -55,11 +67,13 @@ export function RoleLayout({
             ))}
           </nav>
 
-          <div className="shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <NotificationBell tone="dark" />
             <UserMenu
               userName={userName}
               subtitle={userSubtitle}
               onLogout={onLogout}
+              tone="dark"
             />
           </div>
         </header>
@@ -79,12 +93,12 @@ export function RoleLayout({
       >
         Saltar al contenido principal
       </a>
-      <SidebarNav sections={sections} />
+      <SidebarNav sections={sections} open={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <main
         id="contenido-principal"
         tabIndex={-1}
-        className="flex-grow flex flex-col bg-bg-main h-screen overflow-y-auto focus:outline-none"
+        className="flex min-w-0 flex-grow flex-col bg-bg-secondary min-h-screen lg:h-screen lg:overflow-y-auto focus:outline-none"
       >
         <TopBar
           left={headerLeft}
@@ -93,6 +107,8 @@ export function RoleLayout({
           userName={userName}
           userSubtitle={userSubtitle}
           onLogout={onLogout}
+          onOpenMenu={() => setMenuOpen(true)}
+          menuOpen={menuOpen}
         />
 
         <div className="flex-grow">

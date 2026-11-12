@@ -30,6 +30,8 @@ _RECIBIDO = {
     "creado_por_id": 99,
     "creado_en": "2026-09-28T10:30:00-03:00",
     "actualizado_en": "2026-09-28T10:30:00-03:00",
+    "devuelto_en": None,
+    "devuelto_por_id": None,
 }
 _DIAGNOSTICO = {
     **_RECIBIDO,

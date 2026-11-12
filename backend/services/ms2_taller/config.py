@@ -6,20 +6,25 @@ puedan convivir en un mismo archivo .env sin pisarse.
 from __future__ import annotations
 
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from shared.config import ServiceSettings
+from shared.entorno import archivo_entorno
+from services.ms2_taller.direccion_ms3 import url_ms3_por_defecto
 
 
 class Settings(ServiceSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=archivo_entorno(),
         env_file_encoding="utf-8",
         env_prefix="MS2_",
         extra="ignore",
     )
+
+    NOTIFICATION_LOOKUP_SECRET: SecretStr | None = Field(default=None, min_length=32)
 
     SERVICE_NAME: str = "MS2 — Vehículos y Órdenes de Trabajo"
     DATABASE_URL: str = (
@@ -31,12 +36,34 @@ class Settings(ServiceSettings):
     JWT_SECRET_KEY: SecretStr = Field(min_length=32)
     JWT_ALGORITHM: Literal["HS256"] = "HS256"
 
-    # La asignación de mecánico valida el destino contra MS1 (matriz §4.3).
+    MS3_URL: str = Field(default_factory=url_ms3_por_defecto)
+    MS3_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
+    # Publicación interna MS2 → MS1. El worker no se inicia si falta el secreto.
+    EVENT_SHARED_SECRET: SecretStr | None = Field(default=None, min_length=32)
     MS1_URL: str = "http://localhost:8001"
     MS1_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
+    EVENT_WORKER_ENABLED: bool = False
+    EVENT_POLL_SECONDS: float = Field(default=1.0, gt=0, le=60)
+    EVENT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=60)
+    EVENT_RETRY_MAX_SECONDS: int = Field(default=300, gt=0, le=3600)
+    TIMEZONE: str = "America/Santiago"
 
-    MS3_URL: str = "http://localhost:8003"
-    MS3_TIMEOUT_SEGUNDOS: float = Field(default=3.0, gt=0, le=30)
+    @model_validator(mode="after")
+    def validar_publicador_eventos(self) -> "Settings":
+        if self.EVENT_WORKER_ENABLED and self.EVENT_SHARED_SECRET is None:
+            raise ValueError(
+                "MS2_EVENT_SHARED_SECRET es obligatorio al habilitar el worker de eventos"
+            )
+        return self
+
+    @field_validator("TIMEZONE")
+    @classmethod
+    def validar_zona_horaria(cls, valor: str) -> str:
+        try:
+            ZoneInfo(valor)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("MS2_TIMEZONE debe ser una zona IANA válida") from exc
+        return valor
 
 
 settings = Settings()

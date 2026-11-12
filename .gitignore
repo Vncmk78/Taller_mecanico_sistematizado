@@ -32,6 +32,9 @@ coverage/
 .env
 .env.local
 .env.*.local
+# Ambiente de pruebas separado (backend/scripts/ambiente_pruebas.py)
+.env.pruebas
+backend/.pruebas/
 !.env.example
 
 # Skills y reglas locales - uso personal, NO se versionan

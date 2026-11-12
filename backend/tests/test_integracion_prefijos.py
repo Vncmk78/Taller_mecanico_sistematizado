@@ -46,7 +46,7 @@ from services.ms2_taller.config import settings as ms2_settings
 from services.ms2_taller.db import Base as BaseMS2
 from services.ms2_taller.db import get_db as get_db_ms2
 from services.ms2_taller.main import app as app_ms2
-from services.ms2_taller.models import Cliente
+from services.ms2_taller.models import Cliente, ConfiguracionCupoIngresos
 from services.ms2_taller.models.estado_orden import ESTADOS_ORDEN, EstadoOrden
 from services.ms3_presupuestos.config import settings as ms3_settings
 from services.ms3_presupuestos.db import Base as BaseMS3
@@ -165,6 +165,13 @@ def ecosistema(monkeypatch: pytest.MonkeyPatch):
             EstadoOrden(estado_codigo=codigo, nombre=nombre)
             for codigo, nombre in ESTADOS_ORDEN.items()
         ]
+    )
+    sesion_ms2.add(
+        ConfiguracionCupoIngresos(
+            configuracion_id=1,
+            max_ingresos_diarios=100,
+            actualizado_por_id=99,
+        )
     )
     sesion_ms2.commit()
 

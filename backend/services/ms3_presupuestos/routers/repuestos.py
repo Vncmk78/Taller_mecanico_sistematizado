@@ -2,8 +2,10 @@
 
     GET    /repuestos?proveedor_id=&q=&bajo_umbral=&con_stock=&ordenar=&desde=&limite=
     GET    /repuestos/{repuesto_id}           detalle con umbral efectivo
+    GET    /repuestos/{repuesto_id}/trazabilidad  proveedor actual, historial, ingresos y uso
     POST   /repuestos                         alta con stock inicial (Administrador)
-    PATCH  /repuestos/{repuesto_id}           nombre, proveedor, umbral (Administrador)
+    PATCH  /repuestos/{repuesto_id}           nombre, proveedor, umbral (Administrador);
+                                              el cambio de proveedor queda en el historial
     DELETE /repuestos/{repuesto_id}           solo si nunca se usó (Administrador)
 
 `bajo_umbral=true` lista los repuestos con stock < umbral efectivo (el
@@ -25,8 +27,10 @@ from services.ms3_presupuestos.schemas.catalogo import (
     RepuestoActualizar,
     RepuestoCrear,
     RepuestoSalida,
+    TrazabilidadRepuesto,
 )
 from services.ms3_presupuestos.services import catalogo as casos
+from services.ms3_presupuestos.services import trazabilidad
 from shared.auth import NombreRol, PrincipalAutenticado
 
 router = APIRouter(prefix="/repuestos", tags=["repuestos"])
@@ -70,6 +74,15 @@ def listar(
 def detalle(repuesto_id: int = IdRepuesto,
             uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo)) -> RepuestoSalida:
     return casos.a_repuesto(uow.repuestos.obtener_o_error(repuesto_id), casos.umbral_general(uow))
+
+
+@router.get("/{repuesto_id}/trazabilidad", response_model=TrazabilidadRepuesto,
+            summary="Proveedor actual, historial de proveedores, ingresos por proveedor y uso por orden",
+            responses={**_401, **_403, **_404}, dependencies=[Depends(_lectura)])
+def trazabilidad_repuesto(repuesto_id: int = IdRepuesto,
+                          uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo)
+                          ) -> TrazabilidadRepuesto:
+    return trazabilidad.trazabilidad_repuesto(uow, repuesto_id)
 
 
 @router.post("", response_model=RepuestoSalida, status_code=status.HTTP_201_CREATED,

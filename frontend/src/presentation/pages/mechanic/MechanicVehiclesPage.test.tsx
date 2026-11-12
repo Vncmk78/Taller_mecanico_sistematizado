@@ -81,7 +81,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
         renderPage();
 
         expect(
-            screen.getByRole('textbox', { name: 'Buscar por patente, marca o modelo' })
+            screen.getByRole('searchbox', { name: 'Buscar por patente, marca o modelo' })
         ).toBeInTheDocument();
     });
 
@@ -99,7 +99,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
 
         expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
 
-        fireEvent.change(screen.getByRole('textbox', { name: 'Buscar por patente, marca o modelo' }), {
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar por patente, marca o modelo' }), {
             target: { value: 'ABCD-12' },
         });
 

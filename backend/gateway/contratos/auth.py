@@ -7,6 +7,7 @@ compara estas copias con los esquemas reales de MS1 y avisa si se desactualizan.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -44,10 +45,6 @@ _EJEMPLO_TOKEN: dict[str, object] = {
         "roles": ["cliente"],
         "is_active": True,
     },
-}
-
-_EJEMPLO_ROL: dict[str, object] = {
-    "rol": "administrador",
 }
 
 
@@ -99,20 +96,17 @@ class LoginSolicitud(BaseModel):
 
 
 class RolAsignarSolicitud(BaseModel):
-    """Asignación de un rol restringido a un usuario existente."""
+    """Asignación de un rol restringido a un usuario existente (solo Administrador).
+
+    Un rol desconocido responde `422` en MS1 sin llegar al caso de uso.
+    """
 
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"examples": [_EJEMPLO_ROL]},
+        json_schema_extra={"examples": [{"rol": "mecanico"}]},
     )
 
-    rol: Rol = Field(
-        description=(
-            "Rol a asignar: cliente, mecanico o administrador. Un valor "
-            "desconocido responde 422."
-        ),
-        examples=["administrador"],
-    )
+    rol: Rol = Field(description="Rol a asignar.", examples=["mecanico"])
 
 
 class UsuarioRespuesta(BaseModel):
@@ -124,10 +118,7 @@ class UsuarioRespuesta(BaseModel):
     email: str = Field(description="Correo del usuario.", examples=["ana@correo.cl"])
     full_name: str = Field(description="Nombre completo.", examples=["Ana Pérez"])
     roles: list[Rol] = Field(
-        description=(
-            "Roles del usuario (cliente, mecanico o administrador). La consulta "
-            "administrativa puede devolver `[]` si la cuenta no tiene roles."
-        ),
+        description="Roles del usuario (cliente, mecanico o administrador).",
         examples=[["cliente"]],
     )
     is_active: bool = Field(description="Si la cuenta está activa.", examples=[True])
@@ -136,7 +127,12 @@ class UsuarioRespuesta(BaseModel):
 class TokenRespuesta(BaseModel):
     """Resultado del login: token de acceso y datos del usuario."""
 
-    model_config = ConfigDict(json_schema_extra={"examples": [_EJEMPLO_TOKEN]})
+    # Todo campo con valor por defecto se serializa siempre: el esquema de
+    # salida lo marca obligatorio (contrato 2.0.1, diferencia D-02).
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [_EJEMPLO_TOKEN]},
+        json_schema_serialization_defaults_required=True,
+    )
 
     access_token: str = Field(
         description="JWT que se envía como `Authorization: Bearer <token>`.",
@@ -144,3 +140,22 @@ class TokenRespuesta(BaseModel):
     )
     token_type: str = Field(default="bearer", description="Tipo de token.")
     user: UsuarioRespuesta = Field(description="Usuario autenticado.")
+
+
+class NotificacionRespuesta(BaseModel):
+    """Aviso de cambio de estado visible para el usuario autenticado."""
+
+    notificacion_id: int
+    tipo: str
+    orden_id: int | None
+    vehiculo_id: int | None
+    titulo: str
+    mensaje: str
+    ocurrido_en: datetime
+    creado_en: datetime
+    leida: bool
+    leida_en: datetime | None
+
+    solicitud_id: int | None = None
+    presupuesto_id: int | None = None
+    repuesto_id: int | None = None

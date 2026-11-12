@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { Order } from '@/domain/entities/Order';
 import type { Vehicle } from '@/domain/entities/Vehicle';
+import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { AdminVehicleDetailPage } from './AdminVehicleDetailPage';
 
 vi.mock('@/infrastructure/api/VehicleService', () => ({
@@ -13,6 +16,21 @@ vi.mock('@/infrastructure/api/VehicleService', () => ({
         getAssignedVehicles: vi.fn(),
         getVehicleById: vi.fn(),
         createVehicle: vi.fn(),
+    },
+}));
+
+vi.mock('@/infrastructure/api/OrderService', () => ({
+    orderService: { getVehicleOrderHistory: vi.fn(), crearOrden: vi.fn() },
+}));
+
+vi.mock('@/infrastructure/api/ConfiguracionTallerService', () => ({
+    configuracionTallerService: {
+        obtenerCupoDiario: vi.fn(() =>
+            Promise.resolve({
+                maxIngresosDiarios: 10, actualizadoPorId: '1', actualizadoEn: '2026-11-07T10:00:00-03:00',
+                jornadaLocal: '2026-11-07', ingresosRegistrados: 3, sobreLimite: false,
+            })
+        ),
     },
 }));
 
@@ -26,6 +44,17 @@ const vehiculo: Vehicle = {
     clientId: 'c1',
 };
 
+const orden: Order = {
+    id: '101',
+    vehicleId: '1',
+    ingresoId: 1,
+    estadoCodigo: 7,
+    mecanicoActualId: '50',
+    creadoPorId: '99',
+    creadoEn: '2026-09-19T15:00:00.000Z',
+    actualizadoEn: '2026-09-20T10:00:00.000Z',
+};
+
 const axios404 = { isAxiosError: true, response: { status: 404, data: {} } };
 const axios500 = { isAxiosError: true, response: { status: 500, data: {} } };
 // Error de transporte: no llegó respuesta HTTP, así que es "sin conexión".
@@ -34,9 +63,11 @@ const axiosNetworkError = { isAxiosError: true };
 function renderPage() {
     return render(
         <MemoryRouter initialEntries={['/admin/vehiculos/1']}>
-            <Routes>
-                <Route path="/admin/vehiculos/:id" element={<AdminVehicleDetailPage />} />
-            </Routes>
+            <ToastProvider>
+                <Routes>
+                    <Route path="/admin/vehiculos/:id" element={<AdminVehicleDetailPage />} />
+                </Routes>
+            </ToastProvider>
         </MemoryRouter>
     );
 }
@@ -45,6 +76,9 @@ describe('AdminVehicleDetailPage: ficha del vehículo', () => {
     beforeEach(() => {
         useVehicleStore.setState({ vehicles: [], status: 'idle', error: null, isOffline: false });
         vi.clearAllMocks();
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [], total: 0, limit: 20, offset: 0,
+        });
     });
 
     it('muestra la ficha del vehículo', async () => {
@@ -54,6 +88,34 @@ describe('AdminVehicleDetailPage: ficha del vehículo', () => {
 
         expect(await screen.findByText('ABCD-12')).toBeInTheDocument();
         expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
+    });
+
+    it('ofrece registrar el ingreso y crear la orden del vehículo de la ficha', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(vehiculo);
+
+        renderPage();
+
+        expect(
+            await screen.findByRole('region', { name: 'Registrar ingreso y crear orden' })
+        ).toBeInTheDocument();
+        expect(screen.getByText('ABCD-12 · Ford Fiesta')).toBeInTheDocument();
+        expect(await screen.findByText(/Ingresos de hoy:/)).toHaveTextContent('3 de 10');
+    });
+
+    it('muestra el historial y enlaza al detalle de la orden en el portal administrador', async () => {
+        vi.mocked(vehicleService.getVehicleById).mockResolvedValue(vehiculo);
+        vi.mocked(orderService.getVehicleOrderHistory).mockResolvedValue({
+            items: [orden], total: 1, limit: 20, offset: 0,
+        });
+
+        renderPage();
+
+        expect(await screen.findByRole('link', { name: /Orden n° 101 · Ford Fiesta/ }))
+            .toHaveAttribute('href', '/admin/ordenes/101');
+        expect(orderService.getVehicleOrderHistory).toHaveBeenCalledWith('1', {
+            limit: 20,
+            offset: 0,
+        });
     });
 
     it('un 404 real muestra el estado vacío, no un error', async () => {

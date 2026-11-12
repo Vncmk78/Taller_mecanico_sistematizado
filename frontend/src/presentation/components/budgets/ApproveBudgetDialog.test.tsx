@@ -50,6 +50,30 @@ describe('ApproveBudgetDialog: confirmación de aprobación', () => {
         expect(screen.getByText('El servidor tuvo un problema.')).toBeInTheDocument();
     });
 
+    it('describe la casilla de revisión y la marca como obligatoria', () => {
+        setup();
+
+        const casilla = screen.getByLabelText(/He revisado las partidas y el total/);
+        expect(casilla).toHaveAttribute('aria-required', 'true');
+        expect(casilla).toHaveAttribute('aria-describedby', 'aprobar-revisado-hint');
+        expect(document.getElementById('aprobar-revisado-hint')).toHaveTextContent(
+            'Marque la casilla para habilitar la confirmación.'
+        );
+    });
+
+    it('asocia el diálogo con su título y su descripción', () => {
+        setup();
+
+        const dialog = screen.getByRole('dialog', { name: 'Aprobar presupuesto' });
+        const titleId = dialog.getAttribute('aria-labelledby');
+        const descriptionId = dialog.getAttribute('aria-describedby');
+
+        expect(document.getElementById(titleId as string)).toHaveTextContent('Aprobar presupuesto');
+        expect(document.getElementById(descriptionId as string)).toHaveTextContent(
+            /Al aprobar, autoriza al taller/
+        );
+    });
+
     it('mientras envía deshabilita cancelar y confirmar', () => {
         setup({ isLoading: true });
 

@@ -55,8 +55,11 @@ y arquitectura hexagonal.
   Componente `ServiceCard` para cada servicio con acceso al detalle de la orden
   y la ficha del vehículo.
 - **Ficha técnica del vehículo** (`/client/vehiculos/:id`): el historial de
-  órdenes del vehículo ahora se consulta de las órdenes del cliente (con su
-  estado y fecha de actualización) y enlaza al detalle de cada orden.
+  órdenes se consulta al endpoint paginado por vehículo, muestra estado y fecha
+  de ingreso, y enlaza al detalle de cada orden.
+
+- **Fichas de vehículos de Administrador y Mecánico**: muestran el historial
+  paginado de órdenes autorizado para su rol y enlazan al detalle de cada orden.
 
 ### Tarea 6 — Implementar estados vacío, carga y error en las vistas del cliente
 - **Estado del Servicio** (`/client/servicios`): estados de carga
@@ -229,6 +232,58 @@ y arquitectura hexagonal.
   `useEvidenceStore.test.ts` (subir/errores), `ProgressBar.test.tsx`,
   `EvidenceUploadForm.test.tsx` y `OrderEvidencePage.test.tsx`.
 
+### Tarea 15 — Crear pruebas de formularios y flujo de evidencia
+- **Formulario de carga** (`EvidenceUploadForm.validacion.test.tsx`, 19 pruebas):
+  - Validaciones antes de enviar: sin archivo (botón deshabilitado y aviso),
+    tipos no permitidos (PDF, sin tipo), videos aceptados y el límite exacto de
+    **12 MiB** (justo en el límite pasa, un byte más se rechaza).
+  - Datos enviados según el contexto: los cuatro contextos oficiales, la casilla
+    *Visible para el cliente*, y en **presupuesto** la asociación automática
+    (sin casilla, una sola consulta del presupuesto, espera mientras llega y
+    bloqueo si la orden no tiene presupuesto o la consulta falla).
+  - Durante y después de la subida: controles bloqueados y un solo envío,
+    limpieza del archivo tras el éxito, `onSuccess` con la evidencia creada,
+    `Referencia` del error para soporte y reintento después de un fallo.
+- **Flujo completo** (`OrderEvidenceFlow.test.tsx`, 7 pruebas) con un servidor
+  falso en memoria que guarda lo subido, informa el progreso y filtra por
+  visibilidad cuando consulta el cliente:
+  - El mecánico sube y la evidencia aparece en su galería sin recargar.
+  - El cliente ve solo lo marcado como visible; la evidencia de presupuesto
+    queda asociada y siempre visible.
+  - El cliente abre la vista previa de un video recién subido; el personal
+    abre una foto recién subida y la descarga.
+  - Si la subida falla no aparece nada y al reintentar se completa el flujo.
+  - Sin permiso de carga se ve la galería pero no el formulario.
+- Ejecutar: `npx vitest run src/presentation/components/evidence src/presentation/pages/shared`.
+
+### Tarea 16 — Revisar accesibilidad de inputs, validaciones y mensajes
+- **Campos compartidos**: `Input` admite `hint` y combina `aria-describedby`
+  (descripción externa + ayuda + error); `required` se refleja en `required` y
+  `aria-required`. `Alert` expone `id` y `aria-atomic="true"`. Los diálogos
+  `ConfirmDialog`, `ApproveBudgetDialog` y `RejectBudgetDialog` se asocian con su
+  título y descripción mediante `aria-labelledby`/`aria-describedby`.
+- **Validaciones por campo**: en `BitacoraForm`, `OrderActionsPanel`,
+  `EvidenceUploadForm`, `RejectBudgetDialog` y `MechanicStatusPage` cada error
+  tiene `id` y el campo lo referencia con `aria-describedby` y `aria-invalid`
+  (después de interactuar). El error de archivo de evidencia se separa del error
+  general (presupuesto/servidor) y el campo muestra formatos y tamaño máximo.
+- **Formularios públicos y de cliente**: `LoginPage` usa `h2`, `noValidate` y
+  logos decorativos con `aria-hidden`; `ClientVehicleFormPage` marca
+  patente/marca/modelo como obligatorios y usa teclado numérico en año y
+  kilometraje.
+- **Búsquedas**: `OrderListToolbar`, los listados de vehículos y la búsqueda
+  global del layout admin exponen `role="search"`, `type="search"`, `name` y
+  `autoComplete="off"`; las pruebas consultan el rol `searchbox`.
+- Pruebas: `Input.test.tsx`, `Alert.test.tsx`, `ConfirmDialog.test.tsx`,
+  `BitacoraForm.test.tsx`, `EvidenceUploadForm.validacion.test.tsx`,
+  `RejectBudgetDialog.test.tsx` (nuevo), `ApproveBudgetDialog.test.tsx`,
+  `OrderActionsPanel.test.tsx`, `OrderListToolbar.test.tsx` (nuevo),
+  `MechanicStatusPage.test.tsx`, `LoginPage.test.tsx` y
+  `ClientVehicleFormPage.test.tsx`. Total del frontend: **619/619** pruebas en
+  85 archivos; `npm run lint` y `npx tsc -b` sin errores.
+- Documentación: [`docs/revision-accesibilidad.md`](docs/revision-accesibilidad.md)
+  (Tarea 16).
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -253,9 +308,10 @@ El mapa completo de rutas está documentado en
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |
 
-Nota: el login consume la **API Gateway** (`POST /auth/login`). Si ni la Gateway ni
-el `auth-service` están desplegados, se muestra el error de credenciales. Las vistas
-de vehículos usan datos mock mientras MS2 no esté disponible.
+Nota: el login consume la **API Gateway** (`POST /api/auth/login`), que enruta al
+MS1 vigente de `backend/services/ms1_auth/`. El directorio alternativo
+`auth-service/` fue retirado. Los mocks se conservan para las pruebas; el estado
+del ambiente publicado debe comprobarse por separado.
 
 ### Accesibilidad
 
@@ -265,7 +321,7 @@ hallazgos y correcciones aplicadas) está documentada en
 
 ## Cómo ejecutar el proyecto localmente
 
-Requisitos: **Node.js 18+**.
+Requisitos: **Node.js 24.x**, compatible con las versiones actuales de Vite y Vitest.
 
 ```bash
 cd frontend

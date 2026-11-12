@@ -2,30 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, func, select
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from services.ms2_taller.config import settings
 from services.ms2_taller.db import get_db
-from services.ms2_taller.integracion_ms1 import (
-    obtener_verificador_usuarios,
-)
 from services.ms2_taller.main import app
 from services.ms2_taller.models import (
     Base,
     Cliente,
+    ConfiguracionCapacidadMecanico,
+    ConfiguracionCupoIngresos,
     EstadoOrden,
+    EventoOutbox,
+    HistorialConfiguracionCupoIngresos,
     HistorialEstado,
+    HistorialValidacionCupoIngreso,
     IngresoVehiculo,
     OrdenTrabajo,
+    SolicitudCancelacion,
     Vehiculo,
 )
 from services.ms2_taller.models.estado_orden import (
@@ -39,16 +43,25 @@ from services.ms2_taller.models.estado_orden import (
     LISTO,
     RECIBIDO,
 )
+from services.ms2_taller.integracion_ms3 import obtener_verificador_aprobacion_inicial
 from services.ms2_taller.models.bitacora_orden import BitacoraOrden, BitacoraRepuesto
 from services.ms2_taller.services.ordenes import (
     OrdenObservacionInvalidaError,
     OrdenEstadoNoAutorizadoError,
+    registrar_historial_estado,
     OrdenTransicionNoPermitidaError,
     _consulta_vehiculo_para_actualizacion,
     cambiar_estado_orden,
     registrar_historial_estado,
 )
+from services.ms2_taller.integracion_ms3 import obtener_verificador_disponibilidad_repuestos
+from services.ms2_taller.services.cupo_ingresos import (
+    _consulta_configuracion_para_actualizacion,
+    _rango_jornada_utc,
+)
 from shared.auth import NombreRol, PrincipalAutenticado, crear_token_acceso
+from shared.contratos_decisiones import DisponibilidadRepuestosVerificada
+from shared.contratos_decisiones import AprobacionInicialOrdenVerificada
 
 
 @pytest.fixture
@@ -81,6 +94,20 @@ def db_ordenes() -> Generator[Session, None, None]:
             for codigo, nombre in ESTADOS_ORDEN.items()
         ]
     )
+    sesion.add(
+        ConfiguracionCapacidadMecanico(
+            configuracion_id=1,
+            max_ordenes_activas=5,
+            actualizado_por_id=99,
+        )
+    )
+    sesion.add(
+        ConfiguracionCupoIngresos(
+            configuracion_id=1,
+            max_ingresos_diarios=100,
+            actualizado_por_id=99,
+        )
+    )
     sesion.commit()
     try:
         yield sesion
@@ -90,21 +117,34 @@ def db_ordenes() -> Generator[Session, None, None]:
         engine.dispose()
 
 
-class VerificacionPermeable:
-    """Doble del verificador de MS1: acepta cualquier destino como mecánico."""
-
-    def verificar_mecanico(self, usuario_id: int, token: str) -> None:
-        return None
-
-
 @pytest.fixture
-def api_ordenes(db_ordenes: Session) -> Generator[TestClient, None, None]:
+def api_ordenes(db_ordenes: Session, monkeypatch: pytest.MonkeyPatch, mecanicos_validos) -> Generator[TestClient, None, None]:
+    # Alembic fileConfig deshabilita loggers existentes durante otras pruebas.
+    # Restaurar solo este logger durante el caso, igual que la fixture de MS4.
+    monkeypatch.setattr(logging.getLogger("services.ms2_taller.routers.ordenes"), "disabled", False)
+    class VerificadorPrueba:
+        aprobacion_registrada = False
+        error = False
+        llamadas = 0
+
+        def consultar(self, orden_id: int, _token: str):
+            self.llamadas += 1
+            if self.error:
+                from services.ms2_taller.integracion_ms3 import ServicioPresupuestosNoDisponibleError
+                raise ServicioPresupuestosNoDisponibleError("MS3 simulado")
+            return AprobacionInicialOrdenVerificada(
+                orden_id=orden_id,
+                aprobacion_registrada=self.aprobacion_registrada,
+            )
+
+    verificador = VerificadorPrueba()
     def reemplazar_db():
         yield db_ordenes
 
     app.dependency_overrides[get_db] = reemplazar_db
-    app.dependency_overrides[obtener_verificador_usuarios] = lambda: VerificacionPermeable()
+    app.dependency_overrides[obtener_verificador_aprobacion_inicial] = lambda: verificador
     with TestClient(app) as cliente_http:
+        cliente_http.verificador_aprobacion = verificador
         yield cliente_http
     app.dependency_overrides.clear()
 
@@ -197,6 +237,196 @@ def test_post_no_reutiliza_ingreso_cerrado(
     )
     assert ingreso_abierto is not None
     assert respuesta.json()["ingreso_id"] == ingreso_abierto.ingreso_id
+
+
+def test_configurar_cupo_diario_audita_y_devuelve_uso_de_jornada(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    _crear_orden(db_ordenes, usuario_cliente=10)
+
+    respuesta = api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["max_ingresos_diarios"] == 1
+    assert respuesta.json()["ingresos_registrados"] == 1
+    assert respuesta.json()["sobre_limite"] is False
+    assert respuesta.json()["jornada_local"]
+    historial = db_ordenes.scalar(
+        select(HistorialConfiguracionCupoIngresos)
+    )
+    assert historial is not None
+    assert historial.valor_anterior == 100
+    assert historial.valor_nuevo == 1
+    assert historial.administrador_id == 99
+
+
+def test_reducir_cupo_por_debajo_del_uso_informa_exceso_sin_borrar_ingresos(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    _crear_orden(db_ordenes, usuario_cliente=10)
+    _crear_orden(db_ordenes, usuario_cliente=20)
+
+    respuesta = api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["ingresos_registrados"] == 2
+    assert respuesta.json()["sobre_limite"] is True
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 2
+
+
+def test_post_bloquea_nuevo_ingreso_al_alcanzar_cupo_y_audita_rechazo(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    primer_vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    segundo_vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=20)
+    api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    primero = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": primer_vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    segundo = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": segundo_vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert primero.status_code == 201
+    assert segundo.status_code == 409
+    assert segundo.json() == {
+        "detail": "El taller ya alcanzó el máximo diario de ingresos físicos"
+    }
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 1
+    assert db_ordenes.scalar(select(func.count()).select_from(OrdenTrabajo)) == 1
+    validaciones = db_ordenes.scalars(
+        select(HistorialValidacionCupoIngreso).order_by(
+            HistorialValidacionCupoIngreso.validacion_id
+        )
+    ).all()
+    assert [(v.aceptada, v.resultado, v.ingresos_registrados) for v in validaciones] == [
+        (True, "cupo_disponible", 0),
+        (False, "cupo_excedido", 1),
+    ]
+    assert validaciones[0].ingreso_id == primero.json()["ingreso_id"]
+    assert validaciones[1].ingreso_id is None
+
+
+def test_post_reutiliza_ingreso_abierto_sin_consumir_cupo_adicional(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    ingreso = IngresoVehiculo(vehiculo_id=vehiculo.vehiculo_id, registrado_por_id=80)
+    db_ordenes.add(ingreso)
+    db_ordenes.commit()
+    api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    respuesta = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 201
+    assert respuesta.json()["ingreso_id"] == ingreso.ingreso_id
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 1
+    assert db_ordenes.scalar(
+        select(func.count()).select_from(HistorialValidacionCupoIngreso)
+    ) == 0
+
+
+def test_ingreso_de_orden_cancelada_sigue_ocupando_cupo_del_dia(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    orden_cancelada = _crear_orden(db_ordenes, usuario_cliente=10)
+    orden_cancelada.estado_codigo = CANCELADO
+    db_ordenes.commit()
+    api_ordenes.put(
+        "/ordenes/configuracion/capacidad/ingresos-diarios",
+        json={"max_ingresos_diarios": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    otro_vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=20)
+
+    respuesta = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": otro_vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 1
+
+
+def test_post_sin_cupo_configurado_registra_rechazo(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    configuracion = db_ordenes.get(ConfiguracionCupoIngresos, 1)
+    configuracion.max_ingresos_diarios = None
+    db_ordenes.commit()
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+
+    respuesta = api_ordenes.post(
+        "/ordenes",
+        json={"vehiculo_id": vehiculo.vehiculo_id},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    validacion = db_ordenes.scalar(select(HistorialValidacionCupoIngreso))
+    assert validacion is not None
+    assert validacion.aceptada is False
+    assert validacion.resultado == "cupo_no_configurado"
+    assert validacion.max_ingresos_diarios is None
+    assert db_ordenes.scalar(select(func.count()).select_from(IngresoVehiculo)) == 0
+
+
+def test_bloqueo_del_cupo_diario_usa_for_update_en_postgresql():
+    consulta = _consulta_configuracion_para_actualizacion()
+    sql = " ".join(
+        str(
+            consulta.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        ).split()
+    )
+
+    assert "configuracion_cupo_ingresos.configuracion_id = 1" in sql
+    assert sql.endswith("FOR UPDATE")
+
+
+def test_rango_de_jornada_local_respeta_la_zona_del_taller(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "TIMEZONE", "America/Santiago")
+    inicio, fin = _rango_jornada_utc(datetime(2026, 1, 15).date())
+
+    assert inicio.tzinfo == timezone.utc
+    assert fin.tzinfo == timezone.utc
+    assert fin - inicio == timedelta(hours=24)
 
 
 def test_post_multirol_con_administrador_puede_crear(
@@ -355,6 +585,102 @@ def test_consulta_de_vehiculo_usa_for_update_en_postgresql():
     assert sql.endswith("FOR UPDATE")
 
 
+@pytest.mark.parametrize("sqlstate", ["42703", "42P01", None, "secreto-invalido"])
+def test_listado_fallido_registra_codigo_sin_filtrar_sql_ni_credenciales(
+    api_ordenes: TestClient, db_ordenes: Session,
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    sqlstate: str | None,
+):
+    class ErrorDriver(Exception):
+        pass
+
+    original = ErrorDriver("postgresql://usuario:clave-privada@servidor/base")
+    original.sqlstate = sqlstate
+    fallo = DBAPIError(
+        "SELECT dato_privado FROM tabla_privada",
+        {"password": "password-privado"}, original,
+    )
+    rollbacks = []
+    rollback_real = db_ordenes.rollback
+
+    def fallar_consulta(*args, **kwargs):
+        raise fallo
+
+    def registrar_rollback():
+        rollbacks.append(True)
+        rollback_real()
+
+    monkeypatch.setattr(db_ordenes, "scalars", fallar_consulta)
+    monkeypatch.setattr(db_ordenes, "rollback", registrar_rollback)
+    respuesta = api_ordenes.get(
+        "/ordenes",
+        headers={**_headers_para(99, NombreRol.ADMINISTRADOR), "X-Request-ID": "integra4-500"},
+    )
+    assert respuesta.status_code == 500
+    assert respuesta.json() == {"detail": "No fue posible consultar las órdenes"}
+    assert rollbacks == [True]
+    registros = [r for r in caplog.records if "ms2_consulta_ordenes_fallida" in r.message]
+    assert len(registros) == 1
+    assert "request_id=integra4-500 tipo=DBAPIError" in registros[0].message
+    esperado = sqlstate if sqlstate in {"42703", "42P01"} else "no-disponible"
+    assert f"sqlstate={esperado}" in registros[0].message
+    assert registros[0].exc_info is None
+    for privado in (
+        "usuario", "clave-privada", "dato_privado", "tabla_privada",
+        "password-privado", "secreto-invalido", "Bearer",
+    ):
+        assert privado not in caplog.text + respuesta.text
+
+
+@pytest.mark.parametrize("request_id", [None, "id con espacios", "x" * 129])
+def test_listado_fallido_descarta_request_id_invalido(
+    api_ordenes: TestClient, db_ordenes: Session,
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    request_id: str | None,
+):
+    def fallar_consulta(*args, **kwargs):
+        raise SQLAlchemyError("detalle privado")
+
+    monkeypatch.setattr(db_ordenes, "scalars", fallar_consulta)
+    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+    if request_id is not None:
+        headers["X-Request-ID"] = request_id
+    respuesta = api_ordenes.get("/ordenes", headers=headers)
+    assert respuesta.status_code == 500
+    assert "request_id=no-disponible tipo=SQLAlchemyError sqlstate=no-disponible" in caplog.text
+    assert "detalle privado" not in caplog.text
+    if request_id is not None:
+        assert request_id not in caplog.text
+
+
+@pytest.mark.parametrize("rol,usuario", [
+    (NombreRol.CLIENTE, 10), (NombreRol.MECANICO, 50), (NombreRol.ADMINISTRADOR, 99),
+])
+def test_columna_historial_ausente_rompe_listado_y_recupera_al_restaurarla(
+    api_ordenes: TestClient, db_ordenes: Session,
+    caplog: pytest.LogCaptureFixture, rol: NombreRol, usuario: int,
+):
+    _crear_orden(db_ordenes, usuario_cliente=10, mecanico_id=50)
+    headers = {**_headers_para(usuario, rol), "X-Request-ID": "prueba-esquema-ms2"}
+    assert api_ordenes.get("/ordenes", headers=headers).status_code == 200
+    db_ordenes.execute(text(
+        "ALTER TABLE historial_estado RENAME COLUMN envio_presupuesto_id TO columna_temporal"
+    ))
+    db_ordenes.commit()
+    try:
+        respuesta = api_ordenes.get("/ordenes", headers=headers)
+        assert respuesta.status_code == 500
+        assert respuesta.json() == {"detail": "No fue posible consultar las órdenes"}
+        assert "request_id=prueba-esquema-ms2 tipo=OperationalError" in caplog.text
+        assert "envio_presupuesto_id" not in caplog.text + respuesta.text
+    finally:
+        db_ordenes.execute(text(
+            "ALTER TABLE historial_estado RENAME COLUMN columna_temporal TO envio_presupuesto_id"
+        ))
+        db_ordenes.commit()
+    assert api_ordenes.get("/ordenes", headers=headers).status_code == 200
+
+
 def test_get_administrador_ve_todas_las_ordenes(
     api_ordenes: TestClient,
     db_ordenes: Session,
@@ -402,6 +728,137 @@ def test_get_mecanico_ve_solo_ordenes_asignadas(
 
     assert respuesta.status_code == 200
     assert _ids(respuesta.json()) == [asignada.orden_id]
+
+
+def test_historial_vehiculo_admin_pagina_y_ordena_de_forma_estable(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    ordenes = []
+    for estado in (CANCELADO, CANCELADO, RECIBIDO):
+        ingreso = IngresoVehiculo(
+            vehiculo_id=vehiculo.vehiculo_id,
+            registrado_por_id=99,
+        )
+        db_ordenes.add(ingreso)
+        db_ordenes.flush()
+        orden = OrdenTrabajo(
+            vehiculo_id=vehiculo.vehiculo_id,
+            ingreso_id=ingreso.ingreso_id,
+            estado_codigo=estado,
+            creado_por_id=99,
+        )
+        db_ordenes.add(orden)
+        db_ordenes.flush()
+        ordenes.append(orden)
+    db_ordenes.commit()
+
+    primera = api_ordenes.get(
+        f"/ordenes/vehiculo/{vehiculo.vehiculo_id}/historial?limit=2",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    segunda = api_ordenes.get(
+        f"/ordenes/vehiculo/{vehiculo.vehiculo_id}/historial?limit=2&offset=2",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert primera.status_code == segunda.status_code == 200
+    assert _ids(primera.json()["items"]) == [
+        ordenes[2].orden_id,
+        ordenes[1].orden_id,
+    ]
+    assert primera.json()["total"] == 3
+    assert primera.json()["limit"] == 2
+    assert primera.json()["offset"] == 0
+    assert [item["orden_id"] for item in segunda.json()["items"]] == [
+        ordenes[0].orden_id
+    ]
+    assert segunda.json()["total"] == 3
+
+
+def test_historial_vehiculo_respeta_propiedad_y_devuelve_vacio_si_no_hay_ordenes(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    propio = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    ajeno = _crear_vehiculo(db_ordenes, usuario_cliente=20)
+
+    vacio = api_ordenes.get(
+        f"/ordenes/vehiculo/{propio.vehiculo_id}/historial",
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    no_visible = api_ordenes.get(
+        f"/ordenes/vehiculo/{ajeno.vehiculo_id}/historial",
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+
+    assert vacio.status_code == 200
+    assert vacio.json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+    assert no_visible.status_code == 404
+    assert no_visible.json() == {"detail": "Vehículo no encontrado"}
+
+
+def test_historial_vehiculo_mecanico_solo_recibe_ordenes_asignadas(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+    ingreso = IngresoVehiculo(
+        vehiculo_id=vehiculo.vehiculo_id,
+        registrado_por_id=99,
+    )
+    db_ordenes.add(ingreso)
+    db_ordenes.flush()
+    asignada = OrdenTrabajo(
+        vehiculo_id=vehiculo.vehiculo_id,
+        ingreso_id=ingreso.ingreso_id,
+        estado_codigo=CANCELADO,
+        mecanico_actual_id=50,
+        creado_por_id=99,
+    )
+    db_ordenes.add(asignada)
+    otro_ingreso = IngresoVehiculo(
+        vehiculo_id=vehiculo.vehiculo_id,
+        registrado_por_id=99,
+    )
+    db_ordenes.add(otro_ingreso)
+    db_ordenes.flush()
+    db_ordenes.add(
+        OrdenTrabajo(
+            vehiculo_id=vehiculo.vehiculo_id,
+            ingreso_id=otro_ingreso.ingreso_id,
+            estado_codigo=RECIBIDO,
+            mecanico_actual_id=60,
+            creado_por_id=99,
+        )
+    )
+    db_ordenes.commit()
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/vehiculo/{vehiculo.vehiculo_id}/historial",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200
+    assert _ids(respuesta.json()["items"]) == [asignada.orden_id]
+    assert respuesta.json()["total"] == 1
+
+
+@pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1"])
+def test_historial_vehiculo_rechaza_parametros_paginacion_invalidos(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+    query: str,
+):
+    vehiculo = _crear_vehiculo(db_ordenes, usuario_cliente=10)
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/vehiculo/{vehiculo.vehiculo_id}/historial?{query}",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 422
 
 
 def test_get_multirol_une_alcances_sin_duplicados(
@@ -668,10 +1125,12 @@ def test_patch_estado_mecanico_asignado_actualiza_y_registra_historial(
     assert historial.fecha_hora is not None
 
 
-@pytest.mark.parametrize("estado_actual,destino", [
-    (RECIBIDO, ESPERANDO_DIAGNOSTICO),
-    (ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS),
-    (ESPERANDO_APROBACION_PRESUPUESTO, EN_REPARACION),
+@pytest.mark.parametrize("estado_actual,destino,motivo", [
+    (RECIBIDO, ESPERANDO_DIAGNOSTICO, "operación específica"),
+    (ESPERANDO_DIAGNOSTICO, ESPERANDO_APROBACION_PRESUPUESTO, "operación específica"),
+    (ESPERANDO_APROBACION_PRESUPUESTO, ESPERANDO_REPUESTOS, "operación específica"),
+    (ESPERANDO_APROBACION_PRESUPUESTO, EN_REPARACION, "operación específica"),
+    (ESPERANDO_REPUESTOS, EN_REPARACION, "disponibilidad de repuestos"),
 ])
 @pytest.mark.parametrize("usuario,roles", [
     (99, (NombreRol.ADMINISTRADOR,)),
@@ -682,7 +1141,8 @@ def test_patch_estado_mecanico_asignado_actualiza_y_registra_historial(
 def test_patch_estado_no_elude_operaciones_especificas_ni_con_varios_roles(
     api_ordenes: TestClient,
     db_ordenes: Session,
-    estado_actual: int, destino: int, usuario: int, roles: tuple[NombreRol, ...],
+    estado_actual: int, destino: int, motivo: str,
+    usuario: int, roles: tuple[NombreRol, ...],
 ):
     orden = _crear_orden(
         db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=estado_actual,
@@ -694,18 +1154,10 @@ def test_patch_estado_no_elude_operaciones_especificas_ni_con_varios_roles(
         headers=_headers_para(usuario, *roles),
     )
 
-    if (estado_actual, destino) == (RECIBIDO, ESPERANDO_DIAGNOSTICO):
-        # Excepción acordada: 1->2 se permite por PATCH cuando la orden ya está
-        # asignada (mecanico_actual_id presente). El actor autorizado (mecánico
-        # asignado o administrador) avanza y se registra el historial.
-        assert respuesta.status_code == 200
-        db_ordenes.refresh(orden)
-        assert orden.estado_codigo == destino
-        assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
-        return
-
+    # El primer 1→2 debe pasar por PUT /mecanico, que también verifica el cupo
+    # del mecánico; PATCH no puede eludir esa precondición.
     assert respuesta.status_code == 409
-    assert "operación específica" in respuesta.json()["detail"]
+    assert motivo in respuesta.json()["detail"]
     db_ordenes.refresh(orden)
     assert orden.estado_codigo == estado_actual
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
@@ -783,27 +1235,375 @@ def test_cancelacion_sin_motivo_valido_no_modifica_orden_ni_historial(
 @pytest.mark.parametrize("estado_anterior", [
     RECIBIDO, ESPERANDO_DIAGNOSTICO, ESPERANDO_APROBACION_PRESUPUESTO,
 ])
-def test_cancelacion_con_motivo_guarda_historial_y_no_admite_repeticion(
+@pytest.mark.parametrize("usuario,rol", [
+    (99, NombreRol.ADMINISTRADOR),
+    (50, NombreRol.MECANICO),
+])
+def test_cancelacion_generica_se_bloquea_aunque_tenga_motivo(
     api_ordenes: TestClient, db_ordenes: Session, estado_anterior: int,
+    usuario: int, rol: NombreRol,
 ):
-    orden = _crear_orden(db_ordenes, usuario_cliente=10, estado_codigo=estado_anterior)
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50,
+        estado_codigo=estado_anterior,
+    )
     orden_id = orden.orden_id
     datos = {"estado_destino": CANCELADO, "observacion": "  Cliente solicita cancelar  "}
-    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+    headers = _headers_para(usuario, rol)
     respuesta = api_ordenes.patch(f"/ordenes/{orden_id}/estado", json=datos, headers=headers)
 
-    assert respuesta.status_code == 200
-    assert respuesta.json()["estado_codigo"] == CANCELADO
-    historial = db_ordenes.scalar(select(HistorialEstado))
-    assert historial.estado_anterior == estado_anterior
-    assert historial.estado_nuevo == CANCELADO
-    assert historial.observacion == "Cliente solicita cancelar"
-    assert historial.actor_usuario_id == 99
-    assert historial.origen == "usuario"
+    assert respuesta.status_code == 409
+    assert "flujo de negocio específico" in respuesta.json()["detail"] or (
+        "operación específica" in respuesta.json()["detail"]
+    )
+    db_ordenes.expire_all()
+    assert db_ordenes.get(OrdenTrabajo, orden_id).estado_codigo == estado_anterior
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
-    repetida = api_ordenes.patch(f"/ordenes/{orden_id}/estado", json=datos, headers=headers)
-    assert repetida.status_code == 409
+
+def test_cancelacion_requiere_solicitud_y_confirmacion_administrativa(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, estado_codigo=ESPERANDO_APROBACION_PRESUPUESTO,
+    )
+    orden_id = orden.orden_id
+    motivo = "El cliente no continuará con el servicio"
+    solicitud = api_ordenes.post(
+        f"/ordenes/{orden_id}/cancelacion", json={"motivo": motivo},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert solicitud.status_code == 201, solicitud.text
+    assert solicitud.json()["estado"] == "pendiente"
+    assert solicitud.json()["cliente_usuario_id"] == 10
+    db_ordenes.expire_all()
+    assert db_ordenes.get(OrdenTrabajo, orden_id).estado_codigo == ESPERANDO_APROBACION_PRESUPUESTO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+    repetida = api_ordenes.post(
+        f"/ordenes/{orden_id}/cancelacion", json={"motivo": motivo},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert repetida.status_code == 200
+    assert repetida.json()["solicitud_id"] == solicitud.json()["solicitud_id"]
+
+    pendientes = api_ordenes.get(
+        "/ordenes/cancelaciones/pendientes", headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert pendientes.status_code == 200
+    assert [item["solicitud_id"] for item in pendientes.json()] == [solicitud.json()["solicitud_id"]]
+
+    confirmada = api_ordenes.post(
+        f"/ordenes/{orden_id}/cancelacion/confirmacion",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert confirmada.status_code == 200, confirmada.text
+    assert confirmada.json()["estado_codigo"] == CANCELADO
+    db_ordenes.expire_all()
+    registro = db_ordenes.scalar(select(SolicitudCancelacion))
+    historial = db_ordenes.scalar(select(HistorialEstado))
+    assert registro.estado == "confirmada" and registro.administrador_id == 99
+    assert registro.confirmada_en is not None
+    assert historial.actor_usuario_id == 99
+    assert historial.observacion == motivo
+
+    # Si se pierde la respuesta de confirmación, repetirla no duplica historial.
+    retry = api_ordenes.post(
+        f"/ordenes/{orden_id}/cancelacion/confirmacion",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert retry.status_code == 200
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
+
+
+def test_cancelacion_vuelve_a_verificar_que_no_haya_aprobacion(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10,
+        estado_codigo=ESPERANDO_APROBACION_PRESUPUESTO,
+    )
+    solicitud = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={"motivo": "No continuar"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert solicitud.status_code == 201
+    api_ordenes.verificador_aprobacion.aprobacion_registrada = True
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion/confirmacion",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 409
+    assert "aprobación inicial" in respuesta.json()["detail"]
+    db_ordenes.expire_all()
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == ESPERANDO_APROBACION_PRESUPUESTO
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+    assert db_ordenes.scalar(select(SolicitudCancelacion)).estado == "pendiente"
+
+
+def test_solicitar_cancelacion_devuelve_503_si_ms3_no_se_puede_verificar(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    api_ordenes.verificador_aprobacion.error = True
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={"motivo": "No continuar"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 503
+    assert db_ordenes.scalar(select(func.count()).select_from(SolicitudCancelacion)) == 0
+
+
+@pytest.mark.parametrize("usuario,roles", [
+    (99, (NombreRol.ADMINISTRADOR,)),
+    (50, (NombreRol.ADMINISTRADOR,)),
+    (60, (NombreRol.MECANICO,)),
+])
+def test_solo_mecanico_asignado_puede_finalizar_trabajo(
+    api_ordenes: TestClient, db_ordenes: Session,
+    usuario: int, roles: tuple[NombreRol, ...],
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=EN_REPARACION,
+    )
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden.orden_id}/estado",
+        json={"estado_destino": LISTO},
+        headers=_headers_para(usuario, *roles),
+    )
+
+    assert respuesta.status_code == 403
+    db_ordenes.expire_all()
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == EN_REPARACION
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_patch_no_entrega_sin_operacion_ni_registro_de_entrega(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    orden_id = orden.orden_id
+    respuesta = api_ordenes.patch(
+        f"/ordenes/{orden_id}/estado",
+        json={"estado_destino": ENTREGADO},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    db_ordenes.expire_all()
+    orden_actual = db_ordenes.get(OrdenTrabajo, orden_id)
+    assert orden_actual.estado_codigo == LISTO
+    assert orden_actual.entregado_en is None
+    assert orden_actual.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_cambio_de_estado_y_evento_outbox_se_guardan_en_la_misma_transaccion(
+    db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes,
+        usuario_cliente=10,
+        mecanico_id=50,
+        estado_codigo=ESPERANDO_REPUESTOS,
+    )
+
+    historial = registrar_historial_estado(
+        db_ordenes,
+        orden_id=orden.orden_id,
+        estado_anterior=ESPERANDO_REPUESTOS,
+        estado_nuevo=EN_REPARACION,
+        actor_usuario_id=99,
+        origen="usuario",
+    )
+    db_ordenes.flush()
+
+    evento = db_ordenes.scalar(select(EventoOutbox))
+    assert evento is not None
+    assert evento.tipo == "orden.estado_cambiado"
+    assert evento.payload["evento_id"] == str(evento.evento_id)
+    assert evento.payload["orden_id"] == orden.orden_id
+    assert evento.payload["vehiculo_id"] == orden.vehiculo_id
+    assert evento.payload["cliente_usuario_id"] == 10
+    assert evento.payload["estado_anterior"] == ESPERANDO_REPUESTOS
+    assert evento.payload["estado_nuevo"] == EN_REPARACION
+    assert db_ordenes.get(HistorialEstado, historial.historial_id) is not None
+
+    db_ordenes.rollback()
+
+    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 0
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_admin_registra_entrega_desde_listo_con_historial_atomico(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["orden_id"] == orden.orden_id
+    assert datos["estado_codigo"] == ENTREGADO
+    assert datos["entregado_por_id"] == 99
+    assert datos["entregado_en"]
+    db_ordenes.expire_all()
+    actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
+    historial = list(db_ordenes.scalars(select(HistorialEstado)))
+    assert actual.estado_codigo == ENTREGADO
+    assert actual.entregado_por_id == 99
+    assert actual.entregado_en is not None
+    assert len(historial) == 1
+    assert historial[0].historial_id == datos["historial_id"]
+    assert (historial[0].estado_anterior, historial[0].estado_nuevo) == (LISTO, ENTREGADO)
+    assert historial[0].actor_usuario_id == 99
+    assert historial[0].origen == "usuario"
+
+
+def test_entrega_requiere_administrador_y_no_modifica_la_orden_si_no_autoriza(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 403
+    db_ordenes.expire_all()
+    actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
+    assert actual.estado_codigo == LISTO
+    assert actual.entregado_en is None
+    assert actual.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_entrega_solo_desde_listo_y_rechazo_no_escribe_historial(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=EN_REPARACION,
+    )
+
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 409
+    db_ordenes.expire_all()
+    actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
+    assert actual.estado_codigo == EN_REPARACION
+    assert actual.entregado_en is None
+    assert actual.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_repetir_entrega_devuelve_registro_original_sin_duplicar_historial(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+
+    primera = api_ordenes.post(f"/ordenes/{orden.orden_id}/entrega", headers=headers)
+    segunda = api_ordenes.post(f"/ordenes/{orden.orden_id}/entrega", headers=headers)
+
+    assert primera.status_code == segunda.status_code == 200
+    assert segunda.json() == primera.json()
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
+
+
+def test_finalizacion_y_entrega_conservan_actores_historial_y_eventos(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=EN_REPARACION,
+    )
+    orden_id = orden.orden_id
+
+    finalizacion = api_ordenes.patch(
+        f"/ordenes/{orden_id}/estado",
+        json={"estado_destino": LISTO, "observacion": "Trabajo autorizado terminado"},
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+    entrega = api_ordenes.post(
+        f"/ordenes/{orden_id}/entrega",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    consulta = api_ordenes.get(
+        f"/ordenes/{orden_id}/historial",
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+
+    assert finalizacion.status_code == entrega.status_code == consulta.status_code == 200
+    assert finalizacion.json()["estado_codigo"] == LISTO
+    assert entrega.json()["estado_codigo"] == ENTREGADO
+    assert entrega.json()["entregado_por_id"] == 99
+    cambios = consulta.json()
+    assert [
+        (c["estado_anterior"], c["estado_nuevo"], c["actor_usuario_id"], c["origen"])
+        for c in cambios
+    ] == [
+        (EN_REPARACION, LISTO, 50, "usuario"),
+        (LISTO, ENTREGADO, 99, "usuario"),
+    ]
+    assert cambios[-1]["historial_id"] == entrega.json()["historial_id"]
+    assert all(c["fecha_hora"] for c in cambios)
+    eventos = db_ordenes.scalars(
+        select(EventoOutbox).order_by(EventoOutbox.outbox_id)
+    ).all()
+    assert [
+        (e.payload["estado_anterior"], e.payload["estado_nuevo"])
+        for e in eventos
+    ] == [(EN_REPARACION, LISTO), (LISTO, ENTREGADO)]
+    assert all(e.payload["cliente_usuario_id"] == 10 for e in eventos)
+    db_ordenes.expire_all()
+    persistida = db_ordenes.get(OrdenTrabajo, orden_id)
+    assert persistida.estado_codigo == ENTREGADO
+    assert persistida.entregado_por_id == 99
+    assert persistida.entregado_en is not None
+
+
+def test_fallo_al_confirmar_entrega_revierte_estado_fechas_historial_y_outbox(
+    api_ordenes: TestClient, db_ordenes: Session, monkeypatch: pytest.MonkeyPatch,
+):
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, mecanico_id=50, estado_codigo=LISTO,
+    )
+    orden_id = orden.orden_id
+
+    def fallar_commit() -> None:
+        raise SQLAlchemyError("Fallo de persistencia después de escribir la entrega")
+
+    monkeypatch.setattr(db_ordenes, "commit", fallar_commit)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden_id}/entrega",
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 500
+    db_ordenes.expire_all()
+    persistida = db_ordenes.get(OrdenTrabajo, orden_id)
+    assert persistida.estado_codigo == LISTO
+    assert persistida.entregado_en is None
+    assert persistida.entregado_por_id is None
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+    assert db_ordenes.scalar(select(func.count()).select_from(EventoOutbox)) == 0
 
 
 @pytest.mark.parametrize("observacion", [None, "", " \t\n "])
@@ -913,7 +1713,7 @@ def test_post_entrega_no_administrador_recibe_403(
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
-@pytest.mark.parametrize("estado_actual", [RECIBIDO, EN_REPARACION, ENTREGADO, CANCELADO])
+@pytest.mark.parametrize("estado_actual", [RECIBIDO, EN_REPARACION, CANCELADO])
 def test_post_entrega_desde_estado_no_listo_devuelve_409(
     api_ordenes: TestClient, db_ordenes: Session, estado_actual: int,
 ):
@@ -927,6 +1727,23 @@ def test_post_entrega_desde_estado_no_listo_devuelve_409(
     )
     assert respuesta.status_code == 409
     assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == estado_actual
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+
+
+def test_post_entrega_terminal_sin_auditoria_informa_inconsistencia(
+    api_ordenes: TestClient, db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10, estado_codigo=ENTREGADO)
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/entrega",
+        json={},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    assert respuesta.status_code == 500
+    assert respuesta.json()["detail"] == "La orden no conserva un registro de entrega completo"
+    db_ordenes.refresh(orden)
+    assert orden.estado_codigo == ENTREGADO
+    assert orden.entregado_en is None
     assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
@@ -1011,14 +1828,14 @@ def test_post_cancelacion_cliente_propietario_cancela(
         json={"motivo": "  Ya no deseo el servicio  "},
         headers=_headers_para(10, NombreRol.CLIENTE),
     )
-    assert respuesta.status_code == 200
-    assert respuesta.json()["estado_codigo"] == CANCELADO
-    historial = db_ordenes.scalar(select(HistorialEstado))
-    assert historial.estado_anterior == estado_actual
-    assert historial.estado_nuevo == CANCELADO
-    assert historial.actor_usuario_id == 10
-    assert historial.origen == "usuario"
-    assert historial.observacion == "Ya no deseo el servicio"
+    assert respuesta.status_code == 201
+    assert respuesta.json()["estado"] == "pendiente"
+    assert respuesta.json()["estado_al_solicitar"] == estado_actual
+    assert db_ordenes.get(OrdenTrabajo, orden_id).estado_codigo == estado_actual
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
+    solicitud = db_ordenes.scalar(select(SolicitudCancelacion))
+    assert solicitud.cliente_usuario_id == 10
+    assert solicitud.motivo == "Ya no deseo el servicio"
 
     repetida = api_ordenes.post(
         f"/ordenes/{orden_id}/cancelacion",
@@ -1026,7 +1843,7 @@ def test_post_cancelacion_cliente_propietario_cancela(
         headers=_headers_para(10, NombreRol.CLIENTE),
     )
     assert repetida.status_code == 409
-    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 1
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0
 
 
 def test_post_cancelacion_cliente_ajeno_devuelve_404(
@@ -1067,8 +1884,9 @@ def test_post_cancelacion_cliente_multirrol_propietario_cancela(
         json={"motivo": "Cambié de opinión"},
         headers=_headers_para(10, NombreRol.CLIENTE, NombreRol.MECANICO),
     )
-    assert respuesta.status_code == 200
-    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == CANCELADO
+    assert respuesta.status_code == 201
+    assert db_ordenes.get(OrdenTrabajo, orden.orden_id).estado_codigo == RECIBIDO
+    assert db_ordenes.scalar(select(SolicitudCancelacion)).cliente_usuario_id == 10
 
 
 @pytest.mark.parametrize("motivo", ["", " ", "\t\n"])
@@ -1906,3 +2724,68 @@ def _headers_para(usuario_id: int, *roles: NombreRol) -> dict[str, str]:
 
 def _ids(ordenes: list[dict]) -> list[int]:
     return [orden["orden_id"] for orden in ordenes]
+
+
+def test_disponibilidad_repuestos_admin_verifica_y_aplica_idempotente(
+    api_ordenes: TestClient, db_ordenes: Session,
+) -> None:
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, estado_codigo=ESPERANDO_REPUESTOS,
+    )
+    clave = f"disp:{orden.orden_id}:42"
+
+    class VerificadorFalso:
+        def consultar(self, orden_id: int, clave_operacion: str, token: str):
+            assert orden_id == orden.orden_id
+            assert clave_operacion == clave
+            assert token
+            return DisponibilidadRepuestosVerificada(
+                clave_operacion=clave, orden_id=orden_id, reserva_confirmada=True,
+            )
+
+    app.dependency_overrides[
+        obtener_verificador_disponibilidad_repuestos
+    ] = lambda: VerificadorFalso()
+
+    primera = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/disponibilidad-repuestos",
+        json={"clave_operacion": clave},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+    segunda = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/disponibilidad-repuestos",
+        json={"clave_operacion": clave},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert primera.status_code == 200
+    assert primera.json()["estado_aplicado"] == EN_REPARACION
+    assert segunda.status_code == 200
+    assert segunda.json()["historial_id"] == primera.json()["historial_id"]
+    db_ordenes.expire_all()
+    actual = db_ordenes.get(OrdenTrabajo, orden.orden_id)
+    assert actual.estado_codigo == EN_REPARACION
+    historial = db_ordenes.scalar(
+        select(HistorialEstado).where(
+            HistorialEstado.disponibilidad_repuestos_clave_operacion == clave
+        )
+    )
+    assert historial is not None
+    assert historial.actor_usuario_id == 99
+    assert historial.estado_anterior == ESPERANDO_REPUESTOS
+    assert historial.estado_nuevo == EN_REPARACION
+
+
+def test_disponibilidad_repuestos_rechaza_cliente(
+    api_ordenes: TestClient, db_ordenes: Session,
+) -> None:
+    orden = _crear_orden(
+        db_ordenes, usuario_cliente=10, estado_codigo=ESPERANDO_REPUESTOS,
+    )
+    respuesta = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/disponibilidad-repuestos",
+        json={"clave_operacion": "disp:1:1"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert respuesta.status_code == 403
+    assert db_ordenes.scalar(select(func.count()).select_from(HistorialEstado)) == 0

@@ -102,6 +102,16 @@ del `500` que daba hasta la corrección del hallazgo §8.3 de
 y perfil local `Cliente`; con el rol pero sin perfil local responde `404`.
 El listado y el detalle resuelven la visibilidad por rol en el router.
 
+El perfil local se prepara con `POST /api/clientes/perfil` (contrato 2.2.0):
+exige rol `cliente` (`403` en otro caso) y toma la identidad del JWT; el body
+no admite `usuario_id` ni roles. `GET /api/clientes/perfil` usa el mismo
+`resolver_cliente_actual` y nunca crea el perfil.
+
+| Capacidad | Cliente | Mecánico | Administrador |
+|---|---|---|---|
+| `POST /api/clientes/perfil` | ✅ el propio | ❌ | ⚠️ * |
+| `GET /api/clientes/perfil` | ✅ el propio | ❌ | ⚠️ * |
+
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
 | `POST /api/vehiculos` | ✅ | ❌ 403 | ❌ 403 |
@@ -124,6 +134,10 @@ El listado y el detalle resuelven la visibilidad por rol en el router.
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
 | `POST /api/ordenes` | ❌ | ❌ | ✅ |
+| `GET /api/ordenes/configuracion/capacidad/mecanicos` | ❌ | ❌ | ✅ |
+| `PUT /api/ordenes/configuracion/capacidad/mecanicos` | ❌ | ❌ | ✅ |
+| `GET /api/ordenes/configuracion/capacidad/ingresos-diarios` | ❌ | ❌ | ✅ |
+| `PUT /api/ordenes/configuracion/capacidad/ingresos-diarios` | ❌ | ❌ | ✅ |
 | `GET /api/ordenes` | ⚠️ de sus vehículos | ⚠️ asignadas | ✅ todas |
 | `GET /api/ordenes/{id}` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
 | `PUT /api/ordenes/{id}/mecanico` | ❌ | ❌ | ✅ |
@@ -132,7 +146,9 @@ El listado y el detalle resuelven la visibilidad por rol en el router.
 | `POST /api/ordenes/{id}/bitacora` | ❌ 403 | ⚠️ solo asignada | ✅ |
 | `PATCH /api/ordenes/{id}/estado` | ❌ 403 | ⚠️ solo asignadas | ✅ cualquiera |
 | `POST /api/ordenes/{id}/entrega` | ❌ 403 | ❌ 403 | ✅ |
-| `POST /api/ordenes/{id}/cancelacion` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
+| `POST /api/ordenes/{id}/cancelacion` | ⚠️ solicita solo el propietario | ❌ 403 | ❌ 403 |
+| `GET /api/ordenes/cancelaciones/pendientes` | ❌ 403 | ❌ 403 | ✅ |
+| `POST /api/ordenes/{id}/cancelacion/confirmacion` | ❌ 403 | ❌ 403 | ✅ |
 | `POST /api/ordenes/{id}/decisiones-presupuesto` | ⚠️ solo propietario | ❌ 403 | ❌ 403 |
 
 Detalles que condicionan la matriz:
@@ -150,13 +166,10 @@ Detalles que condicionan la matriz:
   `Esperando diagnóstico` y quedan registrados `HistorialAsignacion` e
   `HistorialEstado` en la misma transacción. `Entregado` y `Cancelado` rechazan
   asignaciones con `409`.
-- `mecanico_id` es una **referencia a MS1 que el servidor valida** (matriz
-  §4.3): antes de guardar, MS2 consulta `GET {MS1_URL}/auth/usuarios/{id}`
-  reenviando el JWT del administrador que asigna. El destino debe existir
-  (`404` si no), estar **activo** y tener el rol `mecanico` (`409` si no); si
-  MS1 no responde, `503` y la asignación **no** ocurre (fail-closed).
-  Implementación: `services/ms2_taller/integracion_ms1.py`. El máximo de
-  órdenes activas sigue sin aplicarse.
+- `mecanico_id` es una **referencia lógica** a MS1. MS2 consulta su API con el
+  JWT del Administrador y exige usuario existente, activo y con rol `mecanico`
+  (`422` en otro caso; `503` si no se puede validar), antes de guardar cambios.
+  También aplica el máximo configurable de órdenes activas.
 - **Cambio general de estado** (`PATCH /api/ordenes/{id}/estado`): solo el
   Administrador, o el Mecánico asignado a esa orden, con `403` en otro caso. Los
   pares `1 → 2`, `3 → 4/5` y `6 → 7` están reservados a sus operaciones
@@ -164,10 +177,15 @@ Detalles que condicionan la matriz:
 - **Entrega física** (`POST /api/ordenes/{id}/entrega`): exclusiva del
   Administrador. Cierra `6 → 7`, registra `entregado_en` y `entregado_por_id` con
   la identidad del JWT y el historial. El PATCH `6 → 7` responde `409`.
-- **Cancelación del cliente** (`POST /api/ordenes/{id}/cancelacion`): solo el
-  Cliente propietario del vehículo mientras la orden esté en `1`, `2` o `3`. El
-  motivo es obligatorio; una orden inexistente o ajena responde `404` y una orden
-  ya avanzada o terminal `409`.
+- **Solicitud de cancelación** (`POST /api/ordenes/{id}/cancelacion`): el Cliente
+  propietario puede solicitarla mientras la orden esté en `1`, `2` o `3`. Se
+  guarda su motivo y fecha sin cambiar el estado; MS2 verifica que MS3 no tenga
+  una aprobación inicial. Una orden inexistente o ajena responde `404`.
+- **Revisión y confirmación**: el Administrador consulta
+  `GET /api/ordenes/cancelaciones/pendientes` y confirma por
+  `POST /api/ordenes/{id}/cancelacion/confirmacion`. MS2 vuelve a verificar la
+  aprobación inicial y solo entonces actualiza a `Cancelado` e historial en una
+  transacción. `PATCH` no permite saltarse el flujo.
 - **Bitácora de trabajo** (`GET`/`POST /api/ordenes/{id}/bitacora`): la lectura
   aplica la misma visibilidad del detalle (`obtener_orden_visible`: fuera del
   alcance → `404` indistinguible). La escritura es del **Mecánico asignado** o
@@ -175,12 +193,15 @@ Detalles que condicionan la matriz:
   bitácora pero no registra entradas. Una acción puede declarar repuestos
   utilizados (nombre y cantidad); una observación no. Implementación:
   `services/ms2_taller/services/bitacora.py`.
+- MS2 valida la referencia por `GET /auth/usuarios/{id}` de MS1, sin consultar
+  su base. La comprobación remota y la transacción local no son atómicas entre
+  servicios; una caída o respuesta incompatible impide guardar la asignación.
 
 ### 4.4 Presupuestos, repuestos, proveedores e inventario (MS3)
 
 | Capacidad | Cliente | Mecánico | Administrador |
 |---|---|---|---|
-| Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ solo órdenes asignadas | ✅ |
+| Crear presupuesto de una orden (`POST /presupuestos`, versión 1 en borrador) | ❌ 403 | ✅ solo asignada | ✅ orden existente |
 | Listar / buscar por orden (`GET /presupuestos?orden_id=`) | ✅ solo su orden y con `orden_id` | ✅ | ✅ |
 | Detalle y versión (`GET /presupuestos/{id}`, `/versiones/{n}`) | ✅ solo sus órdenes, sin borradores | ✅ | ✅ |
 | Crear la versión siguiente (`POST /presupuestos/{id}/versiones`) | ❌ 403 | ✅ solo órdenes asignadas | ✅ |
@@ -202,19 +223,21 @@ Detalles que condicionan la matriz:
   muestra, MS3 responde `404` (sin revelar si el presupuesto existe); si MS2 no
   responde, `503`. Implementación: `services/ms3_presupuestos/integracion_ms2.py`.
 - El cliente no ve versiones en borrador: para él no existen (`404`).
-- **Alcance del mecánico (§4.4):** al crear la versión 1, si no interviene el
-  Administrador, MS3 confirma la visibilidad de la orden con MS2
-  (`GET {MS2}/ordenes/{orden_id}` reenviando el JWT del mecánico, que solo ve
-  las asignadas): orden ajena o inexistente → `404` (sin revelar existencia) y
-  MS2 no disponible → `503`. Implementación:
-  `services/ms3_presupuestos/routers/presupuestos.py::crear`.
+- Al crear un presupuesto, MS3 valida en MS2 existencia y asignación con el JWT
+  original. Un Cliente+Mecánico propietario sigue necesitando la asignación;
+  solo Administrador está exento. Rechaza con `404` si la orden no corresponde,
+  o `503` si MS2 no permite validarla, sin escrituras.
 - **Alcance del mecánico ampliado a versiones e inventario (§4.4):** los mismos
-  controles de arriba se aplican a `crear_version`, `reemplazar_items` y a los
-  movimientos de stock con `orden_id` (compromiso, consumo y liberación) de
+  controles se aplican a `crear_version`, `reemplazar_items` y a los movimientos
+  de stock con `orden_id` (compromiso, consumo y liberación) de
   `inventario.py::registrar`. La validación ocurre antes de escribir datos:
   nada se registra (ni se toca stock) sin acceso confirmado (fail-closed).
   Orden ajena o inexistente → `404` (`Presupuesto {id}` / `Orden {id}` no
   existe); MS2 no disponible → `503`. El Administrador opera sin filtro.
+  Se confirma explícitamente `mecanico_actual_id` con el JWT y el principal,
+  reutilizando el verificador de creación. Una cuenta Cliente+Mecánico
+  propietaria necesita igualmente la asignación; ver su propia orden en MS2
+  no la autoriza a versionar, modificar ítems o mover stock como Mecánico.
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).
 - El cliente no ve el catálogo: ve el repuesto y su proveedor dentro de su presupuesto (§4.3).

@@ -12,13 +12,13 @@ Reglas del patrón en este servicio:
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Generic, Literal, TypeVar
 
-from sqlalchemy import case, exists, func, select
+from sqlalchemy import exists, func, select, false
 from sqlalchemy.sql import Select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, lazyload, selectinload
 
 from services.ms3_presupuestos.db import Base
 from services.ms3_presupuestos.models import (
@@ -118,8 +118,11 @@ class RepositorioProveedores(RepositorioBase[Proveedor]):
             consulta = consulta.where(Proveedor.proveedor_id != excepto)
         return self.sesion.scalar(consulta)
 
-    def _filtro(self, texto: str | None, con_repuestos: bool | None) -> Select:
+    def _filtro(self, texto: str | None, con_repuestos: bool | None,
+                tipo_distribuidor: str | None = None) -> Select:
         consulta = select(Proveedor)
+        if tipo_distribuidor is not None:
+            consulta = consulta.where(Proveedor.tipo_distribuidor == tipo_distribuidor)
         if texto and texto.strip():
             # Índices ix_proveedor_nombre_trgm / ix_proveedor_contacto_trgm.
             consulta = consulta.where(contiene_texto(Proveedor.nombre, texto)
@@ -130,18 +133,21 @@ class RepositorioProveedores(RepositorioBase[Proveedor]):
         return consulta
 
     def buscar(self, *, texto: str | None = None, con_repuestos: bool | None = None,
+               tipo_distribuidor: str | None = None,
                desde: int = 0, limite: int = 50) -> Sequence[Proveedor]:
         limite = max(1, min(limite, LIMITE_MAXIMO))
         # Orden = índice ix_proveedor_nombre_orden (lower(nombre), proveedor_id).
-        consulta = (self._filtro(texto, con_repuestos)
+        consulta = (self._filtro(texto, con_repuestos, tipo_distribuidor)
                     .order_by(func.lower(Proveedor.nombre), Proveedor.proveedor_id)
-                    .offset(max(desde, 0)).limit(limite))
+                    .offset(max(desde, 0)).limit(limite)
+                    # El listado muestra cuántos repuestos tiene cada proveedor.
+                    .options(selectinload(Proveedor.repuestos)))
         return self.sesion.scalars(consulta).all()
 
-    def contar_busqueda(self, *, texto: str | None = None, con_repuestos: bool | None = None) -> int:
-        return self.sesion.scalar(
-            select(func.count()).select_from(self._filtro(texto, con_repuestos).subquery())
-        ) or 0
+    def contar_busqueda(self, *, texto: str | None = None, con_repuestos: bool | None = None,
+                        tipo_distribuidor: str | None = None) -> int:
+        filtro = self._filtro(texto, con_repuestos, tipo_distribuidor)
+        return self.sesion.scalar(select(func.count()).select_from(filtro.subquery())) or 0
 
 
 class RepositorioRepuestos(RepositorioBase[Repuesto]):
@@ -169,6 +175,23 @@ class RepositorioRepuestos(RepositorioBase[Repuesto]):
             raise RecursoNoEncontrado(f"Repuesto {repuesto_id} no existe")
         return repuesto
 
+    def bloquear_varios(self, repuesto_ids: Iterable[int]) -> dict[int, Repuesto]:
+        """Bloquea (FOR UPDATE) varios repuestos SIEMPRE en orden de id.
+
+        Si dos transacciones bloquean los mismos repuestos, ambas lo hacen en el
+        mismo orden: la segunda espera a la primera en vez de quedar en un
+        interbloqueo (deadlock) con ella. Los inexistentes no aparecen.
+        """
+        ids = sorted(set(repuesto_ids))
+        if not ids:
+            return {}
+        consulta = (
+            select(Repuesto).where(Repuesto.repuesto_id.in_(ids))
+            .order_by(Repuesto.repuesto_id).with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return {r.repuesto_id: r for r in self.sesion.scalars(consulta)}
+
     def con_nombre_similar(
         self, proveedor_id: int, nombre: str, *, excepto: int | None = None
     ) -> Repuesto | None:
@@ -193,7 +216,9 @@ class RepositorioRepuestos(RepositorioBase[Repuesto]):
         if f.con_stock is not None:
             consulta = consulta.where(Repuesto.stock > 0 if f.con_stock else Repuesto.stock == 0)
         if f.solo_bajo_umbral:
-            # Sin umbral general vigente, solo cuentan los umbrales particulares.
+            # Las alertas se activan una vez configurado el umbral general.
+            if f.umbral_general is None:
+                return consulta.where(false())
             efectivo = func.coalesce(Repuesto.umbral_particular, f.umbral_general)
             consulta = consulta.where(efectivo.is_not(None), Repuesto.stock < efectivo)
         return consulta
@@ -225,6 +250,8 @@ class RepositorioRepuestos(RepositorioBase[Repuesto]):
 
     def bajo_umbral(self, umbral_general: int) -> Sequence[Repuesto]:
         """Repuestos con stock < umbral efectivo (particular o, si falta, general)."""
+        if umbral_general is None:
+            return []
         umbral_efectivo = func.coalesce(Repuesto.umbral_particular, umbral_general)
         consulta = select(Repuesto).where(Repuesto.stock < umbral_efectivo).order_by(Repuesto.nombre)
         return self.sesion.scalars(consulta).all()
@@ -243,24 +270,52 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
     def comprometido_por_orden(self, repuesto_id: int) -> dict[int, int]:
         """Unidades reservadas y aún no usadas, por orden.
 
-        Por orden: compromisos − liberaciones − consumos (nunca menos de 0:
-        un consumo mayor que lo reservado toma el resto del stock libre).
-        """
-        saldo = func.sum(case(
-            (MovimientoInventario.tipo == "compromiso", MovimientoInventario.cantidad),
-            (MovimientoInventario.tipo.in_(("liberacion", "consumo")), -MovimientoInventario.cantidad),
-            else_=0,
-        ))
-        filas = self.sesion.execute(
-            select(MovimientoInventario.orden_id, saldo)
-            .where(MovimientoInventario.repuesto_id == repuesto_id,
-                   MovimientoInventario.orden_id.is_not(None))
-            .group_by(MovimientoInventario.orden_id)
-        ).all()
-        return {orden: int(valor) for orden, valor in filas if valor and valor > 0}
+        Se recorre el historial EN ORDEN (movimiento_id), porque el saldo de una
+        orden nunca baja de 0: un consumo mayor que lo reservado toma el resto
+        del stock libre y no deja "deuda" que se coma una reserva posterior.
 
-    def _filtro(self, *, repuesto_id: int | None, orden_id: int | None, tipo: str | None) -> Select:
+            compromiso  saldo += n
+            liberacion  saldo −= n
+            consumo     saldo = max(0, saldo − n)
+
+        (Una suma simple daría mal: consumir 2 sin reserva y después reservar 3
+        dejaría 1 reservada en vez de 3.)
+        """
+        return self.comprometido_por_ordenes([repuesto_id]).get(repuesto_id, {})
+
+    def comprometido_por_ordenes(self, repuesto_ids: Iterable[int]) -> dict[int, dict[int, int]]:
+        """`comprometido_por_orden` de varios repuestos en UNA consulta.
+
+        {repuesto_id: {orden_id: reservado}}. Evita una consulta por repuesto
+        al validar o reservar varios a la vez. Usa ix_movimiento_inventario_saldo
+        (lectura solo del índice, ya en orden de movimiento).
+        """
+        ids = sorted(set(repuesto_ids))
+        if not ids:
+            return {}
+        filas = self.sesion.execute(
+            select(MovimientoInventario.repuesto_id, MovimientoInventario.orden_id,
+                   MovimientoInventario.tipo, MovimientoInventario.cantidad)
+            .where(MovimientoInventario.repuesto_id.in_(ids),
+                   MovimientoInventario.orden_id.is_not(None))
+            .order_by(MovimientoInventario.repuesto_id, MovimientoInventario.movimiento_id)
+        ).all()
+        saldos: dict[int, dict[int, int]] = {}
+        for repuesto_id, orden, tipo, cantidad in filas:
+            saldo = saldos.setdefault(repuesto_id, {})
+            actual = saldo.get(orden, 0)
+            if tipo == "compromiso":
+                actual += cantidad
+            else:  # liberacion / consumo
+                actual = max(0, actual - cantidad)
+            saldo[orden] = actual
+        return {rid: {o: v for o, v in saldo.items() if v > 0} for rid, saldo in saldos.items()}
+
+    def _filtro(self, *, repuesto_id: int | None, orden_id: int | None, tipo: str | None,
+                proveedor_id: int | None = None) -> Select:
         consulta = select(MovimientoInventario)
+        if proveedor_id is not None:
+            consulta = consulta.where(MovimientoInventario.proveedor_id == proveedor_id)
         if repuesto_id is not None:
             consulta = consulta.where(MovimientoInventario.repuesto_id == repuesto_id)
         if orden_id is not None:
@@ -271,11 +326,12 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
 
     def buscar(
         self, *, repuesto_id: int | None = None, orden_id: int | None = None,
-        tipo: str | None = None, desde: int = 0, limite: int = 50,
+        tipo: str | None = None, proveedor_id: int | None = None, desde: int = 0, limite: int = 50,
     ) -> Sequence[MovimientoInventario]:
         """Más recientes primero."""
         limite = max(1, min(limite, LIMITE_MAXIMO))
-        consulta = (self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo)
+        consulta = (self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo,
+                                 proveedor_id=proveedor_id)
                     .order_by(MovimientoInventario.fecha_hora.desc(),
                               MovimientoInventario.movimiento_id.desc())
                     .offset(max(desde, 0)).limit(limite))
@@ -283,8 +339,10 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
 
     def contar_busqueda(
         self, *, repuesto_id: int | None = None, orden_id: int | None = None, tipo: str | None = None,
+        proveedor_id: int | None = None,
     ) -> int:
-        consulta = self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo)
+        consulta = self._filtro(repuesto_id=repuesto_id, orden_id=orden_id, tipo=tipo,
+                                proveedor_id=proveedor_id)
         return self.sesion.scalar(select(func.count()).select_from(consulta.subquery())) or 0
 
     def de_orden(self, orden_id: int) -> Sequence[MovimientoInventario]:
@@ -292,6 +350,24 @@ class RepositorioMovimientos(RepositorioBase[MovimientoInventario]):
             select(MovimientoInventario)
             .where(MovimientoInventario.orden_id == orden_id)
             .order_by(MovimientoInventario.fecha_hora, MovimientoInventario.movimiento_id)
+        )
+        return self.sesion.scalars(consulta).all()
+
+    def de_repuestos(self, repuesto_ids: Sequence[int]) -> Sequence[MovimientoInventario]:
+        if not repuesto_ids:
+            return []
+        consulta = (
+            select(MovimientoInventario)
+            .where(MovimientoInventario.repuesto_id.in_(repuesto_ids))
+            .order_by(MovimientoInventario.movimiento_id)
+        )
+        return self.sesion.scalars(consulta).all()
+
+    def por_prefijo_clave_operacion(self, prefijo: str) -> Sequence[MovimientoInventario]:
+        consulta = (
+            select(MovimientoInventario)
+            .where(MovimientoInventario.clave_operacion.like(f"{prefijo}%"))
+            .order_by(MovimientoInventario.movimiento_id)
         )
         return self.sesion.scalars(consulta).all()
 
@@ -339,6 +415,18 @@ class RepositorioPresupuestos(RepositorioBase[Presupuesto]):
             raise RecursoNoEncontrado(f"Presupuesto {presupuesto_id} no existe")
         return presupuesto
 
+    def obtener_de_orden_para_actualizar(self, orden_id: int) -> Presupuesto:
+        consulta = (
+            select(Presupuesto)
+            .where(Presupuesto.orden_id == orden_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        presupuesto = self.sesion.scalar(consulta)
+        if presupuesto is None:
+            raise RecursoNoEncontrado(f"Presupuesto para orden {orden_id} no existe")
+        return presupuesto
+
     def buscar(
         self, *, orden_id: int | None = None, desde: int = 0, limite: int = 50
     ) -> Sequence[Presupuesto]:
@@ -351,6 +439,10 @@ class RepositorioPresupuestos(RepositorioBase[Presupuesto]):
             consulta.order_by(Presupuesto.presupuesto_id.desc())
             .offset(max(desde, 0))
             .limit(limite)
+            # El resumen solo suma ítems: no carga repuestos ni proveedores.
+            .options(selectinload(Presupuesto.versiones)
+                     .selectinload(VersionPresupuesto.items)
+                     .lazyload(ItemPresupuesto.repuesto))
         )
         return self.sesion.scalars(consulta).all()
 

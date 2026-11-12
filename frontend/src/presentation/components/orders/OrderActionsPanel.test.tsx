@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { AxiosError, AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import type { User, UsuarioListado } from '@/domain/entities/User';
@@ -20,6 +21,7 @@ vi.mock('@/infrastructure/api/OrderService', () => ({
         asignarMecanico: vi.fn(),
         registrarEntrega: vi.fn(),
         cancelarComoCliente: vi.fn(),
+        confirmarCancelacion: vi.fn(),
     },
 }));
 
@@ -72,7 +74,7 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         renderPanel(orden({ estadoCodigo: 1 }));
 
         expect(await screen.findByRole('button', { name: 'Asignar mecánico' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Cancelar orden' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Confirmar cancelación' })).toBeInTheDocument();
         expect(await screen.findByRole('option', { name: 'Martín Herrera' })).toBeInTheDocument();
         await waitFor(() => expect(authService.listarUsuarios).toHaveBeenCalledTimes(1));
     });
@@ -100,7 +102,7 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
             'href',
             '/client/presupuestos/101'
         );
-        expect(screen.getByRole('button', { name: 'Cancelar solicitud' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Solicitar cancelación' })).toBeInTheDocument();
     });
 
     it('no ofrece acciones cuando el estado no habilita ninguna para el rol', () => {
@@ -113,12 +115,12 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
 
     it('la cancelación del cliente exige motivo antes de llamar al servicio', async () => {
         useAuthStore.setState({ user: sesion('cliente'), token: 't', isAuthenticated: true });
-        vi.mocked(orderService.cancelarComoCliente).mockResolvedValue(orden({ estadoCodigo: 8 }));
+        vi.mocked(orderService.cancelarComoCliente).mockResolvedValue(orden({ estadoCodigo: 2 }));
 
         renderPanel(orden({ estadoCodigo: 2 }));
 
-        fireEvent.click(screen.getByRole('button', { name: 'Cancelar solicitud' }));
-        fireEvent.click(await screen.findByRole('button', { name: 'Cancelar orden' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Solicitar cancelación' }));
+        fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Solicitar cancelación' }));
 
         expect(await screen.findByText('Debe indicar un motivo.')).toBeInTheDocument();
         expect(orderService.cancelarComoCliente).not.toHaveBeenCalled();
@@ -126,10 +128,33 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         fireEvent.change(screen.getByLabelText('Motivo de la orden 101'), {
             target: { value: 'Ya no deseo el servicio' },
         });
-        fireEvent.click(screen.getByRole('button', { name: 'Cancelar orden' }));
+        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Solicitar cancelación' }));
 
         await waitFor(() =>
             expect(orderService.cancelarComoCliente).toHaveBeenCalledWith('101', 'Ya no deseo el servicio')
+        );
+        expect(await screen.findByText(/Solicitud de cancelación.*enviada.*Pendiente de confirmación administrativa/)).toBeInTheDocument();
+        expect(orderService.cambiarEstado).not.toHaveBeenCalled();
+    });
+
+    it('asocia el error del motivo de cancelación con el campo', async () => {
+        useAuthStore.setState({ user: sesion('cliente'), token: 't', isAuthenticated: true });
+
+        renderPanel(orden({ estadoCodigo: 2 }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Solicitar cancelación' }));
+        fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Solicitar cancelación' }));
+
+        expect(await screen.findByText('Debe indicar un motivo.')).toBeInTheDocument();
+
+        const motivo = screen.getByLabelText('Motivo de la orden 101');
+        expect(motivo).toHaveAttribute('aria-required', 'true');
+        expect(motivo).toHaveAttribute('aria-invalid', 'true');
+        expect(motivo.getAttribute('aria-describedby')).toBe(
+            'orden-101-cancelar-motivo-error'
+        );
+        expect(document.getElementById('orden-101-cancelar-motivo-error')).toHaveTextContent(
+            'Debe indicar un motivo.'
         );
     });
 
@@ -202,6 +227,21 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         );
     });
 
+    it('el administrador confirma una solicitud por su endpoint específico', async () => {
+        useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
+        vi.mocked(orderService.confirmarCancelacion).mockResolvedValue(orden({ estadoCodigo: 8 }));
+        renderPanel(orden({ estadoCodigo: 3 }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelación' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText(/solicitud pendiente.*MS2 comprobará/)).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar cancelación' }));
+
+        await waitFor(() => expect(orderService.confirmarCancelacion).toHaveBeenCalledWith('101'));
+        expect(orderService.cambiarEstado).not.toHaveBeenCalled();
+        expect(await screen.findByText('Orden n° 101 actualizada a Cancelado.')).toBeInTheDocument();
+    });
+
     it('sin conexión deshabilita las acciones y avisa al usuario', () => {
         useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
         useOrderStore.setState({ isOffline: true });
@@ -209,7 +249,69 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         renderPanel(orden({ estadoCodigo: 1 }));
 
         expect(screen.getByRole('button', { name: 'Asignar mecánico' })).toBeDisabled();
-        expect(screen.getByRole('button', { name: 'Cancelar orden' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Confirmar cancelación' })).toBeDisabled();
         expect(screen.getByText(/para modificar el estado de la orden necesita estar conectado/)).toBeInTheDocument();
     });
+
+    it('el administrador reasigna sin ofrecer al responsable actual y conserva el estado', async () => {
+        useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
+        vi.mocked(orderService.asignarMecanico).mockResolvedValue(
+            orden({ estadoCodigo: 3, mecanicoActualId: '51' })
+        );
+
+        renderPanel(orden({ estadoCodigo: 3, mecanicoActualId: '50' }));
+
+        const boton = screen.getByRole('button', { name: 'Reasignar mecánico' });
+        await screen.findByRole('option', { name: 'Jefe Taller' });
+        expect(screen.queryByRole('option', { name: 'Martín Herrera' })).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Nuevo mecánico responsable')).toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText('Mecánico para la orden 101'), {
+            target: { value: '51' },
+        });
+        fireEvent.click(boton);
+
+        const dialog = await screen.findByRole('dialog', { name: '¿Confirmar la reasignación?' });
+        expect(screen.getByText(/pasará a Jefe Taller y conservará su estado/)).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Reasignar mecánico' }));
+
+        await waitFor(() =>
+            expect(orderService.asignarMecanico).toHaveBeenCalledWith('101', '51', '')
+        );
+        expect(await screen.findByText(/reasignada. Conserva el estado/)).toBeInTheDocument();
+    });
+
+    it('muestra el rechazo por capacidad de MS2 sin cambiar la orden', async () => {
+        useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
+        const config = { headers: new AxiosHeaders() } as InternalAxiosRequestConfig;
+        vi.mocked(orderService.asignarMecanico).mockRejectedValue(
+            new AxiosError('409', '409', config, undefined, {
+                status: 409, statusText: '', headers: {}, config,
+                data: { detail: 'El mecánico alcanzó el máximo de órdenes activas' },
+            })
+        );
+        const actualizar = vi.spyOn(useOrderStore.getState(), 'updateOrder');
+
+        renderPanel(orden({ estadoCodigo: 1 }));
+        await screen.findByRole('option', { name: 'Martín Herrera' });
+        fireEvent.change(screen.getByLabelText('Mecánico para la orden 101'), {
+            target: { value: '50' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Asignar mecánico' }));
+        const dialog = await screen.findByRole('dialog');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Asignar mecánico' }));
+
+        expect(
+            await screen.findByText('El mecánico alcanzó el máximo de órdenes activas')
+        ).toBeInTheDocument();
+        expect(actualizar).not.toHaveBeenCalled();
+    });
+});
+
+it('la cuenta Cliente+Administrador ejerce administración desde su portal aunque Cliente sea primero', async () => {
+    useAuthStore.setState({ user: { ...sesion('cliente'), roles: ['cliente', 'administrador'] }, token: 't', isAuthenticated: true });
+    vi.mocked(authService.listarUsuarios).mockResolvedValue(MECANICOS);
+    render(<MemoryRouter initialEntries={['/admin/ordenes/101']}><ToastProvider><OrderActionsPanel order={orden()} /></ToastProvider></MemoryRouter>);
+    expect(await screen.findByRole('button', { name: 'Asignar mecánico' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Solicitar cancelación' })).not.toBeInTheDocument();
 });

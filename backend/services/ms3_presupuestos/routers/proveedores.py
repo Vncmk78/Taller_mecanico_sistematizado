@@ -1,10 +1,11 @@
 """Endpoints de proveedores (MS3, RF-15: distribuidores de repuestos).
 
-    GET    /proveedores?q=&con_repuestos=&desde=&limite=   listar / buscar (nombre o contacto)
+    GET    /proveedores?q=&con_repuestos=&tipo_distribuidor=&desde=&limite=   listar / buscar
     GET    /proveedores/{proveedor_id}        detalle con sus repuestos
+    GET    /proveedores/{proveedor_id}/trazabilidad  repuestos que abastece o abasteció y unidades
     POST   /proveedores                       crear            (Administrador)
     PATCH  /proveedores/{proveedor_id}        modificar        (Administrador)
-    DELETE /proveedores/{proveedor_id}        eliminar si no tiene repuestos (Administrador)
+    DELETE /proveedores/{proveedor_id}        eliminar si no tiene repuestos ni trazabilidad (Administrador)
 
 Lectura: Mecánico y Administrador (el mecánico elige repuestos al presupuestar).
 El cliente ve el proveedor de cada repuesto dentro de su presupuesto (§4.3),
@@ -23,8 +24,11 @@ from services.ms3_presupuestos.schemas.catalogo import (
     ProveedorCrear,
     ProveedorDetalle,
     ProveedorSalida,
+    TipoDistribuidor,
+    TrazabilidadProveedor,
 )
 from services.ms3_presupuestos.services import catalogo as casos
+from services.ms3_presupuestos.services import trazabilidad
 from shared.auth import NombreRol
 
 router = APIRouter(prefix="/proveedores", tags=["proveedores"])
@@ -35,7 +39,8 @@ _escritura = requerir_roles(NombreRol.ADMINISTRADOR)
 _401 = {status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente, inválido o expirado"}}
 _403 = {status.HTTP_403_FORBIDDEN: {"description": "Rol no permitido"}}
 _404 = {status.HTTP_404_NOT_FOUND: {"description": "Proveedor inexistente"}}
-_409 = {status.HTTP_409_CONFLICT: {"description": "Nombre repetido o proveedor con repuestos"}}
+_409 = {status.HTTP_409_CONFLICT: {"description": "Nombre repetido, proveedor con repuestos "
+                                                  "o con trazabilidad registrada"}}
 _422 = {422: {"description": "Datos inválidos"}}
 
 IdProveedor = Path(gt=0, description="proveedor_id")
@@ -48,11 +53,14 @@ def listar(
                           description="Texto en nombre o contacto (sin distinguir mayúsculas ni tildes)"),
     con_repuestos: bool | None = Query(default=None,
                                        description="true: solo con repuestos · false: sin repuestos"),
+    tipo_distribuidor: TipoDistribuidor | None = Query(default=None,
+                                                       description="oficial o generico"),
     desde: int = Query(default=0, ge=0),
     limite: int = Query(default=50, ge=1, le=LIMITE_MAXIMO),
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
 ) -> PaginaProveedores:
     total, proveedores = casos.listar_proveedores(uow, texto=q, con_repuestos=con_repuestos,
+                                                  tipo_distribuidor=tipo_distribuidor,
                                                   desde=desde, limite=limite)
     return PaginaProveedores(total=total, desde=desde, limite=limite,
                              proveedores=[casos.a_proveedor(p) for p in proveedores])
@@ -67,16 +75,26 @@ def detalle(proveedor_id: int = IdProveedor,
     return casos.a_proveedor_detalle(proveedor, casos.umbral_general(uow))
 
 
+@router.get("/{proveedor_id}/trazabilidad", response_model=TrazabilidadProveedor,
+            summary="Repuestos que el proveedor abastece o abasteció, con las unidades entregadas",
+            responses={**_401, **_403, **_404}, dependencies=[Depends(_lectura)])
+def trazabilidad_proveedor(proveedor_id: int = IdProveedor,
+                           uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo)
+                           ) -> TrazabilidadProveedor:
+    return trazabilidad.trazabilidad_proveedor(uow, proveedor_id)
+
+
 @router.post("", response_model=ProveedorSalida, status_code=status.HTTP_201_CREATED,
              summary="Registrar un proveedor", responses={**_401, **_403, **_409, **_422},
              dependencies=[Depends(_escritura)])
 def crear(body: ProveedorCrear,
           uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo)) -> ProveedorSalida:
-    return casos.a_proveedor(casos.crear_proveedor(uow, nombre=body.nombre, contacto=body.contacto))
+    return casos.a_proveedor(casos.crear_proveedor(uow, nombre=body.nombre, contacto=body.contacto,
+                                                   tipo_distribuidor=body.tipo_distribuidor))
 
 
 @router.patch("/{proveedor_id}", response_model=ProveedorSalida,
-              summary="Modificar nombre y/o contacto",
+              summary="Modificar nombre, contacto y/o tipo de distribuidor",
               responses={**_401, **_403, **_404, **_409, **_422},
               dependencies=[Depends(_escritura)])
 def actualizar(body: ProveedorActualizar, proveedor_id: int = IdProveedor,

@@ -7,9 +7,13 @@ import {
     rechazoCancelaServicio,
     versionPendiente,
     versionVigente,
+    aplicacionPendiente,
 } from '@/domain/entities/Presupuesto';
+import { useEstadoOrden } from '@/presentation/hooks/useEstadoOrden';
+import { AplicacionPresupuestoPendienteError } from '@/domain/ports/PresupuestoPort';
+import { PresupuestoAplicacionPanel } from '@/presentation/components/budgets/PresupuestoAplicacionPanel';
 import { presupuestoService } from '@/infrastructure/api/PresupuestoService';
-import { getApiErrorMessage, isConflictError } from '@/infrastructure/api/errors';
+import { esResultadoIncierto, getApiErrorMessage, isConflictError } from '@/infrastructure/api/errors';
 import { useBudgetStore } from '@/infrastructure/stores/useBudgetStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useBudgetDetail } from '@/presentation/hooks/useBudgetDetail';
@@ -46,19 +50,27 @@ export function ClientBudgetDetailPage() {
     } = useOrderEvidence(ordenId);
     const order = useOrderStore((s) => s.orders.find((cached) => cached.id === ordenId));
     const updateBudget = useBudgetStore((s) => s.updateBudget);
+    const { estado: estadoOrden, recargar: recargarOrden } = useEstadoOrden(ordenId, { soloPropietario: true });
 
     const [approveOpen, setApproveOpen] = useState(false);
     const [rejectOpen, setRejectOpen] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [incierto, setIncierto] = useState(false);
+    const [aplicacionId, setAplicacionId] = useState<string | null>(null);
     const [decisionError, setDecisionError] = useState<string | null>(null);
     const [decisionResuelta, setDecisionResuelta] = useState<DecisionResuelta | null>(null);
     const [decisionVersion, setDecisionVersion] = useState<number | null>(null);
+    const [aplicacionConfirmada, setAplicacionConfirmada] = useState(false);
 
     const pendiente = presupuesto ? versionPendiente(presupuesto) : undefined;
     const cancelaServicio = presupuesto ? rechazoCancelaServicio(presupuesto) : false;
     const mostrada = pendiente ?? (presupuesto ? versionVigente(presupuesto) : undefined);
-    const puedeAprobar = pendiente != null && !isOffline && pendiente.items.length > 0;
-    const puedeRechazar = pendiente != null && !isOffline;
+    const pendienteAplicar = aplicacionId
+        ? { tipo: 'decision' as const, id: aplicacionId }
+        : aplicacionPendiente(presupuesto, estadoOrden);
+    const decisionPendiente = pendienteAplicar?.tipo === 'decision' ? pendienteAplicar : null;
+    const puedeAprobar = !incierto && !decisionPendiente && pendiente != null && !isOffline && pendiente.items.length > 0;
+    const puedeRechazar = !incierto && !decisionPendiente && pendiente != null && !isOffline;
 
     const cerrarDialogos = () => {
         setApproveOpen(false);
@@ -110,11 +122,25 @@ export function ClientBudgetDetailPage() {
             );
             updateBudget(resultado.presupuesto);
             setDecisionResuelta({ tipo, resultado });
+            void recargarOrden();
             cerrarDialogos();
         } catch (err) {
-            if (isConflictError(err)) {
+            if (err instanceof AplicacionPresupuestoPendienteError) {
+                // La decisión ya existe: se conserva su referencia y se ofrece
+                // solo el reintento de su aplicación, nunca decidir otra vez.
+                setAplicacionId(err.id);
+                setDecisionError(null);
+                cerrarDialogos();
+                refetch();
+                void recargarOrden();
+            } else if (isConflictError(err)) {
                 setDecisionError(versionCambio);
                 cerrarDialogos();
+                refetch();
+            } else if (esResultadoIncierto(err)) {
+                setIncierto(true);
+                cerrarDialogos();
+                setDecisionError('No se recibió la respuesta. Consulte el presupuesto antes de repetir; el servidor podría seguir procesando.');
                 refetch();
             } else {
                 setDecisionError(getApiErrorMessage(err));
@@ -125,13 +151,13 @@ export function ClientBudgetDetailPage() {
     };
 
     if (loading) {
-        return <LoadingState message="Cargando presupuesto..." className="p-10" />;
+        return <LoadingState message="Cargando presupuesto..." className="p-4 sm:p-6 lg:p-10" />;
     }
 
     if (failed) {
         return (
             <ErrorState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 title="No se pudo cargar el presupuesto"
                 message={error}
                 requestId={requestId}
@@ -151,7 +177,7 @@ export function ClientBudgetDetailPage() {
     if (!presupuesto || notFound) {
         return (
             <EmptyState
-                className="p-10"
+                className="p-4 sm:p-6 lg:p-10"
                 icon={ClipboardX}
                 title="Presupuesto no encontrado."
                 description="Es posible que esta orden todavía no tenga una cotización enviada por el taller."
@@ -167,7 +193,7 @@ export function ClientBudgetDetailPage() {
         );
     }
 
-    const aplicacionPendiente =
+    const efectoSinConfirmar =
         decisionResuelta?.resultado.efectoEnOrden != null &&
         !decisionResuelta.resultado.aplicacionConfirmada;
     const evidenciasPresupuesto = evidenciasDelPresupuesto(evidenciasOrden, presupuesto.id);
@@ -181,19 +207,36 @@ export function ClientBudgetDetailPage() {
                 <ArrowLeft className="w-4 h-4" aria-hidden /> Volver a mis presupuestos
             </Link>
 
+            {incierto && <section className="card p-4 mb-4" aria-label="Decisión sin confirmar">
+                <p>Resultado incierto. La información consultada puede provenir de otra pestaña.</p>
+                <Button variant="secondary" onClick={refetch}>Comprobar de nuevo</Button>
+                <Button variant="secondary" onClick={() => setIncierto(false)}>Ya lo revisé: permitir decidir otra vez</Button>
+            </section>}
             {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
+            {decisionPendiente && <PresupuestoAplicacionPanel
+                tipo="decision" id={decisionPendiente.id} ordenId={presupuesto.orderId}
+                onConfirmed={async () => {
+                    setAplicacionId(null);
+                    refetch();
+                    await recargarOrden();
+                    setDecisionError(null);
+                    setAplicacionConfirmada(true);
+                }} />}
+            {aplicacionConfirmada && !decisionPendiente && (
+                <Alert tone="success" className="mb-6">Decisión aplicada: la orden ya refleja su respuesta.</Alert>
+            )}
             {decisionResuelta && (
                 <Alert
                     tone={decisionResuelta.tipo === 'aprobado' ? 'success' : 'warning'}
                     className="mb-6"
                 >
                     {decisionResuelta.tipo === 'aprobado'
-                        ? 'Presupuesto aprobado. El taller ha sido notificado.'
-                        : 'Presupuesto rechazado. El taller ha sido notificado.'}
-                    {decisionResuelta.resultado.efectoEnOrden &&
+                        ? 'Aprobación registrada.'
+                        : 'Rechazo registrado.'}
+                    {decisionResuelta.resultado.aplicacionConfirmada && decisionResuelta.resultado.efectoEnOrden &&
                         ` Estado del servicio: ${EFECTO_EN_ORDEN_LABEL[decisionResuelta.resultado.efectoEnOrden]}.`}
-                    {aplicacionPendiente &&
+                    {efectoSinConfirmar &&
                         ' La decisión quedó registrada; el estado del servicio se confirmará en breve.'}
                 </Alert>
             )}

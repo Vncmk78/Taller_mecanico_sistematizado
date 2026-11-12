@@ -142,6 +142,8 @@ no admite `usuario_id` ni roles. `GET /api/clientes/perfil` usa el mismo
 | `GET /api/ordenes/{id}` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
 | `PUT /api/ordenes/{id}/mecanico` | ❌ | ❌ | ✅ |
 | `GET /api/ordenes/{id}/historial` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
+| `GET /api/ordenes/{id}/bitacora` | ⚠️ de sus vehículos | ⚠️ asignada | ✅ cualquiera |
+| `POST /api/ordenes/{id}/bitacora` | ❌ 403 | ⚠️ solo asignada | ✅ |
 | `PATCH /api/ordenes/{id}/estado` | ❌ 403 | ⚠️ solo asignadas | ✅ cualquiera |
 | `POST /api/ordenes/{id}/entrega` | ❌ 403 | ❌ 403 | ✅ |
 | `POST /api/ordenes/{id}/cancelacion` | ⚠️ solicita solo el propietario | ❌ 403 | ❌ 403 |
@@ -184,6 +186,13 @@ Detalles que condicionan la matriz:
   `POST /api/ordenes/{id}/cancelacion/confirmacion`. MS2 vuelve a verificar la
   aprobación inicial y solo entonces actualiza a `Cancelado` e historial en una
   transacción. `PATCH` no permite saltarse el flujo.
+- **Bitácora de trabajo** (`GET`/`POST /api/ordenes/{id}/bitacora`): la lectura
+  aplica la misma visibilidad del detalle (`obtener_orden_visible`: fuera del
+  alcance → `404` indistinguible). La escritura es del **Mecánico asignado** o
+  del **Administrador** (`403` en otro caso): el Cliente propietario lee su
+  bitácora pero no registra entradas. Una acción puede declarar repuestos
+  utilizados (nombre y cantidad); una observación no. Implementación:
+  `services/ms2_taller/services/bitacora.py`.
 - MS2 valida la referencia por `GET /auth/usuarios/{id}` de MS1, sin consultar
   su base. La comprobación remota y la transacción local no son atómicas entre
   servicios; una caída o respuesta incompatible impide guardar la asignación.
@@ -199,6 +208,8 @@ Detalles que condicionan la matriz:
 | Reemplazar ítems de una versión en borrador (`PUT .../versiones/{n}/items`) | ❌ 403 | ✅ solo órdenes asignadas | ✅ |
 | Enviar la versión al cliente (`POST .../versiones/{n}/envio`) | ❌ 403 | ❌ 403 | ✅ |
 | Aprobar o rechazar (`POST .../versiones/{n}/decision`) | ✅ solo dueño | ❌ 403 | ❌ 403 |
+| Consultar el hecho de una decisión (`GET /presupuestos/decisiones/{decision_id}`) | ✅ solo las propias | ❌ 403 | ❌ 403 |
+| Reintentar la aplicación de una decisión (`POST /presupuestos/decisiones/{decision_id}/aplicacion`) | ✅ solo las propias | ❌ 403 | ❌ 403 |
 | Listar / ver proveedores y repuestos (`GET /proveedores`, `/repuestos`, con `bajo_umbral`) | ❌ 403 | ✅ | ✅ |
 | Crear, modificar o eliminar proveedores y repuestos (`POST`/`PATCH`/`DELETE`) | ❌ 403 | ❌ 403 | ✅ |
 | Consultar movimientos, stock, alertas, umbral e historial (`GET /inventario/...`) | ❌ 403 | ✅ | ✅ |
@@ -230,6 +241,14 @@ Detalles que condicionan la matriz:
 - Una versión enviada o aprobada no se edita (`409`); la base lo garantiza además
   con triggers (`0003_ms3`).
 - El cliente no ve el catálogo: ve el repuesto y su proveedor dentro de su presupuesto (§4.3).
+- **SCRUM-438 (coordinación con MS2):** la primera decisión se aplica en la
+  orden vía `POST /ordenes/{id}/decisiones-presupuesto` reenviando el JWT del
+  cliente. Si la decisión quedó registrada pero MS2 no confirmó el efecto, el
+  endpoint de decisión responde `503` con el hecho persistido y
+  `POST /presupuestos/decisiones/{id}/aplicacion` reintenta la aplicación de
+  forma idempotente; `GET /presupuestos/decisiones/{id}` lee el hecho sin
+  llamar a MS2. Ambos son solo del Cliente responsable: una decisión ajena
+  responde el mismo `404` que una inexistente.
 
 ### 4.5 Evidencias multimedia (MS4)
 

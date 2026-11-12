@@ -3,6 +3,7 @@ import type {
     PaginaAlertas,
     PaginaMovimientos,
     ResultadoDisponibilidad,
+    ResultadoConfirmarDisponibilidad,
     ResultadoOperacionOrden,
     ResultadoMovimiento,
     ResultadoReserva,
@@ -43,6 +44,7 @@ export interface InventarioPort {
     cambiarUmbralGeneral(input: CambiarUmbralInput): Promise<UmbralGeneral>;
     getHistorialUmbral(repuestoId?: number | null, soloGeneral?: boolean, limite?: number): Promise<CambioUmbral[]>;
     getDisponibilidadOrden(ordenId: number): Promise<ResultadoDisponibilidad>;
+    confirmarDisponibilidad(ordenId: number): Promise<ResultadoConfirmarDisponibilidad>;
     reservar(ordenId: number): Promise<ResultadoReserva>;
     consumir(ordenId: number, items: Array<{ repuestoId: number; cantidad: number }>, claveOperacion: string): Promise<ResultadoOperacionOrden>;
     liberar(ordenId: number, claveOperacion: string): Promise<ResultadoOperacionOrden>;

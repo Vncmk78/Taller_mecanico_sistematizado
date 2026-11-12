@@ -8,6 +8,7 @@ import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 
 export function AdminVehiclesPage() {
@@ -67,7 +68,7 @@ export function AdminVehiclesPage() {
         </Alert>
         )}
 
-        {status === 'loading' ? (
+        {isInitialLoad(status, filtered.length > 0) ? (
         <VehicleListSkeleton className="px-4 sm:px-6 lg:px-10 pb-10" />
         ) : isServerError && filtered.length === 0 ? (
         <ErrorState

@@ -10,6 +10,7 @@ import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { filterOrdersByMechanic, filterVehiclesByOrders } from '@/presentation/utils/mechanicScope';
@@ -76,7 +77,7 @@ export function MechanicVehiclesPage() {
         </Alert>
         )}
 
-        {status === 'loading' ? (
+        {isInitialLoad(status, assignedVehicles.length > 0) ? (
         <VehicleListSkeleton count={3} />
         ) : isServerError && assignedVehicles.length === 0 ? (
         <ErrorState

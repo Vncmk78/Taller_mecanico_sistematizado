@@ -9,6 +9,7 @@ import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { OrderStatusBadge } from '@/presentation/components/orders/OrderStatusBadge';
 import { OrderStateStepper } from '@/presentation/components/orders/OrderStateStepper';
@@ -286,7 +287,7 @@ export function MechanicStatusPage() {
             </Alert>
         )}
 
-        {status === 'loading' ? (
+        {isInitialLoad(status, filteredOrders.length > 0) ? (
             <OrderListSkeleton count={3} />
         ) : isServerError && filteredOrders.length === 0 ? (
             <ErrorState

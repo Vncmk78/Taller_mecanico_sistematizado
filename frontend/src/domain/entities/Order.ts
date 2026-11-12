@@ -22,8 +22,8 @@ export function ordenStatusLabel(codigo: number): string {
 // cliente y el administrador, y cancelar corresponde al cliente. El backend
 // conserva la autoridad final sobre permisos, operaciones y precondiciones.
 // La primera asignación (1 -> 2) usa la operación administrativa específica.
-// El envío inicial (2 -> 3) corresponde al administrador, y la disponibilidad
-// posterior (4 -> 5) depende de un evento MS3 cuyo actor sigue sin definirse.
+// El envío inicial (2 -> 3) y la confirmación de disponibilidad posterior
+// (4 -> 5) corresponden a operaciones administrativas específicas.
 // Ninguno de esos flujos se ofrece como acción del mecánico.
 export const AVANCES_MECANICO: Record<number, number[]> = {
     5: [6], // En reparación -> Listo

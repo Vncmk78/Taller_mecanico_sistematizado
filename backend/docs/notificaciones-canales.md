@@ -126,12 +126,12 @@ Nunca desactiva la verificación del certificado ni del nombre del servidor. Las
 `MS1_SMTP_REMITENTE`, `MS1_SMTP_USUARIO`, `MS1_SMTP_CLAVE`.
 `sin_tls_local` se admite exclusivamente en loopback para Mailpit.
 
-El Gmail institucional propuesto **no está conectado**. Debe autorizarse el uso
-de la cuenta y comprobar qué permite el administrador de Google Workspace.
-Este adaptador usa autenticación SMTP; no implementa OAuth de Gmail. No utilizar
-la contraseña habitual en el chat o en Git. Si la organización no permite una
-credencial SMTP específica, elegir un proveedor autorizado o implementar OAuth
-como trabajo separado. Conviene una cuenta del equipo para el despliegue final.
+La cuenta exclusiva del equipo `tallerconect.sgtm@gmail.com` se validó con SMTP
+SSL en el puerto 465 y contraseña de aplicación. Este adaptador usa autenticación
+SMTP; no implementa OAuth de Gmail. Las credenciales se conservan en configuración
+privada ignorada por Git. No utilizar la contraseña habitual de Google ni
+compartir las credenciales en el chat o el repositorio. La validación local no
+configura el proveedor ni habilita los workers del ambiente público.
 
 FCM usa HTTP v1, OAuth de cuenta de servicio, `MS1_FCM_PROJECT_ID` y un archivo
 privado señalado por `MS1_FCM_CREDENTIALS_FILE`. El JSON privado no pertenece a
@@ -152,4 +152,35 @@ Pruebas: `test_canales_notificaciones.py`, `test_proveedores_notificaciones.py`,
 integridad migra bases descartables y compara modelos, índices y claves.
 El ejecutor `python scripts/verificar_backend.py` aísla PostgreSQL y usa buckets
 exclusivos para las pruebas reales de MS4. El correo local y el navegador se
-validan con los servicios de la demostración, sin acreditar Gmail/FCM externos.
+validan con los servicios de la demostración, sin acreditar por sí solos
+Gmail/FCM externos.
+
+### Comprobación de correo externo — 9 de noviembre de 2026
+
+Sobre `MartinH` en `4a2441c` (mismo contenido que `main` en `f200e7b`), se
+comprobó por separado el recorrido real de una notificación con Gmail:
+
+- Gateway, MS1 y MS2 ejecutados en procesos locales propios, con dos bases
+  PostgreSQL nuevas y separadas, migradas para esta prueba.
+- Registro público del Cliente, preparación de su perfil, alta de vehículo y
+  creación administrativa de una orden mediante la Gateway. La creación
+  registra el estado `Recibido`, su historial y el evento de outbox en MS2.
+- El publicador real de MS2 envía el evento por HTTP autenticado a MS1. El Cliente
+  consulta por la Gateway un único aviso propio; otra cuenta recibe 404 al
+  consultar su entrega.
+- La cola contiene un solo correo para el destinatario autorizado. El procesador
+  real `scripts/procesar_notificaciones.py --una-vez` lo envía mediante el
+  adaptador SMTP existente, con validación del certificado y nombre del servidor.
+- MS1 conserva una entrega aceptada y un solo intento con fecha. La recepción
+  se confirmó en los Recibidos de la cuenta destinataria mediante una búsqueda
+  de Gmail por el Message-ID exacto, vinculado a la UUID del evento.
+- Repetir el evento devuelve el mismo aviso como duplicado. Solicitar reintentos
+  y ejecutar otra vez el procesador no vuelve a enviar el correo aceptado:
+  queda un aviso y un intento. Esto comprueba el caso observado, sin garantizar
+  entrega exactamente una vez ante todos los fallos de red posibles.
+
+Resultado: **16 comprobaciones aprobadas y recepción externa confirmada**. Los
+procesos propios se detuvieron y las bases descartables se eliminaron al terminar.
+Los workers de correo continuos permanecieron desactivados; no se procesaron
+colas existentes ni se modificaron las bases o la configuración del despliegue.
+Esta prueba no acredita recepción push ni funcionamiento en el ambiente público.

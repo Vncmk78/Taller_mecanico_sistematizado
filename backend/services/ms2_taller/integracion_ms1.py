@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.ms2_taller.config import settings
 from shared.auth import NombreRol
+from shared.correlacion import cabeceras_correlacion
 
 
 class MecanicoNoValidoError(Exception):
@@ -39,7 +40,7 @@ class VerificadorMecanicosHttp:
         try:
             respuesta = httpx.get(
                 f"{self.url_base}/auth/usuarios/{mecanico_id}",
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {token}", **cabeceras_correlacion()},
                 timeout=self.timeout,
             )
         except httpx.HTTPError as exc:

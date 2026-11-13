@@ -13,6 +13,7 @@ import logging
 import httpx
 from fastapi import APIRouter, Request, status
 from fastapi.responses import Response
+from starlette.requests import ClientDisconnect
 
 from gateway.cliente_http import obtener_cliente, timeout_para
 from gateway.config import settings
@@ -24,9 +25,13 @@ from gateway.errores import (
     MENSAJE_CUERPO_DEMASIADO_GRANDE,
     MENSAJE_ERROR_MICROSERVICIO,
     MENSAJE_METODO_NO_PERMITIDO,
+    MENSAJE_RESPUESTA_INVALIDA,
     MENSAJE_RUTA_NO_ENCONTRADA,
+    MENSAJE_SOLICITUD_INTERRUMPIDA,
     METODO_NO_PERMITIDO,
+    RESPUESTA_INVALIDA,
     RUTA_NO_ENCONTRADA,
+    SOLICITUD_INTERRUMPIDA,
     mapear_error_httpx,
     respuesta_error,
 )
@@ -208,6 +213,22 @@ async def proxy(ruta: str, request: Request) -> Response:
             codigo=ERROR_HTTP,
             detalle=MENSAJE_CONTENT_LENGTH_INVALIDA,
         )
+    except ClientDisconnect:
+        # Semana 10: el cliente cortó la subida a mitad (red móvil, pestaña
+        # cerrada). No se reenvía un body incompleto al microservicio, así que
+        # no queda nada a medias aguas abajo. Antes caía como error no
+        # controlado (500 con traceback en el log); ahora es un evento esperado.
+        logger.info(
+            "Solicitud interrumpida por el cliente en '/%s' (request_id=%s)",
+            primer_segmento,
+            request_id,
+        )
+        return respuesta_error(
+            request,
+            estado=status.HTTP_400_BAD_REQUEST,
+            codigo=SOLICITUD_INTERRUMPIDA,
+            detalle=MENSAJE_SOLICITUD_INTERRUMPIDA,
+        )
 
     timeout = timeout_para(primer_segmento)
     try:
@@ -269,6 +290,8 @@ def _construir_respuesta(
     """
     if respuesta.status_code >= 400 and not _tiene_body_json(respuesta):
         return _normalizar_error_no_json(request, respuesta)
+    if respuesta.status_code < 300 and _declara_json_invalido(respuesta):
+        return _respuesta_exitosa_invalida(request, respuesta)
 
     respuesta_cliente = Response(
         content=respuesta.content,
@@ -292,6 +315,47 @@ def _tiene_body_json(respuesta: httpx.Response) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _declara_json_invalido(respuesta: httpx.Response) -> bool:
+    """True si un 2xx declara JSON pero su body no se puede parsear (Semana 10).
+
+    Un body vacío no cuenta (204, HEAD): no hay nada que el cliente vaya a
+    parsear. Sin esta comprobación el frontend recibía un 200 y fallaba al
+    leerlo, sin `request_id` ni mensaje útil.
+    """
+    if not respuesta.content:
+        return False
+    if "json" not in respuesta.headers.get("content-type", "").lower():
+        return False
+    try:
+        respuesta.json()
+    except ValueError:
+        return True
+    return False
+
+
+def _respuesta_exitosa_invalida(
+    request: Request, respuesta: httpx.Response
+) -> Response:
+    """Reemplaza un 2xx con JSON roto por un 502 `RESPUESTA_INVALIDA`.
+
+    El body recibido no se reenvía ni se registra (puede traer datos o trazas
+    internas); el log solo deja estado, servicio y `request_id`.
+    """
+    request_id = getattr(request.state, "request_id", None)
+    logger.warning(
+        "Microservicio %s respondió %s con JSON inválido (request_id=%s)",
+        nombre_servicio(request.url.path.removeprefix("/api/")) or "-",
+        respuesta.status_code,
+        request_id,
+    )
+    return respuesta_error(
+        request,
+        estado=status.HTTP_502_BAD_GATEWAY,
+        codigo=RESPUESTA_INVALIDA,
+        detalle=MENSAJE_RESPUESTA_INVALIDA,
+    )
 
 
 def _cabecera_cliente_permitida(clave: str) -> bool:

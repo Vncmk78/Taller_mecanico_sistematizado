@@ -52,7 +52,15 @@ app.add_middleware(
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID", "X-Notificaciones-Total", "X-Notificaciones-No-Leidas"],
+    # Cabeceras que un cliente en navegador (web, build web de la app móvil)
+    # puede leer. Retry-After acompaña al 429 del login y a los 502/503/504;
+    # sin exponerla, fetch() la oculta y el cliente no sabe cuánto esperar.
+    expose_headers=[
+        "X-Request-ID",
+        "Retry-After",
+        "X-Notificaciones-Total",
+        "X-Notificaciones-No-Leidas",
+    ],
 )
 app.add_middleware(RequestIdMiddleware)
 

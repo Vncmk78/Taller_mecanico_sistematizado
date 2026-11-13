@@ -19,6 +19,8 @@ from services.ms2_taller.routers import (
     router_ordenes,
 )
 from services.ms2_taller.services.publicador_eventos import ejecutar_worker_eventos
+from shared.correlacion import MiddlewareCorrelacion
+from shared.correlacion import configurar_logs as configurar_logs_correlacion
 from shared.openapi_ordenes import agregar_ejemplos_ordenes
 
 @asynccontextmanager
@@ -42,6 +44,10 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+# Semana 10 (SCRUM-582): toma el X-Request-ID que reenvía la Gateway, lo
+# devuelve en toda respuesta y deja una línea de log por petición con ese ID.
+configurar_logs_correlacion()
+app.add_middleware(MiddlewareCorrelacion, servicio="ms2_taller")
 app.include_router(crear_router_vehiculos(resolver_cliente_actual))
 # Las rutas estáticas de solicitudes deben preceder al GET /ordenes/{orden_id}.
 app.include_router(router_nuevas_atenciones)

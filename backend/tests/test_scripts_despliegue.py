@@ -86,7 +86,8 @@ def test_migrador_incluye_ms4_y_verificacion_final(monkeypatch):
     assert migrar.main() == 1  # No declara éxito si la comprobación final sigue atrasada.
     assert len(migradas) == 4
     assert all(destino == "heads" for _, destino in migradas)
-    assert migradas[-1][0].endswith("ms4_evidencias/alembic.ini")
+    # Path: en Windows la ruta usa "\\" y endswith("ms4_evidencias/alembic.ini") fallaba.
+    assert Path(migradas[-1][0]).parts[-2:] == ("ms4_evidencias", "alembic.ini")
 
 
 def test_migrador_aborta_al_fallar_un_servicio(monkeypatch):

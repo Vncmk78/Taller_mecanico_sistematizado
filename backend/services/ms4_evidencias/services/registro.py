@@ -85,6 +85,17 @@ def request_id_actual() -> str | None:
     return _request_id_actual.get()
 
 
+def cabeceras_request_id() -> dict[str, str]:
+    """`X-Request-ID` para las llamadas de MS4 a MS2/MS3 (Semana 10).
+
+    Propaga el identificador de la solicitud en curso para que la verificación
+    de la orden o del presupuesto quede en los logs de MS2/MS3 con el mismo ID.
+    Fuera de una solicitud devuelve `{}`.
+    """
+    actual = request_id_actual()
+    return {CABECERA_REQUEST_ID: actual} if actual else {}
+
+
 def _limpiar(valor: Any) -> str:
     texto = _NO_SEGURO.sub("_", str(valor))
     return texto[:_LARGO_MAXIMO]
@@ -154,6 +165,16 @@ class MiddlewareRegistro:
         async def enviar(mensaje) -> None:
             if mensaje["type"] == "http.response.start":
                 estado["http"] = mensaje["status"]
+                # Semana 10: el ID vuelve en toda respuesta de MS4, también en
+                # los errores, para poder citarlo al reportar un fallo.
+                if request_id and not any(
+                    clave.lower() == b"x-request-id"
+                    for clave, _ in mensaje.get("headers", [])
+                ):
+                    mensaje["headers"] = [
+                        *mensaje.get("headers", []),
+                        (b"x-request-id", request_id.encode("latin-1")),
+                    ]
             await send(mensaje)
 
         try:

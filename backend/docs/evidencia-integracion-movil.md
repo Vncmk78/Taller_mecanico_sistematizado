@@ -22,7 +22,7 @@ incompatibilidad que aparezca aquí se registra con un ID nuevo en
 | Build de la app disponible | No |
 | Entorno acordado para las pruebas | Propuesto: `https://tallerconect.vercel.app` |
 | Cuentas de prueba entregadas al equipo móvil | Pendiente |
-| Sesiones de prueba realizadas | 1 (preparación, solo backend) |
+| Sesiones de prueba realizadas | 2 (S-00 preparación y S-01 checklist de contratos; ambas sin la app) |
 
 ## 2. Sesiones
 
@@ -46,6 +46,56 @@ Resultado:
 | Producción accesible desde red externa | `200` en `/api/health`; los 4 servicios `ok` tras el arranque en frío | Estudio §2.2 |
 | Incompatibilidades corregidas | H-01 (`Retry-After` no expuesto por CORS) y O-01 (matriz de roles desactualizada) | Estudio §3 |
 | Pendientes para el equipo móvil | Confirmar stack y si habrá build web (H-02); recibir cuentas de prueba | — |
+
+### S-01 — Ejecución del checklist de contratos de la app móvil (2026-11-12)
+
+**SCRUM-541.** Se ejecutó el checklist de las 38 operaciones que usa la app
+(`gateway/contratos/integracion_iv.py`) en dos niveles: el código de la rama y
+la Gateway desplegada. Todavía no hay build de la app: esta sesión acredita el
+lado del backend, no el consumo desde un teléfono (eso queda para S-02,
+SCRUM-538).
+
+| | |
+|---|---|
+| Participantes | Bastián Liempi (backend) |
+| Entorno | Rama `Bastian` (con Semana 10) y producción `https://tallerconect.vercel.app` |
+| Cliente | Pruebas automáticas y `httpx` desde fuera de la red del backend, sin `Origin` (cliente nativo) y con `Origin` (build web) |
+| Contrato | `info.version` = 3.0.1 en producción |
+
+Resultado en el código (rama `Bastian`):
+
+| Verificación | Resultado | Evidencia |
+|---|---|---|
+| Contratos de las 38 operaciones móviles | ok | `pytest tests/test_contratos_integracion_iv.py` |
+| Respuestas reales contra el contrato | ok | `pytest tests/test_contrato_consumo_real.py` |
+| Cabeceras para clientes móviles y externos | ok | `pytest tests/test_cabeceras_cliente_movil.py` |
+| Regresión de incompatibilidades corregidas | ok | `pytest tests/test_regresion_incompatibilidades.py` |
+| Total de los cuatro archivos | 338 de 338 ok | — |
+
+Resultado en producción:
+
+| # | Verificación | Esperado | Obtenido | `X-Request-ID` | ¿OK? |
+|---|---|---|---|---|---|
+| 1 | `GET /api/health/servicios` | 4 servicios `ok` | 4 `ok` (tras arranque en frío; el primer intento dio `tiempo_agotado`) | — | ✅ |
+| 2 | `/openapi.json` publica las 38 operaciones con sus estados requeridos | 38 de 38 | 38 de 38, versión 3.0.1 | — | ✅ |
+| 3 | `GET /api/auth/me` sin token | `401` + `WWW-Authenticate: Bearer` | `401`, `Bearer` | `checklist-541-a` (eco) | ✅ |
+| 4 | `GET /api/vehiculos` sin token | `401` `{"detail": ...}` | `401` | `checklist-541-b` (eco) | ✅ |
+| 5 | `POST /api/auth/login` con credenciales inválidas | `401` | `401` | `checklist-541-c` (eco) | ✅ |
+| 6 | Ruta inexistente | `404 RUTA_NO_ENCONTRADA` | igual | `checklist-541-d` | ✅ |
+| 7 | Preflight CORS desde un build web (`*.vercel.app`) | `200` + `Access-Control-Allow-Origin` | igual | — | ✅ |
+| 8 | Cabeceras expuestas por CORS | `X-Request-ID`, `Retry-After`, `X-Notificaciones-*` | **falta `Retry-After`** | — | ⚠️ H-03 |
+
+Incompatibilidades encontradas:
+
+- **H-03 — Producción no expone `Retry-After` por CORS.** La corrección H-01
+  (Semana 9) está en la rama `Bastian` (`gateway/main.py`, `expose_headers`)
+  pero todavía no llega a `Develop` ni a `main`, que es lo desplegado. Solo
+  afecta a un build web de la app (un cliente nativo lee la cabecera igual).
+  Se resuelve al integrar `Bastian` en `Develop` y `main`; la regresión ya la
+  cubre `tests/test_cabeceras_cliente_movil.py`.
+
+Pendiente para S-02 (SCRUM-538, con el equipo de Integra IV): repetir la tabla
+de la plantilla desde la app real, por flujo y rol, y marcar la sección 4.
 
 ### Plantilla para las próximas sesiones
 

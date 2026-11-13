@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Package, X } from 'lucide-react';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
 import { proveedorService } from '@/infrastructure/api/ProveedorService';
@@ -10,6 +11,7 @@ import type { Proveedor } from '@/domain/entities/Proveedor';
 import { InventoryToolbar } from '@/presentation/components/inventory/InventoryToolbar';
 import { StockStatusBadge } from '@/presentation/components/inventory/StockStatusBadge';
 import { getStockStatus, type StockFilter } from '@/presentation/utils/stockStatus';
+import { isAdminInventoryMode, type InventoryPortalMode } from '@/presentation/utils/inventoryPortal';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -41,7 +43,14 @@ function textoBuscable(repuesto: Repuesto): string {
         .toLowerCase();
 }
 
-export function AdminInventoryPage() {
+interface AdminInventoryPageProps {
+    /** El portal mecánico comparte la vista, pero sin acciones de administración. */
+    mode?: InventoryPortalMode;
+}
+
+export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) {
+    const isAdmin = isAdminInventoryMode(mode);
+    const stockDetailBase = isAdmin ? '/admin/inventario/stock' : '/mechanic/inventario/stock';
     const [repuestos, setRepuestos] = useState<Repuesto[]>([]);
     const [total, setTotal] = useState(0);
 
@@ -86,6 +95,8 @@ export function AdminInventoryPage() {
     }, [loadRepuestos]);
 
     useEffect(() => {
+        // Solo el formulario de alta/edición necesita el catálogo de proveedores.
+        if (!isAdmin) return;
         void (async () => {
             try {
                 const response = await proveedorService.getProveedores({ limite: 200 });
@@ -94,7 +105,7 @@ export function AdminInventoryPage() {
                 setProveedores([]);
             }
         })();
-    }, []);
+    }, [isAdmin]);
 
     const handleRetry = () => {
         void loadRepuestos();
@@ -172,11 +183,17 @@ export function AdminInventoryPage() {
             <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
                 <div>
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Inventario</h2>
-                    <p className="text-text-muted text-lg">Control de repuestos y stock del taller</p>
+                    <p className="text-text-muted text-lg">
+                        {isAdmin
+                            ? 'Control de repuestos y stock del taller'
+                            : 'Consulta de repuestos y disponibilidad del taller'}
+                    </p>
                 </div>
-                <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
-                    Nuevo repuesto
-                </Button>
+                {isAdmin && (
+                    <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
+                        Nuevo repuesto
+                    </Button>
+                )}
                 {status === 'success' && (
                     <p className="text-sm text-text-muted" aria-live="polite">
                         {filteredRepuestos.length} de {total} repuestos
@@ -301,10 +318,19 @@ export function AdminInventoryPage() {
                                         <StockStatusBadge repuesto={repuesto} />
                                     </TableCell>
                                     <TableCell className="text-center">
-                                        <div className="flex justify-center gap-2">
-                                            <Button variant="secondary" onClick={() => { setEditing(repuesto); setFormError(null); setFormOpen(true); }}>Editar</Button>
-                                            <Button variant="danger" onClick={() => setDeleteTarget(repuesto)}>Eliminar</Button>
-                                        </div>
+                                        {isAdmin ? (
+                                            <div className="flex justify-center gap-2">
+                                                <Button variant="secondary" onClick={() => { setEditing(repuesto); setFormError(null); setFormOpen(true); }}>Editar</Button>
+                                                <Button variant="danger" onClick={() => setDeleteTarget(repuesto)}>Eliminar</Button>
+                                            </div>
+                                        ) : (
+                                            <Link
+                                                to={`${stockDetailBase}/${repuesto.repuestoId}`}
+                                                className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border-custom bg-surface text-text-main text-sm font-medium no-underline hover:bg-bg-secondary"
+                                            >
+                                                Ver stock
+                                            </Link>
+                                        )}
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -313,23 +339,27 @@ export function AdminInventoryPage() {
                 </div>
             )}
 
-            <RepuestoFormDialog
-                open={formOpen}
-                initial={editing}
-                proveedores={proveedores}
-                isSubmitting={formSubmitting}
-                error={formError}
-                onSubmit={editing ? handleUpdate : handleCreate}
-                onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
-            />
-            <ConfirmDialog
-                open={!!deleteTarget}
-                title="Eliminar repuesto"
-                description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
-                isLoading={deleteSubmitting}
-                onConfirm={handleDelete}
-                onCancel={() => setDeleteTarget(null)}
-            />
+            {isAdmin && (
+                <>
+                    <RepuestoFormDialog
+                        open={formOpen}
+                        initial={editing}
+                        proveedores={proveedores}
+                        isSubmitting={formSubmitting}
+                        error={formError}
+                        onSubmit={editing ? handleUpdate : handleCreate}
+                        onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
+                    />
+                    <ConfirmDialog
+                        open={!!deleteTarget}
+                        title="Eliminar repuesto"
+                        description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
+                        isLoading={deleteSubmitting}
+                        onConfirm={handleDelete}
+                        onCancel={() => setDeleteTarget(null)}
+                    />
+                </>
+            )}
         </div>
     );
 }

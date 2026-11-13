@@ -12,6 +12,7 @@ import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { isAdminInventoryMode, type InventoryPortalMode } from '@/presentation/utils/inventoryPortal';
 import {
     Table,
     TableBody,
@@ -40,7 +41,13 @@ function textoBuscable(proveedor: Proveedor): string {
     return [proveedor.nombre, proveedor.contacto].join(' ').toLowerCase();
 }
 
-export function AdminDistributorsPage() {
+interface AdminDistributorsPageProps {
+    /** El portal mecánico consulta distribuidores sin poder editarlos. */
+    mode?: InventoryPortalMode;
+}
+
+export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageProps) {
+    const isAdmin = isAdminInventoryMode(mode);
     const [proveedores, setProveedores] = useState<Proveedor[]>([]);
     const [total, setTotal] = useState(0);
     const [status, setStatus] = useState<FetchStatus>('loading');
@@ -153,9 +160,11 @@ export function AdminDistributorsPage() {
                         Proveedores de repuestos y su tipo de distribución
                     </p>
                 </div>
-                <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
-                    Nuevo proveedor
-                </Button>
+                {isAdmin && (
+                    <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
+                        Nuevo proveedor
+                    </Button>
+                )}
                 {status === 'success' && (
                     <p className="text-sm text-text-muted" aria-live="polite">
                         {filteredProveedores.length} de {total} distribuidores
@@ -268,7 +277,7 @@ export function AdminDistributorsPage() {
                                 <TableHeaderCell>Contacto</TableHeaderCell>
                                 <TableHeaderCell>Tipo</TableHeaderCell>
                                 <TableHeaderCell className="text-right">Repuestos</TableHeaderCell>
-                                <TableHeaderCell className="text-center">Acciones</TableHeaderCell>
+                                {isAdmin && <TableHeaderCell className="text-center">Acciones</TableHeaderCell>}
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -290,12 +299,14 @@ export function AdminDistributorsPage() {
                                     <TableCell className="text-right font-medium">
                                         {proveedor.cantidadRepuestos}
                                     </TableCell>
-                                    <TableCell className="text-center">
-                                        <div className="flex justify-center gap-2">
-                                            <Button variant="secondary" onClick={() => { setEditing(proveedor); setFormError(null); setFormOpen(true); }}>Editar</Button>
-                                            <Button variant="danger" onClick={() => setDeleteTarget(proveedor)}>Eliminar</Button>
-                                        </div>
-                                    </TableCell>
+                                    {isAdmin && (
+                                        <TableCell className="text-center">
+                                            <div className="flex justify-center gap-2">
+                                                <Button variant="secondary" onClick={() => { setEditing(proveedor); setFormError(null); setFormOpen(true); }}>Editar</Button>
+                                                <Button variant="danger" onClick={() => setDeleteTarget(proveedor)}>Eliminar</Button>
+                                            </div>
+                                        </TableCell>
+                                    )}
                                 </TableRow>
                             ))}
                         </TableBody>
@@ -303,22 +314,26 @@ export function AdminDistributorsPage() {
                 </div>
             )}
 
-            <ProveedorFormDialog
-                open={formOpen}
-                initial={editing}
-                isSubmitting={formSubmitting}
-                error={formError}
-                onSubmit={editing ? handleUpdate : handleCreate}
-                onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
-            />
-            <ConfirmDialog
-                open={!!deleteTarget}
-                title="Eliminar proveedor"
-                description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
-                isLoading={deleteSubmitting}
-                onConfirm={handleDelete}
-                onCancel={() => setDeleteTarget(null)}
-            />
+            {isAdmin && (
+                <>
+                    <ProveedorFormDialog
+                        open={formOpen}
+                        initial={editing}
+                        isSubmitting={formSubmitting}
+                        error={formError}
+                        onSubmit={editing ? handleUpdate : handleCreate}
+                        onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
+                    />
+                    <ConfirmDialog
+                        open={!!deleteTarget}
+                        title="Eliminar proveedor"
+                        description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
+                        isLoading={deleteSubmitting}
+                        onConfirm={handleDelete}
+                        onCancel={() => setDeleteTarget(null)}
+                    />
+                </>
+            )}
         </div>
     );
 }

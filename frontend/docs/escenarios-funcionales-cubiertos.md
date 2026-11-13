@@ -95,16 +95,19 @@ Documento de referencia de los escenarios funcionales cubiertos por el frontend 
 | **Vehículos asignados** | Acceso a vehículos relacionados con órdenes asignadas. | Cubierto |
 | **Presupuesto** | Edición del presupuesto desde el detalle de la orden asignada. | Cubierto |
 | **Bitácora** | Registro de observaciones y acciones (con repuestos) contra la orden. | Cubierto |
+| **Inventario de consulta** | El mecánico accede a catálogo, alertas, stock, umbral, movimientos y distribuidores en modo solo lectura. | Cubierto |
+| **Movimientos de orden** | El mecánico registra únicamente `compromiso`, `consumo` o `liberación` con una orden asignada; no ve ingresos, ajustes ni proveedores. | Cubierto |
 
 ## 9. Inventario y Consumo de Repuestos
 
 | Escenario | Descripción | Estado |
 |---|---|---|
-| **Inventario** | Listado de stock por repuesto con proveedor y estado. | Cubierto |
-| **Alertas de stock** | Listado de repuestos bajo el umbral efectivo. | Cubierto |
-| **Movimientos** | Historial de movimientos con filtros y trazabilidad. | Cubierto |
-| **Detalle de stock** | Ficha de un repuesto con compromisos por orden. | Cubierto |
-| **Umbral general** | Consulta y cambio del umbral general con historial. | Cubierto |
+| **Inventario** | Listado de stock por repuesto con proveedor y estado. En el portal mecánico es solo lectura y agrega el enlace *Ver stock*. | Cubierto |
+| **Alertas de stock** | Listado de repuestos bajo el umbral efectivo (consulta para mecánico y administrador). | Cubierto |
+| **Movimientos** | Historial de movimientos con filtros y trazabilidad. El mecánico solo registra movimientos de sus órdenes asignadas. | Cubierto |
+| **Detalle de stock** | Ficha de un repuesto con compromisos por orden (solo lectura). | Cubierto |
+| **Umbral general** | Consulta e historial para ambos roles; el cambio del umbral queda reservado al administrador. | Cubierto |
+| **Distribuidores** | Consulta del catálogo de proveedores; alta, edición y eliminación son exclusivas del administrador. | Cubierto |
 | **Consumo de repuestos** | Panel en el detalle de la orden (Admin y Mecánico) para descontar los repuestos del presupuesto aprobado, solo en estados 4–6. | Cubierto |
 | **Límite por ítem** | La cantidad máxima es `min(requerido, disponible)`; no se puede pedir más. | Cubierto |
 | **Idempotencia** | Se usa `clave_operacion`; ante una respuesta incierta se conserva para reintentar sin duplicar, y se descarta ante rechazos definitivos. | Cubierto |
@@ -150,6 +153,10 @@ Las pruebas funcionales se encuentran en:
 - `frontend/src/presentation/components/orders/ConsumoRepuestosPanel.test.tsx` - Consumo de repuestos, idempotencia y `409`
 - `frontend/src/presentation/pages/admin/AdminCancelacionesPage.test.tsx` - Bandeja de cancelaciones
 - `frontend/src/presentation/pages/admin/AdminUsersPage.test.tsx` - Gestión de roles y guardas
+- `frontend/src/presentation/pages/admin/AdminInventoryPage.test.tsx` - Catálogo y modo mecánico
+- `frontend/src/presentation/pages/admin/AdminInventoryMovementsPage.test.tsx` - Movimientos y restricciones del mecánico
+- `frontend/src/presentation/pages/admin/AdminThresholdPage.test.tsx` - Umbral general y modo mecánico
+- `frontend/src/presentation/pages/admin/AdminDistributorsPage.test.tsx` - Distribuidores y modo mecánico
 - `frontend/src/presentation/pages/client/ClientVehicleEditPage.test.tsx` - Edición de vehículo
 - `frontend/src/presentation/pages/admin/AdminDashboardPage.test.tsx` - Dashboard administrativo
 - `frontend/src/presentation/hooks/useOrderListFilters.test.ts` (si aplica) - Filtros y paginación

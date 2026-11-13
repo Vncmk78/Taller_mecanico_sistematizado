@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    esResultadoIncierto,
     getApiErrorCode,
     getApiErrorMessage,
     getApiErrorRequestId,
@@ -234,5 +235,50 @@ describe('getApiErrorRequestId / getApiErrorCode: rastreo de la petición', () =
         expect(getApiErrorCode(errorAxios(500, errorGateway('Fallo al reintentar.', 'ERROR_HTTP', 502)))).toBe(
             'ERROR_HTTP'
         );
+    });
+});
+
+describe('esResultadoIncierto: cuándo una escritura pudo aplicarse igual', () => {
+    // La decisión importa: si es incierta, la UI ofrece "comprobar" antes de
+    // repetir la escritura; si es definitiva, puede mostrar el rechazo directo.
+    it('sin respuesta (red caída o timeout) el resultado es incierto', () => {
+        expect(esResultadoIncierto(sinRespuestaReal)).toBe(true);
+        expect(esResultadoIncierto(sinRespuesta)).toBe(true);
+    });
+
+    it('un fallo de transporte inesperado también se trata como incierto', () => {
+        // Decisión conservadora: ante un error que no es de Axios no se puede
+        // afirmar que el servicio haya descartado la operación.
+        expect(esResultadoIncierto(new Error('boom'))).toBe(true);
+        expect(esResultadoIncierto('no soy un error')).toBe(true);
+    });
+
+    it('502, 503 y 504 son inciertos: la Gateway no obtuvo la respuesta del servicio', () => {
+        expect(esResultadoIncierto(errorAxios(502, servicioInalcanzable))).toBe(true);
+        expect(esResultadoIncierto(errorAxios(503, gatewaySaturada))).toBe(true);
+        expect(esResultadoIncierto(errorAxios(504, tiempoAgotado))).toBe(true);
+    });
+
+    it('un 500 de la Gateway es incierto porque trae su código de error', () => {
+        expect(esResultadoIncierto(errorAxios(500, errorInternoGateway))).toBe(true);
+        expect(esResultadoIncierto(errorAxios(500, errorMicroServicio))).toBe(true);
+        expect(esResultadoIncierto(errorAxios(500, errorGateway('Fallo al reintentar.', 'ERROR_HTTP', 502)))).toBe(
+            true
+        );
+    });
+
+    it('un 500 propio del microservicio es definitivo: llega sin bloque error', () => {
+        expect(esResultadoIncierto(errorAxios(500, { detail: 'No fue posible consultar los vehículos' }))).toBe(
+            false
+        );
+    });
+
+    it('los rechazos de negocio son definitivos y no se reintentan a ciegas', () => {
+        expect(esResultadoIncierto(errorAxios(400, { detail: 'Solicitud inválida' }))).toBe(false);
+        expect(esResultadoIncierto(errorAxios(401, tokenInvalido))).toBe(false);
+        expect(esResultadoIncierto(errorAxios(403, sinPermiso))).toBe(false);
+        expect(esResultadoIncierto(errorAxios(404, rutaNoEncontrada))).toBe(false);
+        expect(esResultadoIncierto(errorAxios(409, patenteDuplicada))).toBe(false);
+        expect(esResultadoIncierto(errorAxios(422, validacionPydantic))).toBe(false);
     });
 });

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { AxiosError } from 'axios';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
 import { setForbiddenHandler, setUnauthorizedHandler } from '@/infrastructure/config/apiClient';
 import { AuthContext, type AuthContextValue } from '@/presentation/components/auth/authContext';
+import { SessionExpiryBanner } from '@/presentation/components/auth/SessionExpiryBanner';
+import { useSessionExpiry } from '@/presentation/components/auth/useSessionExpiry';
 import { getUserRoles, hasAllRoles, hasAnyRole } from '@/presentation/utils/roleVisibility';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -25,22 +27,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const clearSession = useAuthStore((s) => s.clearSession);
   const getProfile = useAuthStore((s) => s.getProfile);
+  const marcarSesionExpirada = useAuthStore((s) => s.marcarSesionExpirada);
+
+  // Cierra la sesión una sola vez por token, ya sea porque la API respondió 401
+  // o porque el `exp` del JWT venció mientras la app estaba en uso.
+  const sesionCerrada = useRef(false);
+
+  const cerrarPorExpiracion = useCallback(
+    (anunciarExpiracion: boolean) => {
+      if (sesionCerrada.current) return;
+      sesionCerrada.current = true;
+      // Solo se anuncia "sesión expirada" si había una sesión activa: abrir la
+      // app con un token ya vencido no debe presentarse como una expiración en
+      // curso.
+      const habiaSesion = useAuthStore.getState().isAuthenticated;
+      const anunciar = anunciarExpiracion && habiaSesion;
+      // El aviso vive también en el store: el <Navigate> de ProtectedRoute
+      // puede ganarle la carrera a esta redirección y perder el state.
+      marcarSesionExpirada(anunciar);
+      // Se navega antes de limpiar: si primero se limpia la sesión, el guard de
+      // `ProtectedRoute` monta su propio <Navigate> y pisa el estado con el que
+      // se anuncia la expiración (además pierde el query string).
+      const { pathname, search } = rutaActual.current;
+      if (pathname !== '/login') {
+        navigate('/login', {
+          replace: true,
+          state: { from: pathname + search, sesionExpirada: anunciar },
+        });
+      }
+      clearSession();
+    },
+    [clearSession, marcarSesionExpirada, navigate]
+  );
+
+  // Al iniciar sesión de nuevo, el guard vuelve a habilitarse.
+  useEffect(() => {
+    if (token) sesionCerrada.current = false;
+  }, [token]);
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      // La expiración solo se anuncia si había una sesión activa: abrir la app
-      // con un token ya vencido (restauración) no debe presentarse como
-      // "sesión expirada", era una sesión que nunca llegó a existir.
-      const habiaSesion = useAuthStore.getState().isAuthenticated;
-      clearSession();
-      // Si ya se está en /login (por ejemplo, un segundo 401 de la misma
-      // restauración), no se navega otra vez: se perdería la ruta pedida.
-      const { pathname, search } = rutaActual.current;
-      if (pathname === '/login') return;
-      navigate('/login', {
-        replace: true,
-        state: { from: pathname + search, sesionExpirada: habiaSesion },
-      });
+      cerrarPorExpiracion(true);
     });
     setForbiddenHandler((error: AxiosError) => {
       const message = getApiErrorMessage(error, 'No tiene permisos para acceder a este recurso.');
@@ -50,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUnauthorizedHandler(null);
       setForbiddenHandler(null);
     };
-  }, [clearSession, navigate]);
+  }, [cerrarPorExpiracion, navigate]);
 
   // Una sola restauración por montaje: en desarrollo, StrictMode repite los
   // efectos y la segunda consulta de /auth/me duplicaba el 401.
@@ -62,6 +89,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [restoreSession]);
 
   const roles = useMemo(() => getUserRoles(user), [user]);
+
+  // Cierre proactivo por `exp`: no depende de que la próxima petición reciba
+  // un 401, así una pantalla sin tráfico no sigue mostrando una sesión muerta.
+  const { minutosRestantes } = useSessionExpiry({ token, onExpired: cerrarPorExpiracion });
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -95,5 +126,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+      <SessionExpiryBanner minutosRestantes={minutosRestantes} />
+    </AuthContext.Provider>
+  );
 }

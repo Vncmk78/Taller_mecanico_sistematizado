@@ -11,6 +11,8 @@ Documento de referencia de los escenarios funcionales cubiertos por el frontend 
 | **Login diferenciado** | El sistema permite acceso según el rol autenticado (administrador, cliente o mecánico). | Cubierto |
 | **Acceso denegado** | Cuando un usuario intenta acceder a un portal que no le corresponde, se muestra la vista "Acceso Denegado" con opción para volver a su propio panel. | Cubierto |
 | **Sesión inválida** | Con token presente pero sin perfil válido, se redirige a `/login` sin mostrar acceso denegado. | Cubierto |
+| **Registro público** | El registro crea únicamente cuentas con rol Cliente (`POST /auth/register`). | Cubierto |
+| **Perfil de cliente** | El portal Cliente exige el perfil de cliente de MS2 (`ClientProfileGate`) antes de mostrar sus vistas. | Cubierto |
 
 ## 2. Panel Administrativo
 
@@ -21,7 +23,11 @@ Documento de referencia de los escenarios funcionales cubiertos por el frontend 
 | **Manejo de errores** | Muestra `ErrorState` con botón "Reintentar" ante fallos en la carga del resumen. | Cubierto |
 | **Carga de mecánicos** | Visualización de mecánicos con sus órdenes totales y activas, ordenados por carga. | Cubierto |
 | **Paginación** | Paginación de la carga de mecánicos (5 por página) con navegación y contador. | Cubierto |
-| **Navegación del panel** | Acceso a órdenes, clientes, vehículos, inventario y distribuidores desde el menú lateral. | Cubierto |
+| **Navegación del panel** | Acceso a órdenes, nuevas atenciones, cancelaciones, clientes, usuarios y roles, configuración, avisos, vehículos, inventario y distribuidores desde el menú lateral. | Cubierto |
+| **Clientes** | Listado y búsqueda de cuentas de cliente. | Cubierto |
+| **Nuevas atenciones** | Listado y detalle de las solicitudes de nueva atención. | Cubierto |
+| **Capacidad del taller** | Consulta y ajuste de la capacidad diaria del taller. | Cubierto |
+| **Distribuidores** | Listado y búsqueda de distribuidores. | Cubierto |
 
 ## 3. Listado y Gestión de Órdenes
 
@@ -40,25 +46,46 @@ Documento de referencia de los escenarios funcionales cubiertos por el frontend 
 | Escenario | Descripción | Estado |
 |---|---|---|
 | **Reglas centralizadas** | Acciones determinadas por `accionesDisponibles()` en `OrderActions.ts` según rol y estado. | Cubierto |
-| **Administrador** | Puede asignar mecánico (estado "Recibido"), cancelar órdenes cancelables y registrar entrega (estado "Listo"). | Cubierto |
+| **Administrador** | Puede asignar mecánico (estado "Recibido") y registrar entrega (estado "Listo"). Las cancelaciones se confirman en la bandeja dedicada. | Cubierto |
 | **Mecánico asignado** | Solo el mecánico asignado puede avanzar estados según transiciones permitidas. | Cubierto |
 | **Mecánico no asignado** | Acciones bloqueadas con mensaje informativo. | Cubierto |
-| **Cliente** | Puede gestionar presupuesto (estado "Pendiente de aprobación") o cancelar solicitud en estados cancelables. | Cubierto |
-| **Validación de motivo** | Cancelación exige motivo obligatorio. | Cubierto |
+| **Cliente** | Puede gestionar presupuesto (estado "Pendiente de aprobación") o **solicitar** la cancelación de la orden en estados cancelables. | Cubierto |
+| **Validación de motivo** | La solicitud de cancelación exige motivo obligatorio. | Cubierto |
 | **Confirmación** | Acciones críticas requieren confirmación en diálogo modal. | Cubierto |
 | **Sin acciones** | Cuando no hay acciones disponibles para el rol/estado, el panel no se muestra. | Cubierto |
 
-## 5. Portal Cliente
+## 5. Cancelaciones
+
+| Escenario | Descripción | Estado |
+|---|---|---|
+| **Solicitud del cliente** | El cliente registra una solicitud de cancelación con motivo desde el detalle de la orden. | Cubierto |
+| **Bandeja administrativa** | `/admin/cancelaciones` lista las solicitudes pendientes con orden, cliente, estado al solicitar y motivo. | Cubierto |
+| **Confirmación administrativa** | El administrador confirma la cancelación desde la bandeja (exclusivo de su rol). | Cubierto |
+| **Solo Administrador** | La consulta de pendientes y la confirmación se reservan al rol administrador. | Cubierto |
+| **Sin acción directa del admin** | El detalle de la orden del administrador ya no ofrece "Cancelar": la confirmación vive en la bandeja. | Cubierto |
+
+## 6. Clientes y Vehículos
+
+| Escenario | Descripción | Estado |
+|---|---|---|
+| **Registro de vehículo** | El cliente registra un vehículo con patente, marca, modelo, año y kilometraje. | Cubierto |
+| **Edición de vehículo** | El cliente edita marca, modelo, año y kilometraje desde `/client/vehiculos/:id/editar` (`PATCH /api/vehiculos/{id}`). La patente no se modifica. | Cubierto |
+| **Pertenencia del vehículo** | La ficha del cliente solo muestra vehículos cuyo `clientId` coincide con la sesión. | Cubierto |
+| **Historial por vehículo** | La ficha muestra el historial paginado de órdenes autorizado para el rol. | Cubierto |
+
+## 7. Portal Cliente
 
 | Escenario | Descripción | Estado |
 |---|---|---|
 | **Dashboard cliente** | Vista con vehículos, órdenes en proceso y presupuestos pendientes. | Cubierto |
-| **Mis vehículos** | Listado y detalle de vehículos registrados con historial. | Cubierto |
-| **Agendar mantención** | Formulario para agendar mantención. | Cubierto |
+| **Mis vehículos** | Listado, alta, edición y detalle de vehículos registrados con historial. | Cubierto |
+| **Agendar mantención** | La ruta `/client/agendar` **no está implementada**: no existe endpoint de agenda y redirige a `/client/ordenes`. | No cubierto |
 | **Mis órdenes** | Listado de órdenes propias con seguimiento. | Cubierto |
 | **Presupuestos** | Listado y detalle de presupuestos con decisión (aprobar/rechazar) con motivo. | Cubierto |
+| **Nuevas atenciones** | Listado y detalle de las solicitudes de nueva atención del cliente. | Cubierto |
+| **Avisos** | Centro de notificaciones del cliente. | Cubierto |
 
-## 6. Portal Mecánico
+## 8. Portal Mecánico
 
 | Escenario | Descripción | Estado |
 |---|---|---|
@@ -66,8 +93,36 @@ Documento de referencia de los escenarios funcionales cubiertos por el frontend 
 | **Mis órdenes** | Listado filtrado por mecánico asignado. | Cubierto |
 | **Actualizar estados** | Cambio de estado con transiciones validadas y restricción por asignación. | Cubierto |
 | **Vehículos asignados** | Acceso a vehículos relacionados con órdenes asignadas. | Cubierto |
+| **Presupuesto** | Edición del presupuesto desde el detalle de la orden asignada. | Cubierto |
+| **Bitácora** | Registro de observaciones y acciones (con repuestos) contra la orden. | Cubierto |
 
-## 7. Evidencias y Presupuestos
+## 9. Inventario y Consumo de Repuestos
+
+| Escenario | Descripción | Estado |
+|---|---|---|
+| **Inventario** | Listado de stock por repuesto con proveedor y estado. | Cubierto |
+| **Alertas de stock** | Listado de repuestos bajo el umbral efectivo. | Cubierto |
+| **Movimientos** | Historial de movimientos con filtros y trazabilidad. | Cubierto |
+| **Detalle de stock** | Ficha de un repuesto con compromisos por orden. | Cubierto |
+| **Umbral general** | Consulta y cambio del umbral general con historial. | Cubierto |
+| **Consumo de repuestos** | Panel en el detalle de la orden (Admin y Mecánico) para descontar los repuestos del presupuesto aprobado, solo en estados 4–6. | Cubierto |
+| **Límite por ítem** | La cantidad máxima es `min(requerido, disponible)`; no se puede pedir más. | Cubierto |
+| **Idempotencia** | Se usa `clave_operacion`; ante una respuesta incierta se conserva para reintentar sin duplicar, y se descarta ante rechazos definitivos. | Cubierto |
+| **Stock insuficiente** | El `409` con `faltantes` se traduce y no descuenta nada (operación todo o nada); luego se refresca la disponibilidad. | Cubierto |
+| **Sin presupuesto aprobado** | El panel avisa cuando la orden no tiene presupuesto aprobado del que consumir. | Cubierto |
+
+## 10. Usuarios y Roles
+
+| Escenario | Descripción | Estado |
+|---|---|---|
+| **Listado de usuarios** | `/admin/usuarios` lista las cuentas con sus roles y estado, con búsqueda por nombre/correo. | Cubierto |
+| **Asignar rol** | Agrega un rol con `POST /auth/usuarios/{id}/roles` (idempotente, acumula roles). | Cubierto |
+| **Retirar rol** | Quita un rol con `DELETE /auth/usuarios/{id}/roles/{rol}` (idempotente). | Cubierto |
+| **Autoedición bloqueada** | El administrador no puede modificar los roles de su propia cuenta. | Cubierto |
+| **Cuenta sin roles** | Dejar una cuenta con `roles: []` exige confirmación en diálogo. | Cubierto |
+| **Fallo parcial** | Ante un error al guardar, se muestra el mensaje y se recarga el listado para reflejar el estado real. | Cubierto |
+
+## 11. Evidencias y Presupuestos
 
 | Escenario | Descripción | Estado |
 |---|---|---|
@@ -76,7 +131,7 @@ Documento de referencia de los escenarios funcionales cubiertos por el frontend 
 | **Presupuesto** | Creación, visualización y decisión por cliente. | Cubierto |
 | **Aprobación/Rechazo** | Requiere validación y motivo en caso de rechazo. | Cubierto |
 
-## 8. Estados de UI y Experiencia
+## 12. Estados de UI y Experiencia
 
 | Escenario | Descripción | Estado |
 |---|---|---|
@@ -92,6 +147,10 @@ Documento de referencia de los escenarios funcionales cubiertos por el frontend 
 Las pruebas funcionales se encuentran en:
 - `frontend/src/presentation/routes/AppRoutes.test.tsx` - Navegación por roles
 - `frontend/src/presentation/components/orders/OrderActionsPanel.test.tsx` - Acciones por permisos
+- `frontend/src/presentation/components/orders/ConsumoRepuestosPanel.test.tsx` - Consumo de repuestos, idempotencia y `409`
+- `frontend/src/presentation/pages/admin/AdminCancelacionesPage.test.tsx` - Bandeja de cancelaciones
+- `frontend/src/presentation/pages/admin/AdminUsersPage.test.tsx` - Gestión de roles y guardas
+- `frontend/src/presentation/pages/client/ClientVehicleEditPage.test.tsx` - Edición de vehículo
 - `frontend/src/presentation/pages/admin/AdminDashboardPage.test.tsx` - Dashboard administrativo
 - `frontend/src/presentation/hooks/useOrderListFilters.test.ts` (si aplica) - Filtros y paginación
 - Pruebas unitarias de componentes UI y utilidades

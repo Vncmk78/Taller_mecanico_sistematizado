@@ -11,6 +11,7 @@ vi.mock('@/infrastructure/config/apiClient', () => ({
   default: {
     post: vi.fn(),
     get: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -197,6 +198,47 @@ describe('AuthService: listado administrativo de usuarios', () => {
       roles: ['cliente'],
       is_active: true,
     });
+  });
+});
+
+describe('AuthService: asignación y retiro de roles', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('asigna un rol con POST /auth/usuarios/{id}/roles y devuelve la cuenta actualizada', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { ...usuarioRespuestaReal, roles: ['mecanico', 'administrador'] },
+    });
+
+    const usuario = await authService.asignarRol('42', 'administrador');
+
+    expect(apiClient.post).toHaveBeenCalledWith('/auth/usuarios/42/roles', {
+      rol: 'administrador',
+    });
+    expect(usuario.roles).toEqual(['mecanico', 'administrador']);
+    expect(usuario.id).toBe('42');
+  });
+
+  it('retira un rol con DELETE y conserva la lista vacía sin inventar un rol por defecto', async () => {
+    vi.mocked(apiClient.delete).mockResolvedValue({
+      data: { ...usuarioRespuestaReal, roles: [] },
+    });
+
+    const usuario = await authService.retirarRol('42', 'mecanico');
+
+    expect(apiClient.delete).toHaveBeenCalledWith('/auth/usuarios/42/roles/mecanico');
+    expect(usuario.roles).toEqual([]);
+  });
+
+  it('descarta roles desconocidos también en la respuesta de los endpoints de roles', async () => {
+    vi.mocked(apiClient.post).mockResolvedValue({
+      data: { ...usuarioRespuestaReal, roles: ['supervisor', 'cliente'] },
+    });
+
+    const usuario = await authService.asignarRol('42', 'cliente');
+
+    expect(usuario.roles).toEqual(['cliente']);
   });
 });
 

@@ -5,10 +5,10 @@ app móvil (Integración IV). La fuente de verdad interactiva está en el Swagge
 de la Gateway: <http://localhost:8000/docs> y su versión JSON en
 <http://localhost:8000/openapi.json>.
 
-**Contrato de esta entrega: 3.0.0.** La versión efectiva de cada despliegue debe
+**Contrato de esta entrega: 3.0.1.** La versión efectiva de cada despliegue debe
 comprobarse en su `/openapi.json`; publicar código no migra automáticamente las bases.
-Copia 3.0.0 para preparar la integración sin
-levantar la Gateway: [`docs/openapi/sgtm-gateway-3.0.0.json`](openapi/sgtm-gateway-3.0.0.json).
+Copia 3.0.1 para preparar la integración sin
+levantar la Gateway: [`docs/openapi/sgtm-gateway-3.0.1.json`](openapi/sgtm-gateway-3.0.1.json).
 Reglas de versionado e historial: [`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
 
 En 3.0.0, `POST /api/ordenes` responde `409` si el vehículo ya tiene una orden

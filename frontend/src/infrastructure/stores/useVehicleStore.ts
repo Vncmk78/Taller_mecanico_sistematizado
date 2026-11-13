@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Vehicle } from '@/domain/entities/Vehicle';
-import type { CreateVehicleInput } from '@/domain/ports/VehiclePort';
+import type { CreateVehicleInput, UpdateVehicleInput } from '@/domain/ports/VehiclePort';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import {
     initialAsyncStatus,
@@ -23,6 +23,7 @@ interface VehicleState extends AsyncStatus {
     fetchVehicleById: (id: string, loader: (id: string) => Promise<Vehicle>) => Promise<FetchVehicleResult>;
     patentExists: (patent: string) => boolean;
     addVehicle: (input: CreateVehicleInput, clientId: string) => Promise<Vehicle>;
+    updateVehicle: (id: string, input: UpdateVehicleInput, clientId?: string) => Promise<Vehicle>;
     /**
      * Vacía la caché y vuelve al estado inicial. Se invoca al cerrar sesión: la
      * caché es compartida entre portales y sin esto el siguiente usuario que
@@ -73,6 +74,15 @@ export const useVehicleStore = create<VehicleState>((set, get) => ({
             ],
         }));
         return vehiculo;
+    },
+
+    updateVehicle: async (id, input, clientId) => {
+        // La respuesta de la Gateway se integra en la caché compartida con
+        // upsertById para que la ficha y los listados de los tres portales
+        // reflejen de inmediato los datos nuevos.
+        const actualizado = await vehicleService.updateVehicle(id, input, clientId);
+        set((state) => ({ vehicles: upsertById(state.vehicles, actualizado) }));
+        return actualizado;
     },
 
     reset: () => set({ vehicles: [], ...initialAsyncStatus }),

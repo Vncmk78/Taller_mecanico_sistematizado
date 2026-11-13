@@ -37,8 +37,10 @@ export function destinosAvanceMecanico(estadoCodigo: number): number[] {
     return AVANCES_MECANICO[estadoCodigo] ?? [];
 }
 
-// El cliente solicita y el administrador confirma. El backend comprueba además
-// la solicitud pendiente y la ausencia de aprobación inicial en MS3.
+// El cliente solicita la cancelación; el Administrador la confirma desde la
+// bandeja de cancelaciones pendientes (/admin/cancelaciones), donde solo
+// aparecen órdenes con solicitud registrada. No se ofrece como acción de la
+// orden: el backend responde 409 si no existe una solicitud que confirmar.
 const ESTADOS_CANCELABLES = new Set([1, 2, 3]);
 
 const CANCELADO = 8;
@@ -103,15 +105,8 @@ function accionesAdministrador(order: Order): AccionOrden[] {
         }
     }
 
-    if (ESTADOS_CANCELABLES.has(order.estadoCodigo)) {
-        acciones.push({
-            id: 'cancelar',
-            etiqueta: 'Confirmar cancelación',
-            destinos: [CANCELADO],
-            requiereMotivo: false,
-            habilitada: true,
-        });
-    }
+    // La cancelación no se ofrece aquí: se confirma desde la bandeja de
+    // cancelaciones pendientes, que solo lista solicitudes reales.
 
     // La entrega física cierra el ciclo normal (6 -> 7).
     if (order.estadoCodigo === 6) {

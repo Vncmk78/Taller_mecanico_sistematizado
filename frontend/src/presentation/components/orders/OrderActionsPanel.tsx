@@ -157,10 +157,9 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
                     actualizada = await orderService.registrarEntrega(order.id, observacion);
                     break;
                 case 'cancelar':
-                    actualizada =
-                        actor.rol === 'cliente'
-                            ? await orderService.cancelarComoCliente(order.id, motivo)
-                            : await orderService.confirmarCancelacion(order.id);
+                    // Solo el Cliente llega aquí: el Administrador confirma
+                    // las solicitudes desde la bandeja /admin/cancelaciones.
+                    actualizada = await orderService.cancelarComoCliente(order.id, motivo);
                     break;
                 default:
                     return;
@@ -168,7 +167,7 @@ function OrderActionsPanelContent({ order, actor, acciones, className }: OrderAc
 
             updateOrder(actualizada);
             showToast(
-                pending.id === 'cancelar' && actor.rol === 'cliente'
+                pending.id === 'cancelar'
                     ? `Solicitud de cancelación de la orden n° ${order.id} enviada. Pendiente de confirmación administrativa.`
                     : pending.id === 'asignar_mecanico' && order.mecanicoActualId !== null
                       ? `Orden n° ${order.id} reasignada. Conserva el estado ${ordenStatusLabel(actualizada.estadoCodigo)}.`

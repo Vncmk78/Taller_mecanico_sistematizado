@@ -5,6 +5,8 @@ import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPa
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
 import { OrderBitacoraSection } from '@/presentation/components/orders/OrderBitacoraSection';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
+import { ConsumoRepuestosPanel } from '@/presentation/components/orders/ConsumoRepuestosPanel';
+import { puedeConsumirRepuestos } from '@/presentation/components/orders/consumoRepuestos';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -33,6 +35,7 @@ export function MechanicOrderDetailPage() {
     );
     const { presupuesto: presupuestoOrden } = useBudgetDetail(id);
     const { isOffline, error, requestId } = useOrderStore();
+    const updateOrder = useOrderStore((s) => s.updateOrder);
     const user = useAuthStore((s) => s.user);
     const vehicles = useVehicleStore((s) => s.vehicles);
     const [evidenciasAbiertas, setEvidenciasAbiertas] = useState(true);
@@ -102,6 +105,15 @@ export function MechanicOrderDetailPage() {
             active = false;
         };
     }, [order?.id]);
+
+    const recargarOrdenYStock = async (orderId: number) => {
+        const [orderResult, availabilityResult] = await Promise.allSettled([
+            orderService.getOrderById(String(orderId)),
+            inventarioService.getDisponibilidadOrden(orderId),
+        ]);
+        if (orderResult.status === 'fulfilled') updateOrder(orderResult.value);
+        if (availabilityResult.status === 'fulfilled') setDisponibilidad(availabilityResult.value);
+    };
 
     if (loading) {
         return <LoadingState message="Cargando detalle de la orden..." className="p-4 sm:p-6 lg:p-10" />;
@@ -228,6 +240,13 @@ export function MechanicOrderDetailPage() {
                         ))}
                     </div>
                 </section>
+            )}
+
+            {puedeConsumirRepuestos(order.estadoCodigo) && (
+                <ConsumoRepuestosPanel
+                    orderId={order.id}
+                    onConsumed={() => recargarOrdenYStock(Number(order.id))}
+                />
             )}
 
             <OrderBitacoraSection order={order} canWrite={user?.role === 'mecanico'} />

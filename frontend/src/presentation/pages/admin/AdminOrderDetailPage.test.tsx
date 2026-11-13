@@ -191,7 +191,8 @@ describe('AdminOrderDetailPage: detalle con panel e historial', () => {
         renderPage();
 
         expect(await screen.findByRole('button', { name: 'Asignar mecánico' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Confirmar cancelación' })).toBeInTheDocument();
+        // La cancelación se confirma desde la bandeja de cancelaciones.
+        expect(screen.queryByRole('button', { name: 'Confirmar cancelación' })).not.toBeInTheDocument();
     });
 
     it('confirma disponibilidad desde Esperando repuestos y refresca orden e historial', async () => {

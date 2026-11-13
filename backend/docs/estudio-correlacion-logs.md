@@ -11,8 +11,9 @@
   `request_id`; el cliente recibe un mensaje genérico y la cabecera de
   correlación.
 - MS4 conserva el identificador en los metadatos de las evidencias.
-- MS1, MS2 y MS3 no tienen middleware general que adjunte el `X-Request-ID`
-  entrante a todos sus logs. MS2 registra ahora ese identificador cuando falla
+- (Hasta la Semana 9) MS1, MS2 y MS3 no tenían middleware general que adjunte
+  el `X-Request-ID` entrante a todos sus logs; la Semana 10 lo agrega (ver
+  sección final). MS2 registra ahora ese identificador cuando falla
   la persistencia de `GET /ordenes`, según el diagnóstico acotado más abajo.
   Esto no añade correlación a los demás endpoints ni a las llamadas salientes.
 - En flujos síncronos MS3↔MS2, el JWT y las referencias de orden/decisión
@@ -77,6 +78,59 @@ JWT, body completo ni datos personales innecesarios.
 Una instrumentación distribuida mayor (por ejemplo OpenTelemetry o un backend
 centralizado de trazas) requiere una decisión de infraestructura aparte y no es
 necesaria para aprovechar el identificador que ya entrega la Gateway.
+
+## Semana 10: observabilidad básica y decisiones (SCRUM-581)
+
+Observabilidad = poder responder "¿qué le pasó a esta petición?" sin
+reproducirla. Para el tamaño del SGTM bastan tres piezas, sin infraestructura
+nueva:
+
+| Pieza | Qué aporta | Estado tras la Semana 10 |
+|---|---|---|
+| **Identificador de correlación** (`X-Request-ID`) | Une las líneas de log de todos los servicios que tocó una misma petición. | Gateway lo asigna; MS1–MS4 lo leen, lo devuelven en toda respuesta y lo reenvían en sus llamadas a otros servicios. |
+| **Log por petición** (`evento=solicitud`) | Servicio, método, ruta, estado y duración de cada petición, con el ID. | MS1, MS2 y MS3 con `shared/correlacion.py`; MS4 con su `MiddlewareRegistro` (Semana 6). |
+| **Error con ID visible** | El usuario o QA puede citar el ID al reportar un fallo. | Errores de la Gateway: `error.request_id` + cabecera. Errores de un microservicio: cabecera `X-Request-ID` (el body sigue "tal cual"). La web ya muestra el ID en sus paneles de error (`getApiErrorRequestId`). |
+
+Conceptos revisados:
+
+- **Logs, métricas y trazas** son los tres pilares clásicos. El SGTM se queda
+  con logs correlacionados: las métricas y las trazas distribuidas
+  (OpenTelemetry) exigen un backend que el curso no tiene.
+- **Propagación de contexto**: el ID viaja como cabecera HTTP en cada salto y
+  dentro del proceso se guarda en un `ContextVar`, que Starlette copia al hilo
+  donde corren los endpoints `def` (por eso se puede leer en
+  `integracion_ms2.py` sin pasarlo como parámetro).
+- **Logs `clave=valor`**: una línea por evento, filtrable con `grep
+  request_id=<id>` en la salida de cada servicio (Docker o Vercel).
+
+Decisiones:
+
+> **C1 — Un solo origen del ID.** La Gateway asigna el ID. Un microservicio
+> solo **reenvía** el ID que recibió; si lo llaman directo sin cabecera,
+> genera uno para su propio log y su respuesta, pero no lo propaga.
+
+> **C2 — Mismo formato en todos lados.** `^[A-Za-z0-9-]{1,128}$` (el de la
+> Gateway). Un valor distinto se reemplaza: evita *log injection*.
+
+> **C3 — Nada sensible en los logs.** Ni cabeceras (JWT), ni body, ni query
+> string, ni el texto de las excepciones (solo su tipo).
+
+> **C4 — Los errores de los microservicios no se reescriben.** La Gateway los
+> sigue reenviando "tal cual" (contrato usado por web y móvil); el ID va en la
+> cabecera `X-Request-ID`, que la Gateway expone por CORS.
+
+> **C5 — Workers en segundo plano sin ID.** Los publicadores de eventos de MS2
+> y MS3 no nacen de una petición; se correlacionan por el ID del evento.
+
+Procedimiento de diagnóstico actualizado: copiar el ID del panel de error de la
+web (o de la cabecera), y buscar `request_id=<id>` en los logs de la Gateway y
+de cada microservicio. Ejemplo real de una prueba (MS2 llamando a MS1 dentro de
+la misma petición):
+
+```text
+evento=solicitud servicio=ms1_auth   request_id=8562d68d-... metodo=GET ruta=/auth/usuarios/77 estado_http=200 duracion_ms=8
+evento=solicitud servicio=ms2_taller request_id=8562d68d-... metodo=PUT ruta=/ordenes/1/mecanico estado_http=200 duracion_ms=33
+```
 
 ## Fuentes revisadas
 

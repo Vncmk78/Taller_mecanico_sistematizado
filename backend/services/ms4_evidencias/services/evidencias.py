@@ -10,6 +10,7 @@ con SQLite y un FakeS3, y reutilizadas por los endpoints.
 """
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ from services.ms4_evidencias.services.almacenamiento import (
     subir_objeto,
 )
 from services.ms4_evidencias.services.contexto import normalizar_request_id
+from services.ms4_evidencias.services.registro import registrar
 from services.ms4_evidencias.services.validacion_archivos import (
     MENSAJE_ARCHIVO_ILEGIBLE,
     ArchivoDanadoError,
@@ -166,7 +168,9 @@ def recibir_evidencia(
        (filas y objetos comparten el mismo UUID: trazabilidad y, en Semana 6,
        limpieza de huérfanos por prefijo);
     3. sube el archivo a MinIO con los metadatos en x-amz-meta-* — si falla,
-       se propaga y NO se crea ninguna fila;
+       NO se crea ninguna fila, se intenta borrar la clave (la transferencia
+       pudo completarse en MinIO aunque la respuesta se perdiera, Semana 10)
+       y se propaga la excepción original;
     4. inserta la fila con estado `confirmada`, `confirmada_en` y `sha256` y hace
        commit;
     5. compensación: si la base falla, rollback y borra el objeto recién subido;
@@ -201,19 +205,23 @@ def recibir_evidencia(
         datos.orden_id, content_type, evidencia_id=evidencia_id
     )
 
-    subir_objeto(
-        s3,
-        bucket,
-        clave,
-        archivo,
-        content_type,
-        metadatos=metadatos_objeto(
-            evidencia_id,
-            datos.orden_id,
-            sha256,
-            autor_usuario_id,
-        ),
-    )
+    try:
+        subir_objeto(
+            s3,
+            bucket,
+            clave,
+            archivo,
+            content_type,
+            metadatos=metadatos_objeto(
+                evidencia_id,
+                datos.orden_id,
+                sha256,
+                autor_usuario_id,
+            ),
+        )
+    except Exception:
+        _compensar_subida_fallida(s3, bucket, clave, evidencia_id, datos.orden_id)
+        raise
 
     campos: dict = {
         "evidencia_id": evidencia_id,
@@ -250,6 +258,36 @@ def recibir_evidencia(
         raise GuardadoEvidenciaError(clave_huerfana, evidencia_id) from exc
     db.refresh(evidencia)
     return evidencia
+
+
+def _compensar_subida_fallida(
+    s3: object, bucket: str, clave: str, evidencia_id: uuid.UUID, orden_id: int
+) -> None:
+    """Borra la clave tras una transferencia fallida (Semana 10, SCRUM-584).
+
+    Una subida puede fallar **después** de que MinIO guardó el objeto: se corta
+    la conexión o vence el timeout de lectura esperando la confirmación del
+    `PutObject`/`CompleteMultipartUpload`. Sin fila en la base ese objeto sería
+    un huérfano. Borrar una clave inexistente no falla en S3, así que el borrado
+    es seguro siempre. Si el borrado también falla, se registra
+    `pendiente_limpieza=true` (sin la clave: checklist 5.5) para que la
+    conciliación (`scripts/limpiar_huerfanos_ms4.py`) lo recoja.
+
+    Nunca lanza: el error que se informa al cliente es el de la subida.
+    """
+    try:
+        eliminar_objeto(s3, bucket, clave)
+    except Exception as exc:  # noqa: BLE001  (best-effort; la subida ya falló)
+        registrar(
+            "compensacion_fallida",
+            logging.ERROR,
+            motivo="subida_interrumpida",
+            servicio="s3",
+            error=type(exc).__name__,
+            evidencia_id=evidencia_id,
+            orden_id=orden_id,
+            pendiente_limpieza=True,
+        )
 
 
 def listar_por_orden(

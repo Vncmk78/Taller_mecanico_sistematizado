@@ -41,6 +41,14 @@ ERROR_INTERNO = "ERROR_INTERNO"
 CUERPO_DEMASIADO_GRANDE = "CUERPO_DEMASIADO_GRANDE"
 # Estado HTTP no previsto (por ejemplo, un 400 lanzado por la propia app).
 ERROR_HTTP = "ERROR_HTTP"
+# Semana 10 (SCRUM-579): el microservicio contestó, pero la respuesta no se
+# puede usar (HTTP mal formado, compresión rota o un 2xx que declara JSON y no
+# lo es). Distinto de MICROSERVICIO_INALCANZABLE: el servicio sí está arriba.
+RESPUESTA_INVALIDA = "RESPUESTA_INVALIDA"
+# Semana 10 (SCRUM-579): el cliente cortó la conexión mientras enviaba el body
+# (típico de una subida de evidencia interrumpida). No se llama al
+# microservicio con un body incompleto.
+SOLICITUD_INTERRUMPIDA = "SOLICITUD_INTERRUMPIDA"
 
 # Mapeo de estado HTTP -> código del catálogo.
 _CODIGOS_POR_ESTADO: dict[int, str] = {
@@ -73,6 +81,12 @@ MENSAJE_TIEMPO_AGOTADO = (
 MENSAJE_GATEWAY_SATURADA = "La Gateway está ocupada. Intente más tarde."
 MENSAJE_ERROR_MICROSERVICIO = "El servicio respondió con un error inesperado."
 MENSAJE_CONTENT_LENGTH_INVALIDA = "La cabecera Content-Length es inválida"
+MENSAJE_RESPUESTA_INVALIDA = (
+    "El servicio respondió de forma inválida. Intente más tarde."
+)
+MENSAJE_SOLICITUD_INTERRUMPIDA = (
+    "La solicitud se interrumpió antes de recibirse completa."
+)
 
 # Estados de "no disponible por ahora": se acompañan de `Retry-After` (RFC 9110
 # §10.2.3) para que web y móvil sepan cuánto esperar antes de reintentar un
@@ -94,6 +108,11 @@ def mapear_error_httpx(exc: httpx.RequestError) -> tuple[int, str, str]:
         return 504, TIEMPO_AGOTADO, MENSAJE_TIEMPO_AGOTADO
     if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
         return 502, MICROSERVICIO_INALCANZABLE, MENSAJE_SERVICIO_CAIDO
+    # El servicio contestó, pero con HTTP mal formado (status fuera de rango,
+    # cabeceras rotas, cierre a mitad de la respuesta) o un body comprimido que
+    # no se puede descomprimir (Semana 10).
+    if isinstance(exc, (httpx.RemoteProtocolError, httpx.DecodingError)):
+        return 502, RESPUESTA_INVALIDA, MENSAJE_RESPUESTA_INVALIDA
     return 502, MICROSERVICIO_INALCANZABLE, MENSAJE_SERVICIO_CAIDO
 
 

@@ -40,6 +40,8 @@ from services.ms3_presupuestos.persistencia import ErrorDePersistencia
 from services.ms3_presupuestos.routers import ROUTERS
 
 from services.ms3_presupuestos.services.publicador_avisos import ejecutar_worker
+from shared.correlacion import MiddlewareCorrelacion
+from shared.correlacion import configurar_logs as configurar_logs_correlacion
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -74,6 +76,11 @@ app = FastAPI(
         {"name": "inventario", "description": "Movimientos de stock (idempotentes), disponibilidad, alertas y umbral general."},
     ],
 )
+
+# Semana 10 (SCRUM-582): toma el X-Request-ID que reenvía la Gateway, lo
+# devuelve en toda respuesta y deja una línea de log por petición con ese ID.
+configurar_logs_correlacion()
+app.add_middleware(MiddlewareCorrelacion, servicio="ms3_presupuestos")
 
 for router in ROUTERS:
     app.include_router(router)

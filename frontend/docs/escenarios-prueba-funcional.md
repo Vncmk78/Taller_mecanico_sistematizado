@@ -53,14 +53,16 @@ Documento de referencia para pruebas manuales y trazabilidad con la suite automa
 
 | ID | Rol | Objetivo | Pasos | Resultado esperado | Automatizado |
 |---|---|---|---|---|---|
-| INV-01 | admin | Listar repuestos | Abrir `/admin/inventario` | Lista con estado de stock | Sí (`AdminInventoryPage.test.tsx`) |
+| INV-01 | admin/mecánico | Listar repuestos | Abrir `/admin/inventario` o `/mechanic/inventario` | Lista con estado de stock; el mecánico ve *Ver stock* y no ve acciones de escritura | Sí (`AdminInventoryPage.test.tsx`) |
 | INV-02 | admin | Filtrar por texto y estado | Buscar y filtrar | Resultados acotados | Sí (`AdminInventoryPage.test.tsx`) |
-| INV-03 | admin | Alertas de stock | Abrir alertas | Repuestos bajo umbral | Sí (`AdminInventoryAlertsPage.test.tsx`) |
-| INV-04 | admin/mecánico | Movimientos de stock | Abrir movimientos | Historial filtrable | Sí (`AdminInventoryMovementsPage.test.tsx`) |
+| INV-03 | admin/mecánico | Alertas de stock | Abrir alertas | Repuestos bajo umbral | Sí (`AdminInventoryAlertsPage.test.tsx`) |
+| INV-04 | admin/mecánico | Movimientos de stock | Abrir movimientos | Historial filtrable; el mecánico registra solo movimientos de sus órdenes | Sí (`AdminInventoryMovementsPage.test.tsx`) |
 | INV-05 | admin/mecánico | Stock por repuesto | Abrir detalle de stock | Físico, comprometido, disponible | Sí (`AdminStockDetailPage.test.tsx`) |
-| INV-06 | admin | Umbral general | Cambiar umbral y ver historial | Umbral actualizado | Sí (`AdminThresholdPage.test.tsx`) |
+| INV-06 | admin/mecánico | Umbral general | Consultar valor e historial; el administrador puede cambiarlo | El mecánico no ve el formulario de cambio | Sí (`AdminThresholdPage.test.tsx`) |
 | INV-07 | admin | CRUD de repuestos | Crear/editar/eliminar | Catálogo actualizado | Parcial (servicio) |
 | INV-08 | admin | CRUD de proveedores | Crear/editar/eliminar | Catálogo actualizado | Parcial (servicio) |
+| INV-09 | mecánico | Inventario de consulta | Recorrer `/mechanic/inventario*` | Catálogo, alertas, stock, umbral y distribuidores en solo lectura | Sí (`AppRoutes.test.tsx`, pruebas de modo mecánico) |
+| INV-10 | mecánico | Movimiento de orden asignada | Registrar `compromiso`, `consumo` o `liberación` con orden | Movimiento registrado; sin orden se rechaza en la UI | Sí (`AdminInventoryMovementsPage.test.tsx`) |
 
 ## Disponibilidad de stock en órdenes
 

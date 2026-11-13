@@ -207,3 +207,70 @@ describe('AdminInventoryMovementsPage: formulario de registro', () => {
         expect(screen.getByRole('dialog', { name: 'Registrar movimiento' })).toBeInTheDocument();
     });
 });
+
+describe('AdminInventoryMovementsPage: modo mecánico', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.mocked(inventarioService.listMovimientos).mockResolvedValue(pagina([]));
+        vi.mocked(inventarioService.registrarMovimiento).mockResolvedValue(RESULTADO);
+        vi.stubGlobal('crypto', { randomUUID: () => 'uuid-fijo' });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('solo ofrece compromiso, consumo y liberación, y exige la orden asignada', async () => {
+        render(<AdminInventoryMovementsPage mode="mechanic" />);
+        await screen.findByText('No hay movimientos');
+
+        const dialog = await abrirFormulario();
+
+        expect(within(dialog).getByLabelText('Tipo')).toHaveValue('compromiso');
+        const opciones = within(dialog)
+            .getAllByRole('option')
+            .map((opcion) => (opcion as HTMLOptionElement).value);
+        expect(opciones).toEqual(['compromiso', 'consumo', 'liberacion']);
+        expect(within(dialog).getByLabelText('Orden asignada (obligatoria)')).toBeInTheDocument();
+        expect(within(dialog).queryByLabelText('Proveedor ID (opcional)')).not.toBeInTheDocument();
+    });
+
+    it('no registra el movimiento si falta la orden asignada', async () => {
+        render(<AdminInventoryMovementsPage mode="mechanic" />);
+        await screen.findByText('No hay movimientos');
+        const dialog = await abrirFormulario();
+
+        escribirEn(dialog, 'Repuesto ID', '2');
+        escribirEn(dialog, 'Cantidad', '5');
+        submit(dialog);
+
+        expect(
+            await within(dialog).findByText(
+                'Indica la orden asignada a la que pertenece el movimiento.'
+            )
+        ).toBeInTheDocument();
+        expect(inventarioService.registrarMovimiento).not.toHaveBeenCalled();
+    });
+
+    it('registra el movimiento de la orden sin proveedor', async () => {
+        render(<AdminInventoryMovementsPage mode="mechanic" />);
+        await screen.findByText('No hay movimientos');
+        const dialog = await abrirFormulario();
+
+        escribirEn(dialog, 'Repuesto ID', '2');
+        escribirEn(dialog, 'Cantidad', '5');
+        escribirEn(dialog, 'Orden asignada (obligatoria)', '12');
+        submit(dialog);
+
+        await waitFor(() =>
+            expect(inventarioService.registrarMovimiento).toHaveBeenCalledWith({
+                claveOperacion: 'uuid-fijo',
+                repuestoId: 2,
+                tipo: 'compromiso',
+                cantidad: 5,
+                ordenId: 12,
+                proveedorId: null,
+            })
+        );
+    });
+});

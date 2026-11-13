@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
 import type { PaginaRepuestos, Repuesto } from '@/domain/entities/Repuesto';
 import { AdminInventoryPage, LIMITE_REPUESTOS } from './AdminInventoryPage';
@@ -282,5 +283,44 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
 
         expect(await screen.findByText('No se pudieron cargar los repuestos del inventario')).toBeInTheDocument();
         expect(screen.getByText('Referencia: req-inventario-1')).toBeInTheDocument();
+    });
+});
+
+describe('AdminInventoryPage: modo mecánico', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    function renderMechanic() {
+        return render(
+            <MemoryRouter>
+                <AdminInventoryPage mode="mechanic" />
+            </MemoryRouter>
+        );
+    }
+
+    it('oculta las acciones de administración y ofrece consultar el stock', async () => {
+        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+
+        renderMechanic();
+
+        expect(await screen.findByText('Filtro de aceite')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Nuevo repuesto' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Eliminar' })).not.toBeInTheDocument();
+
+        const enlacesStock = screen.getAllByRole('link', { name: 'Ver stock' });
+        expect(enlacesStock).toHaveLength(catalogo.length);
+        expect(enlacesStock[0]).toHaveAttribute('href', '/mechanic/inventario/stock/1');
+    });
+
+    it('muestra el subtítulo de consulta sin acciones de escritura', async () => {
+        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+
+        renderMechanic();
+
+        expect(
+            await screen.findByText('Consulta de repuestos y disponibilidad del taller')
+        ).toBeInTheDocument();
     });
 });

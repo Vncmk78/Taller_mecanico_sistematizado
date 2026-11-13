@@ -74,6 +74,12 @@ Roles del sistema: `administrador`, `cliente`, `mecanico`.
     ├── /mechanic/ordenes/:id/presupuesto → Editor de presupuesto
     ├── /mechanic/ordenes/:id/evidencias  → Evidencia multimedia (con carga)
     ├── /mechanic/estados     → Actualizar estados
+    ├── /mechanic/inventario  → Catálogo de repuestos
+    ├── /mechanic/inventario/alertas      → Alertas de stock
+    ├── /mechanic/inventario/movimientos  → Movimientos de inventario
+    ├── /mechanic/inventario/stock/:repuestoId → Detalle de stock
+    ├── /mechanic/inventario/umbral       → Umbral general
+    ├── /mechanic/inventario/distribuidores → Distribuidores
     └── /mechanic/notificaciones → Centro de avisos
 
 * (cualquier otra ruta)      → / (fallback)
@@ -156,6 +162,12 @@ Layout: `MechanicLayout` → `RoleLayout` (variante `sidebar`). Aplica
 | `/mechanic/ordenes/:id/presupuesto` | `MechanicBudgetPage` | Funcional (edición de presupuesto) |
 | `/mechanic/ordenes/:id/evidencias` | `OrderEvidencePage` | Funcional (subida con progreso/éxito/error) |
 | `/mechanic/estados` | `MechanicStatusPage` | Funcional (avance de estado con confirmación) |
+| `/mechanic/inventario` | `AdminInventoryPage` (`mode="mechanic"`) | Funcional (solo lectura; enlace a stock) |
+| `/mechanic/inventario/alertas` | `AdminInventoryAlertsPage` | Funcional (solo lectura) |
+| `/mechanic/inventario/movimientos` | `AdminInventoryMovementsPage` (`mode="mechanic"`) | Funcional (consulta y movimientos de órdenes asignadas) |
+| `/mechanic/inventario/stock/:repuestoId` | `AdminStockDetailPage` | Funcional (solo lectura) |
+| `/mechanic/inventario/umbral` | `AdminThresholdPage` (`mode="mechanic"`) | Funcional (solo lectura) |
+| `/mechanic/inventario/distribuidores` | `AdminDistributorsPage` (`mode="mechanic"`) | Funcional (solo lectura) |
 | `/mechanic/notificaciones` | `NotificationsPage` | Funcional |
 
 ## Menús por rol
@@ -173,7 +185,8 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
 - No hay ítem de menú para *Agendar Mantención*: `/client/agendar` no está implementada y redirige a *Mis Órdenes*.
 
 **Mecánico** (sidebar):
-- *Mi Panel* (`/mechanic`), *Mis Órdenes* (`/mechanic/ordenes`), *Actualizar Estados* (`/mechanic/estados`), *Vehículos Asignados* (`/mechanic/vehiculos`), *Centro de avisos* (`/mechanic/notificaciones`).
+- Portal Mecánico: *Mi Panel* (`/mechanic`), *Mis Órdenes* (`/mechanic/ordenes`), *Actualizar Estados* (`/mechanic/estados`), *Vehículos Asignados* (`/mechanic/vehiculos`), *Centro de avisos* (`/mechanic/notificaciones`).
+- Inventario: *Repuestos* (`/mechanic/inventario`), *Alertas de stock* (`/mechanic/inventario/alertas`), *Movimientos* (`/mechanic/inventario/movimientos`), *Umbral general* (`/mechanic/inventario/umbral`), *Distribuidores* (`/mechanic/inventario/distribuidores`).
 
 ## Reglas de navegación
 
@@ -201,6 +214,14 @@ Los ítems de navegación se declaran en cada layout (`AdminLayout`,
   `/mechanic/ordenes/:id` mientras la orden está en taller (estados 4–6). El
   panel `ConsumoRepuestosPanel` usa la disponibilidad del presupuesto aprobado,
   envía una `clave_operacion` idempotente y maneja el `409` con `faltantes`.
+- **Inventario del mecánico**: `/mechanic/inventario*` reutiliza las pantallas de
+  inventario con `mode="mechanic"`. El mecánico consulta catálogo, alertas,
+  movimientos, stock, umbral e historial y distribuidores, pero no ve las
+  acciones administrativas (crear/editar/eliminar repuestos o proveedores,
+  ingresos, ajustes ni cambio de umbral). En movimientos solo puede registrar
+  `compromiso`, `consumo` o `liberación` con una orden asignada; el backend
+  valida esa asignación. El modo del portal manda incluso si la cuenta acumula
+  también el rol `administrador`.
 - **Gestión de roles**: `/admin/usuarios` acumula y retira roles con
   `POST/DELETE /auth/usuarios/{id}/roles`. La propia cuenta del administrador no
   se puede editar y se pide confirmación antes de dejar una cuenta sin roles.

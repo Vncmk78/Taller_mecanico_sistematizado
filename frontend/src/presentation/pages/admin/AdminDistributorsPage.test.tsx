@@ -101,6 +101,18 @@ describe('AdminDistributorsPage: listado y estados', () => {
         expect(await screen.findByText('No hay distribuidores registrados')).toBeInTheDocument();
     });
 
+    it('en modo mecánico lista los distribuidores sin acciones de escritura', async () => {
+        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+
+        render(<AdminDistributorsPage mode="mechanic" />);
+
+        expect(await screen.findByText('Repuestos del Sur')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Nuevo proveedor' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Eliminar' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('columnheader', { name: 'Acciones' })).not.toBeInTheDocument();
+    });
+
     it('distingue el vacío por búsqueda y permite limpiar los filtros', async () => {
         vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
 

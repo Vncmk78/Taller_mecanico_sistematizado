@@ -44,6 +44,14 @@ import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicO
 import { BudgetEditor } from '@/presentation/components/budgets/BudgetEditor';
 import { MechanicBudgetPage } from '@/presentation/pages/mechanic/MechanicBudgetPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
+import {
+  MechanicDistributorsPage,
+  MechanicInventoryAlertsPage,
+  MechanicInventoryMovementsPage,
+  MechanicInventoryPage,
+  MechanicStockDetailPage,
+  MechanicThresholdPage,
+} from '@/presentation/pages/mechanic/MechanicInventoryPages';
 import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage';
 import { NotificationsPage } from '@/presentation/pages/shared/NotificationsPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
@@ -152,6 +160,12 @@ export function AppRoutes() {
           element={<OrderEvidencePage backTo="/mechanic/ordenes" backLabel="Volver a mis órdenes" canUpload />}
         />
         <Route path="estados" element={<MechanicStatusPage />} />
+        <Route path="inventario" element={<MechanicInventoryPage />} />
+        <Route path="inventario/alertas" element={<MechanicInventoryAlertsPage />} />
+        <Route path="inventario/movimientos" element={<MechanicInventoryMovementsPage />} />
+        <Route path="inventario/stock/:repuestoId" element={<MechanicStockDetailPage />} />
+        <Route path="inventario/umbral" element={<MechanicThresholdPage />} />
+        <Route path="inventario/distribuidores" element={<MechanicDistributorsPage />} />
         <Route path="notificaciones" element={<NotificationsPage />} />
       </Route>
 

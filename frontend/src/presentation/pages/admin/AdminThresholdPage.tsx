@@ -8,13 +8,20 @@ import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { Input } from '@/presentation/components/ui/Input';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { isAdminInventoryMode, type InventoryPortalMode } from '@/presentation/utils/inventoryPortal';
 import {
     Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow,
 } from '@/presentation/components/ui/Table';
 
 type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
-export function AdminThresholdPage() {
+interface AdminThresholdPageProps {
+    /** El portal mecánico consulta el umbral, pero no puede modificarlo. */
+    mode?: InventoryPortalMode;
+}
+
+export function AdminThresholdPage({ mode = 'admin' }: AdminThresholdPageProps) {
+    const isAdmin = isAdminInventoryMode(mode);
     const [umbral, setUmbral] = useState<UmbralGeneral | null>(null);
     const [historial, setHistorial] = useState<CambioUmbral[]>([]);
     const [status, setStatus] = useState<FetchStatus>('loading');
@@ -92,7 +99,9 @@ export function AdminThresholdPage() {
     return (
         <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Umbral general de stock</h2>
-            <p className="text-text-muted text-lg mb-6">Configuración vigente e historial de cambios</p>
+            <p className="text-text-muted text-lg mb-6">
+                {isAdmin ? 'Configuración vigente e historial de cambios' : 'Valor vigente e historial de cambios'}
+            </p>
 
             {isOffline && <OfflineBanner message={error} onRetry={handleRetry} requestId={requestId} className="mb-6" />}
 
@@ -107,23 +116,27 @@ export function AdminThresholdPage() {
                     <div className="card p-6">
                         <p className="text-text-muted text-sm mb-1">Umbral general vigente</p>
                         <p className="text-2xl font-bold mb-4">{umbral?.umbralGeneral ?? 'Sin configurar'}</p>
-                        <form onSubmit={handleSave} className="flex flex-wrap gap-4 items-end">
-                            <Input
-                                label="Nuevo umbral"
-                                type="number"
-                                value={valor}
-                                onChange={(e) => setValor(e.target.value)}
-                            />
-                            <Input
-                                label="Observación"
-                                value={observacion}
-                                onChange={(e) => setObservacion(e.target.value)}
-                            />
-                            <Button type="submit" disabled={saving}>
-                                {saving ? 'Guardando...' : 'Guardar'}
-                            </Button>
-                        </form>
-                        {saveError && <p className="text-status-red text-sm mt-3">{saveError}</p>}
+                        {isAdmin && (
+                            <>
+                                <form onSubmit={handleSave} className="flex flex-wrap gap-4 items-end">
+                                    <Input
+                                        label="Nuevo umbral"
+                                        type="number"
+                                        value={valor}
+                                        onChange={(e) => setValor(e.target.value)}
+                                    />
+                                    <Input
+                                        label="Observación"
+                                        value={observacion}
+                                        onChange={(e) => setObservacion(e.target.value)}
+                                    />
+                                    <Button type="submit" disabled={saving}>
+                                        {saving ? 'Guardando...' : 'Guardar'}
+                                    </Button>
+                                </form>
+                                {saveError && <p className="text-status-red text-sm mt-3">{saveError}</p>}
+                            </>
+                        )}
                     </div>
 
                     <div className="card overflow-hidden">

@@ -303,6 +303,14 @@ y arquitectura hexagonal.
   `min(requerido, disponible)`, envía una `clave_operacion` idempotente y maneja
   el `409` con `faltantes` (operación todo o nada) refrescando la disponibilidad
   y la orden.
+- **Inventario del mecánico**: las pantallas de inventario se reutilizan con
+  `mode="mechanic"` en `/mechanic/inventario*`. El mecánico consulta catálogo,
+  alertas, movimientos, stock, umbral e historial y distribuidores, pero no ve
+  las acciones administrativas (crear/editar/eliminar repuestos o proveedores,
+  ingresos, ajustes ni cambio de umbral). En movimientos solo puede registrar
+  `compromiso`, `consumo` o `liberación` indicando una orden asignada; el
+  backend valida esa asignación. El modo del portal manda incluso si la cuenta
+  acumula también el rol `administrador`.
 - **Usuarios y roles**: nueva vista `/admin/usuarios` que lista las cuentas y
   permite acumular/retirar roles con `POST` y `DELETE
   /auth/usuarios/{id}/roles`. La propia cuenta del administrador queda bloqueada
@@ -351,6 +359,7 @@ El mapa completo de rutas está documentado en
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
 | `/mechanic/ordenes` (+ `/:id`, `/:id/presupuesto`, `/:id/evidencias`) | Mis órdenes, detalle, presupuesto y evidencia | Funcional |
 | `/mechanic/estados` | Actualizar estados | Funcional |
+| `/mechanic/inventario` (+ `/alertas`, `/movimientos`, `/stock/:repuestoId`, `/umbral`, `/distribuidores`) | Consulta de inventario: catálogo, alertas, movimientos, stock, umbral e historial y distribuidores | Funcional (solo lectura, salvo movimientos de órdenes asignadas) |
 | `/mechanic/notificaciones` | Centro de avisos | Funcional |
 
 Nota: el login consume la **API Gateway** (`POST /api/auth/login`), que enruta al

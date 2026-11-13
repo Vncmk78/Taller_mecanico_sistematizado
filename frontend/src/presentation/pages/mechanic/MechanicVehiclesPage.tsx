@@ -14,9 +14,11 @@ import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { orderService } from '@/infrastructure/api/OrderService';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { filterOrdersByMechanic, filterVehiclesByOrders } from '@/presentation/utils/mechanicScope';
+import { useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
 
 export function MechanicVehiclesPage() {
     const [search, setSearch] = useState('');
+    const debouncedSearch = useDebouncedValue(search);
     const { vehicles, status, error, isOffline, requestId, fetchVehicles } = useVehicleStore();
     const orders = useOrderStore((s) => s.orders);
     const fetchOrders = useOrderStore((s) => s.fetchOrders);
@@ -33,7 +35,7 @@ export function MechanicVehiclesPage() {
     }, []);
 
     const assignedVehicles = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = debouncedSearch.trim().toLowerCase();
     // Online, getAssignedVehicles() ya devuelve solo los vehículos de las
     // órdenes asignadas al mecánico. El acotado por órdenes es la segunda
     // barrera: online no descarta nada y offline evita que se vean los
@@ -42,7 +44,7 @@ export function MechanicVehiclesPage() {
     return filterVehiclesByOrders(vehicles, myOrders).filter((v) =>
         term ? [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term)) : true
     );
-    }, [vehicles, orders, mechanicId, search]);
+    }, [vehicles, orders, mechanicId, debouncedSearch]);
 
     // El store solo marca isOffline ante fallos de transporte: un error HTTP del
     // servidor se muestra aparte para no rotularlo como "sin conexión".

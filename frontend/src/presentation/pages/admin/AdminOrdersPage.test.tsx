@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import { orderService } from '@/infrastructure/api/OrderService';
@@ -82,7 +82,9 @@ describe('AdminOrdersPage: listado de órdenes (filtros, paginación, offline)',
 
         fireEvent.change(screen.getByLabelText('Buscar órdenes'), { target: { value: 'EFGH' } });
 
-        expect(screen.queryByText('Orden n° 1')).not.toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.queryByText('Orden n° 1')).not.toBeInTheDocument();
+        });
         expect(screen.getByText('Orden n° 2')).toBeInTheDocument();
 
         fireEvent.change(screen.getByLabelText('Buscar órdenes'), { target: { value: 'zzz' } });

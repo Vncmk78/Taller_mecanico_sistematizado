@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { proveedorService } from '@/infrastructure/api/ProveedorService';
 import type { PaginaProveedores, Proveedor } from '@/domain/entities/Proveedor';
 import { AdminDistributorsPage, LIMITE_PROVEEDORES } from './AdminDistributorsPage';
@@ -47,13 +47,28 @@ const catalogo = [
     }),
 ];
 
+/**
+ * Simula `GET /proveedores`: sin `q` devuelve el catálogo y con `q` solo los
+ * que coinciden por nombre o contacto (igual que MS3).
+ */
+function mockProveedores(proveedores: Proveedor[] = catalogo, total = proveedores.length) {
+    vi.mocked(proveedorService.getProveedores).mockImplementation(async (filtros) => {
+        const q = filtros?.q?.trim().toLowerCase() ?? '';
+        if (!q) return pagina(proveedores, total);
+        const coincidencias = proveedores.filter((p) =>
+            [p.nombre, p.contacto].join(' ').toLowerCase().includes(q)
+        );
+        return pagina(coincidencias);
+    });
+}
+
 describe('AdminDistributorsPage: listado y estados', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('pide como máximo el límite que acepta el backend y lista los distribuidores', async () => {
-        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+        mockProveedores();
 
         render(<AdminDistributorsPage />);
 
@@ -102,7 +117,7 @@ describe('AdminDistributorsPage: listado y estados', () => {
     });
 
     it('en modo mecánico lista los distribuidores sin acciones de escritura', async () => {
-        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+        mockProveedores();
 
         render(<AdminDistributorsPage mode="mechanic" />);
 
@@ -114,7 +129,7 @@ describe('AdminDistributorsPage: listado y estados', () => {
     });
 
     it('distingue el vacío por búsqueda y permite limpiar los filtros', async () => {
-        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+        mockProveedores();
 
         render(<AdminDistributorsPage />);
         await screen.findByText('Repuestos del Sur');
@@ -123,19 +138,21 @@ describe('AdminDistributorsPage: listado y estados', () => {
         fireEvent.change(buscador, { target: { value: 'inexistente' } });
 
         expect(
-            screen.getByText('No se encontraron distribuidores para "inexistente".')
+            await screen.findByText('No se encontraron distribuidores para "inexistente".')
         ).toBeInTheDocument();
         expect(screen.queryByText('Repuestos del Sur')).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /limpiar filtros/i }));
 
         expect(buscador).toHaveValue('');
-        expect(screen.getByText('Repuestos del Sur')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText('Repuestos del Sur')).toBeInTheDocument();
+        });
         expect(screen.getByText('Frenos Chile')).toBeInTheDocument();
     });
 
     it('filtra por nombre y por contacto', async () => {
-        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+        mockProveedores();
 
         render(<AdminDistributorsPage />);
         await screen.findByText('Repuestos del Sur');
@@ -144,9 +161,11 @@ describe('AdminDistributorsPage: listado y estados', () => {
             target: { value: '8765' },
         });
 
+        await waitFor(() => {
+            expect(screen.queryByText('Repuestos del Sur')).not.toBeInTheDocument();
+        });
         expect(screen.getByText('Frenos Chile')).toBeInTheDocument();
-        expect(screen.queryByText('Repuestos del Sur')).not.toBeInTheDocument();
-        expect(screen.getByText(/1 de 2 distribuidores/)).toBeInTheDocument();
+        expect(screen.getByText(/1 de 1 distribuidores/)).toBeInTheDocument();
     });
 
     it('avisa cuando el catálogo supera lo que se carga en una página', async () => {
@@ -158,7 +177,7 @@ describe('AdminDistributorsPage: listado y estados', () => {
     });
 
     it('consulta el servicio una sola vez al montar', async () => {
-        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+        mockProveedores();
 
         render(<AdminDistributorsPage />);
 
@@ -167,8 +186,49 @@ describe('AdminDistributorsPage: listado y estados', () => {
         expect(proveedorService.getProveedores).toHaveBeenCalledWith({ limite: 200 });
     });
 
+    it('no consulta al servidor hasta que pasa la espera de la búsqueda', async () => {
+        mockProveedores();
+
+        render(<AdminDistributorsPage />);
+        await screen.findByText('Repuestos del Sur');
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar distribuidores' }), {
+            target: { value: 'frenos' },
+        });
+
+        expect(proveedorService.getProveedores).toHaveBeenCalledTimes(1);
+
+        await waitFor(() => {
+            expect(proveedorService.getProveedores).toHaveBeenCalledWith({
+                limite: 200,
+                q: 'frenos',
+            });
+        });
+        expect(proveedorService.getProveedores).toHaveBeenCalledTimes(2);
+    });
+
+    it('hace una sola consulta al escribir rápido', async () => {
+        mockProveedores();
+
+        render(<AdminDistributorsPage />);
+        await screen.findByText('Repuestos del Sur');
+
+        const buscador = screen.getByRole('searchbox', { name: 'Buscar distribuidores' });
+        fireEvent.change(buscador, { target: { value: 'f' } });
+        fireEvent.change(buscador, { target: { value: 'fr' } });
+        fireEvent.change(buscador, { target: { value: 'fre' } });
+
+        await waitFor(() => {
+            expect(proveedorService.getProveedores).toHaveBeenCalledWith({
+                limite: 200,
+                q: 'fre',
+            });
+        });
+        expect(proveedorService.getProveedores).toHaveBeenCalledTimes(2);
+    });
+
     it('muestra el contacto de cada distribuidor y su tipo', async () => {
-        vi.mocked(proveedorService.getProveedores).mockResolvedValue(pagina(catalogo));
+        mockProveedores();
 
         render(<AdminDistributorsPage />);
 

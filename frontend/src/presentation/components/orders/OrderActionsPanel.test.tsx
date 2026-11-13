@@ -21,7 +21,6 @@ vi.mock('@/infrastructure/api/OrderService', () => ({
         asignarMecanico: vi.fn(),
         registrarEntrega: vi.fn(),
         cancelarComoCliente: vi.fn(),
-        confirmarCancelacion: vi.fn(),
     },
 }));
 
@@ -68,13 +67,14 @@ beforeEach(() => {
 });
 
 describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
-    it('el administrador ve asignar y cancelar en Recibido y carga los mecánicos', async () => {
+    it('el administrador ve solo asignar en Recibido y carga los mecánicos', async () => {
         useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
 
         renderPanel(orden({ estadoCodigo: 1 }));
 
         expect(await screen.findByRole('button', { name: 'Asignar mecánico' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Confirmar cancelación' })).toBeInTheDocument();
+        // La cancelación se confirma desde /admin/cancelaciones, no desde la orden.
+        expect(screen.queryByRole('button', { name: 'Confirmar cancelación' })).not.toBeInTheDocument();
         expect(await screen.findByRole('option', { name: 'Martín Herrera' })).toBeInTheDocument();
         await waitFor(() => expect(authService.listarUsuarios).toHaveBeenCalledTimes(1));
     });
@@ -227,21 +227,6 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         );
     });
 
-    it('el administrador confirma una solicitud por su endpoint específico', async () => {
-        useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
-        vi.mocked(orderService.confirmarCancelacion).mockResolvedValue(orden({ estadoCodigo: 8 }));
-        renderPanel(orden({ estadoCodigo: 3 }));
-
-        fireEvent.click(screen.getByRole('button', { name: 'Confirmar cancelación' }));
-        const dialog = await screen.findByRole('dialog');
-        expect(within(dialog).getByText(/solicitud pendiente.*MS2 comprobará/)).toBeInTheDocument();
-        fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar cancelación' }));
-
-        await waitFor(() => expect(orderService.confirmarCancelacion).toHaveBeenCalledWith('101'));
-        expect(orderService.cambiarEstado).not.toHaveBeenCalled();
-        expect(await screen.findByText('Orden n° 101 actualizada a Cancelado.')).toBeInTheDocument();
-    });
-
     it('sin conexión deshabilita las acciones y avisa al usuario', () => {
         useAuthStore.setState({ user: sesion('administrador'), token: 't', isAuthenticated: true });
         useOrderStore.setState({ isOffline: true });
@@ -249,7 +234,6 @@ describe('OrderActionsPanel: catálogo centralizado en la interfaz', () => {
         renderPanel(orden({ estadoCodigo: 1 }));
 
         expect(screen.getByRole('button', { name: 'Asignar mecánico' })).toBeDisabled();
-        expect(screen.getByRole('button', { name: 'Confirmar cancelación' })).toBeDisabled();
         expect(screen.getByText(/para modificar el estado de la orden necesita estar conectado/)).toBeInTheDocument();
     });
 

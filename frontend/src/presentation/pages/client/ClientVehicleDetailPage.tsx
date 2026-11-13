@@ -1,5 +1,5 @@
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarPlus, SearchX } from 'lucide-react';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { ArrowLeft, CalendarPlus, Pencil, SearchX } from 'lucide-react';
 import { VehicleInfoPanel } from '@/presentation/components/vehicles/VehicleInfoPanel';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -15,6 +15,7 @@ import { vehicleService } from '@/infrastructure/api/VehicleService';
 
 export function ClientVehicleDetailPage() {
     const { id } = useParams<{ id: string }>();
+    const location = useLocation();
     const user = useAuthStore((s) => s.user);
     // Identidad real de la sesión (usuario_id de MS1) para resolver la
     // pertenencia del vehículo en la caché compartida entre portales.
@@ -74,6 +75,12 @@ export function ClientVehicleDetailPage() {
 
             <h1 className="sr-only">Ficha del vehículo {vehicle.brand} {vehicle.model}</h1>
 
+            {(location.state as { justUpdated?: boolean } | null)?.justUpdated && (
+                <Alert tone="success" className="mb-6">
+                    Los datos del vehículo se actualizaron correctamente.
+                </Alert>
+            )}
+
             {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
             {/* Error del servidor con copia local en caché: se conserva la ficha y se avisa. */}
@@ -86,6 +93,12 @@ export function ClientVehicleDetailPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6">
                 <div className="flex flex-col gap-4">
                     <VehicleInfoPanel vehicle={vehicle} />
+                    <Link
+                        to={`/client/vehiculos/${vehicle.id}/editar`}
+                        className="bg-surface border border-border-custom text-text-main py-3 rounded-lg font-bold text-center flex items-center justify-center gap-2 no-underline hover:bg-bg-secondary transition-colors"
+                    >
+                        <Pencil className="w-4 h-4" aria-hidden /> Editar vehículo
+                    </Link>
                     <Link
                         to="/client/ordenes"
                         className="bg-primary-blue text-white py-3 rounded-lg font-bold text-center flex items-center justify-center gap-2 no-underline hover:bg-primary-blue-hover transition-colors"

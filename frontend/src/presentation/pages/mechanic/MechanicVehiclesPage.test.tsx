@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { Order } from '@/domain/entities/Order';
 import { mockAssignedVehicleIds, mockVehicles } from '@/infrastructure/mocks/vehicles.mock';
@@ -85,7 +85,7 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
         ).toBeInTheDocument();
     });
 
-    it('filtra los vehículos asignados al escribir en la búsqueda', () => {
+    it('filtra los vehículos asignados al escribir en la búsqueda', async () => {
         vi.mocked(useVehicleStore).mockReturnValue({
             vehicles: vehiculosAsignados,
             status: 'success',
@@ -103,8 +103,10 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
             target: { value: 'ABCD-12' },
         });
 
+        await waitFor(() => {
+            expect(screen.queryByText('Nissan Kicks')).not.toBeInTheDocument();
+        });
         expect(screen.getByText('Ford Fiesta')).toBeInTheDocument();
-        expect(screen.queryByText('Nissan Kicks')).not.toBeInTheDocument();
     });
 
     it('descarta los vehículos que no están en las órdenes del mecánico, aunque la caché los tenga', () => {

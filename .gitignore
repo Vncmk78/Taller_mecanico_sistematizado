@@ -48,3 +48,5 @@ Documentos para Opencode/
 *.minio
 tmp/
 temp/
+.vercel
+

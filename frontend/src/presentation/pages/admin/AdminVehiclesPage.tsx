@@ -10,9 +10,11 @@ import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
 
 export function AdminVehiclesPage() {
     const [search, setSearch] = useState('');
+    const debouncedSearch = useDebouncedValue(search);
     const { vehicles, status, error, isOffline, requestId, fetchVehicles } = useVehicleStore();
 
     const loadVehicles = () => fetchVehicles(() => vehicleService.getAllVehicles());
@@ -23,12 +25,12 @@ export function AdminVehiclesPage() {
     }, []);
 
     const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = debouncedSearch.trim().toLowerCase();
     if (!term) return vehicles;
     return vehicles.filter((v) =>
         [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term))
     );
-    }, [vehicles, search]);
+    }, [vehicles, debouncedSearch]);
 
     // El store solo marca isOffline ante fallos de transporte: un error HTTP del
     // servidor se muestra aparte para no rotularlo como "sin conexión".

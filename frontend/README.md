@@ -327,6 +327,31 @@ y arquitectura hexagonal.
   roles en `AuthService.test.ts` y los ajustes en `OrderActionsPanel` y los
   detalles de orden.
 
+### Búsqueda con espera (debounce) en los listados
+- **Hook `useDebouncedValue`** (`presentation/hooks/useDebouncedValue.ts`):
+  devuelve el valor retrasado 300 ms (sin dependencias externas). El input sigue
+  respondiendo a cada tecla con el valor inmediato; el filtrado, los contadores y
+  las consultas usan el valor retrasado. Con `delayMs = 0` no hay espera (usado
+  por pruebas síncronas).
+- **Filtrado local**: órdenes (admin/cliente/mecánico y estados del mecánico),
+  clientes, usuarios y vehículos (admin/cliente/mecánico) filtran en memoria con
+  el término debounced. En `useOrderListFilters` la opción `debounceMs` permite
+  ajustar el retardo (300 por defecto).
+- **Consultas al servidor**:
+  - `GET /proveedores?q=` en Distribuidores (admin y mecánico). El `q` de MS3
+    busca en nombre o contacto, la misma semántica que la vista anterior. Se
+    conserva el catálogo sin filtro para restaurar la lista al limpiar la
+    búsqueda y se descartan respuestas fuera de orden.
+  - `GET /repuestos?q=` en Inventario (admin y mecánico). Como el `q` de MS3
+    busca **solo por nombre**, el resultado se combina con una búsqueda local por
+    proveedor y código sobre el catálogo cargado. La búsqueda por nombre alcanza
+    todo el catálogo; la de proveedor/código sigue limitada a los primeros 200
+    repuestos (`LIMITE_REPUESTOS`).
+- Pruebas: `useDebouncedValue.test.ts`, casos de espera en
+  `useOrderListFilters.test.ts`, y verificación de que no se consulta antes del
+  retardo y de que se hace una sola consulta al escribir rápido en
+  `AdminInventoryPage.test.tsx` y `AdminDistributorsPage.test.tsx`.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en

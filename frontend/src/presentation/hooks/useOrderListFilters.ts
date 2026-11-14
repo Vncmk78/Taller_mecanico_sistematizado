@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import type { Order } from '@/domain/entities/Order';
 import { parseNumberOrDefault, parseStringOrDefault, serializeNumber, serializeString, useUrlState } from '@/presentation/hooks/useUrlState';
 import { usePersistentState } from '@/presentation/hooks/usePersistentState';
+import { DEFAULT_DEBOUNCE_MS, useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
 
 export type OrderEstadoFilter = number | 'all';
 
@@ -41,6 +42,11 @@ interface UseOrderListFiltersOptions {
     storageKey?: string;
     /** Tipo de storage al persistir localmente. */
     storageType?: 'local' | 'session';
+    /**
+     * Milisegundos de espera antes de aplicar la búsqueda al filtrado.
+     * 300 por defecto; 0 la aplica de inmediato (pruebas).
+     */
+    debounceMs?: number;
 }
 
 /**
@@ -60,6 +66,7 @@ export function useOrderListFilters(
         persistInStorage = true,
         storageKey = 'tallerconect:orders-filters',
         storageType = 'local',
+        debounceMs = DEFAULT_DEBOUNCE_MS,
     } = options;
 
     const searchKey = `${urlKeyPrefix}q`;
@@ -199,13 +206,15 @@ export function useOrderListFilters(
         setPageSizeState(DEFAULT_PAGE_SIZE);
     }, [syncWithUrl, persistInStorage, setSearchUrl, estadoKey, pageKey, pageSizeKey, setSearchStored, setEstadoStored, setPageStored, setPageSizeStored]);
 
+    const debouncedSearch = useDebouncedValue(search, debounceMs);
+
     const filteredOrders = useMemo(() => {
-        const term = search.trim().toLowerCase();
+        const term = debouncedSearch.trim().toLowerCase();
         return orders
             .filter((o) => (estadoCodigo === 'all' ? true : o.estadoCodigo === estadoCodigo))
             .filter((o) => (term ? searchableFields(o).toLowerCase().includes(term) : true))
             .sort((a, b) => (a.actualizadoEn < b.actualizadoEn ? 1 : -1));
-    }, [orders, search, estadoCodigo, searchableFields]);
+    }, [orders, debouncedSearch, estadoCodigo, searchableFields]);
 
     const total = filteredOrders.length;
     const pageCount = Math.max(1, Math.ceil(total / pageSize));

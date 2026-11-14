@@ -8,6 +8,7 @@ import {
     isOfflineError,
 } from '@/infrastructure/api/errors';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
@@ -62,6 +63,7 @@ export function AdminUsersPage() {
     const [isOffline, setIsOffline] = useState(false);
     const [requestId, setRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
+    const debouncedSearch = useDebouncedValue(search);
 
     const [editando, setEditando] = useState<UsuarioListado | null>(null);
     const [rolesSeleccionados, setRolesSeleccionados] = useState<UserRole[]>([]);
@@ -92,10 +94,10 @@ export function AdminUsersPage() {
     }, [cargar]);
 
     const filtrados = useMemo(() => {
-        const term = search.trim().toLowerCase();
+        const term = debouncedSearch.trim().toLowerCase();
         if (term === '') return usuarios;
         return usuarios.filter((usuario) => textoBuscable(usuario).includes(term));
-    }, [usuarios, search]);
+    }, [usuarios, debouncedSearch]);
 
     const hasActiveFilters = search.trim() !== '';
     const isServerError = status === 'error' && !isOffline;

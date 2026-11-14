@@ -1,0 +1,104 @@
+name: Docker Build
+
+# Kubero UCT no construye imágenes: este workflow las publica en ghcr.io.
+# Se ejecuta al empujar a main o a la rama de despliegue, y también a mano.
+on:
+  push:
+    branches: [main, kubero-deploy]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: tallerconnect-backend
+  FRONTEND_IMAGE: tallerconnect-frontend
+
+jobs:
+  backend:
+    name: Backend (Gateway + MS1-MS4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      # ghcr.io exige nombres en minúsculas; el propietario puede tener mayúsculas.
+      - name: Usar el propietario en minúsculas
+        id: owner
+        run: echo "lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Calcular etiqueta corta del commit
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Iniciar sesión en ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Preparar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Una sola imagen sirve para las cinco apps backend: SGTM_SERVICIO
+      # decide en tiempo de ejecución si arranca Gateway o un microservicio.
+      - name: Construir y publicar la imagen del backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lc }}/${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lc }}/${{ env.BACKEND_IMAGE }}:sha-${{ steps.sha.outputs.short }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  frontend:
+    name: Frontend (React + Nginx)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Usar el propietario en minúsculas
+        id: owner
+        run: echo "lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Calcular etiqueta corta del commit
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Iniciar sesión en ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Preparar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # El build fija VITE_API_URL=/api; Nginx reenvía /api/* a GATEWAY_UPSTREAM.
+      - name: Construir y publicar la imagen del frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lc }}/${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.lc }}/${{ env.FRONTEND_IMAGE }}:sha-${{ steps.sha.outputs.short }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend

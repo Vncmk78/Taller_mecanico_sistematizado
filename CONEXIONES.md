@@ -1,5 +1,20 @@
 # CONEXIONES — Integración TallerConnect y preparación de Kubero
 
+> **Documento histórico.** Este archivo describe el proceso de planificación y
+> las primeras pruebas de integración. El ambiente ya está desplegado y
+> verificado; la **fuente de verdad vigente** es la carpeta [`docs/`](docs/README.md):
+> - [Arquitectura](docs/01-arquitectura.md)
+> - [Despliegue en Kubero](docs/02-despliegue-kubero.md)
+> - [Variables de entorno](docs/03-variables-entorno.md)
+> - [Datos de prueba](docs/04-datos-de-prueba.md)
+> - [API para la app móvil](docs/05-api-app-movil.md)
+> - [Runbook de operación](docs/06-runbook-operacion.md)
+> - [Pruebas realizadas](docs/07-pruebas-realizadas.md)
+> - [Pendientes y deuda](docs/08-pendientes-y-deuda.md)
+>
+> Donde este documento diga "aún debe asignarse" o "no está verificado", vale lo
+> que dice `docs/`.
+
 ## 1. Estado y límites de esta guía
 
 Panel de administración: https://kubero.inf.uct.cl. **No es la URL de la API**.

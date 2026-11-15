@@ -6,6 +6,29 @@ Digitalizamos la gestión integral de talleres mecánicos: conectamos la
 eficiencia operativa del administrador con la transparencia y trazabilidad que
 exige el cliente.
 
+## Documentación del despliegue vigente
+
+El ambiente actual está desplegado en el **clúster Kubero de la UCT**. Kubero
+reemplaza a Vercel y el PostgreSQL de Kubero reemplaza a Neon; los despliegues
+anteriores se conservan intactos, pero ya no son el ambiente vigente.
+
+Toda la documentación operativa y de integración está en [`docs/`](docs/README.md):
+
+| Documento | Para quién |
+| --- | --- |
+| [Índice y accesos](docs/README.md) | Todo el equipo |
+| [01 — Arquitectura](docs/01-arquitectura.md) | Todo el equipo |
+| [02 — Despliegue en Kubero](docs/02-despliegue-kubero.md) | Infraestructura |
+| [03 — Variables de entorno](docs/03-variables-entorno.md) | Backend / infraestructura |
+| [04 — Datos de prueba](docs/04-datos-de-prueba.md) | QA / app móvil |
+| [05 — API para la app móvil](docs/05-api-app-movil.md) | **Equipo de app móvil** |
+| [06 — Runbook de operación](docs/06-runbook-operacion.md) | Infraestructura / soporte |
+| [07 — Pruebas realizadas](docs/07-pruebas-realizadas.md) | Todo el equipo |
+| [08 — Pendientes y deuda](docs/08-pendientes-y-deuda.md) | Todo el equipo |
+
+> El repositorio es **público**: los secretos no están aquí. Se administran en el
+> panel de Kubero. Ver la regla de seguridad en [`docs/README.md`](docs/README.md#regla-de-seguridad-importante).
+
 ## Estructura del Repositorio
 
 | Carpeta | Descripción |
@@ -32,6 +55,10 @@ cuatro servicios de `backend/services/`: autenticación y usuarios; vehículos y
 órdenes; presupuestos e inventario; evidencia multimedia. El frontend consume la
 Gateway y cuenta con rutas por rol y pruebas Vitest. El backend se verifica con
 pytest.
+
+El ambiente publicado corre en Kubero UCT con imágenes de GHCR, PostgreSQL por
+servicio y MinIO para las evidencias. Los pasos, variables y verificaciones están
+en [`docs/`](docs/README.md).
 
 El [mapa de rutas](frontend/docs/mapa-de-rutas.md) y los
 [contratos API](backend/docs/contratos-api-gateway.md) describen las operaciones

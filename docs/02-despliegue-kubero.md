@@ -208,8 +208,9 @@ Después de migrar se ejecutó el seed de cuentas de prueba:
 python backend/scripts/seed_usuarios_prueba.py
 ```
 
-Es **idempotente** (crea o actualiza las cuentas) y requiere `MS2_DATABASE_URL` y
-`MS2_JWT_SECRET_KEY` si se ejecuta desde MS1. Resultado y detalle en
+Es **idempotente** (crea o actualiza las cuentas) y requiere
+`MS1_DATABASE_URL` y `MS2_DATABASE_URL`, porque crea el usuario en MS1 y su
+perfil de cliente en MS2. Resultado y detalle en
 [04 — Datos de prueba](04-datos-de-prueba.md).
 
 ---

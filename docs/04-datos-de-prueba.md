@@ -41,7 +41,8 @@ python backend/scripts/seed_usuarios_prueba.py
 ```
 
 El script es **idempotente**: si la cuenta existe, actualiza nombre y roles; si no,
-la crea. Requiere acceso a la base de MS1 y al secreto JWT.
+la crea. Requiere acceso a la base de MS1 (usuario y roles) y a la de MS2 (perfil
+de cliente).
 
 ---
 

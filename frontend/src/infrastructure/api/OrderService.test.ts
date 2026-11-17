@@ -67,7 +67,9 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
 
     const orders = await orderService.getOrders();
 
-    expect(apiClient.get).toHaveBeenCalledWith('/ordenes');
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes', {
+      params: { limite: 100, desde: 0 },
+    });
     expect(orders[0]).toEqual({
       id: '3',
       vehicleId: '7',
@@ -110,7 +112,9 @@ describe('OrderService: contrato HTTP de MS2 (órdenes)', () => {
 
     const entries = await orderService.getOrderHistory('9');
 
-    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/9/historial');
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/9/historial', {
+      params: { limite: 100, desde: 0 },
+    });
     expect(entries[0]).toEqual({
       id: '2',
       ordenId: '9',
@@ -283,7 +287,9 @@ describe('OrderService: Bitácora de trabajo (contrato HTTP de MS2)', () => {
 
     const entries = await orderService.getOrderBitacora('31');
 
-    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/31/bitacora');
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/31/bitacora', {
+      params: { limite: 100, desde: 0 },
+    });
     expect(entries[0]).toEqual({
       id: '77',
       ordenId: '31',
@@ -367,7 +373,9 @@ describe('OrderService: solicitud y confirmación de cancelación', () => {
 
     const pendientes = await orderService.getCancelacionesPendientes();
 
-    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/cancelaciones/pendientes');
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/cancelaciones/pendientes', {
+      params: { limite: 100, desde: 0 },
+    });
     expect(pendientes[0]).toEqual({
       id: '12',
       ordenId: '31',

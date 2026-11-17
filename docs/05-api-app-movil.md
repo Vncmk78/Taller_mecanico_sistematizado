@@ -117,18 +117,41 @@ app.
 
 ### 3.2 Paginación
 
-No es uniforme entre servicios. Hay dos formatos:
+Los listados operativos de MS1, MS2 y MS4 comparten un contrato de **arreglo
+plano paginado**:
 
-**Arreglo plano** — MS1 (usuarios), MS2 (vehículos y órdenes), MS4 (evidencias)
-y notificaciones:
+```http
+GET /api/vehiculos?limite=50&desde=0
+```
 
 ```json
 [ { ... }, { ... } ]
 ```
 
-En las notificaciones, los totales vienen en cabeceras
-(`X-Notificaciones-Total`, `X-Notificaciones-No-Leidas`). En los demás, el
-listado completo se devuelve de una vez (los volúmenes son acotados).
+- `limite`: registros por página, entero entre **1 y 100** (por defecto 50).
+- `desde`: desplazamiento, entero **≥ 0** (por defecto 0).
+- El total de registros (antes de paginar) viaja en la cabecera
+  **`X-Total-Count`**; la Gateway la expone por CORS.
+- Un valor fuera de rango responde `422`.
+
+Endpoints que siguen este contrato:
+
+| Servicio | Rutas |
+| --- | --- |
+| MS1 | `/api/auth/usuarios`, `/api/notificaciones/dispositivos`, `/api/notificaciones/{id}/entregas` |
+| MS2 | `/api/vehiculos`, `/api/vehiculos/asignados`, `/api/ordenes`, `/api/ordenes/{id}/historial`, `/api/ordenes/{id}/bitacora`, `/api/ordenes/cancelaciones/pendientes` |
+| MS4 | `/api/evidencias` |
+
+Casos particulares:
+
+- `/api/notificaciones` conserva `limite`/`offset` y sus cabeceras propias
+  (`X-Notificaciones-Total`, `X-Notificaciones-No-Leidas`).
+- `/api/ordenes/vehiculo/{id}/historial` mantiene `limit`/`offset` y acepta
+  `limite`/`desde` como alias canónicos.
+
+La app móvil recorre todas las páginas con `limite=100` y `X-Total-Count`, de
+modo que cada pantalla recibe la colección completa y pagina en el cliente
+(6/12/24). Así el comportamiento es el mismo en todos los listados.
 
 **Objeto paginado** — MS3 (presupuestos, repuestos, proveedores, inventario):
 
@@ -144,7 +167,7 @@ listado completo se devuelve de una vez (los volúmenes son acotados).
 El nombre de la colección cambia según el recurso (`presupuestos`, `repuestos`,
 `proveedores`, `movimientos`).
 
-Parámetros típicos de MS3: `limite` (máximo 100), `desde` y filtros propios del
+Parámetros típicos de MS3: `limite` (máximo 200), `desde` y filtros propios del
 recurso (`orden_id`, `estado`, `texto`, etc.). Consultar `/docs` para cada caso.
 
 ### 3.3 Errores

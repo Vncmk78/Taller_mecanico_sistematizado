@@ -468,6 +468,37 @@ def test_listado_aplica_los_filtros_de_visibilidad_por_rol(
     assert len(admin.json()) == len(escenario)
 
 
+def test_listado_pagina_y_expone_total(api: TestClient, sesion: Session) -> None:
+    escenario = _escenario_visibilidad()
+    _sembrar(sesion, *escenario)
+
+    respuesta = api.get(
+        "/evidencias",
+        params={"orden_id": ORDEN, "limite": 2, "desde": 1},
+        headers={"Authorization": f"Bearer {_token(1, NombreRol.ADMINISTRADOR)}"},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.headers["x-total-count"] == str(len(escenario))
+    assert len(respuesta.json()) == 2
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"limite": 0}, {"limite": 101}, {"desde": -1}],
+)
+def test_listado_rechaza_paginacion_invalida(
+    api: TestClient, params: dict[str, int]
+) -> None:
+    respuesta = api.get(
+        "/evidencias",
+        params={"orden_id": ORDEN, **params},
+        headers={"Authorization": f"Bearer {_token(7, NombreRol.MECANICO)}"},
+    )
+
+    assert respuesta.status_code == 422
+
+
 def test_listado_sin_orden_id_responde_422(api: TestClient) -> None:
     respuesta = api.get(
         "/evidencias",

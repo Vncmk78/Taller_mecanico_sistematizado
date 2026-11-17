@@ -44,6 +44,9 @@ AGENTS.md
 # Documentos para Opencode - solo para el agente, NO se versionan
 Documentos para Opencode/
 
+# Documentación confidencial con credenciales - NO se versiona
+documentacion kubero/
+
 # Binarios multimedia / temporales
 *.minio
 tmp/

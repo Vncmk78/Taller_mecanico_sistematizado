@@ -9,6 +9,7 @@ import type {
 import type { EvidenciaPort } from '@/domain/ports/EvidenciaPort';
 import type { AxiosProgressEvent } from 'axios';
 import apiClient from '../config/apiClient';
+import { obtenerTodasLasPaginas } from './paginacion';
 
 // Contrato HTTP de MS4 (evidencia multimedia) a través de la API Gateway. El
 // backend usa nombres en español; el dominio del frontend en inglés. La respuesta
@@ -52,8 +53,8 @@ function mapEvidenciaApi(evidencia: EvidenciaApi): Evidencia {
 
 class EvidenciaService implements EvidenciaPort {
     async getByOrder(ordenId: string): Promise<Evidencia[]> {
-        const { data } = await apiClient.get<EvidenciaApi[]>('/evidencias', {
-            params: { orden_id: ordenId },
+        const data = await obtenerTodasLasPaginas<EvidenciaApi>('/evidencias', {
+            orden_id: ordenId,
         });
         return data.map(mapEvidenciaApi);
     }

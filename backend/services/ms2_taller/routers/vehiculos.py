@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from services.ms2_taller.db import get_db
@@ -96,19 +96,29 @@ def crear_router_vehiculos(
         },
     )
     def consultar_vehiculos(
+        response: Response,
+        limite: int = Query(default=50, ge=1, le=100),
+        desde: int = Query(default=0, ge=0),
         db: Session = Depends(get_db),
         principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     ) -> list[Vehiculo]:
         try:
             if NombreRol.ADMINISTRADOR in principal.roles:
-                return listar_vehiculos_taller(db)
-            if NombreRol.CLIENTE in principal.roles:
+                vehiculos, total = listar_vehiculos_taller(
+                    db, limite=limite, desde=desde
+                )
+            elif NombreRol.CLIENTE in principal.roles:
                 cliente = resolver_cliente_actual(principal=principal, db=db)
-                return listar_vehiculos(db, cliente)
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Se requiere rol Cliente o Administrador",
-            )
+                vehiculos, total = listar_vehiculos(
+                    db, cliente, limite=limite, desde=desde
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Se requiere rol Cliente o Administrador",
+                )
+            response.headers["X-Total-Count"] = str(total)
+            return vehiculos
         except HTTPException:
             raise
         except PersistenciaVehiculoError as exc:
@@ -130,6 +140,9 @@ def crear_router_vehiculos(
         },
     )
     def consultar_vehiculos_asignados(
+        response: Response,
+        limite: int = Query(default=50, ge=1, le=100),
+        desde: int = Query(default=0, ge=0),
         db: Session = Depends(get_db),
         principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     ) -> list[Vehiculo]:
@@ -140,7 +153,11 @@ def crear_router_vehiculos(
             )
 
         try:
-            return listar_vehiculos_para_mecanico(db, principal.usuario_id)
+            vehiculos, total = listar_vehiculos_para_mecanico(
+                db, principal.usuario_id, limite=limite, desde=desde
+            )
+            response.headers["X-Total-Count"] = str(total)
+            return vehiculos
         except PersistenciaVehiculoError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -10,7 +10,9 @@ import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import {
     Table,
     TableBody,
@@ -73,6 +75,10 @@ export function AdminClientsPage() {
         if (term === '') return clientes;
         return clientes.filter((cliente) => textoBuscable(cliente).includes(term));
     }, [clientes, debouncedSearch]);
+
+    const paginacion = useClientPagination(filteredClientes, {
+        resetDeps: [debouncedSearch],
+    });
 
     const hasActiveFilters = search.trim() !== '';
 
@@ -196,7 +202,7 @@ export function AdminClientsPage() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {filteredClientes.map((cliente) => (
+                            {paginacion.pageItems.map((cliente) => (
                                 <TableRow key={cliente.id}>
                                     <TableCell className="font-medium">
                                         {cliente.full_name}
@@ -221,6 +227,21 @@ export function AdminClientsPage() {
                     </Table>
                 </div>
             )}
+
+            <Pagination
+                className="mt-4"
+                page={paginacion.page}
+                pageCount={paginacion.pageCount}
+                onPageChange={paginacion.setPage}
+                pageSize={paginacion.pageSize}
+                onPageSizeChange={paginacion.setPageSize}
+                rangeStart={paginacion.rangeStart}
+                rangeEnd={paginacion.rangeEnd}
+                total={paginacion.total}
+                label="clientes"
+                ariaLabel="Paginación de clientes"
+                sizeLabel="Clientes por página"
+            />
         </div>
     );
 }

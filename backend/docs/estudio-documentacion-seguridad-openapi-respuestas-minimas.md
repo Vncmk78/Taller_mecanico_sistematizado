@@ -250,7 +250,7 @@ el inventario interno.
 | 9 | `422` tipado y consumible por el cliente | GAP | `detail` como `string` o `array<object>` genérico | `DOC-04` |
 | 10 | Respuestas de éxito modeladas | OK | 96 con esquema; 5 `204` sin cuerpo | - |
 | 11 | Esquemas de respuesta cerrados (`additionalProperties`) | OBS | 67/113 objetos sin declararlo | `DOC-05` |
-| 12 | Listas acotadas (paginación o límite) | GAP | 10 colecciones sin `limit`/`offset` | `DOC-06` |
+| 12 | Listas acotadas (paginación o límite) | OK | `limite`/`desde` (1–100) + `X-Total-Count` en las 10 colecciones; `422` fuera de rango | - |
 | 13 | Sin secretos ni URLs internas en esquemas y ejemplos | OK | Tokens ficticios, sin claves de almacenamiento; prueba de ejemplos | - |
 | 14 | Un solo contrato para los clientes | OBS | Gateway 3.0.0 vs servicios 0.1.0 y `HTTPBearer` | `DOC-07` |
 | 15 | Inventario y cifras del contrato actualizados en la documentación | OBS | `contratos-api-gateway.md` dice 71 operaciones (hoy 94) | `DOC-08` |
@@ -425,15 +425,15 @@ No cambia el comportamiento del servicio; solo el contrato.
 
 ### DOC-06 - Diez colecciones se publican sin `limit` ni `offset` - **Media**
 
-**Qué pasa.** Estas operaciones devuelven una lista y no declaran parámetros de
-paginación:
+**Qué pasaba.** Estas operaciones devolvían una lista completa y no declaraban
+parámetros de paginación:
 
 | Operación | Alcance | Observación |
 |---|---|---|
-| `GET /api/auth/usuarios` | Administrador | Devuelve **todos** los usuarios (`listar_usuarios(db)` sin límite) |
-| `GET /api/vehiculos` | Cliente / Administrador | El Administrador recibe todo el parque vehicular (`listar_vehiculos_taller`) |
+| `GET /api/auth/usuarios` | Administrador | Devolvía **todos** los usuarios (`listar_usuarios(db)` sin límite) |
+| `GET /api/vehiculos` | Cliente / Administrador | El Administrador recibía todo el parque vehicular |
 | `GET /api/vehiculos/asignados` | Mecánico | Todos los vehículos con órdenes asignadas |
-| `GET /api/ordenes` | Según alcance | Todas las órdenes visibles (`listar_ordenes`) |
+| `GET /api/ordenes` | Según alcance | Todas las órdenes visibles |
 | `GET /api/ordenes/{orden_id}/historial` | Según visibilidad | Todos los cambios de estado |
 | `GET /api/ordenes/{orden_id}/bitacora` | Según visibilidad | Todas las entradas de bitácora |
 | `GET /api/ordenes/cancelaciones/pendientes` | Administrador | Todas las solicitudes pendientes |
@@ -441,23 +441,24 @@ paginación:
 | `GET /api/notificaciones/dispositivos` | Usuario | Todos sus dispositivos |
 | `GET /api/notificaciones/{id}/entregas` | Usuario | Historial de intentos, que **crece con cada reintento** |
 
-`GET /api/inventario/alertas` sí está paginada (`PaginaAlertas` con `total` y
-`umbral_general`), y no se incluye en la lista.
+**Corrección aplicada (Gateway 3.1.0).** Las diez operaciones aceptan ahora
+`limite` (entero 1–100, por defecto 50) y `desde` (entero ≥ 0, por defecto 0),
+mantienen el cuerpo como **arreglo plano** y publican el total en la cabecera
+`X-Total-Count`. Los valores fuera de rango responden `422`. La Gateway expone la
+cabecera por CORS y el contrato congelado
+(`docs/openapi/sgtm-gateway-3.1.0.json`) documenta parámetros, cabecera y `422`.
+Las pruebas cubren página, total y rechazos en `test_usuarios_roles.py`,
+`test_vehiculos_api.py`, `test_ordenes_api.py`, `test_ms4_api_evidencias.py` y
+`test_canales_notificaciones.py`.
 
-**Impacto.** El contrato permite respuestas arbitrariamente grandes. En
-`/api/auth/usuarios` y `/api/vehiculos` (Administrador) el crecimiento es real;
-en `/api/notificaciones/{id}/entregas` cada reintento agrega un registro y el
-checklist §6 ya observa que los reintentos no tienen límite. El coste es de
-memoria, tiempo de respuesta y tamaño de la respuesta, no de autorización.
+**Compatibilidad.** El cuerpo no cambió, así que los clientes existentes siguen
+funcionando: sin parámetros reciben la primera página (50 registros). Se
+conservan `limit`/`offset` en `/api/notificaciones` y en
+`/api/ordenes/vehiculo/{id}/historial`; este último acepta además
+`limite`/`desde` como alias canónicos. La app móvil recorre todas las páginas con
+`limite=100` para no truncar colecciones y pagina en el cliente.
 
-**Recomendación.** Agregar `limit`/`offset` (o cursor) con valores por defecto y
-máximos. Añadir parámetros opcionales es **MINOR**; cambiar la respuesta plana
-por un sobre de página (`items`, `total`) es **MAJOR**, así que conviene
-decidirlo antes de publicar. Como mínimo, documentar el tope que aplique el
-servidor. Unificar además el nombre: hoy conviven `limit`/`offset` y `limite`
-(`/api/notificaciones`, `/api/inventario/historial-umbral`).
-
-**Estado.** No corregido.
+**Estado.** Corregido.
 
 ### DOC-07 - Dos contratos de seguridad y rutas internas publicadas en los servicios - **Media (condicional)**
 
@@ -505,7 +506,7 @@ números fijos. No se corrigió en esta tarea.
 | Prioridad | Recomendación | Resuelve | Tipo de cambio |
 |---|---|---|---|
 | Alta | Documentar el `403` de `GET /api/presupuestos/{id}/envio-inicial` y cubrirlo con prueba | DOC-01 | Contrato (PATCH) |
-| Alta | Paginar o acotar `/api/auth/usuarios`, `/api/vehiculos` y `/api/ordenes`; luego el resto de colecciones | DOC-06 | Contrato + código (ver DOC-06) |
+| Alta | ~~Paginar o acotar `/api/auth/usuarios`, `/api/vehiculos` y `/api/ordenes`; luego el resto de colecciones~~ **Hecho**: `limite`/`desde` + `X-Total-Count` en las diez colecciones | DOC-06 | Contrato + código (MINOR) |
 | Media | Tipar el `422` con un esquema de validación (`loc`, `msg`, `type`) | DOC-04 | Contrato (MINOR) |
 | Media | Unificar el contrato de los servicios con el de la Gateway o dejar de publicar sus puertos/OpenAPI | DOC-07 | Despliegue + contrato |
 | Baja | Declarar `security: []` en las cuatro operaciones públicas que lo omiten | DOC-02 | Contrato (PATCH) |

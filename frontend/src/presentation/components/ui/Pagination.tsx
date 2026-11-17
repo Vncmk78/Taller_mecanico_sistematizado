@@ -10,7 +10,14 @@ interface PaginationProps {
   rangeStart: number;
   rangeEnd: number;
   total: number;
+  /** Sustantivo plural que acompaña al rango: "de 24 usuarios". */
   label?: string;
+  /** Etiqueta accesible del nav; permite distinguir varios listados. */
+  ariaLabel?: string;
+  /** Etiqueta accesible del selector de tamaño. */
+  sizeLabel?: string;
+  /** Tamaños de página ofrecidos; por defecto 6/12/24. */
+  pageSizes?: readonly number[];
   className?: string;
 }
 
@@ -43,6 +50,9 @@ export function Pagination({
   rangeEnd,
   total,
   label = 'registros',
+  ariaLabel = 'Paginación',
+  sizeLabel = 'Registros por página',
+  pageSizes = PAGE_SIZES,
   className = '',
 }: PaginationProps) {
   if (total <= pageSize) return null;
@@ -61,10 +71,10 @@ export function Pagination({
           <select
             value={pageSize}
             onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            aria-label="Registros por página"
+            aria-label={sizeLabel}
             className="bg-surface border border-border-custom rounded-lg px-3 py-1.5 text-text-main text-sm outline-none focus:border-primary-blue"
           >
-            {PAGE_SIZES.map((size) => (
+            {pageSizes.map((size) => (
               <option key={size} value={size}>
                 {size}
               </option>
@@ -72,7 +82,7 @@ export function Pagination({
           </select>
         </label>
 
-        <nav aria-label="Paginación" className="flex items-center gap-1">
+        <nav aria-label={ariaLabel} className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => onPageChange(page - 1)}

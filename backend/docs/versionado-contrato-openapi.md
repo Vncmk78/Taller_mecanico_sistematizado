@@ -8,8 +8,8 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 
 | | |
 |---|---|
-| Versión de este checkout | **3.0.1** |
-| Copia congelada | [`docs/openapi/sgtm-gateway-3.0.1.json`](openapi/sgtm-gateway-3.0.1.json) |
+| Versión de este checkout | **3.1.0** |
+| Copia congelada | [`docs/openapi/sgtm-gateway-3.1.0.json`](openapi/sgtm-gateway-3.1.0.json) |
 | Interactivo | `http://localhost:8000/docs` (Swagger) y `/openapi.json` |
 | Dónde se define | `gateway/openapi.py` (`_VERSION`), `gateway/openapi_ms3.py`, `gateway/openapi_ejemplos.py`, `shared/openapi_ordenes.py` |
 
@@ -20,7 +20,7 @@ frontend web y la app móvil de Integración IV. Desde **1.0.0** se considera
 - **Sin levantar la Gateway:** usen el archivo congelado. Sirve para generar
   tipos o clientes (`openapi-typescript`, `openapi-generator`, Flutter/Dart,
   etc.) y mocks a partir de los ejemplos.
-- **Fijen la versión:** referencien `sgtm-gateway-3.0.1.json` para el comportamiento de esta entrega, no «el último».
+- **Fijen la versión:** referencien `sgtm-gateway-3.1.0.json` para el comportamiento de esta entrega, no «el último».
   Una versión nueva llega como un archivo nuevo; el anterior no se borra.
 - **Solo lo publicado es contrato.** Una ruta que la Gateway reenvía pero no
   aparece en el archivo puede cambiar sin aviso.
@@ -53,6 +53,23 @@ Si cambias el contrato y olvidas los pasos 2 y 3,
 mano: `python scripts/exportar_openapi.py --verificar`.
 
 ## 4. Historial
+
+### 3.1.0 — Paginación uniforme de los listados operativos
+
+MINOR: las diez colecciones que se publicaban completas aceptan `limite`
+(entero 1–100, por defecto 50) y `desde` (entero ≥ 0, por defecto 0), y
+publican el total en la cabecera `X-Total-Count`. El cuerpo sigue siendo un
+arreglo plano, así que los clientes existentes no se rompen: sin parámetros
+reciben la primera página. Los valores fuera de rango responden `422` y la
+Gateway expone la cabecera por CORS.
+
+Rutas: `/api/auth/usuarios`, `/api/notificaciones/dispositivos`,
+`/api/notificaciones/{id}/entregas`, `/api/vehiculos`,
+`/api/vehiculos/asignados`, `/api/ordenes`, `/api/ordenes/{id}/historial`,
+`/api/ordenes/{id}/bitacora`, `/api/ordenes/cancelaciones/pendientes` y
+`/api/evidencias`. Se conservan `limit`/`offset` en `/api/notificaciones` y en
+`/api/ordenes/vehiculo/{id}/historial` (este último acepta además
+`limite`/`desde`). La copia 3.0.1 se conserva como historial.
 
 ### 3.0.1 — Corregir ejemplo de cambio de estado
 

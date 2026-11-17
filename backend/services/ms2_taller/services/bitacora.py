@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -44,22 +44,31 @@ def listar_bitacora_orden(
     db: Session,
     principal: PrincipalAutenticado,
     orden_id: int,
-) -> list[BitacoraOrden]:
+    *,
+    limite: int | None = None,
+    desde: int = 0,
+) -> tuple[list[BitacoraOrden], int]:
     """Devuelve la bitácora cronológica de una orden visible al principal.
 
     Aplica la misma autorización por recurso del detalle: una orden inexistente
-    o ajena responde el mismo error de recurso ausente.
+    o ajena responde el mismo error de recurso ausente. Devuelve la página
+    pedida y el total de entradas.
     """
 
     obtener_orden_visible(db, principal, orden_id)
     try:
-        consulta = (
-            select(BitacoraOrden)
-            .where(BitacoraOrden.orden_id == orden_id)
+        base = select(BitacoraOrden).where(BitacoraOrden.orden_id == orden_id)
+        total = db.scalar(
+            select(func.count()).select_from(base.order_by(None).subquery())
+        ) or 0
+        consulta = base.order_by(
             # El id desempata filas creadas en el mismo instante.
-            .order_by(BitacoraOrden.creado_en, BitacoraOrden.bitacora_id)
+            BitacoraOrden.creado_en,
+            BitacoraOrden.bitacora_id,
         )
-        return list(db.scalars(consulta).all())
+        if limite is not None:
+            consulta = consulta.limit(limite).offset(desde)
+        return list(db.scalars(consulta).all()), int(total)
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaOrdenError(

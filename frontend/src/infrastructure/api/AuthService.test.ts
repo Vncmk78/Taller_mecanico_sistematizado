@@ -147,7 +147,9 @@ describe('AuthService: listado administrativo de usuarios', () => {
 
     const usuarios = await authService.listarUsuarios();
 
-    expect(apiClient.get).toHaveBeenCalledWith('/auth/usuarios');
+    expect(apiClient.get).toHaveBeenCalledWith('/auth/usuarios', {
+      params: { limite: 100, desde: 0 },
+    });
     expect(usuarios).toEqual([
       {
         id: '42',

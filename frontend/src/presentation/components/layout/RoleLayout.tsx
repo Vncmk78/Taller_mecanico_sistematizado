@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Outlet } from 'react-router-dom';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { AppBrand } from '@/presentation/components/layout/AppBrand';
 import { AppNavLink, type NavSection } from '@/presentation/components/layout/AppNavLink';
 import { NotificationBell } from '@/presentation/components/notifications/NotificationBell';
@@ -28,16 +28,23 @@ export function RoleLayout({
   headerLeft,
   headerRightPrepend,
 }: RoleLayoutProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname } = useLocation();
+  // Se guarda la ruta en la que se abrió el menú, no un booleano: al cambiar de
+  // ruta (atras/adelante o navegación programática) `menuOpen` pasa a false por
+  // derivación, sin un efecto que fuerce un render adicional.
+  const [menuPath, setMenuPath] = useState<string | null>(null);
+  const menuOpen = menuPath === pathname;
+
+  const cerrarMenu = useCallback(() => setMenuPath(null), []);
 
   useEffect(() => {
     if (!menuOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false);
+      if (event.key === 'Escape') cerrarMenu();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen]);
+  }, [menuOpen, cerrarMenu]);
 
   if (variant === 'topnav') {
     return (
@@ -93,7 +100,7 @@ export function RoleLayout({
       >
         Saltar al contenido principal
       </a>
-      <SidebarNav sections={sections} open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <SidebarNav sections={sections} open={menuOpen} onClose={cerrarMenu} />
 
       <main
         id="contenido-principal"
@@ -107,7 +114,7 @@ export function RoleLayout({
           userName={userName}
           userSubtitle={userSubtitle}
           onLogout={onLogout}
-          onOpenMenu={() => setMenuOpen(true)}
+          onOpenMenu={() => setMenuPath(pathname)}
           menuOpen={menuOpen}
         />
 

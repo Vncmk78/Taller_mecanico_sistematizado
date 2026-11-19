@@ -3,6 +3,10 @@ import type { AuthResponse, User } from '@/domain/entities/User';
 import { authService } from '@/infrastructure/api/AuthService';
 import { getToken } from '@/infrastructure/config/tokenStorage';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
+import { useBudgetStore } from '@/infrastructure/stores/useBudgetStore';
+import { useEvidenceStore } from '@/infrastructure/stores/useEvidenceStore';
+import { useOrderBitacoraStore } from '@/infrastructure/stores/useOrderBitacoraStore';
+import { useOrderHistoryStore } from '@/infrastructure/stores/useOrderHistoryStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { tokenQueVenceEn, tokenVencido } from '@/test/jwt';
@@ -202,11 +206,74 @@ describe('useAuthStore: flujo funcional de autenticación', () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
 
-  // Las cachés de órdenes y vehículos son compartidas entre portales y viven en
-  // memoria, así que sin esta purga el siguiente usuario de la sesión en el mismo
-  // navegador heredaría los datos del anterior.
+  // Todas las cachés de dominio son compartidas entre portales y viven en
+  // memoria, así que sin esta purga el siguiente usuario en el mismo navegador
+  // heredaría datos privados del anterior.
   describe('purga de las cachés compartidas', () => {
     beforeEach(() => {
+      useBudgetStore.setState({
+        presupuestos: [
+          {
+            id: 'p1',
+            orderId: '1',
+            creadoEn: '2026-09-01T10:00:00',
+            cantidadVersiones: 1,
+            ultimaVersion: 1,
+            estadoUltimaVersion: 'enviada',
+            totalUltimaVersion: 100,
+            versionVigente: null,
+            versiones: [],
+          },
+        ],
+        status: 'success',
+      });
+      useEvidenceStore.setState({
+        evidencias: [
+          {
+            id: 'e1',
+            orderId: '1',
+            presupuestoId: null,
+            contexto: 'diagnostico',
+            tipoArchivo: 'foto',
+            visibleCliente: true,
+            estado: 'confirmada',
+            nombreOriginal: 'foto.jpg',
+            contentType: 'image/jpeg',
+            tamanoBytes: 100,
+            creadaEn: '2026-09-01T10:00:00',
+          },
+        ],
+        status: 'success',
+      });
+      useOrderBitacoraStore.setState({
+        entries: [
+          {
+            id: 'b1',
+            ordenId: '1',
+            autorUsuarioId: '1',
+            tipo: 'observacion',
+            descripcion: 'Revisión previa',
+            creadoEn: '2026-09-01T10:00:00',
+            repuestos: [],
+          },
+        ],
+        status: 'success',
+      });
+      useOrderHistoryStore.setState({
+        entries: [
+          {
+            id: 'h1',
+            ordenId: '1',
+            estadoAnteriorCodigo: null,
+            estadoNuevoCodigo: 1,
+            actorUsuarioId: null,
+            origen: 'sistema',
+            fecha: '2026-09-01T10:00:00',
+            observacion: 'ingreso',
+          },
+        ],
+        status: 'success',
+      });
       useOrderStore.setState({
         orders: [
           {
@@ -233,29 +300,44 @@ describe('useAuthStore: flujo funcional de autenticación', () => {
       });
     });
 
-    it('logout vacía las cachés de órdenes y vehículos', () => {
+    function expectCachesVacias() {
+      expect(useOrderStore.getState().orders).toEqual([]);
+      expect(useVehicleStore.getState().vehicles).toEqual([]);
+      expect(useBudgetStore.getState().presupuestos).toEqual([]);
+      expect(useEvidenceStore.getState().evidencias).toEqual([]);
+      expect(useOrderBitacoraStore.getState().entries).toEqual([]);
+      expect(useOrderHistoryStore.getState().entries).toEqual([]);
+    }
+
+    it('logout vacía todas las cachés de dominio', () => {
       useAuthStore.getState().logout();
 
-      expect(useOrderStore.getState().orders).toEqual([]);
-      expect(useVehicleStore.getState().vehicles).toEqual([]);
+      expectCachesVacias();
     });
 
-    it('clearSession también vacía las cachés compartidas', () => {
+    it('clearSession también vacía todas las cachés compartidas', () => {
       useAuthStore.getState().clearSession();
 
-      expect(useOrderStore.getState().orders).toEqual([]);
-      expect(useVehicleStore.getState().vehicles).toEqual([]);
+      expectCachesVacias();
     });
 
     it('la purga devuelve los estados de carga a su valor inicial', () => {
       useAuthStore.getState().logout();
 
-      expect(useOrderStore.getState().status).toBe('idle');
-      expect(useOrderStore.getState().error).toBeNull();
-      expect(useVehicleStore.getState().status).toBe('idle');
-      expect(useVehicleStore.getState().error).toBeNull();
-      expect(useVehicleStore.getState().isOffline).toBe(false);
-      expect(useVehicleStore.getState().requestId).toBeNull();
+      for (const store of [
+        useOrderStore,
+        useVehicleStore,
+        useBudgetStore,
+        useEvidenceStore,
+        useOrderBitacoraStore,
+        useOrderHistoryStore,
+      ]) {
+        const estado = store.getState();
+        expect(estado.status).toBe('idle');
+        expect(estado.error).toBeNull();
+        expect(estado.isOffline).toBe(false);
+        expect(estado.requestId).toBeNull();
+      }
     });
   });
 });

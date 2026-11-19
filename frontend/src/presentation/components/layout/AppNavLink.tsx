@@ -21,7 +21,7 @@ interface AppNavLinkProps extends NavItem {
 
 const baseClasses: Record<AppNavLinkProps['variant'], string> = {
   sidebar:
-    'flex items-center gap-3.5 px-4 py-3.5 rounded-[10px] transition-all duration-200 text-base no-underline',
+    'flex min-w-0 items-center gap-3.5 px-4 py-3.5 rounded-[10px] transition-all duration-200 text-base no-underline',
   topnav:
     'flex items-center gap-2.5 px-3 sm:px-4 py-2.5 rounded-[10px] transition-all duration-200 text-sm font-medium no-underline whitespace-nowrap shrink-0',
 };
@@ -52,7 +52,7 @@ export function AppNavLink({ to, label, icon, end, variant, onNavigate }: AppNav
           {icon}
         </span>
       ) : null}
-      {label}
+      <span className={variant === 'sidebar' ? 'min-w-0 truncate' : undefined}>{label}</span>
     </NavLink>
   );
 }

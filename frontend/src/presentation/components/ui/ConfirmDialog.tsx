@@ -63,7 +63,7 @@ export function ConfirmDialog({
           type="button"
           aria-label="Cerrar"
           onClick={onCancel}
-          className="absolute right-4 top-4 text-text-muted hover:text-text-main bg-transparent border-none cursor-pointer"
+          className="absolute right-2 top-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-text-muted hover:text-text-main hover:bg-bg-secondary bg-transparent border-none cursor-pointer"
         >
           <X className="w-5 h-5" aria-hidden />
         </button>

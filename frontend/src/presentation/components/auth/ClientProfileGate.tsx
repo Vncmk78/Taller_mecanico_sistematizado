@@ -34,7 +34,7 @@ export function ClientProfileGate({ children }: { children: ReactNode }) {
     return (
       <main
         id="contenido-principal"
-        className="min-h-screen flex items-center justify-center px-5 py-8 animate-fade-in"
+        className="min-h-[var(--viewport-height)] flex items-center justify-center px-5 py-8 animate-fade-in"
       >
         <GlassCard className="w-full max-w-[520px] p-6 sm:p-10 text-center">
           <UserCheck aria-hidden className="w-12 h-12 mx-auto mb-4 text-primary-blue" />

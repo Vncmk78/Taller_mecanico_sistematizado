@@ -130,7 +130,7 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}
-        className={`relative inline-flex items-center justify-center w-10 h-10 rounded-lg transition-colors ${triggerClass}`}
+        className={`relative inline-flex items-center justify-center h-11 w-11 rounded-lg transition-colors ${triggerClass}`}
       >
         <Bell className="w-5 h-5" aria-hidden />
         {noLeidas > 0 && (
@@ -146,7 +146,7 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
           role="dialog"
           aria-modal="false"
           aria-label="Avisos y notificaciones"
-          className="absolute right-0 mt-2 w-[min(92vw,360px)] max-h-[70vh] overflow-hidden rounded-xl border border-border-custom bg-surface text-text-main shadow-xl z-[70] flex flex-col"
+          className="absolute right-0 mt-2 w-[min(92vw,360px)] max-h-[calc(var(--viewport-height)*0.7)] overflow-hidden rounded-xl border border-border-custom bg-surface text-text-main shadow-xl z-[70] flex flex-col"
         >
           <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border-custom bg-surface-elevated">
             <div>
@@ -160,7 +160,8 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
                 <button
                   type="button"
                   onClick={() => void marcarTodas()}
-                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-primary-blue hover:bg-primary-blue/10"
+                  aria-label="Marcar todas como leídas"
+                  className="inline-flex min-h-11 items-center gap-1 px-3 rounded-md text-xs font-medium text-primary-blue hover:bg-primary-blue/10"
                   title="Marcar todas como leídas"
                 >
                   <CheckCheck className="w-4 h-4" aria-hidden />
@@ -171,9 +172,9 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Cerrar avisos"
-                className="p-1.5 rounded-md text-text-muted hover:text-text-main hover:bg-bg-secondary"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-md text-text-muted hover:text-text-main hover:bg-bg-secondary"
               >
-                <X className="w-4 h-4" aria-hidden />
+                <X className="w-5 h-5" aria-hidden />
               </button>
             </div>
           </div>

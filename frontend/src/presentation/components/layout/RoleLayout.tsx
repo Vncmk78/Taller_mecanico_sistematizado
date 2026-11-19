@@ -48,7 +48,7 @@ export function RoleLayout({
 
   if (variant === 'topnav') {
     return (
-      <div className="min-h-screen flex flex-col animate-fade-in">
+      <div className="min-h-[var(--viewport-height)] flex flex-col animate-fade-in">
         <a
           href="#contenido-principal"
           className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-text-main"
@@ -93,7 +93,7 @@ export function RoleLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-[var(--viewport-height)]">
       <a
         href="#contenido-principal"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-text-main"
@@ -105,7 +105,7 @@ export function RoleLayout({
       <main
         id="contenido-principal"
         tabIndex={-1}
-        className="flex min-w-0 flex-grow flex-col bg-bg-secondary min-h-screen lg:h-screen lg:overflow-y-auto focus:outline-none"
+        className="flex min-w-0 flex-grow flex-col bg-bg-secondary min-h-[var(--viewport-height)] lg:h-[var(--viewport-height)] lg:overflow-y-auto focus:outline-none"
       >
         <TopBar
           left={headerLeft}

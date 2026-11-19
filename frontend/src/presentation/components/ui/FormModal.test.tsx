@@ -36,6 +36,20 @@ describe('FormModal: contenedor de formularios modales', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('mueve el foco al diálogo y permite cerrarlo con Escape', () => {
+    const onClose = vi.fn();
+    render(
+      <FormModal open title="Nuevo proveedor" onClose={onClose}>
+        <button type="button">Guardar</button>
+      </FormModal>
+    );
+
+    expect(screen.getByRole('dialog')).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('permite personalizar el ancho de la tarjeta', () => {
     render(
       <FormModal

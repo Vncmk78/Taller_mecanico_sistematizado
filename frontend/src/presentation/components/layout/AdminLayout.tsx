@@ -74,7 +74,7 @@ export function AdminLayout() {
             placeholder="Buscar patente, orden o cliente..."
             aria-label="Buscar patente, orden o cliente"
             autoComplete="off"
-            className="py-2.5 px-4 bg-bg-secondary border-none rounded-lg text-text-main text-sm outline-none w-[220px] lg:w-[350px] placeholder:text-text-muted"
+            className="py-2.5 px-4 bg-bg-secondary border-none rounded-lg text-text-main text-sm outline-none w-full min-w-0 max-w-[220px] lg:max-w-[350px] placeholder:text-text-muted"
           />
         </div>
       }

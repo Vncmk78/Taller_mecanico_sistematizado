@@ -52,21 +52,21 @@ export function EvidencePreviewDialog({ evidencia, url, onClose }: EvidencePrevi
                     type="button"
                     aria-label="Cerrar"
                     onClick={onClose}
-                    className="absolute right-4 top-4 z-10 text-text-muted hover:text-text-main bg-transparent border-none cursor-pointer"
+                    className="absolute right-2 top-2 z-10 inline-flex h-11 w-11 items-center justify-center rounded-lg text-text-muted hover:text-text-main hover:bg-bg-secondary bg-transparent border-none cursor-pointer"
                 >
                     <X className="w-5 h-5" aria-hidden />
                 </button>
 
-                <div className="rounded-xl overflow-hidden bg-bg-secondary flex items-center justify-center max-h-[65vh]">
+                <div className="rounded-xl overflow-hidden bg-bg-secondary flex items-center justify-center max-h-[calc(var(--viewport-height)*0.65)]">
                     {esImagen(evidencia) && (
                         <img
                             src={url}
                             alt={evidencia.nombreOriginal}
-                            className="max-h-[65vh] w-auto object-contain"
+                            className="max-h-[calc(var(--viewport-height)*0.65)] w-auto object-contain"
                         />
                     )}
                     {esVideo(evidencia) && (
-                        <video src={url} controls autoPlay className="max-h-[65vh] w-full" />
+                        <video src={url} controls autoPlay className="max-h-[calc(var(--viewport-height)*0.65)] w-full" />
                     )}
                 </div>
 

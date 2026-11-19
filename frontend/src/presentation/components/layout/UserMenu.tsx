@@ -24,7 +24,7 @@ export function UserMenu({ userName, subtitle, onLogout, prepend, tone = 'light'
         type="button"
         aria-label="Cerrar sesión"
         onClick={onLogout}
-        className="ml-2 sm:ml-5 text-primary-orange cursor-pointer text-lg bg-transparent border-none hover:text-primary-orange-hover transition-colors"
+        className="ml-2 sm:ml-5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-primary-orange cursor-pointer bg-transparent border-none hover:bg-primary-orange/10 hover:text-primary-orange-hover transition-colors"
         title="Cerrar sesión"
       >
         <LogOut className="w-5 h-5" aria-hidden />

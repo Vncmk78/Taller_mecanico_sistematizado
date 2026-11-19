@@ -66,7 +66,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col animate-fade-in">
+    <div className="min-h-[var(--viewport-height)] flex flex-col animate-fade-in">
       <nav className="flex justify-between items-center gap-3 px-4 sm:px-8 lg:px-12 py-4 lg:py-5 border-b border-border-custom bg-surface sticky top-0 z-50">
         <Link to="/" className="flex items-center gap-2.5 text-xl sm:text-2xl font-bold no-underline text-text-main">
           <span aria-hidden className="relative inline-block w-[35px] h-[35px] text-text-muted">
@@ -127,30 +127,30 @@ export function LoginPage() {
                 {...register('email')}
               />
 
-              <div className="relative">
-                <Input
-                  label="Contraseña"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  icon={<Lock className="w-5 h-5" />}
-                  error={errors.password?.message}
-                  {...register('password')}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                  aria-pressed={showPassword}
-                  className="absolute right-4 top-[42px] text-text-muted hover:text-primary-blue transition-colors bg-transparent border-none cursor-pointer"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
+              <Input
+                label="Contraseña"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                placeholder="••••••••"
+                icon={<Lock className="w-5 h-5" />}
+                error={errors.password?.message}
+                trailingControl={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    aria-pressed={showPassword}
+                    className="flex h-11 w-11 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-elevated hover:text-primary-blue bg-transparent border-none cursor-pointer"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
+                  </button>
+                }
+                {...register('password')}
+              />
 
               <Button
                 type="submit"

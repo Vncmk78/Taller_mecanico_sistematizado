@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
 import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
+import { generarIdOperacion } from '@/infrastructure/utils/idOperacion';
 import type { Movimiento, TipoMovimiento } from '@/domain/entities/Inventario';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
@@ -113,7 +114,7 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
         setMovementError(null);
         try {
             await inventarioService.registrarMovimiento({
-                claveOperacion: crypto.randomUUID(),
+                claveOperacion: generarIdOperacion(),
                 repuestoId: repuestoIdNum,
                 tipo: mTipo,
                 cantidad: cantidadNum,

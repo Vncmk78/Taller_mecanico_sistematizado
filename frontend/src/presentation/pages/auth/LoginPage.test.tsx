@@ -188,6 +188,15 @@ describe('LoginPage: flujo funcional de inicio de sesión', () => {
     expect(passwordInput.type).toBe('text');
   });
 
+  it('el control de visibilidad tiene un área táctil amplia', () => {
+    renderLogin();
+
+    expect(screen.getByRole('button', { name: 'Mostrar contraseña' })).toHaveClass(
+      'h-11',
+      'w-11'
+    );
+  });
+
   it('muestra el aviso de sesión expirada cuando el 401 lo señala', () => {
     renderLogin({ pathname: '/login', state: { from: '/client/vehiculos', sesionExpirada: true } });
 

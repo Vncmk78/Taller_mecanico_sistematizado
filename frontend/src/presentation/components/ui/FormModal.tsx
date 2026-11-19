@@ -1,5 +1,6 @@
-import { useId, type ReactNode } from 'react';
+import { useEffect, useId, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useDialogFocus } from '@/presentation/hooks/useDialogFocus';
 
 interface FormModalProps {
   open: boolean;
@@ -22,22 +23,37 @@ export function FormModal({
   maxWidthClassName = 'max-w-[520px]',
 }: FormModalProps) {
   const titleId = useId();
+  const { ref: dialogRef, handleKeyDown: handleDialogKeyDown } =
+    useDialogFocus<HTMLDivElement>(open);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 animate-fade-in">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`card w-full ${maxWidthClassName} p-6 relative`}
+        tabIndex={-1}
+        onKeyDown={handleDialogKeyDown}
+        className={`card w-full ${maxWidthClassName} p-6 relative outline-none`}
       >
         <button
           type="button"
           aria-label="Cerrar"
           onClick={onClose}
-          className="absolute right-4 top-4 text-text-muted hover:text-text-main"
+          className="absolute right-2 top-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-text-muted hover:text-text-main hover:bg-bg-secondary"
         >
           <X className="w-5 h-5" aria-hidden />
         </button>

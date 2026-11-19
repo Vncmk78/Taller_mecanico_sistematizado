@@ -62,7 +62,7 @@ export function SidebarNav({ sections, open = false, onClose }: SidebarNavProps)
         aria-label="Menú lateral"
         aria-modal={open ? true : undefined}
         role={open ? 'dialog' : undefined}
-        className={`fixed inset-y-0 left-0 z-40 flex w-[280px] max-w-[85vw] flex-col border-r border-[#0B1017] bg-primary-blue transition-transform duration-300 lg:sticky lg:top-0 lg:z-10 lg:h-screen lg:translate-x-0 lg:shrink-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[280px] max-w-[85vw] flex-col border-r border-[#0B1017] bg-primary-blue transition-transform duration-300 lg:sticky lg:top-0 lg:z-10 lg:h-[var(--viewport-height)] lg:translate-x-0 lg:shrink-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -72,7 +72,7 @@ export function SidebarNav({ sections, open = false, onClose }: SidebarNavProps)
             type="button"
             aria-label="Cerrar menú lateral"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-[#CBD5E1] transition-colors hover:bg-white/10 hover:text-white lg:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-[#CBD5E1] transition-colors hover:bg-white/10 hover:text-white lg:hidden"
           >
             <X className="h-5 w-5" aria-hidden />
           </button>

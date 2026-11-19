@@ -3,20 +3,28 @@ import type { User } from '@/domain/entities/User';
 import { getToken, removeToken, setToken } from '../config/tokenStorage';
 import { getTokenExpiryMs } from '../config/sessionExpiry';
 import { authService } from '../api/AuthService';
+import { useBudgetStore } from './useBudgetStore';
+import { useEvidenceStore } from './useEvidenceStore';
+import { useOrderBitacoraStore } from './useOrderBitacoraStore';
+import { useOrderHistoryStore } from './useOrderHistoryStore';
 import { useOrderStore } from './useOrderStore';
 import { usePerfilClienteStore } from './usePerfilClienteStore';
 import { useVehicleStore } from './useVehicleStore';
 
 /**
- * Las cachés de órdenes y vehículos viven en memoria y son compartidas entre los
- * tres portales, así que sobreviven a un cambio de sesión en el mismo navegador.
- * Se vacían al cerrar sesión para que el siguiente usuario no herede los datos
- * del anterior.
+ * Todas las cachés de dominio viven en memoria y son compartidas entre los tres
+ * portales, así que sobreviven a un cambio de sesión en el mismo navegador. Se
+ * vacían al cerrar sesión para que el siguiente usuario no herede órdenes,
+ * presupuestos, evidencias, bitácoras ni historiales del anterior.
  */
 function purgeSharedCaches(): void {
   useOrderStore.getState().reset();
   useVehicleStore.getState().reset();
   usePerfilClienteStore.getState().reset();
+  useBudgetStore.getState().reset();
+  useEvidenceStore.getState().reset();
+  useOrderBitacoraStore.getState().reset();
+  useOrderHistoryStore.getState().reset();
 }
 
 interface AuthState {

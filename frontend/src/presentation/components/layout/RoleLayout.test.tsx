@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { RoleLayout, type RoleLayoutProps } from '@/presentation/components/layout/RoleLayout';
 
 const seccionesAdmin = [
@@ -143,6 +143,56 @@ describe('RoleLayout: layout y navegación reutilizable', () => {
       'aria-expanded',
       'false'
     );
+    expect(screen.queryByRole('button', { name: 'Cerrar menú de navegación' })).not.toBeInTheDocument();
+  });
+
+  it('cierra el menú móvil cuando la ruta cambia sin usar un enlace del panel', async () => {
+    function NavegacionProgramatica() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate('/admin/vehiculos')}>
+          Ir a vehículos por código
+        </button>
+      );
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <Routes>
+          <Route
+            element={
+              <RoleLayout
+                variant="sidebar"
+                sections={seccionesAdmin}
+                userName="admin@taller.cl"
+                userSubtitle="Administrador"
+                onLogout={vi.fn()}
+              />
+            }
+          >
+            <Route
+              path="/admin"
+              element={
+                <>
+                  <div>Dashboard del portal</div>
+                  <NavegacionProgramatica />
+                </>
+              }
+            />
+            <Route path="/admin/vehiculos" element={<div>Catálogo de vehículos</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const toggle = screen.getByRole('button', { name: 'Abrir menú de navegación' });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a vehículos por código' }));
+
+    expect(await screen.findByText('Catálogo de vehículos')).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: 'Cerrar menú de navegación' })).not.toBeInTheDocument();
   });
 });

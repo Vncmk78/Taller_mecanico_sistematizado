@@ -65,6 +65,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) sesionCerrada.current = false;
   }, [token]);
 
+  // El aviso de expiración se consume una sola vez: al salir de /login se limpia
+  // el marcador del store para que una visita posterior no vuelva a mostrar
+  // "tu sesión ha expirado" cuando el usuario llegó por su propio medio.
+  useEffect(() => {
+    if (location.pathname !== '/login' && useAuthStore.getState().sesionExpirada) {
+      marcarSesionExpirada(false);
+    }
+  }, [location.pathname, marcarSesionExpirada]);
+
   useEffect(() => {
     setUnauthorizedHandler(() => {
       cerrarPorExpiracion(true);

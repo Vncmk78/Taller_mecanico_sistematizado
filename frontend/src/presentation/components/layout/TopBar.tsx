@@ -33,7 +33,7 @@ export function TopBar({
           aria-controls="navegacion-lateral"
           aria-expanded={menuOpen}
           onClick={onOpenMenu}
-          className="shrink-0 rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-secondary hover:text-primary-blue lg:hidden"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-secondary hover:text-primary-blue lg:hidden"
         >
           <Menu className="h-5 w-5" aria-hidden />
         </button>

@@ -65,7 +65,7 @@ const steps = [
 
 export function HomePage() {
   return (
-    <div className="min-h-screen flex flex-col animate-fade-in">
+    <div className="min-h-[var(--viewport-height)] flex flex-col animate-fade-in">
       <nav className="flex flex-wrap justify-between items-center gap-3 px-4 sm:px-6 lg:px-12 py-4 lg:py-5 border-b border-border-custom bg-surface sticky top-0 z-50">
         <Link to="/" className="flex items-center gap-2.5 text-xl sm:text-2xl font-bold text-text-main no-underline">
           <span className="relative inline-block w-[35px] h-[35px] text-text-muted">

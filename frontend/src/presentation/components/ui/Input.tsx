@@ -7,6 +7,8 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   hint?: string;
   containerClassName?: string;
+  /** Control opcional al final del campo (por ejemplo, mostrar/ocultar contraseña). */
+  trailingControl?: ReactNode;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
@@ -17,6 +19,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       error,
       hint,
       containerClassName = 'mb-6',
+      trailingControl,
       className = '',
       required,
       'aria-describedby': ariaDescribedBy,
@@ -54,11 +57,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             aria-required={required ? true : undefined}
             aria-invalid={ariaInvalid ?? (error ? true : undefined)}
             aria-describedby={describedBy}
-            className={`w-full py-3.5 pr-4 bg-surface border rounded-lg text-text-main text-base transition-all duration-300 outline-none focus:border-primary-blue focus:bg-surface focus:shadow-[0_0_0_3px_rgba(21,40,63,0.15)] ${
+            className={`w-full py-3.5 ${trailingControl ? 'pr-14' : 'pr-4'} bg-surface border rounded-lg text-text-main text-base transition-all duration-300 outline-none focus:border-primary-blue focus:bg-surface focus:shadow-[0_0_0_3px_rgba(21,40,63,0.15)] ${
               icon ? 'pl-12' : 'pl-4'
             } ${error ? 'border-status-red' : 'border-border-custom'} ${className}`}
             {...props}
           />
+          {trailingControl && (
+            <div className="absolute inset-y-0 right-2 flex items-center">
+              {trailingControl}
+            </div>
+          )}
         </div>
         {hint && (
           <p id={hintId} className="mt-1 text-sm text-text-muted">

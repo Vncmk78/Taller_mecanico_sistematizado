@@ -121,6 +121,24 @@ def test_login_sin_cuerpo_devuelve_422(api: TestClient) -> None:
     assert respuesta.status_code == 422
 
 
+def test_el_422_no_devuelve_la_contrasena_enviada(api: TestClient) -> None:
+    """El detalle de validación enmascara secretos; no los refleja (CWE-209)."""
+
+    corta = "Clave12"
+    registro = api.post(
+        "/auth/register",
+        json={"email": "filtra@correo.cl", "password": corta, "full_name": "Nombre Valido"},
+    )
+    assert registro.status_code == 422
+    assert corta not in registro.text
+    assert "***" in registro.text
+
+    login = api.post("/auth/login", json={"password": CONTRASENA})
+    assert login.status_code == 422
+    assert CONTRASENA not in login.text
+    assert "***" in login.text
+
+
 def test_password_vacia_no_cuenta_como_intento_fallido(
     api: TestClient, db: Session
 ) -> None:

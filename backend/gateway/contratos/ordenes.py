@@ -33,7 +33,7 @@ _EJEMPLO_RESPUESTA: dict[str, object] = {
 
 _EJEMPLO_CAMBIAR_ESTADO: dict[str, object] = {
     "estado_destino": 6,
-    "observacion": "Inicia evaluación técnica",
+    "observacion": "Trabajo autorizado finalizado",
 }
 
 _EJEMPLO_ENTREGA: dict[str, object] = {"observacion": "Entregado al cliente"}
@@ -296,7 +296,7 @@ class CambioEstadoSolicitud(BaseModel):
         default=None,
         min_length=1,
         description="Obligatoria al pasar a Cancelado; opcional en los demás destinos.",
-        examples=["Inicia evaluación técnica"],
+        examples=["Trabajo autorizado finalizado"],
     )
 
 

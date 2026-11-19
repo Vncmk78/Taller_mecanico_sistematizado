@@ -158,3 +158,21 @@ describe('AdminThresholdPage: validaciones del formulario de umbral', () => {
         );
     });
 });
+
+describe('AdminThresholdPage: modo mecánico', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.mocked(inventarioService.getUmbralGeneral).mockResolvedValue(umbral());
+        vi.mocked(inventarioService.getHistorialUmbral).mockResolvedValue([]);
+    });
+
+    it('muestra el umbral y el historial sin formulario de edición', async () => {
+        render(<AdminThresholdPage mode="mechanic" />);
+
+        expect(await screen.findByText('5')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Nuevo umbral')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Observación')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Guardar' })).not.toBeInTheDocument();
+        expect(inventarioService.cambiarUmbralGeneral).not.toHaveBeenCalled();
+    });
+});

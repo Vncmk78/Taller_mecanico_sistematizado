@@ -1,6 +1,7 @@
 import type { BitacoraEntradaCrear, BitacoraEntry } from '../entities/Bitacora';
 import type { Order } from '../entities/Order';
 import type { OrderHistoryEntry } from '../entities/OrderHistory';
+import type { SolicitudCancelacion } from '../entities/SolicitudCancelacion';
 
 export interface OrderPort {
     /** Página del historial de órdenes de un vehículo visible para el rol autenticado. */
@@ -45,6 +46,11 @@ export interface OrderPort {
      * repite, devuelve los datos originales.
      */
     registrarDevolucion(ordenId: string): Promise<Order>;
+    /**
+     * Solicitudes de cancelación pendientes de revisión
+     * (GET /ordenes/cancelaciones/pendientes, solo Administrador).
+     */
+    getCancelacionesPendientes(): Promise<SolicitudCancelacion[]>;
     /** Cancelación iniciada por el cliente propietario (POST /ordenes/{id}/cancelacion). */
     cancelarComoCliente(ordenId: string, motivo: string): Promise<Order>;
     /** Administrador confirma una solicitud pendiente; MS2 verifica la aprobación en MS3. */

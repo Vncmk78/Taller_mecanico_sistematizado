@@ -12,6 +12,7 @@ import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDispl
 import { orderService } from '@/infrastructure/api/OrderService';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 
 // Estados que requieren atención del cliente (p. ej. aprobar el presupuesto).
 const ATTENTION_STATES = new Set([3]);
@@ -99,7 +100,7 @@ export function ClientServicesPage() {
                 </Alert>
             )}
 
-            {status === 'loading' ? (
+            {isInitialLoad(status, groups.total > 0) ? (
                 <OrderListSkeleton count={2} />
 ) : isServerError && groups.total === 0 ? (
                 <ErrorState

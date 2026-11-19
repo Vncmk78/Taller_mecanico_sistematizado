@@ -18,6 +18,7 @@ import { vehicleService } from '@/infrastructure/api/VehicleService';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 
 export function MechanicOrdersPage() {
     const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
@@ -93,7 +94,7 @@ export function MechanicOrdersPage() {
                 </Alert>
             )}
 
-            {status === 'loading' ? (
+            {isInitialLoad(status, filteredOrders.length > 0) ? (
                 <OrderListSkeleton count={3} />
             ) : isServerError && filteredOrders.length === 0 ? (
                 <ErrorState

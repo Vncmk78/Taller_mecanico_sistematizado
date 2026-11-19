@@ -284,6 +284,74 @@ y arquitectura hexagonal.
 - Documentación: [`docs/revision-accesibilidad.md`](docs/revision-accesibilidad.md)
   (Tarea 16).
 
+### Completar formularios y operaciones web pendientes según permisos
+- **Edición de vehículo (Cliente)**: nueva ruta
+  `/client/vehiculos/:id/editar` con el formulario compartido `VehicleForm`
+  (alta y edición). Envía `PATCH /api/vehiculos/{id}` con `marca`, `modelo`,
+  `anio` y `kilometraje`; la patente no se edita porque el contrato no la acepta.
+  El store actualiza el vehículo en caché conservando su `clientId`.
+- **Cancelaciones**: el Cliente solo **solicita** la cancelación (con motivo)
+  desde el detalle de su orden. La **confirmación** es exclusiva del
+  Administrador y se realiza en `/admin/cancelaciones`, que lista las
+  solicitudes pendientes (`GET /ordenes/cancelaciones/pendientes`) y las
+  confirma por orden. Se retiró la acción de cancelar del detalle
+  administrativo para que el flujo pase siempre por la bandeja.
+- **Consumo de repuestos**: panel `ConsumoRepuestosPanel` en el detalle de la
+  orden de Administrador y Mecánico, habilitado en los estados 4–6 (en taller).
+  Carga la disponibilidad del presupuesto aprobado
+  (`GET /inventario/ordenes/{id}/disponibilidad`), limita cada ítem a
+  `min(requerido, disponible)`, envía una `clave_operacion` idempotente y maneja
+  el `409` con `faltantes` (operación todo o nada) refrescando la disponibilidad
+  y la orden.
+- **Inventario del mecánico**: las pantallas de inventario se reutilizan con
+  `mode="mechanic"` en `/mechanic/inventario*`. El mecánico consulta catálogo,
+  alertas, movimientos, stock, umbral e historial y distribuidores, pero no ve
+  las acciones administrativas (crear/editar/eliminar repuestos o proveedores,
+  ingresos, ajustes ni cambio de umbral). En movimientos solo puede registrar
+  `compromiso`, `consumo` o `liberación` indicando una orden asignada; el
+  backend valida esa asignación. El modo del portal manda incluso si la cuenta
+  acumula también el rol `administrador`.
+- **Usuarios y roles**: nueva vista `/admin/usuarios` que lista las cuentas y
+  permite acumular/retirar roles con `POST` y `DELETE
+  /auth/usuarios/{id}/roles`. La propia cuenta del administrador queda bloqueada
+  para no perder el acceso y se pide confirmación antes de dejar una cuenta con
+  `roles: []`. Si una actualización falla, se recarga el listado para reflejar el
+  estado real del servidor.
+- **Documentación corregida**: se actualizaron
+  [`docs/mapa-de-rutas.md`](docs/mapa-de-rutas.md) y
+  [`docs/escenarios-funcionales-cubiertos.md`](docs/escenarios-funcionales-cubiertos.md)
+  con las rutas reales y se dejó constancia de que `/client/agendar` **no está
+  implementada** (no existe endpoint de agenda; redirige a `/client/ordenes`).
+- Pruebas: `ClientVehicleEditPage.test.tsx`, `AdminCancelacionesPage.test.tsx`,
+  `ConsumoRepuestosPanel.test.tsx`, `AdminUsersPage.test.tsx`, más los casos de
+  roles en `AuthService.test.ts` y los ajustes en `OrderActionsPanel` y los
+  detalles de orden.
+
+### Búsqueda con espera (debounce) en los listados
+- **Hook `useDebouncedValue`** (`presentation/hooks/useDebouncedValue.ts`):
+  devuelve el valor retrasado 300 ms (sin dependencias externas). El input sigue
+  respondiendo a cada tecla con el valor inmediato; el filtrado, los contadores y
+  las consultas usan el valor retrasado. Con `delayMs = 0` no hay espera (usado
+  por pruebas síncronas).
+- **Filtrado local**: órdenes (admin/cliente/mecánico y estados del mecánico),
+  clientes, usuarios y vehículos (admin/cliente/mecánico) filtran en memoria con
+  el término debounced. En `useOrderListFilters` la opción `debounceMs` permite
+  ajustar el retardo (300 por defecto).
+- **Consultas al servidor**:
+  - `GET /proveedores?q=` en Distribuidores (admin y mecánico). El `q` de MS3
+    busca en nombre o contacto, la misma semántica que la vista anterior. Se
+    conserva el catálogo sin filtro para restaurar la lista al limpiar la
+    búsqueda y se descartan respuestas fuera de orden.
+  - `GET /repuestos?q=` en Inventario (admin y mecánico). Como el `q` de MS3
+    busca **solo por nombre**, el resultado se combina con una búsqueda local por
+    proveedor y código sobre el catálogo cargado. La búsqueda por nombre alcanza
+    todo el catálogo; la de proveedor/código sigue limitada a los primeros 200
+    repuestos (`LIMITE_REPUESTOS`).
+- Pruebas: `useDebouncedValue.test.ts`, casos de espera en
+  `useOrderListFilters.test.ts`, y verificación de que no se consulta antes del
+  retardo y de que se hace una sola consulta al escribir rápido en
+  `AdminInventoryPage.test.tsx` y `AdminDistributorsPage.test.tsx`.
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -292,21 +360,32 @@ El mapa completo de rutas está documentado en
 | Ruta | Vista | Estado |
 | --- | --- | --- |
 | `/` | Landing | Funcional |
-| `/login` | Inicio de sesión | Funcional |
+| `/login`, `/registro` | Inicio de sesión y registro público de cliente | Funcional |
 | `/admin` | Dashboard del administrador | Funcional (solo rol administrador) |
+| `/admin/ordenes` (+ `/:id`, `/:id/presupuesto`, `/:id/evidencias`) | Gestión de órdenes, detalle, presupuesto y evidencia | Funcional |
+| `/admin/nuevas-atenciones` (+ `/:id`) | Nuevas atenciones | Funcional |
+| `/admin/cancelaciones` | Cancelaciones pendientes (bandeja y confirmación) | Funcional |
+| `/admin/usuarios` | Usuarios y roles (asignar/retirar) | Funcional |
+| `/admin/clientes`, `/admin/configuracion`, `/admin/distribuidores` | Clientes, capacidad del taller y distribuidores | Funcional |
 | `/admin/vehiculos` y `/admin/vehiculos/:id` | Catálogo y ficha del vehículo | Funcional |
-| `/admin/ordenes`, `/clientes`, `/inventario`, `/distribuidores` | Secciones admin | Placeholder "Estructura en construcción" |
+| `/admin/inventario` (+ `/alertas`, `/movimientos`, `/stock/:repuestoId`, `/umbral`) | Inventario, alertas, movimientos, stock y umbral | Funcional |
+| `/admin/notificaciones` | Centro de avisos | Funcional |
 | `/client` | Portal Cliente (dashboard) | Funcional (solo rol cliente) |
-| `/client/vehiculos` (+ `/nuevo`, `/:id`) | Mis vehículos, registro y ficha con historial de órdenes | Funcional |
-| `/client/agendar` | Agendar mantención | Provisional "Próximamente" |
+| `/client/vehiculos` (+ `/nuevo`, `/:id`, `/:id/editar`) | Mis vehículos, registro, ficha con historial y edición | Funcional |
+| `/client/agendar` | Agendar mantención | No implementada (redirige a `/client/ordenes`; no existe endpoint de agenda) |
 | `/client/servicios` | Estado del Servicio (consulta de servicios) | Funcional |
 | `/client/ordenes` (+ `/:id`) | Órdenes del cliente y detalle de estado y seguimiento | Funcional |
 | `/client/presupuestos` (+ `/:ordenId`) | Presupuestos: lista y detalle con aprobación/rechazo | Funcional |
 | `/client/ordenes/:id/evidencias` | Evidencia multimedia del servicio (fotos y videos visibles) | Funcional |
+| `/client/nuevas-atenciones` (+ `/:id`) | Nuevas atenciones del cliente | Funcional |
+| `/client/notificaciones` | Centro de avisos | Funcional |
 | `/admin/ordenes/:id/evidencias` y `/mechanic/ordenes/:id/evidencias` | Evidencia multimedia con carga (progreso/éxito/error) para el personal | Funcional |
 | `/mechanic` | Portal Mecánico (dashboard) | Funcional (solo rol mecánico) |
 | `/mechanic/vehiculos` (+ `/:id`) | Vehículos asignados | Funcional |
-| `/mechanic/ordenes`, `/estados`, `/historial` | Secciones mecánico | Placeholder |
+| `/mechanic/ordenes` (+ `/:id`, `/:id/presupuesto`, `/:id/evidencias`) | Mis órdenes, detalle, presupuesto y evidencia | Funcional |
+| `/mechanic/estados` | Actualizar estados | Funcional |
+| `/mechanic/inventario` (+ `/alertas`, `/movimientos`, `/stock/:repuestoId`, `/umbral`, `/distribuidores`) | Consulta de inventario: catálogo, alertas, movimientos, stock, umbral e historial y distribuidores | Funcional (solo lectura, salvo movimientos de órdenes asignadas) |
+| `/mechanic/notificaciones` | Centro de avisos | Funcional |
 
 Nota: el login consume la **API Gateway** (`POST /api/auth/login`), que enruta al
 MS1 vigente de `backend/services/ms1_auth/`. El directorio alternativo

@@ -10,6 +10,7 @@ import { Input } from '@/presentation/components/ui/Input';
 import { GlassCard } from '@/presentation/components/ui/GlassCard';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
+import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useAuth } from '@/presentation/components/auth/authContext';
 import { getHomePath } from '@/presentation/routes/rolePaths';
 
@@ -30,6 +31,12 @@ export function LoginPage() {
   const from = (location.state as { from?: string } | null)?.from;
   // Llega desde el registro público: se confirma la creación y se precarga el correo.
   const registro = (location.state as { registro?: { email?: string } } | null)?.registro;
+  // Llega del interceptor 401 o del temporizador de expiración. El estado del
+  // router puede perderse si el guard de la ruta redirige primero, así que el
+  // aviso se respalda en el store.
+  const sesionExpiradaState = (location.state as { sesionExpirada?: boolean } | null)?.sesionExpirada;
+  const sesionExpiradaStore = useAuthStore((s) => s.sesionExpirada);
+  const sesionExpirada = sesionExpiradaState === true || sesionExpiradaStore;
 
   const targetAfterLogin = (role: UserRole | undefined, requested?: string): string => {
     const home = getHomePath(role);
@@ -100,6 +107,12 @@ export function LoginPage() {
             {registro && !errorMessage && (
               <Alert tone="success" className="mb-6 justify-center">
                 Cuenta de cliente creada. Inicia sesión para continuar.
+              </Alert>
+            )}
+
+            {sesionExpirada && !registro && !errorMessage && (
+              <Alert tone="warning" className="mb-6 justify-center">
+                Tu sesión ha expirado. Inicia sesión nuevamente para continuar.
               </Alert>
             )}
 

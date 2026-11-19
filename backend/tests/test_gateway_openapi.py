@@ -271,7 +271,7 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
 
 def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["info"]["title"] == "SGTM — API Gateway"
-    assert esquema["info"]["version"] == "3.0.0"
+    assert esquema["info"]["version"] == "3.0.1"
     assert esquema["openapi"].startswith("3.")
 
 
@@ -762,6 +762,11 @@ def test_contrato_ordenes_refleja_flujo_implementado(esquema: dict) -> None:
 
     cambio = schemas["CambioEstadoSolicitud"]
     assert cambio["additionalProperties"] is False
+    assert cambio["examples"][0] == {
+        "estado_destino": 6,
+        "observacion": "Trabajo autorizado finalizado",
+    }
+    assert ESTADOS_ORDEN[cambio["examples"][0]["estado_destino"]] == "Listo"
     assert cambio["properties"]["estado_destino"]["exclusiveMinimum"] == 0
     assert "observacion" not in cambio["required"]
     assert "Obligatoria al pasar a Cancelado" in (

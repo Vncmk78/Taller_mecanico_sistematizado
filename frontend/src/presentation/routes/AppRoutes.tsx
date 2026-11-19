@@ -23,6 +23,7 @@ import { ClientDashboardPage } from '@/presentation/pages/client/ClientDashboard
 import { ClientVehiclesPage } from '@/presentation/pages/client/ClientVehiclesPage';
 import { ClientVehicleFormPage } from '@/presentation/pages/client/ClientVehicleFormPage';
 import { ClientVehicleDetailPage } from '@/presentation/pages/client/ClientVehicleDetailPage';
+import { ClientVehicleEditPage } from '@/presentation/pages/client/ClientVehicleEditPage';
 import { ClientServicesPage } from '@/presentation/pages/client/ClientServicesPage';
 import { ClientBudgetsPage } from '@/presentation/pages/client/ClientBudgetsPage';
 import { ClientBudgetDetailPage } from '@/presentation/pages/client/ClientBudgetDetailPage';
@@ -31,6 +32,8 @@ import { ClientOrderDetailPage } from '@/presentation/pages/client/ClientOrderDe
 import { ClientOrderEvidencePage } from '@/presentation/pages/client/ClientOrderEvidencePage';
 import { AdminNuevasAtencionesPage } from '@/presentation/pages/admin/AdminNuevasAtencionesPage';
 import { AdminNuevaAtencionDetailPage } from '@/presentation/pages/admin/AdminNuevaAtencionDetailPage';
+import { AdminCancelacionesPage } from '@/presentation/pages/admin/AdminCancelacionesPage';
+import { AdminUsersPage } from '@/presentation/pages/admin/AdminUsersPage';
 import { ClientNuevasAtencionesPage } from '@/presentation/pages/client/ClientNuevasAtencionesPage';
 import { ClientNuevaAtencionDetailPage } from '@/presentation/pages/client/ClientNuevaAtencionDetailPage';
 import { MechanicDashboardPage } from '@/presentation/pages/mechanic/MechanicDashboardPage';
@@ -41,6 +44,14 @@ import { MechanicOrderDetailPage } from '@/presentation/pages/mechanic/MechanicO
 import { BudgetEditor } from '@/presentation/components/budgets/BudgetEditor';
 import { MechanicBudgetPage } from '@/presentation/pages/mechanic/MechanicBudgetPage';
 import { MechanicStatusPage } from '@/presentation/pages/mechanic/MechanicStatusPage';
+import {
+  MechanicDistributorsPage,
+  MechanicInventoryAlertsPage,
+  MechanicInventoryMovementsPage,
+  MechanicInventoryPage,
+  MechanicStockDetailPage,
+  MechanicThresholdPage,
+} from '@/presentation/pages/mechanic/MechanicInventoryPages';
 import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage';
 import { NotificationsPage } from '@/presentation/pages/shared/NotificationsPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
@@ -87,6 +98,8 @@ export function AppRoutes() {
         />
         <Route path="nuevas-atenciones" element={<AdminNuevasAtencionesPage />} />
         <Route path="nuevas-atenciones/:id" element={<AdminNuevaAtencionDetailPage />} />
+        <Route path="cancelaciones" element={<AdminCancelacionesPage />} />
+        <Route path="usuarios" element={<AdminUsersPage />} />
         <Route path="clientes" element={<AdminClientsPage />} />
         <Route path="configuracion" element={<AdminConfigurationPage />} />
         <Route path="vehiculos" element={<AdminVehiclesPage />} />
@@ -115,6 +128,7 @@ export function AppRoutes() {
         <Route path="vehiculos" element={<ClientVehiclesPage />} />
         <Route path="vehiculos/nuevo" element={<ClientVehicleFormPage />} />
         <Route path="vehiculos/:id" element={<ClientVehicleDetailPage />} />
+        <Route path="vehiculos/:id/editar" element={<ClientVehicleEditPage />} />
         <Route path="agendar" element={<Navigate to="/client/ordenes" replace />} />
         <Route path="servicios" element={<ClientServicesPage />} />
         <Route path="ordenes" element={<ClientOrdersPage />} />
@@ -146,6 +160,12 @@ export function AppRoutes() {
           element={<OrderEvidencePage backTo="/mechanic/ordenes" backLabel="Volver a mis órdenes" canUpload />}
         />
         <Route path="estados" element={<MechanicStatusPage />} />
+        <Route path="inventario" element={<MechanicInventoryPage />} />
+        <Route path="inventario/alertas" element={<MechanicInventoryAlertsPage />} />
+        <Route path="inventario/movimientos" element={<MechanicInventoryMovementsPage />} />
+        <Route path="inventario/stock/:repuestoId" element={<MechanicStockDetailPage />} />
+        <Route path="inventario/umbral" element={<MechanicThresholdPage />} />
+        <Route path="inventario/distribuidores" element={<MechanicDistributorsPage />} />
         <Route path="notificaciones" element={<NotificationsPage />} />
       </Route>
 

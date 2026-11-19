@@ -12,6 +12,7 @@ import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { Select } from '@/presentation/components/ui/Select';
+import { isAdminInventoryMode, type InventoryPortalMode } from '@/presentation/utils/inventoryPortal';
 import {
     Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow,
 } from '@/presentation/components/ui/Table';
@@ -19,8 +20,19 @@ import {
 type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
 const TIPOS: TipoMovimiento[] = ['ingreso', 'ajuste', 'compromiso', 'consumo', 'liberacion'];
+/**
+ * El mecánico solo puede mover stock de sus órdenes asignadas. Ingresos y
+ * ajustes son exclusivos del administrador (MS3 responde 403).
+ */
+const TIPOS_MECANICO: TipoMovimiento[] = ['compromiso', 'consumo', 'liberacion'];
 
-export function AdminInventoryMovementsPage() {
+interface AdminInventoryMovementsPageProps {
+    mode?: InventoryPortalMode;
+}
+
+export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMovementsPageProps) {
+    const isAdmin = isAdminInventoryMode(mode);
+    const tiposFormulario = isAdmin ? TIPOS : TIPOS_MECANICO;
     const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
     const [total, setTotal] = useState(0);
     const [status, setStatus] = useState<FetchStatus>('loading');
@@ -33,7 +45,7 @@ export function AdminInventoryMovementsPage() {
     const [movementSubmitting, setMovementSubmitting] = useState(false);
     const [movementError, setMovementError] = useState<string | null>(null);
     const [mRepuestoId, setMRepuestoId] = useState('');
-    const [mTipo, setMTipo] = useState<TipoMovimiento>('ingreso');
+    const [mTipo, setMTipo] = useState<TipoMovimiento>(isAdmin ? 'ingreso' : 'compromiso');
     const [mCantidad, setMCantidad] = useState('');
     const [mOrdenId, setMOrdenId] = useState('');
     const [mProveedorId, setMProveedorId] = useState('');
@@ -87,6 +99,16 @@ export function AdminInventoryMovementsPage() {
             setMovementError('Cantidad inválida.');
             return;
         }
+        if (!isAdmin) {
+            if (!TIPOS_MECANICO.includes(mTipo)) {
+                setMovementError('Solo puedes registrar compromisos, consumos o liberaciones.');
+                return;
+            }
+            if (mOrdenId.trim() === '') {
+                setMovementError('Indica la orden asignada a la que pertenece el movimiento.');
+                return;
+            }
+        }
         setMovementSubmitting(true);
         setMovementError(null);
         try {
@@ -96,7 +118,7 @@ export function AdminInventoryMovementsPage() {
                 tipo: mTipo,
                 cantidad: cantidadNum,
                 ordenId: mOrdenId ? Number(mOrdenId) : null,
-                proveedorId: mProveedorId ? Number(mProveedorId) : null,
+                proveedorId: isAdmin && mProveedorId ? Number(mProveedorId) : null,
             });
             setMovementOpen(false);
             setMRepuestoId('');
@@ -117,12 +139,20 @@ export function AdminInventoryMovementsPage() {
             <div className="mb-6 flex justify-between items-center gap-4 flex-wrap">
                 <div>
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Movimientos de inventario</h2>
-                    <p className="text-text-muted text-lg">Historial de ingresos, ajustes, compromisos, consumos y liberaciones</p>
+                    <p className="text-text-muted text-lg">
+                        {isAdmin
+                            ? 'Historial de ingresos, ajustes, compromisos, consumos y liberaciones'
+                            : 'Historial de movimientos y registro de compromisos, consumos o liberaciones de tus órdenes'}
+                    </p>
                     {status === 'success' && <p className="text-sm text-text-muted mt-2" aria-live="polite">{total} movimientos</p>}
                 </div>
                 <button
                     type="button"
-                    onClick={() => { setMovementError(null); setMovementOpen(true); }}
+                    onClick={() => {
+                        setMovementError(null);
+                        if (!isAdmin) setMTipo('compromiso');
+                        setMovementOpen(true);
+                    }}
                     className="px-4 py-2 rounded-lg bg-primary-blue text-white text-sm font-medium"
                 >
                     Registrar movimiento
@@ -224,7 +254,7 @@ export function AdminInventoryMovementsPage() {
                             onChange={(e) => setMTipo(e.target.value as TipoMovimiento)}
                             containerClassName="mb-0"
                         >
-                            {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
+                            {tiposFormulario.map((t) => <option key={t} value={t}>{t}</option>)}
                         </Select>
                         <Input
                             label="Cantidad"
@@ -234,19 +264,26 @@ export function AdminInventoryMovementsPage() {
                             containerClassName="mb-0"
                         />
                         <Input
-                            label="Orden ID (opcional)"
+                            label={isAdmin ? 'Orden ID (opcional)' : 'Orden asignada (obligatoria)'}
                             type="number"
                             value={mOrdenId}
                             onChange={(e) => setMOrdenId(e.target.value)}
                             containerClassName="mb-0"
                         />
-                        <Input
-                            label="Proveedor ID (opcional)"
-                            type="number"
-                            value={mProveedorId}
-                            onChange={(e) => setMProveedorId(e.target.value)}
-                            containerClassName="mb-0"
-                        />
+                        {isAdmin && (
+                            <Input
+                                label="Proveedor ID (opcional)"
+                                type="number"
+                                value={mProveedorId}
+                                onChange={(e) => setMProveedorId(e.target.value)}
+                                containerClassName="mb-0"
+                            />
+                        )}
+                        {!isAdmin && (
+                            <p className="text-sm text-text-muted">
+                                Solo puedes mover stock de las órdenes que tienes asignadas.
+                            </p>
+                        )}
                         {movementError && <p className="text-status-red text-sm">{movementError}</p>}
                         <FormActions>
                             <button type="button" onClick={() => setMovementOpen(false)} className="px-4 py-2 rounded-lg border border-border-custom text-sm">Cancelar</button>

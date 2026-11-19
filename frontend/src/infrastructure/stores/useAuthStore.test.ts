@@ -5,6 +5,7 @@ import { getToken } from '@/infrastructure/config/tokenStorage';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { tokenQueVenceEn, tokenVencido } from '@/test/jwt';
 
 vi.mock('@/infrastructure/api/AuthService', () => ({
   authService: {
@@ -129,6 +130,43 @@ describe('useAuthStore: flujo funcional de autenticación', () => {
     await useAuthStore.getState().restoreSession();
 
     expect(authService.getProfile).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().isInitializing).toBe(false);
+  });
+
+  it('con un JWT vigente consulta el perfil para restaurar la sesión', async () => {
+    vi.mocked(authService.getProfile).mockResolvedValue(clientUser);
+    const token = tokenQueVenceEn(10 * 60_000);
+    localStorage.setItem('token', token);
+    useAuthStore.setState({
+      token,
+      isAuthenticated: true,
+      isInitializing: true,
+    });
+
+    await useAuthStore.getState().restoreSession();
+
+    expect(authService.getProfile).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().user).toEqual(clientUser);
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+  });
+
+  it('con un JWT ya vencido no consulta el perfil y limpia la sesión', async () => {
+    const token = tokenVencido();
+    localStorage.setItem('token', token);
+    useAuthStore.setState({
+      token,
+      isAuthenticated: true,
+      isInitializing: true,
+    });
+
+    await useAuthStore.getState().restoreSession();
+
+    // No se gasta una petición en /auth/me: el exp ya dice que no sirve.
+    expect(authService.getProfile).not.toHaveBeenCalled();
+    expect(getToken()).toBeNull();
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(useAuthStore.getState().isInitializing).toBe(false);
   });

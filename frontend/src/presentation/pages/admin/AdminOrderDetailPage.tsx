@@ -5,6 +5,8 @@ import { OrderDetailPanel } from '@/presentation/components/orders/OrderDetailPa
 import { OrderActionsPanel } from '@/presentation/components/orders/OrderActionsPanel';
 import { DevolucionVehiculoPanel } from '@/presentation/components/orders/DevolucionVehiculoPanel';
 import { OrderStatusAndHistory } from '@/presentation/components/orders/OrderStatusAndHistory';
+import { ConsumoRepuestosPanel } from '@/presentation/components/orders/ConsumoRepuestosPanel';
+import { puedeConsumirRepuestos } from '@/presentation/components/orders/consumoRepuestos';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -255,6 +257,15 @@ export function AdminOrderDetailPage() {
                         ))}
                     </div>
                 </section>
+            )}
+
+            {puedeConsumirRepuestos(order.estadoCodigo) && (
+                <ConsumoRepuestosPanel
+                    orderId={order.id}
+                    onConsumed={async () => {
+                        await recargarOrdenYStock(Number(order.id));
+                    }}
+                />
             )}
 
             {(disponibilidad || order.estadoCodigo === 4) && (

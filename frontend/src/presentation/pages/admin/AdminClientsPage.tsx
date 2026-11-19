@@ -3,6 +3,7 @@ import { Search, Users, X } from 'lucide-react';
 import { authService } from '@/infrastructure/api/AuthService';
 import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import type { UsuarioListado } from '@/domain/entities/User';
+import { useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -38,6 +39,7 @@ export function AdminClientsPage() {
     const [isOffline, setIsOffline] = useState(false);
     const [requestId, setRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
+    const debouncedSearch = useDebouncedValue(search);
 
     const loadClientes = useCallback(async () => {
         setStatus('loading');
@@ -67,10 +69,10 @@ export function AdminClientsPage() {
     };
 
     const filteredClientes = useMemo(() => {
-        const term = search.trim().toLowerCase();
+        const term = debouncedSearch.trim().toLowerCase();
         if (term === '') return clientes;
         return clientes.filter((cliente) => textoBuscable(cliente).includes(term));
-    }, [clientes, search]);
+    }, [clientes, debouncedSearch]);
 
     const hasActiveFilters = search.trim() !== '';
 

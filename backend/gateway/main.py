@@ -34,7 +34,7 @@ async def _lifespan(_: FastAPI):
     await cerrar_cliente()
 
 
-app = FastAPI(title="SGTM — API Gateway", version="3.0.0", lifespan=_lifespan)
+app = FastAPI(title="SGTM — API Gateway", version="3.0.1", lifespan=_lifespan)
 
 # El Swagger por defecto solo mostraría /api/{ruta}; se reescribe para
 # documentar los contratos reales de MS1 y MS2 (ver gateway/openapi.py).
@@ -52,7 +52,15 @@ app.add_middleware(
     allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID", "X-Notificaciones-Total", "X-Notificaciones-No-Leidas"],
+    # Cabeceras que un cliente en navegador (web, build web de la app móvil)
+    # puede leer. Retry-After acompaña al 429 del login y a los 502/503/504;
+    # sin exponerla, fetch() la oculta y el cliente no sabe cuánto esperar.
+    expose_headers=[
+        "X-Request-ID",
+        "Retry-After",
+        "X-Notificaciones-Total",
+        "X-Notificaciones-No-Leidas",
+    ],
 )
 app.add_middleware(RequestIdMiddleware)
 

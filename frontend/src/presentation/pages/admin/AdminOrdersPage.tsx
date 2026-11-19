@@ -17,6 +17,7 @@ import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDispl
 import { orderService } from '@/infrastructure/api/OrderService';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 
 export function AdminOrdersPage() {
     const { orders, status, error, isOffline, requestId, fetchOrders } = useOrderStore();
@@ -107,7 +108,7 @@ export function AdminOrdersPage() {
                 </Alert>
             )}
 
-            {status === 'loading' ? (
+            {isInitialLoad(status, filteredOrders.length > 0) ? (
                 <OrderListSkeleton className="px-4 sm:px-6 lg:px-10 pb-10" />
             ) : isServerError && filteredOrders.length === 0 ? (
                 <ErrorState

@@ -348,6 +348,39 @@ describe('OrderService: solicitud y confirmación de cancelación', () => {
     expect(resultado.vehicleId).toBe(String(ordenApi.vehiculo_id));
   });
 
+  it('lista las solicitudes pendientes y traduce el contrato de cancelación', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: [
+        {
+          solicitud_id: 12,
+          orden_id: 31,
+          cliente_usuario_id: 42,
+          estado_al_solicitar: 3,
+          motivo: 'El cliente no continuará',
+          estado: 'pendiente',
+          solicitada_en: '2026-10-23T10:30:00-03:00',
+          administrador_id: null,
+          confirmada_en: null,
+        },
+      ],
+    });
+
+    const pendientes = await orderService.getCancelacionesPendientes();
+
+    expect(apiClient.get).toHaveBeenCalledWith('/ordenes/cancelaciones/pendientes');
+    expect(pendientes[0]).toEqual({
+      id: '12',
+      ordenId: '31',
+      clienteUsuarioId: '42',
+      estadoAlSolicitar: 3,
+      motivo: 'El cliente no continuará',
+      estado: 'pendiente',
+      solicitadaEn: '2026-10-23T10:30:00-03:00',
+      administradorId: null,
+      confirmadaEn: null,
+    });
+  });
+
   it('el administrador usa la confirmación específica y recibe la orden cancelada', async () => {
     vi.mocked(apiClient.post).mockResolvedValue({ data: { ...ordenApi, estado_codigo: 8 } });
 

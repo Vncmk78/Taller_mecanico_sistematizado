@@ -78,6 +78,18 @@ Errores de consola del rol cliente: **0** (tras las migraciones de §2).
 | M-08 | Centro de avisos | `/mechanic/notificaciones` | OK | Estado vacío con contadores en 0 |
 | M-09 | Cierre de sesión | botón en sidebar | OK | Vuelve a `/login` |
 
+### Ampliación posterior: inventario del mecánico
+
+Las rutas `/mechanic/inventario*` se agregaron después de esta corrida manual. Quedan
+pendientes de validación en ambiente real con el mismo usuario mecánico:
+
+| # | Paso | Ruta | Resultado esperado |
+|---|---|---|---|
+| M-10 | Catálogo de repuestos | `/mechanic/inventario` | Lista en solo lectura con enlace *Ver stock*; sin crear/editar/eliminar |
+| M-11 | Alertas de stock | `/mechanic/inventario/alertas` | Repuestos bajo umbral, solo consulta |
+| M-12 | Movimientos | `/mechanic/inventario/movimientos` | Historial y formulario limitado a `compromiso`, `consumo` y `liberación` con orden asignada |
+| M-13 | Umbral y distribuidores | `/mechanic/inventario/umbral`, `/mechanic/inventario/distribuidores` | Consulta e historial; sin formularios de escritura |
+
 Errores de consola del rol mecánico: solo el **502** de evidencias (MS4 detenido, §6).
 
 ## 5. Flujo Administrador (`administrador@pruebas.cl`)

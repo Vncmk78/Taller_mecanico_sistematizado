@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { createElement, type PropsWithChildren } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -23,7 +23,7 @@ const wrapper = ({ children }: PropsWithChildren) => createElement(MemoryRouter,
 
 function filtrosConUrl(initialEntry: string, urlKeyPrefix = '') {
     return renderHook(() => ({
-        filtros: useOrderListFilters(orders, haystack, { syncWithUrl: true, urlKeyPrefix }),
+        filtros: useOrderListFilters(orders, haystack, { syncWithUrl: true, urlKeyPrefix, debounceMs: 0 }),
         params: new URLSearchParams(useLocation().search),
     }), {
         wrapper: ({ children }: PropsWithChildren) => createElement(
@@ -34,7 +34,7 @@ function filtrosConUrl(initialEntry: string, urlKeyPrefix = '') {
 
 describe('useOrderListFilters: filtros y paginación del listado', () => {
     it('filtra por estado y resetea la página al cambiar el filtro', () => {
-        const { result } = renderHook(() => useOrderListFilters(orders, haystack), { wrapper });
+        const { result } = renderHook(() => useOrderListFilters(orders, haystack, { debounceMs: 0 }), { wrapper });
 
         act(() => result.current.setPage(2));
         expect(result.current.page).toBe(2);
@@ -46,14 +46,14 @@ describe('useOrderListFilters: filtros y paginación del listado', () => {
     });
 
     it('busca por texto en los campos entregados', () => {
-        const { result } = renderHook(() => useOrderListFilters(orders, haystack), { wrapper });
+        const { result } = renderHook(() => useOrderListFilters(orders, haystack, { debounceMs: 0 }), { wrapper });
 
         act(() => result.current.setSearch('PT-3'));
         expect(result.current.filteredOrders.map((o) => o.id)).toEqual(['O-4']);
     });
 
     it('ordena por actualización más reciente por defecto', () => {
-        const { result } = renderHook(() => useOrderListFilters(orders, haystack), { wrapper });
+        const { result } = renderHook(() => useOrderListFilters(orders, haystack, { debounceMs: 0 }), { wrapper });
 
         expect(result.current.filteredOrders[0].id).toBe('O-8');
         expect(result.current.filteredOrders[result.current.total - 1].id).toBe('O-1');
@@ -106,11 +106,57 @@ describe('useOrderListFilters: actualización conjunta de URL', () => {
     });
 
     it('mantiene la persistencia local entre montajes dentro de una misma sesión', () => {
-        const primera = renderHook(() => useOrderListFilters(orders, haystack), { wrapper });
+        const primera = renderHook(() => useOrderListFilters(orders, haystack, { debounceMs: 0 }), { wrapper });
         act(() => primera.result.current.setSearch('PT-3'));
         primera.unmount();
-        const segunda = renderHook(() => useOrderListFilters(orders, haystack), { wrapper });
+        const segunda = renderHook(() => useOrderListFilters(orders, haystack, { debounceMs: 0 }), { wrapper });
         expect(segunda.result.current.search).toBe('PT-3');
         expect(segunda.result.current.filteredOrders.map(o => o.id)).toEqual(['O-4']);
+    });
+});
+
+describe('useOrderListFilters: búsqueda con espera', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('mantiene el término inmediato en el input y retrasa el filtrado', () => {
+        vi.useFakeTimers();
+        const { result } = renderHook(
+            () => useOrderListFilters(orders, haystack, { debounceMs: 300 }),
+            { wrapper }
+        );
+
+        act(() => result.current.setSearch('PT-3'));
+        expect(result.current.search).toBe('PT-3');
+        expect(result.current.total).toBe(8);
+
+        act(() => {
+            vi.advanceTimersByTime(300);
+        });
+        expect(result.current.filteredOrders.map((o) => o.id)).toEqual(['O-4']);
+    });
+
+    it('reinicia la espera cuando el término cambia antes del retardo', () => {
+        vi.useFakeTimers();
+        const { result } = renderHook(
+            () => useOrderListFilters(orders, haystack, { debounceMs: 300 }),
+            { wrapper }
+        );
+
+        act(() => result.current.setSearch('PT-'));
+        act(() => {
+            vi.advanceTimersByTime(200);
+        });
+        act(() => result.current.setSearch('PT-3'));
+        act(() => {
+            vi.advanceTimersByTime(200);
+        });
+        expect(result.current.total).toBe(8);
+
+        act(() => {
+            vi.advanceTimersByTime(100);
+        });
+        expect(result.current.filteredOrders.map((o) => o.id)).toEqual(['O-4']);
     });
 });

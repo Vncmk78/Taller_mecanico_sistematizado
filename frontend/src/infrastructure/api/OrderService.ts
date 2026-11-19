@@ -1,6 +1,7 @@
 import type { BitacoraEntradaCrear, BitacoraEntry, RepuestoBitacora, TipoBitacora } from '@/domain/entities/Bitacora';
 import type { Order } from '@/domain/entities/Order';
 import type { OrderHistoryEntry } from '@/domain/entities/OrderHistory';
+import type { SolicitudCancelacion } from '@/domain/entities/SolicitudCancelacion';
 import type { OrderPort } from '@/domain/ports/OrderPort';
 import apiClient from '../config/apiClient';
 
@@ -56,6 +57,37 @@ export function mapOrdenApi(o: OrdenRespuesta): Order {
                 : o.devuelto_por_id === null
                   ? null
                   : String(o.devuelto_por_id),
+    };
+}
+
+// Contrato de SolicitudCancelacionRespuesta (MS2) para la bandeja
+// administrativa de cancelaciones pendientes.
+interface SolicitudCancelacionApi {
+    solicitud_id: number;
+    orden_id: number;
+    cliente_usuario_id: number;
+    estado_al_solicitar: number;
+    motivo: string;
+    estado: 'pendiente' | 'confirmada';
+    solicitada_en: string;
+    administrador_id: number | null;
+    confirmada_en: string | null;
+}
+
+function mapSolicitudCancelacionApi(s: SolicitudCancelacionApi): SolicitudCancelacion {
+    return {
+        id: String(s.solicitud_id),
+        ordenId: String(s.orden_id),
+        clienteUsuarioId: String(s.cliente_usuario_id),
+        estadoAlSolicitar: s.estado_al_solicitar,
+        motivo: s.motivo,
+        estado: s.estado,
+        solicitadaEn: s.solicitada_en,
+        administradorId:
+            s.administrador_id === null || s.administrador_id === undefined
+                ? null
+                : String(s.administrador_id),
+        confirmadaEn: s.confirmada_en,
     };
 }
 
@@ -214,6 +246,13 @@ class OrderService implements OrderPort {
             throw new DevolucionSinDatosError();
         }
         return mapOrdenApi(data);
+    }
+
+    async getCancelacionesPendientes(): Promise<SolicitudCancelacion[]> {
+        const { data } = await apiClient.get<SolicitudCancelacionApi[]>(
+            '/ordenes/cancelaciones/pendientes'
+        );
+        return data.map(mapSolicitudCancelacionApi);
     }
 
     async cancelarComoCliente(ordenId: string, motivo: string): Promise<Order> {

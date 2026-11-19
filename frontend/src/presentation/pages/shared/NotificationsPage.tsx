@@ -6,6 +6,7 @@ import { notificationService } from '@/infrastructure/api/NotificationService';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { LoadingState } from '@/presentation/components/ui/LoadingState';
 
 type FiltroLectura = 'todas' | 'no-leidas';
 
@@ -168,8 +169,8 @@ export function NotificationsPage() {
       )}
 
       {loading ? (
-        <div className="rounded-xl border border-border-custom bg-surface p-8 text-center text-text-muted" role="status">
-          Cargando notificaciones...
+        <div className="rounded-xl border border-border-custom bg-surface p-8 flex justify-center" role="status">
+          <LoadingState message="Cargando notificaciones..." />
         </div>
       ) : error && items.length === 0 ? (
         <ErrorState

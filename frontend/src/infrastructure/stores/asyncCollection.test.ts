@@ -4,6 +4,7 @@ import type { FetchStatus } from './asyncCollection';
 import {
     fetchCollection,
     fetchItemById,
+    isInitialLoad,
     mergeById,
     replaceWhere,
     upsertById,
@@ -62,6 +63,28 @@ describe('asyncCollection: helpers de colección asíncrona', () => {
                 [{ id: 'h3', ordenId: '101' }]
             );
             expect(result.map((i) => i.id)).toEqual(['h2', 'h3']);
+        });
+    });
+
+    describe('isInitialLoad', () => {
+        it('cubre el gap entre el montaje y el primer fetch: idle sin datos', () => {
+            // El store parte en idle y el useEffect de la vista aún no disparó
+            // fetchCollection: sin esto la vista destella el estado vacío.
+            expect(isInitialLoad('idle', false)).toBe(true);
+        });
+
+        it('loading siempre es carga inicial, aunque quede caché visible', () => {
+            expect(isInitialLoad('loading', false)).toBe(true);
+            expect(isInitialLoad('loading', true)).toBe(true);
+        });
+
+        it('idle con datos en caché no bloquea la vista', () => {
+            expect(isInitialLoad('idle', true)).toBe(false);
+        });
+
+        it('success y error no son carga inicial: la vista decide qué mostrar', () => {
+            expect(isInitialLoad('success', false)).toBe(false);
+            expect(isInitialLoad('error', false)).toBe(false);
         });
     });
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
 import type { PaginaRepuestos, Repuesto } from '@/domain/entities/Repuesto';
 import { AdminInventoryPage, LIMITE_REPUESTOS } from './AdminInventoryPage';
@@ -58,13 +59,26 @@ const catalogo = [
     }),
 ];
 
+/**
+ * Simula `GET /repuestos`: sin `q` devuelve el catálogo y con `q` solo los
+ * nombres que contienen el texto (igual que MS3).
+ */
+function mockCatalogo(repuestos: Repuesto[] = catalogo, total = repuestos.length) {
+    vi.mocked(repuestoService.getRepuestos).mockImplementation(async (filtros) => {
+        const q = filtros?.q?.trim().toLowerCase() ?? '';
+        if (!q) return pagina(repuestos, total);
+        const coincidencias = repuestos.filter((r) => r.nombre.toLowerCase().includes(q));
+        return pagina(coincidencias);
+    });
+}
+
 describe('AdminInventoryPage: filtros y estado de stock', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('pide como máximo el límite que acepta el backend', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
 
@@ -83,7 +97,7 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
     });
 
     it('lista los repuestos con su estado de stock y el contador total', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
 
@@ -97,7 +111,7 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
     });
 
     it('filtra por texto sobre nombre, proveedor y código', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
         await screen.findByText('Filtro de aceite');
@@ -106,14 +120,16 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
             target: { value: 'frenos chile' },
         });
 
+        await waitFor(() => {
+            expect(screen.queryByText('Filtro de aceite')).not.toBeInTheDocument();
+        });
         expect(screen.getByText('Pastillas de freno')).toBeInTheDocument();
-        expect(screen.queryByText('Filtro de aceite')).not.toBeInTheDocument();
         expect(screen.queryByText('Bujías')).not.toBeInTheDocument();
-        expect(screen.getByText(/1 de 3 repuestos/)).toBeInTheDocument();
+        expect(screen.getByText(/1 de 1 resultados/)).toBeInTheDocument();
     });
 
     it('filtra por estado de stock', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
         await screen.findByText('Filtro de aceite');
@@ -128,19 +144,23 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
     });
 
     it('limpia los filtros y recupera el listado completo', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
         await screen.findByText('Filtro de aceite');
 
         const buscador = screen.getByRole('searchbox', { name: 'Buscar repuestos' });
         fireEvent.change(buscador, { target: { value: 'bujías' } });
-        expect(screen.queryByText('Filtro de aceite')).not.toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.queryByText('Filtro de aceite')).not.toBeInTheDocument();
+        });
 
         fireEvent.click(screen.getByRole('button', { name: /limpiar filtros/i }));
 
         expect(buscador).toHaveValue('');
-        expect(screen.getByText('Filtro de aceite')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText('Filtro de aceite')).toBeInTheDocument();
+        });
         expect(screen.getByText('Bujías')).toBeInTheDocument();
     });
 
@@ -153,7 +173,7 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
     });
 
     it('explica que no hay coincidencias cuando los filtros no devuelven nada', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
         await screen.findByText('Filtro de aceite');
@@ -163,7 +183,7 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
         });
 
         expect(
-            screen.getByText('No se encontraron repuestos con los filtros aplicados')
+            await screen.findByText('No se encontraron repuestos con los filtros aplicados')
         ).toBeInTheDocument();
     });
 
@@ -198,7 +218,7 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
     });
 
     it('consulta el servicio una sola vez al montar', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
 
@@ -207,8 +227,73 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
         expect(repuestoService.getRepuestos).toHaveBeenCalledWith({ limite: 200 });
     });
 
+    it('no consulta al servidor hasta que pasa la espera de la búsqueda', async () => {
+        mockCatalogo();
+
+        render(<AdminInventoryPage />);
+        await screen.findByText('Filtro de aceite');
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar repuestos' }), {
+            target: { value: 'bujías' },
+        });
+
+        expect(repuestoService.getRepuestos).toHaveBeenCalledTimes(1);
+
+        await waitFor(() => {
+            expect(repuestoService.getRepuestos).toHaveBeenCalledWith({
+                limite: 200,
+                q: 'bujías',
+            });
+        });
+        expect(repuestoService.getRepuestos).toHaveBeenCalledTimes(2);
+    });
+
+    it('hace una sola consulta al escribir rápido', async () => {
+        mockCatalogo();
+
+        render(<AdminInventoryPage />);
+        await screen.findByText('Filtro de aceite');
+
+        const buscador = screen.getByRole('searchbox', { name: 'Buscar repuestos' });
+        fireEvent.change(buscador, { target: { value: 'b' } });
+        fireEvent.change(buscador, { target: { value: 'bu' } });
+        fireEvent.change(buscador, { target: { value: 'buj' } });
+
+        await waitFor(() => {
+            expect(repuestoService.getRepuestos).toHaveBeenCalledWith({
+                limite: 200,
+                q: 'buj',
+            });
+        });
+        expect(repuestoService.getRepuestos).toHaveBeenCalledTimes(2);
+    });
+
+    it('encuentra por nombre repuestos que no están en el catálogo cargado', async () => {
+        const remoto = repuesto({
+            repuestoId: 99,
+            nombre: 'Repuesto remoto',
+            proveedorNombre: 'Proveedor lejano',
+        });
+        vi.mocked(repuestoService.getRepuestos).mockImplementation(async (filtros) => {
+            const q = filtros?.q?.trim().toLowerCase() ?? '';
+            if (!q) return pagina(catalogo, 512);
+            return pagina(catalogo.filter((r) => r.nombre.toLowerCase().includes(q)).concat(
+                'remoto'.includes(q) ? [remoto] : []
+            ), 1);
+        });
+
+        render(<AdminInventoryPage />);
+        await screen.findByText('Filtro de aceite');
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar repuestos' }), {
+            target: { value: 'remoto' },
+        });
+
+        expect(await screen.findByText('Repuesto remoto')).toBeInTheDocument();
+    });
+
     it('combina la búsqueda de texto con el filtro de estado de stock', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
         await screen.findByText('Filtro de aceite');
@@ -220,14 +305,16 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
             target: { value: 'critico' },
         });
 
+        await waitFor(() => {
+            expect(screen.getByText(/1 de 1 resultados/)).toBeInTheDocument();
+        });
         expect(screen.getByText('Pastillas de freno')).toBeInTheDocument();
         expect(screen.queryByText('Filtro de aceite')).not.toBeInTheDocument();
         expect(screen.queryByText('Bujías')).not.toBeInTheDocument();
-        expect(screen.getByText(/1 de 3 repuestos/)).toBeInTheDocument();
     });
 
     it('permite limpiar los filtros desde el estado vacío', async () => {
-        vi.mocked(repuestoService.getRepuestos).mockResolvedValue(pagina(catalogo));
+        mockCatalogo();
 
         render(<AdminInventoryPage />);
         await screen.findByText('Filtro de aceite');
@@ -237,13 +324,15 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
         });
 
         expect(
-            screen.getByText('No se encontraron repuestos con los filtros aplicados')
+            await screen.findByText('No se encontraron repuestos con los filtros aplicados')
         ).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /limpiar filtros/i }));
 
         expect(screen.getByRole('searchbox', { name: 'Buscar repuestos' })).toHaveValue('');
-        expect(screen.getByText('Filtro de aceite')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText('Filtro de aceite')).toBeInTheDocument();
+        });
         expect(screen.getByText('Bujías')).toBeInTheDocument();
     });
 
@@ -282,5 +371,44 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
 
         expect(await screen.findByText('No se pudieron cargar los repuestos del inventario')).toBeInTheDocument();
         expect(screen.getByText('Referencia: req-inventario-1')).toBeInTheDocument();
+    });
+});
+
+describe('AdminInventoryPage: modo mecánico', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    function renderMechanic() {
+        return render(
+            <MemoryRouter>
+                <AdminInventoryPage mode="mechanic" />
+            </MemoryRouter>
+        );
+    }
+
+    it('oculta las acciones de administración y ofrece consultar el stock', async () => {
+        mockCatalogo();
+
+        renderMechanic();
+
+        expect(await screen.findByText('Filtro de aceite')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Nuevo repuesto' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Eliminar' })).not.toBeInTheDocument();
+
+        const enlacesStock = screen.getAllByRole('link', { name: 'Ver stock' });
+        expect(enlacesStock).toHaveLength(catalogo.length);
+        expect(enlacesStock[0]).toHaveAttribute('href', '/mechanic/inventario/stock/1');
+    });
+
+    it('muestra el subtítulo de consulta sin acciones de escritura', async () => {
+        mockCatalogo();
+
+        renderMechanic();
+
+        expect(
+            await screen.findByText('Consulta de repuestos y disponibilidad del taller')
+        ).toBeInTheDocument();
     });
 });

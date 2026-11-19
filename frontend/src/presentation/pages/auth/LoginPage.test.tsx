@@ -188,6 +188,21 @@ describe('LoginPage: flujo funcional de inicio de sesión', () => {
     expect(passwordInput.type).toBe('text');
   });
 
+  it('muestra el aviso de sesión expirada cuando el 401 lo señala', () => {
+    renderLogin({ pathname: '/login', state: { from: '/client/vehiculos', sesionExpirada: true } });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Tu sesión ha expirado. Inicia sesión nuevamente para continuar.'
+    );
+  });
+
+  it('no muestra el aviso de expiración cuando el token venció antes de restaurar la sesión', () => {
+    // Abrir la app con un token ya vencido no debe sonar a "sesión expirada".
+    renderLogin({ pathname: '/login', state: { from: '/client/vehiculos', sesionExpirada: false } });
+
+    expect(screen.queryByText(/Tu sesión ha expirado/)).not.toBeInTheDocument();
+  });
+
   it('usa un encabezado de nivel 2 y desactiva la validación nativa del formulario', () => {
     const { container } = renderLogin();
 

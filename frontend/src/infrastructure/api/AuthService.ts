@@ -45,6 +45,21 @@ function toDomainUser(apiUser: ApiUser): User {
   };
 }
 
+/**
+ * Usuario del listado administrativo. A diferencia de la sesión, aquí una
+ * lista vacía de roles es válida (la cuenta existe pero no accede a ningún
+ * portal) y no se rellena con un rol por defecto.
+ */
+function toUsuarioListado(apiUser: ApiUser): UsuarioListado {
+  return {
+    id: String(apiUser.id),
+    email: apiUser.email,
+    full_name: apiUser.full_name,
+    roles: (apiUser.roles ?? []).filter(esRolValido),
+    is_active: apiUser.is_active,
+  };
+}
+
 class AuthService implements AuthPort {
   async register(data: RegisterRequest): Promise<User> {
     // Solo se envían los tres campos del contrato: MS1 asigna el rol Cliente y
@@ -73,13 +88,21 @@ class AuthService implements AuthPort {
 
   async listarUsuarios(): Promise<UsuarioListado[]> {
     const { data } = await apiClient.get<ApiUser[]>('/auth/usuarios');
-    return data.map((u) => ({
-      id: String(u.id),
-      email: u.email,
-      full_name: u.full_name,
-      roles: (u.roles ?? []) as UserRole[],
-      is_active: u.is_active,
-    }));
+    return data.map(toUsuarioListado);
+  }
+
+  async asignarRol(usuarioId: string, rol: UserRole): Promise<UsuarioListado> {
+    const { data } = await apiClient.post<ApiUser>(`/auth/usuarios/${usuarioId}/roles`, {
+      rol,
+    });
+    return toUsuarioListado(data);
+  }
+
+  async retirarRol(usuarioId: string, rol: UserRole): Promise<UsuarioListado> {
+    const { data } = await apiClient.delete<ApiUser>(
+      `/auth/usuarios/${usuarioId}/roles/${rol}`
+    );
+    return toUsuarioListado(data);
   }
 }
 

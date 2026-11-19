@@ -10,11 +10,14 @@ import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
+import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
+import { useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
 
 export function ClientVehiclesPage() {
     const location = useLocation();
     const [search, setSearch] = useState('');
+    const debouncedSearch = useDebouncedValue(search);
     const user = useAuthStore((s) => s.user);
     const { vehicles, status, error, isOffline, requestId, fetchVehicles } = useVehicleStore();
 
@@ -33,13 +36,13 @@ export function ClientVehiclesPage() {
     }, []);
 
     const myVehicles = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = debouncedSearch.trim().toLowerCase();
     return vehicles
         .filter((v) => v.clientId === clientId)
         .filter((v) =>
         term ? [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term)) : true
         );
-    }, [vehicles, clientId, search]);
+    }, [vehicles, clientId, debouncedSearch]);
 
     const justRegistered = Boolean((location.state as { justRegistered?: boolean } | null)?.justRegistered);
 
@@ -90,7 +93,7 @@ export function ClientVehiclesPage() {
         </Alert>
         )}
 
-        {status === 'loading' ? (
+        {isInitialLoad(status, myVehicles.length > 0) ? (
         <VehicleListSkeleton count={2} />
         ) : isServerError && myVehicles.length === 0 ? (
         <ErrorState

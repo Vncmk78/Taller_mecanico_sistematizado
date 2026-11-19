@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AxiosError,
   type AxiosAdapter,
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import type { User } from '@/domain/entities/User';
@@ -13,6 +13,8 @@ import apiClient from '@/infrastructure/config/apiClient';
 import { getToken } from '@/infrastructure/config/tokenStorage';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { AuthProvider } from '@/presentation/components/auth/AuthProvider';
+import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
+import { tokenQueVenceEn, tokenVencido } from '@/test/jwt';
 
 const originalAdapter = apiClient.defaults.adapter;
 
@@ -51,11 +53,13 @@ beforeEach(() => {
     isAuthenticated: false,
     isLoading: false,
     isInitializing: false,
+    sesionExpirada: false,
   });
 });
 
 afterEach(() => {
   apiClient.defaults.adapter = originalAdapter;
+  vi.useRealTimers();
 });
 
 function TriggerForbidden() {
@@ -182,5 +186,165 @@ describe('AuthProvider: ciclo de sesión frente a errores de la API', () => {
 
     await waitFor(() => expect(useAuthStore.getState().user?.email).toBe('admin@taller.cl'));
     expect(llamadas).toBe(1);
+  });
+
+  it('marca sesionExpirada cuando expira el token de una sesión activa', async () => {
+    localStorage.setItem('token', 'token-admin');
+    useAuthStore.setState({
+      // Sin usuario en memoria: restoreSession consulta /auth/me (si ya hubiera
+      // user, hace early return y no habría petición que expirar).
+      token: 'token-admin',
+      isAuthenticated: true,
+      isInitializing: true,
+    });
+    apiClient.defaults.adapter = responderConStatus(401);
+
+    function Login() {
+      const location = useLocation();
+      const expiro = (location.state as { sesionExpirada?: boolean } | null)?.sesionExpirada;
+      return <div data-testid="login">expirada: {String(expiro)}</div>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/admin" element={<div>Panel</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    // La restauración del montaje dispara el 401 con la sesión aún activa.
+    await waitFor(() => expect(screen.getByTestId('login')).toHaveTextContent('expirada: true'));
+  });
+
+  it('un 401 durante la restauración sin sesión activa no marca sesionExpirada', async () => {
+    localStorage.setItem('token', 'token-expirado');
+    useAuthStore.setState({ token: 'token-expirado', isAuthenticated: false, isInitializing: true });
+    apiClient.defaults.adapter = responderConStatus(401);
+
+    function Login() {
+      const location = useLocation();
+      const expiro = (location.state as { sesionExpirada?: boolean } | null)?.sesionExpirada;
+      return <div data-testid="login">expirada: {String(expiro)}</div>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/admin" element={<div>Panel</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    // Abrir la app con un token ya vencido no debe anunciarse como expiración.
+    await waitFor(() => expect(screen.getByTestId('login')).toHaveTextContent('expirada: false'));
+  });
+
+  it('cierra la sesión cuando el token vence durante el uso, aunque no haya peticiones', () => {
+    vi.useFakeTimers();
+    const ahora = Date.now();
+    const token = tokenQueVenceEn(2_000, ahora);
+    localStorage.setItem('token', token);
+    useAuthStore.setState({
+      user: adminUser,
+      token,
+      isAuthenticated: true,
+      isLoading: false,
+      isInitializing: false,
+    });
+
+    function Login() {
+      const location = useLocation();
+      const expiroState = (location.state as { sesionExpirada?: boolean } | null)?.sesionExpirada;
+      const expiroStore = useAuthStore((s) => s.sesionExpirada);
+      const expiro = expiroState === true || expiroStore;
+      const desde = (location.state as { from?: string } | null)?.from;
+      return (
+        <div data-testid="login">
+          expirada: {String(expiro)} | desde: {desde}
+        </div>
+      );
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/admin/ordenes?tab=abiertas']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/admin/ordenes"
+              element={
+                <ProtectedRoute>
+                  <div data-testid="panel">Panel</div>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    // El aviso previo aparece sin esperar a que falle una petición.
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Tu sesión está por expirar');
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    expect(screen.getByTestId('login')).toHaveTextContent('expirada: true');
+    expect(screen.getByTestId('login')).toHaveTextContent('desde: /admin/ordenes?tab=abiertas');
+    expect(getToken()).toBeNull();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it('un JWT ya vencido al abrir la app se descarta sin marcar sesionExpirada', async () => {
+    const token = tokenVencido();
+    localStorage.setItem('token', token);
+    useAuthStore.setState({
+      user: null,
+      token,
+      isAuthenticated: true,
+      isLoading: false,
+      isInitializing: true,
+    });
+
+    function Login() {
+      const location = useLocation();
+      const expiroState = (location.state as { sesionExpirada?: boolean } | null)?.sesionExpirada;
+      const expiroStore = useAuthStore((s) => s.sesionExpirada);
+      const expiro = expiroState === true || expiroStore;
+      return <div data-testid="login">expirada: {String(expiro)}</div>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute>
+                  <div data-testid="panel">Panel</div>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('login')).toHaveTextContent('expirada: false'));
+    expect(screen.queryByTestId('panel')).not.toBeInTheDocument();
+    expect(getToken()).toBeNull();
   });
 });

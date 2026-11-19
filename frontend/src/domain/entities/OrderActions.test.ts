@@ -83,20 +83,28 @@ describe('OrderActions: catálogo centralizado de acciones por estado y rol', ()
     });
 
     describe('administrador', () => {
-        it('en estado 1 sin mecánico ofrece asignar mecánico y cancelar', () => {
+        it('en estado 1 sin mecánico ofrece solo asignar mecánico', () => {
             const acciones = accionesDisponibles(orden(1, null), ADMIN);
 
-            expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'cancelar']);
+            expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico']);
             expect(acciones[0]).toMatchObject({ etiqueta: 'Asignar mecánico', destinos: [] });
-            expect(acciones[1]).toMatchObject({ destinos: [8], requiereMotivo: false });
         });
 
-        it.each([2, 3])('en estado %i ofrece reasignar y cancelar', (estado) => {
+        it.each([2, 3])('en estado %i ofrece solo reasignar', (estado) => {
             const acciones = accionesDisponibles(orden(estado), ADMIN);
 
-            expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico', 'cancelar']);
+            expect(acciones.map((a) => a.id)).toEqual(['asignar_mecanico']);
             expect(acciones[0]).toMatchObject({ etiqueta: 'Reasignar mecánico', destinos: [] });
         });
+
+        it.each([1, 2, 3])(
+            'no ofrece confirmar la cancelación en el estado %i: se hace desde la bandeja',
+            (estado) => {
+                expect(accionesDisponibles(orden(estado), ADMIN).map((a) => a.id)).not.toContain(
+                    'cancelar'
+                );
+            }
+        );
 
         it('en estado 6 ofrece reasignar y registrar entrega', () => {
             const acciones = accionesDisponibles(orden(6), ADMIN);

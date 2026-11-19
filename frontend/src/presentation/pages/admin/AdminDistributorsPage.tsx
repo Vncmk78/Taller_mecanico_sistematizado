@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search, Truck, X } from 'lucide-react';
 import { proveedorService } from '@/infrastructure/api/ProveedorService';
 import { ProveedorFormDialog } from '@/presentation/components/inventory/ProveedorFormDialog';
@@ -12,6 +12,8 @@ import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
+import { isAdminInventoryMode, type InventoryPortalMode } from '@/presentation/utils/inventoryPortal';
 import {
     Table,
     TableBody,
@@ -21,7 +23,10 @@ import {
     TableRow,
 } from '@/presentation/components/ui/Table';
 
-/**\n * Tope de una sola página de `GET /proveedores`: el backend rechaza con 422\n * cualquier `limite` mayor a 200 (`LIMITE_MAXIMO` de MS3).\n */
+/**
+ * Tope de una sola página de `GET /proveedores`: el backend rechaza con 422
+ * cualquier `limite` mayor a 200 (`LIMITE_MAXIMO` de MS3).
+ */
 export const LIMITE_PROVEEDORES = 200;
 
 type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -36,11 +41,13 @@ const TIPO_CLASS: Record<TipoDistribuidor, string> = {
     generico: 'bg-bg-secondary text-text-muted border border-border-custom',
 };
 
-function textoBuscable(proveedor: Proveedor): string {
-    return [proveedor.nombre, proveedor.contacto].join(' ').toLowerCase();
+interface AdminDistributorsPageProps {
+    /** El portal mecánico consulta distribuidores sin poder editarlos. */
+    mode?: InventoryPortalMode;
 }
 
-export function AdminDistributorsPage() {
+export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageProps) {
+    const isAdmin = isAdminInventoryMode(mode);
     const [proveedores, setProveedores] = useState<Proveedor[]>([]);
     const [total, setTotal] = useState(0);
     const [status, setStatus] = useState<FetchStatus>('loading');
@@ -48,6 +55,7 @@ export function AdminDistributorsPage() {
     const [isOffline, setIsOffline] = useState(false);
     const [requestId, setRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
     const [formOpen, setFormOpen] = useState(false);
     const [editing, setEditing] = useState<Proveedor | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
@@ -55,36 +63,84 @@ export function AdminDistributorsPage() {
     const [deleteTarget, setDeleteTarget] = useState<Proveedor | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
-    const loadProveedores = useCallback(async () => {
-        setStatus('loading');
+    const debouncedSearch = useDebouncedValue(search);
+
+    // Catálogo sin filtro: permite restaurar la lista al limpiar la búsqueda
+    // sin esperar otra llamada al servidor.
+    const catalogoRef = useRef<Proveedor[]>([]);
+    const totalCatalogoRef = useRef(0);
+    // Descarta respuestas que llegan fuera de orden al escribir rápido.
+    const requestSeq = useRef(0);
+    const isFirstLoad = useRef(true);
+
+    const loadProveedores = useCallback(async (term: string, options: { force?: boolean } = {}) => {
+        const trimmed = term.trim();
+        const seq = ++requestSeq.current;
+
+        if (trimmed === '' && !options.force && catalogoRef.current.length > 0) {
+            setProveedores(catalogoRef.current);
+            setTotal(totalCatalogoRef.current);
+            setStatus('success');
+            setError(null);
+            setIsOffline(false);
+            setRequestId(null);
+            setIsSearching(false);
+            return;
+        }
+
+        if (options.force || catalogoRef.current.length === 0) {
+            setStatus('loading');
+        } else {
+            setIsSearching(true);
+        }
         setError(null);
         setIsOffline(false);
         setRequestId(null);
+
         try {
             const response = await proveedorService.getProveedores({
                 limite: LIMITE_PROVEEDORES,
+                ...(trimmed ? { q: trimmed } : {}),
             });
+            if (seq !== requestSeq.current) return;
+            if (trimmed === '') {
+                catalogoRef.current = response.proveedores;
+                totalCatalogoRef.current = response.total;
+            }
             setProveedores(response.proveedores);
             setTotal(response.total);
             setStatus('success');
         } catch (err) {
+            if (seq !== requestSeq.current) return;
             setError(
                 getApiErrorMessage(err, 'No se pudieron cargar los distribuidores del taller.')
             );
             setIsOffline(isOfflineError(err));
             setRequestId(getApiErrorRequestId(err));
             setStatus('error');
+        } finally {
+            if (seq === requestSeq.current) setIsSearching(false);
         }
     }, []);
 
     useEffect(() => {
         // La carga inicial es async: los setState ocurren después del await.
         // eslint-disable-next-line react/set-state-in-effect
-        void loadProveedores();
+        void loadProveedores('', { force: true });
     }, [loadProveedores]);
 
+    useEffect(() => {
+        // La primera ejecución la cubre la carga inicial; después, cada término
+        // debounced consulta al servidor.
+        if (isFirstLoad.current) {
+            isFirstLoad.current = false;
+            return;
+        }
+        void loadProveedores(debouncedSearch);
+    }, [debouncedSearch, loadProveedores]);
+
     const handleRetry = () => {
-        void loadProveedores();
+        void loadProveedores(debouncedSearch, { force: true });
     };
 
     const handleCreate = async (values: { nombre: string; contacto: string; tipoDistribuidor: TipoDistribuidor }) => {
@@ -94,7 +150,7 @@ export function AdminDistributorsPage() {
             await proveedorService.createProveedor(values);
             setFormOpen(false);
             setEditing(null);
-            await loadProveedores();
+            await loadProveedores(debouncedSearch, { force: true });
         } catch (err) {
             setFormError(getApiErrorMessage(err, 'No se pudo crear el proveedor.'));
         } finally {
@@ -110,7 +166,7 @@ export function AdminDistributorsPage() {
             await proveedorService.updateProveedor(editing.proveedorId, values);
             setFormOpen(false);
             setEditing(null);
-            await loadProveedores();
+            await loadProveedores(debouncedSearch, { force: true });
         } catch (err) {
             setFormError(getApiErrorMessage(err, 'No se pudo actualizar el proveedor.'));
         } finally {
@@ -124,19 +180,13 @@ export function AdminDistributorsPage() {
         try {
             await proveedorService.deleteProveedor(deleteTarget.proveedorId);
             setDeleteTarget(null);
-            await loadProveedores();
+            await loadProveedores(debouncedSearch, { force: true });
         } catch {
             setDeleteTarget(null);
         } finally {
             setDeleteSubmitting(false);
         }
     };
-
-    const filteredProveedores = useMemo(() => {
-        const term = search.trim().toLowerCase();
-        if (term === '') return proveedores;
-        return proveedores.filter((proveedor) => textoBuscable(proveedor).includes(term));
-    }, [proveedores, search]);
 
     const hasActiveFilters = search.trim() !== '';
 
@@ -153,12 +203,14 @@ export function AdminDistributorsPage() {
                         Proveedores de repuestos y su tipo de distribución
                     </p>
                 </div>
-                <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
-                    Nuevo proveedor
-                </Button>
+                {isAdmin && (
+                    <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
+                        Nuevo proveedor
+                    </Button>
+                )}
                 {status === 'success' && (
                     <p className="text-sm text-text-muted" aria-live="polite">
-                        {filteredProveedores.length} de {total} distribuidores
+                        {proveedores.length} de {total} distribuidores
                     </p>
                 )}
             </div>
@@ -185,7 +237,7 @@ export function AdminDistributorsPage() {
                             className="w-full py-2.5 pl-11 pr-4 bg-surface border border-border-custom rounded-lg text-text-main text-sm outline-none focus:border-primary-blue"
                         />
                     </div>
-                    {hasActiveFilters && filteredProveedores.length > 0 && (
+                    {hasActiveFilters && proveedores.length > 0 && (
                         <Button variant="secondary" onClick={clearFilters} className="gap-2">
                             <X className="w-4 h-4" aria-hidden />
                             Limpiar filtros
@@ -203,7 +255,7 @@ export function AdminDistributorsPage() {
                 />
             )}
 
-            {isServerError && filteredProveedores.length > 0 && (
+            {isServerError && proveedores.length > 0 && (
                 <Alert
                     tone="error"
                     className="mb-6"
@@ -224,7 +276,7 @@ export function AdminDistributorsPage() {
                 <div className="card p-16 flex justify-center">
                     <LoadingState message="Cargando distribuidores..." />
                 </div>
-            ) : isServerError && filteredProveedores.length === 0 ? (
+            ) : isServerError && proveedores.length === 0 ? (
                 <div className="card p-8">
                     <ErrorState
                         title="No se pudieron cargar los distribuidores"
@@ -233,7 +285,11 @@ export function AdminDistributorsPage() {
                         onRetry={handleRetry}
                     />
                 </div>
-            ) : filteredProveedores.length === 0 ? (
+            ) : isSearching && proveedores.length === 0 ? (
+                <div className="card p-16 flex justify-center">
+                    <LoadingState message="Buscando distribuidores..." />
+                </div>
+            ) : proveedores.length === 0 ? (
                 <div className="card p-8">
                     <EmptyState
                         icon={Truck}
@@ -257,7 +313,7 @@ export function AdminDistributorsPage() {
                     />
                 </div>
             ) : (
-                <div className="card overflow-hidden">
+                <div className="card overflow-hidden" aria-busy={isSearching}>
                     <Table>
                         <caption className="sr-only">
                             Distribuidores registrados con su contacto, tipo y cantidad de repuestos.
@@ -268,11 +324,11 @@ export function AdminDistributorsPage() {
                                 <TableHeaderCell>Contacto</TableHeaderCell>
                                 <TableHeaderCell>Tipo</TableHeaderCell>
                                 <TableHeaderCell className="text-right">Repuestos</TableHeaderCell>
-                                <TableHeaderCell className="text-center">Acciones</TableHeaderCell>
+                                {isAdmin && <TableHeaderCell className="text-center">Acciones</TableHeaderCell>}
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {filteredProveedores.map((proveedor) => (
+                            {proveedores.map((proveedor) => (
                                 <TableRow key={proveedor.proveedorId}>
                                     <TableCell className="font-medium">
                                         {proveedor.nombre}
@@ -290,12 +346,14 @@ export function AdminDistributorsPage() {
                                     <TableCell className="text-right font-medium">
                                         {proveedor.cantidadRepuestos}
                                     </TableCell>
-                                    <TableCell className="text-center">
-                                        <div className="flex justify-center gap-2">
-                                            <Button variant="secondary" onClick={() => { setEditing(proveedor); setFormError(null); setFormOpen(true); }}>Editar</Button>
-                                            <Button variant="danger" onClick={() => setDeleteTarget(proveedor)}>Eliminar</Button>
-                                        </div>
-                                    </TableCell>
+                                    {isAdmin && (
+                                        <TableCell className="text-center">
+                                            <div className="flex justify-center gap-2">
+                                                <Button variant="secondary" onClick={() => { setEditing(proveedor); setFormError(null); setFormOpen(true); }}>Editar</Button>
+                                                <Button variant="danger" onClick={() => setDeleteTarget(proveedor)}>Eliminar</Button>
+                                            </div>
+                                        </TableCell>
+                                    )}
                                 </TableRow>
                             ))}
                         </TableBody>
@@ -303,22 +361,26 @@ export function AdminDistributorsPage() {
                 </div>
             )}
 
-            <ProveedorFormDialog
-                open={formOpen}
-                initial={editing}
-                isSubmitting={formSubmitting}
-                error={formError}
-                onSubmit={editing ? handleUpdate : handleCreate}
-                onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
-            />
-            <ConfirmDialog
-                open={!!deleteTarget}
-                title="Eliminar proveedor"
-                description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
-                isLoading={deleteSubmitting}
-                onConfirm={handleDelete}
-                onCancel={() => setDeleteTarget(null)}
-            />
+            {isAdmin && (
+                <>
+                    <ProveedorFormDialog
+                        open={formOpen}
+                        initial={editing}
+                        isSubmitting={formSubmitting}
+                        error={formError}
+                        onSubmit={editing ? handleUpdate : handleCreate}
+                        onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
+                    />
+                    <ConfirmDialog
+                        open={!!deleteTarget}
+                        title="Eliminar proveedor"
+                        description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
+                        isLoading={deleteSubmitting}
+                        onConfirm={handleDelete}
+                        onCancel={() => setDeleteTarget(null)}
+                    />
+                </>
+            )}
         </div>
     );
 }

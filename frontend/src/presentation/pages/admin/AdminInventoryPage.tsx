@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Package, X } from 'lucide-react';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
 import { proveedorService } from '@/infrastructure/api/ProveedorService';
@@ -10,6 +11,8 @@ import type { Proveedor } from '@/domain/entities/Proveedor';
 import { InventoryToolbar } from '@/presentation/components/inventory/InventoryToolbar';
 import { StockStatusBadge } from '@/presentation/components/inventory/StockStatusBadge';
 import { getStockStatus, type StockFilter } from '@/presentation/utils/stockStatus';
+import { isAdminInventoryMode, type InventoryPortalMode } from '@/presentation/utils/inventoryPortal';
+import { useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
 import { Alert } from '@/presentation/components/ui/Alert';
 import { Button } from '@/presentation/components/ui/Button';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
@@ -34,21 +37,38 @@ export const LIMITE_REPUESTOS = 200;
 
 type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
-/** Texto buscable de un repuesto: código interno, nombre y proveedor. */
-function textoBuscable(repuesto: Repuesto): string {
-    return [repuesto.repuestoId, repuesto.nombre, repuesto.proveedorNombre]
-        .join(' ')
-        .toLowerCase();
+/**
+ * Texto que el servidor NO filtra en `GET /repuestos?q`: el `q` de MS3 busca
+ * solo por nombre. El proveedor y el código se comparan localmente sobre el
+ * catálogo cargado para no perder esas búsquedas.
+ */
+function textoLocal(repuesto: Repuesto): string {
+    return [repuesto.repuestoId, repuesto.proveedorNombre].join(' ').toLowerCase();
 }
 
-export function AdminInventoryPage() {
+interface AdminInventoryPageProps {
+    /** El portal mecánico comparte la vista, pero sin acciones de administración. */
+    mode?: InventoryPortalMode;
+}
+
+export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) {
+    const isAdmin = isAdminInventoryMode(mode);
+    const stockDetailBase = isAdmin ? '/admin/inventario/stock' : '/mechanic/inventario/stock';
+    // Catálogo completo cargado sin filtro (hasta LIMITE_REPUESTOS).
     const [repuestos, setRepuestos] = useState<Repuesto[]>([]);
     const [total, setTotal] = useState(0);
+    // Coincidencias por nombre que devuelve el servidor para el término actual.
+    const [resultadosBusqueda, setResultadosBusqueda] = useState<Repuesto[]>([]);
+    const [totalBusqueda, setTotalBusqueda] = useState(0);
+    const [isSearching, setIsSearching] = useState(false);
 
     const [status, setStatus] = useState<FetchStatus>('loading');
     const [error, setError] = useState<string | null>(null);
     const [isOffline, setIsOffline] = useState(false);
     const [requestId, setRequestId] = useState<string | null>(null);
+    const [searchError, setSearchError] = useState<string | null>(null);
+    const [searchIsOffline, setSearchIsOffline] = useState(false);
+    const [searchRequestId, setSearchRequestId] = useState<string | null>(null);
     const [search, setSearch] = useState('');
     const [estado, setEstado] = useState<StockFilter>('todos');
     const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -59,22 +79,57 @@ export function AdminInventoryPage() {
     const [deleteTarget, setDeleteTarget] = useState<Repuesto | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
+    const debouncedSearch = useDebouncedValue(search);
+
+    // Descarta respuestas fuera de orden al escribir rápido.
+    const catalogoSeq = useRef(0);
+    const busquedaSeq = useRef(0);
+    const isFirstSearch = useRef(true);
+
     const loadRepuestos = useCallback(async () => {
+        const seq = ++catalogoSeq.current;
         setStatus('loading');
         setError(null);
         setIsOffline(false);
         setRequestId(null);
         try {
             const response = await repuestoService.getRepuestos({ limite: LIMITE_REPUESTOS });
+            if (seq !== catalogoSeq.current) return;
             setRepuestos(response.repuestos);
             setTotal(response.total);
-
             setStatus('success');
         } catch (err) {
+            if (seq !== catalogoSeq.current) return;
             setError(getApiErrorMessage(err, 'No se pudieron cargar los repuestos del inventario.'));
             setIsOffline(isOfflineError(err));
             setRequestId(getApiErrorRequestId(err));
             setStatus('error');
+        }
+    }, []);
+
+    const buscar = useCallback(async (term: string) => {
+        const seq = ++busquedaSeq.current;
+        setIsSearching(true);
+        try {
+            const response = await repuestoService.getRepuestos({
+                limite: LIMITE_REPUESTOS,
+                q: term,
+            });
+            if (seq !== busquedaSeq.current) return;
+            setResultadosBusqueda(response.repuestos);
+            setTotalBusqueda(response.total);
+            setSearchError(null);
+            setSearchIsOffline(false);
+            setSearchRequestId(null);
+        } catch (err) {
+            if (seq !== busquedaSeq.current) return;
+            setSearchError(
+                getApiErrorMessage(err, 'No se pudo buscar en el catálogo de repuestos.')
+            );
+            setSearchIsOffline(isOfflineError(err));
+            setSearchRequestId(getApiErrorRequestId(err));
+        } finally {
+            if (seq === busquedaSeq.current) setIsSearching(false);
         }
     }, []);
 
@@ -86,6 +141,22 @@ export function AdminInventoryPage() {
     }, [loadRepuestos]);
 
     useEffect(() => {
+        // La primera ejecución la cubre la carga inicial sin `q`.
+        if (isFirstSearch.current) {
+            isFirstSearch.current = false;
+            return;
+        }
+        const term = debouncedSearch.trim();
+        if (term === '') return;
+        // La consulta es async: setIsSearching ocurre antes del await y la
+        // respuesta actualiza el estado después.
+        // eslint-disable-next-line react/set-state-in-effect
+        void buscar(term);
+    }, [debouncedSearch, buscar]);
+
+    useEffect(() => {
+        // Solo el formulario de alta/edición necesita el catálogo de proveedores.
+        if (!isAdmin) return;
         void (async () => {
             try {
                 const response = await proveedorService.getProveedores({ limite: 200 });
@@ -94,10 +165,21 @@ export function AdminInventoryPage() {
                 setProveedores([]);
             }
         })();
-    }, []);
+    }, [isAdmin]);
+
+    const recargar = async () => {
+        await loadRepuestos();
+        const term = debouncedSearch.trim();
+        if (term !== '') await buscar(term);
+    };
 
     const handleRetry = () => {
-        void loadRepuestos();
+        const term = debouncedSearch.trim();
+        if (term !== '') {
+            void buscar(term);
+        } else {
+            void loadRepuestos();
+        }
     };
 
     const handleCreate = async (values: { proveedorId: number; nombre: string; stockInicial?: number; umbralParticular: number | null }) => {
@@ -107,7 +189,7 @@ export function AdminInventoryPage() {
             await repuestoService.createRepuesto(values);
             setFormOpen(false);
             setEditing(null);
-            await loadRepuestos();
+            await recargar();
         } catch (err) {
             setFormError(getApiErrorMessage(err, 'No se pudo crear el repuesto.'));
         } finally {
@@ -127,7 +209,7 @@ export function AdminInventoryPage() {
             });
             setFormOpen(false);
             setEditing(null);
-            await loadRepuestos();
+            await recargar();
         } catch (err) {
             setFormError(getApiErrorMessage(err, 'No se pudo actualizar el repuesto.'));
         } finally {
@@ -141,7 +223,7 @@ export function AdminInventoryPage() {
         try {
             await repuestoService.deleteRepuesto(deleteTarget.repuestoId);
             setDeleteTarget(null);
-            await loadRepuestos();
+            await recargar();
         } catch {
             setDeleteTarget(null);
         } finally {
@@ -149,37 +231,86 @@ export function AdminInventoryPage() {
         }
     };
 
-    const filteredRepuestos = useMemo(() => {
-        const term = search.trim().toLowerCase();
-        return repuestos.filter((repuesto) => {
-            if (term !== '' && !textoBuscable(repuesto).includes(term)) return false;
-            if (estado === 'todos') return true;
-            return getStockStatus(repuesto).key === estado;
-        });
-    }, [repuestos, search, estado]);
+    const term = debouncedSearch.trim().toLowerCase();
+
+    /**
+     * Unión deduplicada: coincidencias por nombre del servidor (alcanzan todo
+     * el catálogo) + coincidencias locales por proveedor/código (solo los
+     * primeros LIMITE_REPUESTOS cargados).
+     */
+    const baseRepuestos = useMemo(() => {
+        if (term === '') return repuestos;
+        const locales = repuestos.filter((repuesto) => textoLocal(repuesto).includes(term));
+        const vistos = new Set<number>();
+        const union: Repuesto[] = [];
+        for (const repuesto of [...resultadosBusqueda, ...locales]) {
+            if (vistos.has(repuesto.repuestoId)) continue;
+            vistos.add(repuesto.repuestoId);
+            union.push(repuesto);
+        }
+        return union;
+    }, [repuestos, resultadosBusqueda, term]);
+
+    const filteredRepuestos = useMemo(
+        () =>
+            baseRepuestos.filter(
+                (repuesto) => estado === 'todos' || getStockStatus(repuesto).key === estado
+            ),
+        [baseRepuestos, estado]
+    );
 
     const hasActiveFilters = search.trim() !== '' || estado !== 'todos';
 
-    const clearFilters = () => {
+    const limpiarBusqueda = () => {
         setSearch('');
+        setResultadosBusqueda([]);
+        setTotalBusqueda(0);
+        setSearchError(null);
+        setSearchIsOffline(false);
+        setSearchRequestId(null);
+        setIsSearching(false);
+    };
+
+    const handleSearchChange = (value: string) => {
+        if (value.trim() === '') {
+            limpiarBusqueda();
+            return;
+        }
+        setSearch(value);
+    };
+
+    const clearFilters = () => {
+        limpiarBusqueda();
         setEstado('todos');
     };
 
     const isServerError = status === 'error' && !isOffline;
+    const isSearchServerError = searchError !== null && !searchIsOffline;
+    const errorMessage = error ?? searchError;
+    const errorRequestId = requestId ?? searchRequestId;
+    const showOffline = isOffline || searchIsOffline;
 
     return (
         <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
             <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
                 <div>
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Inventario</h2>
-                    <p className="text-text-muted text-lg">Control de repuestos y stock del taller</p>
+                    <p className="text-text-muted text-lg">
+                        {isAdmin
+                            ? 'Control de repuestos y stock del taller'
+                            : 'Consulta de repuestos y disponibilidad del taller'}
+                    </p>
                 </div>
-                <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
-                    Nuevo repuesto
-                </Button>
-                {status === 'success' && (
+                {isAdmin && (
+                    <Button onClick={() => { setEditing(null); setFormError(null); setFormOpen(true); }}>
+                        Nuevo repuesto
+                    </Button>
+                )}
+                {status !== 'loading' && (repuestos.length > 0 || term !== '') && (
                     <p className="text-sm text-text-muted" aria-live="polite">
-                        {filteredRepuestos.length} de {total} repuestos
+                        {term !== ''
+                            ? `${filteredRepuestos.length} de ${baseRepuestos.length} resultados`
+                            : `${filteredRepuestos.length} de ${total} repuestos`}
                     </p>
                 )}
             </div>
@@ -189,7 +320,7 @@ export function AdminInventoryPage() {
                     <InventoryToolbar
                         className="flex-1"
                         search={search}
-                        onSearchChange={setSearch}
+                        onSearchChange={handleSearchChange}
                         estado={estado}
                         onEstadoChange={setEstado}
                     />
@@ -202,29 +333,36 @@ export function AdminInventoryPage() {
                 </div>
             </div>
 
-            {isOffline && (
+            {showOffline && (
                 <OfflineBanner
-                    message={error}
+                    message={errorMessage}
                     onRetry={handleRetry}
-                    requestId={requestId}
+                    requestId={errorRequestId}
                     className="mb-6"
                 />
             )}
 
-            {isServerError && filteredRepuestos.length > 0 && (
+            {(isServerError || isSearchServerError) && filteredRepuestos.length > 0 && (
                 <Alert
                     tone="error"
                     className="mb-6"
                     action={<RetryButton tone="error" onClick={handleRetry} />}
                 >
-                    {error ?? 'No se pudieron cargar los repuestos del inventario.'} Se muestran los últimos datos disponibles.
+                    {errorMessage ?? 'No se pudieron cargar los repuestos del inventario.'} Se muestran los últimos datos disponibles.
                 </Alert>
             )}
 
-            {status === 'success' && total > repuestos.length && (
+            {status === 'success' && term === '' && total > repuestos.length && (
                 <Alert tone="info" className="mb-6">
                     El catálogo tiene {total} repuestos; esta vista muestra los primeros{' '}
                     {repuestos.length}.
+                </Alert>
+            )}
+
+            {term !== '' && totalBusqueda > resultadosBusqueda.length && (
+                <Alert tone="info" className="mb-6">
+                    La búsqueda por nombre encontró {totalBusqueda} repuestos; se muestran los
+                    primeros {resultadosBusqueda.length}.
                 </Alert>
             )}
 
@@ -240,6 +378,10 @@ export function AdminInventoryPage() {
                         requestId={requestId}
                         onRetry={handleRetry}
                     />
+                </div>
+            ) : isSearching && filteredRepuestos.length === 0 ? (
+                <div className="card p-16 text-center">
+                    <p className="text-text-muted">Buscando repuestos...</p>
                 </div>
             ) : filteredRepuestos.length === 0 ? (
                 <div className="card p-8">
@@ -265,7 +407,7 @@ export function AdminInventoryPage() {
                     />
                 </div>
             ) : (
-                <div className="card overflow-hidden">
+                <div className="card overflow-hidden" aria-busy={isSearching}>
                     <Table>
                         <caption className="sr-only">
                             Repuestos del inventario con su stock actual, umbral y estado.
@@ -301,10 +443,19 @@ export function AdminInventoryPage() {
                                         <StockStatusBadge repuesto={repuesto} />
                                     </TableCell>
                                     <TableCell className="text-center">
-                                        <div className="flex justify-center gap-2">
-                                            <Button variant="secondary" onClick={() => { setEditing(repuesto); setFormError(null); setFormOpen(true); }}>Editar</Button>
-                                            <Button variant="danger" onClick={() => setDeleteTarget(repuesto)}>Eliminar</Button>
-                                        </div>
+                                        {isAdmin ? (
+                                            <div className="flex justify-center gap-2">
+                                                <Button variant="secondary" onClick={() => { setEditing(repuesto); setFormError(null); setFormOpen(true); }}>Editar</Button>
+                                                <Button variant="danger" onClick={() => setDeleteTarget(repuesto)}>Eliminar</Button>
+                                            </div>
+                                        ) : (
+                                            <Link
+                                                to={`${stockDetailBase}/${repuesto.repuestoId}`}
+                                                className="inline-flex items-center justify-center px-4 py-2 rounded-lg border border-border-custom bg-surface text-text-main text-sm font-medium no-underline hover:bg-bg-secondary"
+                                            >
+                                                Ver stock
+                                            </Link>
+                                        )}
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -313,23 +464,27 @@ export function AdminInventoryPage() {
                 </div>
             )}
 
-            <RepuestoFormDialog
-                open={formOpen}
-                initial={editing}
-                proveedores={proveedores}
-                isSubmitting={formSubmitting}
-                error={formError}
-                onSubmit={editing ? handleUpdate : handleCreate}
-                onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
-            />
-            <ConfirmDialog
-                open={!!deleteTarget}
-                title="Eliminar repuesto"
-                description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
-                isLoading={deleteSubmitting}
-                onConfirm={handleDelete}
-                onCancel={() => setDeleteTarget(null)}
-            />
+            {isAdmin && (
+                <>
+                    <RepuestoFormDialog
+                        open={formOpen}
+                        initial={editing}
+                        proveedores={proveedores}
+                        isSubmitting={formSubmitting}
+                        error={formError}
+                        onSubmit={editing ? handleUpdate : handleCreate}
+                        onClose={() => { setFormOpen(false); setEditing(null); setFormError(null); }}
+                    />
+                    <ConfirmDialog
+                        open={!!deleteTarget}
+                        title="Eliminar repuesto"
+                        description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
+                        isLoading={deleteSubmitting}
+                        onConfirm={handleDelete}
+                        onCancel={() => setDeleteTarget(null)}
+                    />
+                </>
+            )}
         </div>
     );
 }

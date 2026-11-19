@@ -1,5 +1,9 @@
 import type { Vehicle } from '@/domain/entities/Vehicle';
-import type { CreateVehicleInput, VehiclePort } from '@/domain/ports/VehiclePort';
+import type {
+    CreateVehicleInput,
+    UpdateVehicleInput,
+    VehiclePort,
+} from '@/domain/ports/VehiclePort';
 import apiClient from '../config/apiClient';
 
 // Contrato HTTP de MS2 a través de la API Gateway (/api/vehiculos). MS2 usa
@@ -66,6 +70,20 @@ class VehicleService implements VehiclePort {
         kilometraje: input.mileage,
     });
     return mapVehiculoApi(data);
+    }
+
+    async updateVehicle(id: string, input: UpdateVehicleInput, clientId?: string): Promise<Vehicle> {
+    // `VehiculoActualizar` exige al menos un campo y no admite `patente`.
+    // Solo se envían los campos informados: `undefined` desaparece del JSON y
+    // así no se pisa un dato que esta pantalla no edita.
+    const body: Record<string, unknown> = {};
+    if (input.brand !== undefined) body.marca = input.brand;
+    if (input.model !== undefined) body.modelo = input.model;
+    if (input.year !== undefined) body.anio = input.year;
+    if (input.mileage !== undefined) body.kilometraje = input.mileage;
+
+    const { data } = await apiClient.patch<VehiculoApi>(`/vehiculos/${id}`, body);
+    return mapVehiculoApi(data, clientId);
     }
 }
 

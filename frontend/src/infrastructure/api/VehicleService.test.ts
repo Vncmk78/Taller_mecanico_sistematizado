@@ -13,6 +13,7 @@ vi.mock('@/infrastructure/config/apiClient', () => ({
   default: {
     post: vi.fn(),
     get: vi.fn(),
+    patch: vi.fn(),
   },
 }));
 
@@ -129,6 +130,44 @@ describe('VehicleService: contrato HTTP de MS2 (vehículos)', () => {
       anio: null,
       kilometraje: null,
     });
+  });
+
+  it('updateVehicle usa PATCH /vehiculos/{id} con los campos editables en español', async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({
+      data: { ...vehiculoApi, marca: 'Mazda', modelo: 'CX-5', anio: 2021, kilometraje: 30000 },
+    });
+
+    const updated = await vehicleService.updateVehicle('7', {
+      brand: 'Mazda',
+      model: 'CX-5',
+      year: 2021,
+      mileage: 30000,
+    });
+
+    // `VehiculoActualizar` no incluye la patente: el body no la envía.
+    expect(apiClient.patch).toHaveBeenCalledWith('/vehiculos/7', {
+      marca: 'Mazda',
+      modelo: 'CX-5',
+      anio: 2021,
+      kilometraje: 30000,
+    });
+    expect(updated).toMatchObject({
+      id: '7',
+      patent: 'KKTT11',
+      brand: 'Mazda',
+      model: 'CX-5',
+      year: 2021,
+      mileage: 30000,
+    });
+  });
+
+  it('updateVehicle omite los campos no informados y conserva la pertenencia de la sesión', async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: vehiculoApi });
+
+    const updated = await vehicleService.updateVehicle('7', { mileage: null }, 'cliente-1');
+
+    expect(apiClient.patch).toHaveBeenCalledWith('/vehiculos/7', { kilometraje: null });
+    expect(updated.clientId).toBe('cliente-1');
   });
 });
 

@@ -309,12 +309,13 @@ Estas reglas dicen qué debe respetar cada tarea. No autorizan endpoints nuevos.
 Cuando un cliente web o app móvil muestre acciones a un mecánico, debe atenerse
 a esta matriz:
 
-- El mecánico solo puede **leer** órdenes donde `mecanico_actual_id` coincide con su
-  usuario. No existe ninguna acción de escritura habilitada para el rol `mecanico`.
+- El mecánico solo ve órdenes donde `mecanico_actual_id` coincide con su usuario.
+  Sobre ellas puede cambiar el estado (`PATCH /api/ordenes/{id}/estado`), registrar
+  bitácora y subir evidencias (§4.3 y `contratos-integracion-iv.md`).
 - **Asignar y reasignar es solo del Administrador.** El mecánico no puede
   autoasignarse ni cambiar el responsable de una orden.
-- No ofrecer acciones de cambio de estado: **no existe endpoint** de cambio general
-  de estado. La única transición automática es la que dispara la primera asignación.
+- Ofrecer el cambio de estado solo en órdenes asignadas al mecánico, y sin los pares
+  reservados a operaciones específicas (`1 → 2`, `3 → 4/5`, `6 → 7` responden `409`).
 - El listado de vehículos para el mecánico es `GET /api/vehiculos/asignados`,
   limitado a los vehículos con órdenes asignadas a él; otros roles reciben `403`.
 - Ocultar una acción por rol es una medida de experiencia de usuario, **no** de

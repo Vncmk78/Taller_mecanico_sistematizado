@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { authService } from '@/infrastructure/api/AuthService';
 import type { UsuarioListado } from '@/domain/entities/User';
 import { AdminClientsPage } from './AdminClientsPage';
@@ -125,14 +125,16 @@ describe('AdminClientsPage: listado y estados', () => {
         fireEvent.change(buscador, { target: { value: 'inexistente' } });
 
         expect(
-            screen.getByText('No se encontraron clientes para "inexistente".')
+            await screen.findByText('No se encontraron clientes para "inexistente".')
         ).toBeInTheDocument();
         expect(screen.queryByText('Ana Pérez')).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: /limpiar filtros/i }));
 
         expect(buscador).toHaveValue('');
-        expect(screen.getByText('Ana Pérez')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText('Ana Pérez')).toBeInTheDocument();
+        });
         expect(screen.getByText('Bruno Díaz')).toBeInTheDocument();
     });
 
@@ -146,8 +148,10 @@ describe('AdminClientsPage: listado y estados', () => {
             target: { value: 'bruno@' },
         });
 
+        await waitFor(() => {
+            expect(screen.queryByText('Ana Pérez')).not.toBeInTheDocument();
+        });
         expect(screen.getByText('Bruno Díaz')).toBeInTheDocument();
-        expect(screen.queryByText('Ana Pérez')).not.toBeInTheDocument();
         expect(screen.getByText(/1 de 2 clientes/)).toBeInTheDocument();
     });
 

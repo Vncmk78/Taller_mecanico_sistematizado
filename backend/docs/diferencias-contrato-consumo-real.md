@@ -52,6 +52,12 @@ nuevo (D-05, …).
 `test_d01_la_cancelacion_real_no_trae_los_campos_de_orden` se conserva como
 evidencia viva de que la cancelación responde una solicitud, no una orden.
 
+**Regresión (Semana 9):** cada incompatibilidad corregida (B-01 a B-04, D-01,
+D-02, H-01 y O-01) tiene una prueba con su ID en
+`tests/test_regresion_incompatibilidades.py` y
+`tests/test_cabeceras_cliente_movil.py`. Al corregir una nueva, se agrega ahí
+con su ID.
+
 ## 4. Observaciones (no son diferencias del contrato)
 
 - **O-01 — Fechas sin zona horaria en el entorno de prueba.** Con SQLite, MS2
@@ -60,7 +66,10 @@ evidencia viva de que la cancelación responde una solicitud, no una orden.
   confirmarlo con PostgreSQL antes de exigir `format: date-time` estricto.
 - **O-02 — El 429 de login no se trata aparte en el frontend.** El contrato lo
   publica desde 1.0.0 con `Retry-After`. `errors.ts` muestra el `detail`
-  («Demasiados intentos fallidos…»), pero no usa la espera.
+  («Demasiados intentos fallidos…»), pero no usa la espera. **Semana 9:** además,
+  CORS no exponía `Retry-After`, así que un cliente en navegador no podía leerla
+  aunque quisiera. Corregido en la Gateway (`expose_headers`) con regresión en
+  `tests/test_cabeceras_cliente_movil.py`; falta que el frontend la use.
 - **O-03 — Cancelación repetida.** El contrato distingue `201` (creada) de `200`
   (ya existía). El frontend no los distingue; tras la corrección de D-01 no
   afecta, porque vuelve a pedir la orden en ambos casos.

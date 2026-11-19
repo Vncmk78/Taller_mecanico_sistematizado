@@ -49,7 +49,7 @@ from services.ms3_presupuestos.main import app as app_ms3  # noqa: E402
 from services.ms3_presupuestos.models import (  # noqa: E402
     Base as BaseMS3, Proveedor, Repuesto,
 )
-from shared.auth import NombreRol, crear_token_acceso  # noqa: E402
+from shared.auth import NombreRol, crear_token_acceso, validar_token_acceso  # noqa: E402
 
 
 # Una orden en estado no terminal, requisito de la asignación de mecánico.
@@ -432,7 +432,18 @@ def test_mecanico_asignado_crea_presupuesto_con_su_identidad(escenario):
     r = _crear_presupuesto(escenario, usuario_id=77, roles=NombreRol.MECANICO)
     assert r.status_code == 201
     assert r.json()["versiones"][0]["creado_por_id"] == 77
-    assert escenario.llamadas[-1][1] == _cabeceras(77, NombreRol.MECANICO)
+    principal_capturado = validar_token_acceso(
+        escenario.llamadas[-1][1]["Authorization"].removeprefix("Bearer "),
+        clave_secreta=settings_ms2.JWT_SECRET_KEY.get_secret_value(),
+        algoritmo=settings_ms2.JWT_ALGORITHM,
+    )
+    principal_esperado = validar_token_acceso(
+        _cabeceras(77, NombreRol.MECANICO)["Authorization"].removeprefix("Bearer "),
+        clave_secreta=settings_ms2.JWT_SECRET_KEY.get_secret_value(),
+        algoritmo=settings_ms2.JWT_ALGORITHM,
+    )
+    assert principal_capturado.usuario_id == principal_esperado.usuario_id == 77
+    assert principal_capturado.roles == principal_esperado.roles == frozenset({NombreRol.MECANICO})
 
 
 @pytest.mark.parametrize("asignada", [False, True])

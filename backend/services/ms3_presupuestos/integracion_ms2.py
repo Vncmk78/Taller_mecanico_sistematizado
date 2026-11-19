@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.ms3_presupuestos.config import settings
 from shared.auth import NombreRol, PrincipalAutenticado
+from shared.correlacion import cabeceras_correlacion
 from shared.contratos_decisiones import (
     AplicacionDecisionRespuesta,
     AplicacionDisponibilidadRepuestosRespuesta,
@@ -125,7 +126,7 @@ class VerificadorOrdenesHttp:
         try:
             respuesta = httpx.get(
                 f"{self.url_base}{ruta}",
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {token}", **cabeceras_correlacion()},
                 timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
@@ -178,7 +179,7 @@ class CoordinadorOrdenesHttp:
             respuesta = httpx.post(
                 f"{self.url_base}/ordenes/{orden_id}/decisiones-presupuesto",
                 json={"decision_id": decision_id},
-                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+                headers={"Authorization": f"Bearer {token}", **cabeceras_correlacion()}, timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise DecisionAplicacionPendienteError(orden_id, decision_id) from exc
@@ -219,7 +220,7 @@ class CoordinadorDisponibilidadRepuestos:
                 json=DisponibilidadRepuestosSolicitud(
                     clave_operacion=clave_operacion
                 ).model_dump(),
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {token}", **cabeceras_correlacion()},
                 timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
@@ -285,7 +286,7 @@ class CoordinadorEnviosPresupuestoHttp:
             respuesta = httpx.post(
                 f"{self.url_base}/ordenes/{orden_id}/envios-presupuesto",
                 json={"presupuesto_id": presupuesto_id},
-                headers={"Authorization": f"Bearer {token}"}, timeout=self.timeout,
+                headers={"Authorization": f"Bearer {token}", **cabeceras_correlacion()}, timeout=self.timeout,
             )
         except httpx.HTTPError as exc:
             raise EnvioPresupuestoAplicacionPendienteError(

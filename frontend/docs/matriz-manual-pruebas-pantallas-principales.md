@@ -36,6 +36,7 @@ Convención de resultado: **OK** = cumple esperado, **OBS** = cumple con observa
 | R-10 | Campana de notificaciones | Abrir campana, revisar lista, marcar leída/todas, cerrar con `Escape`/click fuera | Popover dentro del viewport (`w-[min(92vw,360px)]`); foco al abrir; `Escape` cierra y devuelve foco; contador legible | OK | OK | OK | OK | OK | OK | OK | Enlace “Ver centro de avisos” navega por rol. |
 | R-11 | Centro de avisos | Ir a `/admin|client|mechanic/notificaciones`; filtrar Todas/No leídas; marcar leídas; actualizar | Lista legible en móvil (tarjetas apiladas, acciones full-width en móvil); filtros accesibles; estados carga/vacío/error correctos | OK | OK | OK | OK | OK | OK | OK | `NotificationsPage` responsive y con mensajes de error/reintento. |
 | R-12 | Teclado (flujo básico) | Recorrer con `Tab/Shift+Tab`, activar con `Enter/Space`, `Escape` en overlays | Orden de foco lógico; foco visible; sin trampas fuera de modales/drawers; skip link funcional | OK | OK | OK | OK | OK | OK | OK | Verificado en layouts, drawer móvil y campana (alcance de revisión a11y). |
+| R-13 | Inventario del mecánico | Recorrer `/mechanic/inventario*`; abrir *Ver stock* y el formulario de movimientos | Catálogo, alertas, movimientos, umbral y distribuidores legibles; acciones de escritura administrativas no visibles; formulario de movimiento de orden usable en móvil | OK | OK | OK | OBS | OK | OK | OK | Las tablas densas conservan el comportamiento de `R-07`; el formulario restringido exige orden asignada. |
 
 ## 3. Criterios de aceptación verificados
 - No hay **scroll horizontal no intencional** en los viewports principales para flujos críticos (navegación, dashboards, centro de avisos).
@@ -43,6 +44,7 @@ Convención de resultado: **OK** = cumple esperado, **OBS** = cumple con observa
 - **Campana y centro de avisos** utilizables en 320px+ (ancho contenido, textos legibles, acciones accesibles).
 - **Mensajes de error/estado** visibles y comprensibles; reintento disponible cuando corresponde.
 - **Controles interactivos** alcanzables por teclado en los componentes revisados.
+- **Inventario del mecánico** disponible en todos los viewports sin acciones de administración; el formulario de movimientos de orden se mantiene usable en móvil.
 
 ## 4. Observaciones y recomendaciones (seguimiento)
 1. **Tablas densas en `md` (768px):** mantener scroll horizontal contenido o evaluar vista “card” por fila en listados administrativos críticos para mejorar lectura sin desplazamiento lateral.

@@ -64,7 +64,7 @@ export function getApiErrorRequestId(error: unknown): string | null {
 /**
  * Código del catálogo de errores de la Gateway (RUTA_NO_ENCONTRADA,
  * MICROSERVICIO_INALCANZABLE, GATEWAY_SATURADA, TIEMPO_AGOTADO, ERROR_INTERNO,
- * ERROR_MICROSERVICIO, ERROR_HTTP). Solo la Gateway lo envía: los errores que
+ * ERROR_MICROSERVICIO, ERROR_HTTP, RESPUESTA_INVALIDA, SOLICITUD_INTERRUMPIDA). Solo la Gateway lo envía: los errores que
  * llegan tal cual desde un microservicio vienen sin él.
  */
 export function getApiErrorCode(error: unknown): string | null {

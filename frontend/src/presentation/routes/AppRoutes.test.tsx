@@ -36,6 +36,38 @@ vi.mock('@/infrastructure/api/NuevaAtencionService', () => ({
   },
 }));
 
+// Inventario: las rutas solo comprueban que el portal y la pantalla montan.
+vi.mock('@/infrastructure/api/RepuestoService', () => ({
+  repuestoService: {
+    getRepuestos: vi.fn(() =>
+      Promise.resolve({ total: 0, desde: 0, limite: 200, umbralGeneral: null, repuestos: [] })
+    ),
+  },
+}));
+
+vi.mock('@/infrastructure/api/ProveedorService', () => ({
+  proveedorService: {
+    getProveedores: vi.fn(() =>
+      Promise.resolve({ total: 0, desde: 0, limite: 200, proveedores: [] })
+    ),
+  },
+}));
+
+vi.mock('@/infrastructure/api/InventarioService', () => ({
+  inventarioService: {
+    listMovimientos: vi.fn(() =>
+      Promise.resolve({ total: 0, desde: 0, limite: 50, movimientos: [] })
+    ),
+    listAlertas: vi.fn(() => Promise.resolve({ umbralGeneral: null, total: 0, alertas: [] })),
+    getUmbralGeneral: vi.fn(() =>
+      Promise.resolve({ umbralGeneral: null, vigenteDesde: null, actualizadoPorId: null })
+    ),
+    getHistorialUmbral: vi.fn(() => Promise.resolve([])),
+    getStock: vi.fn(),
+    registrarMovimiento: vi.fn(),
+  },
+}));
+
 const adminUser: User = {
   id: '1',
   email: 'admin@taller.cl',
@@ -414,6 +446,70 @@ describe('AppRoutes: navegación por los tres roles', () => {
       expect(
         await screen.findByText('Órdenes de trabajo asignadas a tu cuenta')
       ).toBeInTheDocument();
+    });
+
+    it('muestra la sección Inventario en el menú mecánico', () => {
+      logueadoComo(mechanicUser);
+      renderApp('/mechanic');
+
+      expect(screen.getByRole('link', { name: 'Repuestos' })).toHaveAttribute(
+        'href',
+        '/mechanic/inventario'
+      );
+      expect(screen.getByRole('link', { name: 'Alertas de stock' })).toHaveAttribute(
+        'href',
+        '/mechanic/inventario/alertas'
+      );
+      expect(screen.getByRole('link', { name: 'Movimientos' })).toHaveAttribute(
+        'href',
+        '/mechanic/inventario/movimientos'
+      );
+      expect(screen.getByRole('link', { name: 'Umbral general' })).toHaveAttribute(
+        'href',
+        '/mechanic/inventario/umbral'
+      );
+      expect(screen.getByRole('link', { name: 'Distribuidores' })).toHaveAttribute(
+        'href',
+        '/mechanic/inventario/distribuidores'
+      );
+    });
+
+    it('navega con un clic del menú hacia /mechanic/inventario', async () => {
+      logueadoComo(mechanicUser);
+      renderApp('/mechanic');
+
+      fireEvent.click(screen.getByRole('link', { name: 'Repuestos' }));
+
+      expect(
+        await screen.findByRole('heading', { name: 'Inventario' })
+      ).toBeInTheDocument();
+    });
+
+    it.each([
+      '/mechanic/inventario',
+      '/mechanic/inventario/alertas',
+      '/mechanic/inventario/movimientos',
+      '/mechanic/inventario/stock/2',
+      '/mechanic/inventario/umbral',
+      '/mechanic/inventario/distribuidores',
+    ])('el mecánico puede acceder a %s', async (entry) => {
+      logueadoComo(mechanicUser);
+      renderApp(entry);
+
+      expect(await screen.findByRole('link', { name: 'Repuestos' })).toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Acceso Denegado' })
+      ).not.toBeInTheDocument();
+    });
+
+    it('un administrador no puede entrar al inventario del portal mecánico', () => {
+      logueadoComo(adminUser);
+      renderApp('/mechanic/inventario');
+
+      expect(
+        screen.getByRole('heading', { name: 'Acceso Denegado' })
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Portal Mecánico')).not.toBeInTheDocument();
     });
 
     it('niega /mechanic a un administrador y lo lleva a acceso denegado', () => {

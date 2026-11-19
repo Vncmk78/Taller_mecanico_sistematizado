@@ -282,7 +282,7 @@ def enviar_version(uow: UnidadDeTrabajo, *, presupuesto_id: int, numero: int) ->
     """
     with uow.transaccion():
         presupuesto = uow.presupuestos.obtener_para_actualizar(presupuesto_id)
-        version = uow.presupuestos.version(presupuesto_id, numero)
+        version = _version_de(presupuesto, numero)
         if version.enviada:
             raise ConflictoDeDatos(f"La versión {numero} ya fue enviada")
         _exigir_ultima(presupuesto, version)
@@ -295,7 +295,7 @@ def enviar_version(uow: UnidadDeTrabajo, *, presupuesto_id: int, numero: int) ->
             )
         version.enviado_en = func.now()
         uow.sesion.flush()
-        uow.sesion.refresh(version)
+        uow.sesion.refresh(version, attribute_names=["enviado_en"])  # hora real del servidor
         efecto = None if presupuesto.version_vigente else "esperando_aprobacion"
         registrar_hecho(uow,'presupuesto.enviado',presupuesto_id=presupuesto_id,orden_id=presupuesto.orden_id,version=numero)
     return ResultadoOperacion(presupuesto=a_detalle(presupuesto), efecto_en_orden=efecto)
@@ -341,7 +341,9 @@ def decidir_version(
     """
     with uow.transaccion():
         presupuesto = uow.presupuestos.obtener_para_actualizar(presupuesto_id)
-        version = uow.presupuestos.version(presupuesto_id, numero)
+        # Las versiones ya vienen con el presupuesto (selectin): pedirla aparte
+        # repetía la lectura de la versión, sus ítems, repuestos y proveedores.
+        version = _version_de(presupuesto, numero)
         if not version.enviada:
             raise ConflictoDeDatos(f"La versión {numero} aún no se envía al cliente")
         if version.decision is not None:
@@ -355,12 +357,13 @@ def decidir_version(
                 "servicio; confirme con confirmar_cancelacion=true"
             )
 
-        faltantes = _repuestos_faltantes(uow, version) if decision == "aprobado" else []
+        # Lo que falta usar se calcula UNA vez y sirve para evaluar y reservar.
+        pendientes = _pendientes(uow, version) if decision == "aprobado" else {}
+        faltantes = _repuestos_faltantes(uow, version, pendientes) if decision == "aprobado" else []
         reservados: dict[int, int] = {}
         if decision == "aprobado" and not faltantes:
             # Regla de reserva: con stock suficiente, las unidades quedan
             # comprometidas para la orden en esta misma transacción.
-            pendientes = _pendientes(uow, version)
             reservas.ajustar_reserva(
                 uow, presupuesto.orden_id, pendientes, usuario_id=cliente_usuario_id)
             reservados = {rid: n for rid, n in pendientes.items() if n}
@@ -371,7 +374,9 @@ def decidir_version(
         )
         uow.sesion.add(registro)
         uow.sesion.flush()
-        uow.sesion.refresh(version)  # bloqueada_en lo completa el trigger al aprobar
+        # bloqueada_en lo completa el trigger al aprobar: basta releer esa
+        # columna, no la versión con todas sus relaciones.
+        uow.sesion.refresh(version, attribute_names=["bloqueada_en"])
 
         registrar_hecho(uow,'presupuesto.decidido',presupuesto_id=presupuesto_id,orden_id=presupuesto.orden_id,
             version=numero,decision_id=registro.decision_id,decision=decision)
@@ -394,6 +399,15 @@ def _exigir_ultima(presupuesto: Presupuesto, version: VersionPresupuesto) -> Non
         )
 
 
+def _version_de(presupuesto: Presupuesto, numero: int) -> VersionPresupuesto:
+    """Versión `numero` entre las ya cargadas; mismo 404 que el repositorio."""
+    for version in presupuesto.versiones:
+        if version.numero == numero:
+            return version
+    raise RecursoNoEncontrado(
+        f"El presupuesto {presupuesto.presupuesto_id} no tiene versión {numero}")
+
+
 def _pendientes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> dict[int, int]:
     """Unidades de cada repuesto que la orden todavía tiene que usar con esta versión."""
     consumido = disponibilidad.consumido_por_orden(uow, version.presupuesto.orden_id)
@@ -401,7 +415,9 @@ def _pendientes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> dict[int, 
             for rid, cantidad in disponibilidad.requeridos_de_version(version).items()}
 
 
-def _repuestos_faltantes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> list[RepuestoFaltante]:
+def _repuestos_faltantes(
+    uow: UnidadDeTrabajo, version: VersionPresupuesto, pendientes: dict[int, int] | None = None,
+) -> list[RepuestoFaltante]:
     """Repuestos de la versión cuya disponibilidad no cubre lo que falta usar.
 
     Usa la validación de disponibilidad (services/disponibilidad.py): para la
@@ -409,7 +425,8 @@ def _repuestos_faltantes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> l
     (§4.6). Los repuestos quedan bloqueados (FOR UPDATE) hasta el commit de la
     decisión, así dos aprobaciones simultáneas no cuentan las mismas unidades.
     """
-    pendientes = _pendientes(uow, version)
+    if pendientes is None:
+        pendientes = _pendientes(uow, version)
     if not pendientes:
         return []
     resultado = disponibilidad.evaluar(

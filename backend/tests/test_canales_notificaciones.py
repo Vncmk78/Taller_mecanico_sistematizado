@@ -119,6 +119,66 @@ def test_registro_propiedad_idempotencia_y_cierre_de_dispositivo(api, db):
     assert api.get("/notificaciones/dispositivos", headers=auth()).json()[0]["activo"] is False
 
 
+def test_dispositivos_paginados_con_total(api, db):
+    _crear_cliente(db, 7)
+    registrados = []
+    for indice in range(3):
+        r = api.post(
+            "/notificaciones/dispositivos",
+            headers=auth(),
+            json={
+                "token": f"token-paginado-{indice}-{uuid4()}",
+                "plataforma": "android",
+            },
+        )
+        assert r.status_code == 201, r.text
+        registrados.append(r.json()["dispositivo_id"])
+
+    pagina = api.get(
+        "/notificaciones/dispositivos",
+        params={"limite": 2, "desde": 1},
+        headers=auth(),
+    )
+
+    assert pagina.status_code == 200
+    assert pagina.headers["x-total-count"] == "3"
+    assert [d["dispositivo_id"] for d in pagina.json()] == registrados[1:]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"limite": 0}, {"limite": 101}, {"desde": -1}],
+)
+def test_dispositivos_rechazan_paginacion_invalida(api, db, params):
+    _crear_cliente(db, 7)
+
+    respuesta = api.get(
+        "/notificaciones/dispositivos", params=params, headers=auth()
+    )
+
+    assert respuesta.status_code == 422
+
+
+def test_entregas_paginadas_con_total(api, db, monkeypatch):
+    nid = aviso(api, db, monkeypatch)
+
+    pagina = api.get(
+        f"/notificaciones/{nid}/entregas",
+        params={"limite": 1, "desde": 1},
+        headers=auth(),
+    )
+
+    assert pagina.status_code == 200
+    assert pagina.headers["x-total-count"] == "2"
+    assert len(pagina.json()) == 1
+
+    for params in ({"limite": 0}, {"limite": 101}, {"desde": -1}):
+        respuesta = api.get(
+            f"/notificaciones/{nid}/entregas", params=params, headers=auth()
+        )
+        assert respuesta.status_code == 422
+
+
 def test_cambio_de_cuenta_en_mismo_dispositivo_no_entrega_avisos_del_anterior(api, db, monkeypatch):
     _crear_cliente(db, 8)
     nid = aviso(api, db, monkeypatch)

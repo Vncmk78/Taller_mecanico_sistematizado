@@ -7,7 +7,9 @@ import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner'
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import { useAuthStore } from '@/infrastructure/stores/useAuthStore';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
@@ -43,6 +45,10 @@ export function ClientVehiclesPage() {
         term ? [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term)) : true
         );
     }, [vehicles, clientId, debouncedSearch]);
+
+    const paginacion = useClientPagination(myVehicles, {
+    resetDeps: [debouncedSearch],
+    });
 
     const justRegistered = Boolean((location.state as { justRegistered?: boolean } | null)?.justRegistered);
 
@@ -112,7 +118,7 @@ export function ClientVehiclesPage() {
         />
         ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {myVehicles.map((vehicle) => (
+            {paginacion.pageItems.map((vehicle) => (
             <VehicleCard key={vehicle.id} vehicle={vehicle} detailPath={`/client/vehiculos/${vehicle.id}`} />
             ))}
             {myVehicles.length === 0 && (
@@ -142,6 +148,21 @@ export function ClientVehiclesPage() {
             )}
         </div>
         )}
+
+        <Pagination
+            className="mt-6"
+            page={paginacion.page}
+            pageCount={paginacion.pageCount}
+            onPageChange={paginacion.setPage}
+            pageSize={paginacion.pageSize}
+            onPageSizeChange={paginacion.setPageSize}
+            rangeStart={paginacion.rangeStart}
+            rangeEnd={paginacion.rangeEnd}
+            total={paginacion.total}
+            label="vehículos"
+            ariaLabel="Paginación de vehículos"
+            sizeLabel="Vehículos por página"
+        />
     </div>
     );
 }

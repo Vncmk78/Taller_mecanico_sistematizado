@@ -11,8 +11,10 @@ import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { useDebouncedValue } from '@/presentation/hooks/useDebouncedValue';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import { isAdminInventoryMode, type InventoryPortalMode } from '@/presentation/utils/inventoryPortal';
 import {
     Table,
@@ -192,6 +194,10 @@ export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageP
 
     const clearFilters = () => setSearch('');
 
+    const paginacion = useClientPagination(proveedores, {
+        resetDeps: [debouncedSearch],
+    });
+
     const isServerError = status === 'error' && !isOffline;
 
     return (
@@ -328,7 +334,7 @@ export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageP
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {proveedores.map((proveedor) => (
+                            {paginacion.pageItems.map((proveedor) => (
                                 <TableRow key={proveedor.proveedorId}>
                                     <TableCell className="font-medium">
                                         {proveedor.nombre}
@@ -360,6 +366,21 @@ export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageP
                     </Table>
                 </div>
             )}
+
+            <Pagination
+                className="mt-4"
+                page={paginacion.page}
+                pageCount={paginacion.pageCount}
+                onPageChange={paginacion.setPage}
+                pageSize={paginacion.pageSize}
+                onPageSizeChange={paginacion.setPageSize}
+                rangeStart={paginacion.rangeStart}
+                rangeEnd={paginacion.rangeEnd}
+                total={paginacion.total}
+                label="distribuidores"
+                ariaLabel="Paginación de distribuidores"
+                sizeLabel="Distribuidores por página"
+            />
 
             {isAdmin && (
                 <>

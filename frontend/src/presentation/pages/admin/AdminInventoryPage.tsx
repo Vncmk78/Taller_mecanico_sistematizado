@@ -19,7 +19,9 @@ import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import {
     Table,
     TableBody,
@@ -259,6 +261,10 @@ export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) 
         [baseRepuestos, estado]
     );
 
+    const paginacion = useClientPagination(filteredRepuestos, {
+        resetDeps: [debouncedSearch, estado],
+    });
+
     const hasActiveFilters = search.trim() !== '' || estado !== 'todos';
 
     const limpiarBusqueda = () => {
@@ -424,7 +430,7 @@ export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) 
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {filteredRepuestos.map((repuesto) => (
+                            {paginacion.pageItems.map((repuesto) => (
                                 <TableRow key={repuesto.repuestoId}>
                                     <TableCell className="text-text-muted">
                                         #{repuesto.repuestoId}
@@ -463,6 +469,21 @@ export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) 
                     </Table>
                 </div>
             )}
+
+            <Pagination
+                className="mt-4"
+                page={paginacion.page}
+                pageCount={paginacion.pageCount}
+                onPageChange={paginacion.setPage}
+                pageSize={paginacion.pageSize}
+                onPageSizeChange={paginacion.setPageSize}
+                rangeStart={paginacion.rangeStart}
+                rangeEnd={paginacion.rangeEnd}
+                total={paginacion.total}
+                label="repuestos"
+                ariaLabel="Paginación de inventario"
+                sizeLabel="Repuestos por página"
+            />
 
             {isAdmin && (
                 <>

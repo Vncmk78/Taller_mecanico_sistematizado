@@ -1,6 +1,7 @@
 import type { Notification, NotificationDelivery, NotificationListResponse } from '@/domain/entities/Notification';
 import type { NotificationPort } from '@/domain/ports/NotificationPort';
 import apiClient from '../config/apiClient';
+import { obtenerTodasLasPaginas } from './paginacion';
 
 interface NotificacionApi {
   notificacion_id: number | string;
@@ -55,7 +56,7 @@ function mapEntrega(e: EntregaApi): NotificationDelivery {
 
 class NotificationService implements NotificationPort {
   async getDeliveries(id: string): Promise<NotificationDelivery[]> {
-    const { data } = await apiClient.get<EntregaApi[]>(`/notificaciones/${id}/entregas`);
+    const data = await obtenerTodasLasPaginas<EntregaApi>(`/notificaciones/${id}/entregas`);
     return data.map(mapEntrega);
   }
   async retryDeliveries(id: string): Promise<NotificationDelivery[]> {

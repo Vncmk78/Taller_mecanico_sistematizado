@@ -495,7 +495,10 @@ def subir(
     },
 )
 def listar(
+    response: Response,
     orden_id: int = Query(gt=0, description="Orden de trabajo (MS2) de las evidencias"),
+    limite: int = Query(default=50, ge=1, le=100),
+    desde: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     token: str = Depends(obtener_token_bearer),
@@ -504,12 +507,16 @@ def listar(
     _exigir_orden_accesible(
         orden_id, token, verificador, detalle_no_visible="Orden no encontrada"
     )
-    return listar_por_orden(
+    evidencias, total = listar_por_orden(
         db,
         orden_id,
         vista_cliente=es_vista_cliente(principal),
         incluir_eliminadas=es_administrador(principal),
+        limite=limite,
+        desde=desde,
     )
+    response.headers["X-Total-Count"] = str(total)
+    return evidencias
 
 
 @router.get(

@@ -302,17 +302,25 @@ def test_listar_por_orden_filtra_segun_la_vista(sesion: Session) -> None:
     sesion.commit()
 
     # Vista del cliente: solo confirmadas, visibles y no eliminadas.
-    ids_cliente = [e.evidencia_id for e in listar_por_orden(sesion, 10, vista_cliente=True)]
-    assert ids_cliente == [resultado_visible.evidencia_id]
+    evidencias_cliente, total_cliente = listar_por_orden(
+        sesion, 10, vista_cliente=True
+    )
+    assert [e.evidencia_id for e in evidencias_cliente] == [
+        resultado_visible.evidencia_id
+    ]
+    assert total_cliente == 1
 
     # Vista del mecánico: todas las no eliminadas, en orden de creada_en.
-    ids_mecanico = [e.evidencia_id for e in listar_por_orden(sesion, 10, vista_cliente=False)]
-    assert ids_mecanico == [
+    evidencias_mecanico, total_mecanico = listar_por_orden(
+        sesion, 10, vista_cliente=False
+    )
+    assert [e.evidencia_id for e in evidencias_mecanico] == [
         pendiente.evidencia_id,
         confirmada_no_visible.evidencia_id,
         resultado_visible.evidencia_id,
         anulada.evidencia_id,
     ]
+    assert total_mecanico == 4
 
 
 def test_presupuesto_tiene_evidencia(sesion: Session) -> None:

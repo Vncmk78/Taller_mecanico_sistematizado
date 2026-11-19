@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from math import ceil
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
@@ -258,19 +258,37 @@ def buscar_usuario_activo_por_id(db: Session, usuario_id: int) -> Usuario | None
         ) from exc
 
 
-def listar_usuarios(db: Session) -> list[Usuario]:
-    """Consulta todas las cuentas de MS1, activas y desactivadas.
+def listar_usuarios(
+    db: Session,
+    *,
+    limite: int | None = None,
+    desde: int = 0,
+) -> list[Usuario]:
+    """Consulta las cuentas de MS1, activas y desactivadas, en orden de alta.
 
     A diferencia de `buscar_usuario_activo_por_id` no filtra por `activo`: el
     administrador necesita ver también las cuentas desactivadas. Los roles
     vienen ya cargados, así que serializar la lista no dispara una consulta
-    adicional por cada usuario.
+    adicional por cada usuario. Con ``limite`` se devuelve una página desde
+    ``desde``; sin él se conserva el listado completo histórico.
     """
 
     try:
-        return list(
-            db.scalars(_consulta_usuario_completo().order_by(Usuario.usuario_id))
-        )
+        consulta = _consulta_usuario_completo().order_by(Usuario.usuario_id)
+        if limite is not None:
+            consulta = consulta.limit(limite).offset(desde)
+        return list(db.scalars(consulta))
+    except SQLAlchemyError as exc:
+        raise PersistenciaAutenticacionError(
+            "No fue posible consultar los usuarios"
+        ) from exc
+
+
+def contar_usuarios(db: Session) -> int:
+    """Total de cuentas de MS1, activas y desactivadas, para paginar."""
+
+    try:
+        return int(db.scalar(select(func.count(Usuario.usuario_id))) or 0)
     except SQLAlchemyError as exc:
         raise PersistenciaAutenticacionError(
             "No fue posible consultar los usuarios"

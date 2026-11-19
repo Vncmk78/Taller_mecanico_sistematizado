@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import {
     Table,
@@ -26,6 +27,7 @@ import {
 } from '@/presentation/components/ui/Table';
 import { useToast } from '@/presentation/components/ui/toastContext';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import { formatDateTime } from '@/presentation/utils/orderDisplay';
 
 type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -88,6 +90,8 @@ export function AdminCancelacionesPage() {
     };
 
     const isServerError = status === 'error' && !isOffline;
+
+    const paginacion = useClientPagination(solicitudes);
 
     return (
     <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
@@ -156,7 +160,7 @@ export function AdminCancelacionesPage() {
                 </TableRow>
             </TableHead>
             <TableBody>
-                {solicitudes.map((solicitud) => (
+                {paginacion.pageItems.map((solicitud) => (
                 <TableRow key={solicitud.id}>
                     <TableCell className="font-medium">
                     <Link
@@ -194,6 +198,21 @@ export function AdminCancelacionesPage() {
             </Table>
         </div>
         )}
+
+        <Pagination
+        className="mt-4"
+        page={paginacion.page}
+        pageCount={paginacion.pageCount}
+        onPageChange={paginacion.setPage}
+        pageSize={paginacion.pageSize}
+        onPageSizeChange={paginacion.setPageSize}
+        rangeStart={paginacion.rangeStart}
+        rangeEnd={paginacion.rangeEnd}
+        total={paginacion.total}
+        label="solicitudes"
+        ariaLabel="Paginación de cancelaciones"
+        sizeLabel="Solicitudes por página"
+        />
 
         <ConfirmDialog
         open={seleccionada !== null}

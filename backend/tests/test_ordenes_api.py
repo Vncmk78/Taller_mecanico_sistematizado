@@ -730,6 +730,174 @@ def test_get_mecanico_ve_solo_ordenes_asignadas(
     assert _ids(respuesta.json()) == [asignada.orden_id]
 
 
+def test_get_administrador_pagina_ordenes_con_total(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    ordenes = [_crear_orden(db_ordenes, usuario_cliente=10) for _ in range(3)]
+
+    respuesta = api_ordenes.get(
+        "/ordenes",
+        params={"limite": 2, "desde": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.headers["x-total-count"] == "3"
+    assert _ids(respuesta.json()) == [ordenes[1].orden_id, ordenes[2].orden_id]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"limite": 0}, {"limite": 101}, {"desde": -1}],
+)
+def test_get_ordenes_rechaza_paginacion_invalida(
+    api_ordenes: TestClient,
+    params: dict[str, int],
+):
+    respuesta = api_ordenes.get(
+        "/ordenes",
+        params=params,
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 422
+
+
+def test_historial_orden_pagina_con_total(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    base = datetime.now(timezone.utc)
+    entradas = [
+        HistorialEstado(
+            orden_id=orden.orden_id,
+            estado_anterior=anterior,
+            estado_nuevo=nuevo,
+            actor_usuario_id=99,
+            origen="usuario",
+            fecha_hora=base + timedelta(seconds=indice),
+        )
+        for indice, (anterior, nuevo) in enumerate(
+            [
+                (None, RECIBIDO),
+                (RECIBIDO, ESPERANDO_DIAGNOSTICO),
+                (ESPERANDO_DIAGNOSTICO, EN_REPARACION),
+            ]
+        )
+    ]
+    db_ordenes.add_all(entradas)
+    db_ordenes.commit()
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/historial",
+        params={"limite": 2, "desde": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.headers["x-total-count"] == "3"
+    assert [fila["historial_id"] for fila in respuesta.json()] == [
+        entradas[1].historial_id,
+        entradas[2].historial_id,
+    ]
+
+
+def test_bitacora_pagina_con_total(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    base = datetime.now(timezone.utc)
+    entradas = [
+        BitacoraOrden(
+            orden_id=orden.orden_id,
+            autor_usuario_id=99,
+            tipo="observacion",
+            descripcion=f"Entrada {indice}",
+            creado_en=base + timedelta(seconds=indice),
+        )
+        for indice in range(3)
+    ]
+    db_ordenes.add_all(entradas)
+    db_ordenes.commit()
+
+    respuesta = api_ordenes.get(
+        f"/ordenes/{orden.orden_id}/bitacora",
+        params={"limite": 2, "desde": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.headers["x-total-count"] == "3"
+    assert [fila["bitacora_id"] for fila in respuesta.json()] == [
+        entradas[1].bitacora_id,
+        entradas[2].bitacora_id,
+    ]
+
+
+@pytest.mark.parametrize(
+    "sufijo",
+    ["historial", "bitacora"],
+)
+def test_historial_y_bitacora_rechazan_paginacion_invalida(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+    sufijo: str,
+):
+    orden = _crear_orden(db_ordenes, usuario_cliente=10)
+    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+
+    for params in ({"limite": 0}, {"limite": 101}, {"desde": -1}):
+        respuesta = api_ordenes.get(
+            f"/ordenes/{orden.orden_id}/{sufijo}", params=params, headers=headers
+        )
+        assert respuesta.status_code == 422
+
+
+def test_cancelaciones_pendientes_pagina_con_total(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    solicitudes = []
+    for cliente in (10, 20, 30):
+        orden = _crear_orden(
+            db_ordenes,
+            usuario_cliente=cliente,
+            estado_codigo=ESPERANDO_APROBACION_PRESUPUESTO,
+        )
+        respuesta = api_ordenes.post(
+            f"/ordenes/{orden.orden_id}/cancelacion",
+            json={"motivo": f"Cancelación del cliente {cliente}"},
+            headers=_headers_para(cliente, NombreRol.CLIENTE),
+        )
+        assert respuesta.status_code == 201, respuesta.text
+        solicitudes.append(respuesta.json()["solicitud_id"])
+
+    pendientes = api_ordenes.get(
+        "/ordenes/cancelaciones/pendientes",
+        params={"limite": 2, "desde": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert pendientes.status_code == 200
+    assert pendientes.headers["x-total-count"] == "3"
+    assert [item["solicitud_id"] for item in pendientes.json()] == solicitudes[1:]
+
+
+def test_cancelaciones_pendientes_rechaza_paginacion_invalida(
+    api_ordenes: TestClient,
+):
+    for params in ({"limite": 0}, {"limite": 101}, {"desde": -1}):
+        respuesta = api_ordenes.get(
+            "/ordenes/cancelaciones/pendientes",
+            params=params,
+            headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+        )
+        assert respuesta.status_code == 422
+
+
 def test_historial_vehiculo_admin_pagina_y_ordena_de_forma_estable(
     api_ordenes: TestClient,
     db_ordenes: Session,

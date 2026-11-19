@@ -185,6 +185,40 @@ def test_listado_ordena_por_identificador(
     assert ids.index(primero) < ids.index(segundo)
 
 
+def test_listado_pagina_con_limite_y_desde(
+    api: TestClient,
+    admin_headers: dict[str, str],
+):
+    """``limite`` recorta la página y ``X-Total-Count`` informa el total real."""
+
+    creados = [_registrar(api, f"pagina{i}@correo.cl") for i in range(3)]
+
+    respuesta = api.get(
+        "/auth/usuarios",
+        params={"limite": 2, "desde": 1},
+        headers=admin_headers,
+    )
+
+    assert respuesta.status_code == 200
+    # La cuenta administradora del fixture también está en el listado.
+    assert respuesta.headers["x-total-count"] == "4"
+    assert [fila["id"] for fila in respuesta.json()] == creados[:2]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"limite": 0}, {"limite": 101}, {"desde": -1}],
+)
+def test_listado_rechaza_paginacion_invalida(
+    api: TestClient,
+    admin_headers: dict[str, str],
+    params: dict[str, int],
+):
+    respuesta = api.get("/auth/usuarios", params=params, headers=admin_headers)
+
+    assert respuesta.status_code == 422
+
+
 def test_listado_incluye_cuenta_sin_roles_con_lista_vacia(
     api: TestClient,
     admin_headers: dict[str, str],

@@ -474,11 +474,18 @@ def registrar_orden(
 )
 def consultar_ordenes(
     request: Request,
+    response: Response,
+    limite: int = Query(default=50, ge=1, le=100),
+    desde: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> list[OrdenTrabajo]:
     try:
-        return listar_ordenes(db, principal)
+        ordenes, total = listar_ordenes(
+            db, principal, limite=limite, desde=desde
+        )
+        response.headers["X-Total-Count"] = str(total)
+        return ordenes
     except PersistenciaOrdenError as exc:
         request_id = request.headers.get("x-request-id", "")
         if not _REQUEST_ID_VALIDO.fullmatch(request_id):
@@ -522,16 +529,22 @@ def consultar_ordenes(
 )
 def consultar_historial_ordenes_vehiculo(
     vehiculo_id: int = Path(gt=0),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    limit: int | None = Query(default=None, ge=1, le=100),
+    offset: int | None = Query(default=None, ge=0),
+    limite: int | None = Query(default=None, ge=1, le=100),
+    desde: int | None = Query(default=None, ge=0),
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> dict[str, object]:
+    # ``limite``/``desde`` son el contrato canónico; ``limit``/``offset`` se
+    # conservan para los clientes que ya consumían este endpoint.
+    limite = limite if limite is not None else (limit if limit is not None else 20)
+    desde = desde if desde is not None else (offset if offset is not None else 0)
     try:
         items, total = listar_historial_ordenes_vehiculo(
-            db, principal, vehiculo_id, limit=limit, offset=offset
+            db, principal, vehiculo_id, limit=limite, offset=desde
         )
-        return {"items": items, "total": total, "limit": limit, "offset": offset}
+        return {"items": items, "total": total, "limit": limite, "offset": desde}
     except VehiculoNoEncontradoError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -607,11 +620,18 @@ def consultar_orden(
 )
 def consultar_historial_orden(
     orden_id: int,
+    response: Response,
+    limite: int = Query(default=50, ge=1, le=100),
+    desde: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> list[HistorialEstado]:
     try:
-        return obtener_historial_orden(db, principal, orden_id)
+        historial, total = obtener_historial_orden(
+            db, principal, orden_id, limite=limite, desde=desde
+        )
+        response.headers["X-Total-Count"] = str(total)
+        return historial
     except OrdenNoEncontradaError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -646,11 +666,18 @@ def consultar_historial_orden(
 )
 def consultar_bitacora_orden(
     orden_id: int,
+    response: Response,
+    limite: int = Query(default=50, ge=1, le=100),
+    desde: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> list[BitacoraOrden]:
     try:
-        return listar_bitacora_orden(db, principal, orden_id)
+        entradas, total = listar_bitacora_orden(
+            db, principal, orden_id, limite=limite, desde=desde
+        )
+        response.headers["X-Total-Count"] = str(total)
+        return entradas
     except OrdenNoEncontradaError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1088,13 +1115,20 @@ def solicitar_cancelacion(
                403: {"description": "Se requiere rol Administrador"}},
 )
 def listar_cancelaciones_pendientes(
+    response: Response,
+    limite: int = Query(default=50, ge=1, le=100),
+    desde: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> list[SolicitudCancelacionRespuesta]:
     if NombreRol.ADMINISTRADOR not in principal.roles:
         raise HTTPException(status_code=403, detail="Se requiere rol Administrador")
+    solicitudes, total = listar_solicitudes_cancelacion_pendientes(
+        db, limite=limite, desde=desde
+    )
+    response.headers["X-Total-Count"] = str(total)
     return [SolicitudCancelacionRespuesta.model_validate(solicitud)
-            for solicitud in listar_solicitudes_cancelacion_pendientes(db)]
+            for solicitud in solicitudes]
 
 
 @router_ordenes.post(

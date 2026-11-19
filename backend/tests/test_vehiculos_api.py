@@ -165,6 +165,47 @@ def test_administrador_ve_todos_los_vehiculos(
     ]
 
 
+def test_administrador_pagina_vehiculos_con_total(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculos = [
+        _crear_vehiculo(db_ms2, cliente, patente=f"PAG{i:04d}")
+        for i in range(3)
+    ]
+
+    respuesta = api_ms2.get(
+        "/vehiculos",
+        params={"limite": 2, "desde": 1},
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.headers["x-total-count"] == "3"
+    assert [vehiculo["vehiculo_id"] for vehiculo in respuesta.json()] == [
+        vehiculos[1].vehiculo_id,
+        vehiculos[2].vehiculo_id,
+    ]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"limite": 0}, {"limite": 101}, {"desde": -1}],
+)
+def test_listado_rechaza_paginacion_invalida(
+    api_ms2: TestClient,
+    params: dict[str, int],
+):
+    respuesta = api_ms2.get(
+        "/vehiculos",
+        params=params,
+        headers=_headers_para(99, NombreRol.ADMINISTRADOR),
+    )
+
+    assert respuesta.status_code == 422
+
+
 def test_administrador_sin_vehiculos_devuelve_200(api_ms2: TestClient):
     respuesta = api_ms2.get(
         "/vehiculos",
@@ -534,6 +575,35 @@ def test_asignados_no_duplica_vehiculos_con_varias_ordenes(
     assert respuesta.status_code == 200
     assert [vehiculo["vehiculo_id"] for vehiculo in respuesta.json()] == [
         vehiculo.vehiculo_id
+    ]
+
+
+def test_asignados_pagina_y_total_sin_duplicar_vehiculos(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    primero = _crear_vehiculo(db_ms2, cliente, patente="AAAA11")
+    segundo = _crear_vehiculo(db_ms2, cliente, patente="BBBB22")
+    anterior = _asignar_vehiculo_a_mecanico(
+        db_ms2, primero, mecanico_usuario_id=50
+    )
+    anterior.estado_codigo = CANCELADO
+    db_ms2.commit()
+    # Una segunda orden del mismo vehículo no debe duplicarlo en el listado.
+    _asignar_vehiculo_a_mecanico(db_ms2, primero, mecanico_usuario_id=50)
+    _asignar_vehiculo_a_mecanico(db_ms2, segundo, mecanico_usuario_id=50)
+
+    respuesta = api_ms2.get(
+        "/vehiculos/asignados",
+        params={"limite": 1, "desde": 1},
+        headers=_headers_para(50, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.headers["x-total-count"] == "2"
+    assert [vehiculo["vehiculo_id"] for vehiculo in respuesta.json()] == [
+        segundo.vehiculo_id
     ]
 
 

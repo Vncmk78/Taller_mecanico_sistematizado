@@ -36,7 +36,9 @@ describe('EvidenciaService: contrato HTTP de MS4 (evidencia multimedia)', () => 
 
         const evidencias = await evidenciaService.getByOrder('31');
 
-        expect(apiClient.get).toHaveBeenCalledWith('/evidencias', { params: { orden_id: '31' } });
+        expect(apiClient.get).toHaveBeenCalledWith('/evidencias', {
+            params: { orden_id: '31', limite: 100, desde: 0 },
+        });
         expect(evidencias).toEqual([
             {
                 id: '3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f',

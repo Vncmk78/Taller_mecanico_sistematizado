@@ -5,6 +5,7 @@ import type {
     VehiclePort,
 } from '@/domain/ports/VehiclePort';
 import apiClient from '../config/apiClient';
+import { obtenerTodasLasPaginas } from './paginacion';
 
 // Contrato HTTP de MS2 a través de la API Gateway (/api/vehiculos). MS2 usa
 // nombres en español (patente, marca, modelo, anio, kilometraje) y devuelve
@@ -40,17 +41,17 @@ function mapVehiculoApi(v: VehiculoApi, clientId?: string): Vehicle {
 
 class VehicleService implements VehiclePort {
     async getMyVehicles(clientId: string): Promise<Vehicle[]> {
-    const { data } = await apiClient.get<VehiculoApi[]>('/vehiculos');
+    const data = await obtenerTodasLasPaginas<VehiculoApi>('/vehiculos');
     return data.map((v) => mapVehiculoApi(v, clientId));
     }
 
     async getAllVehicles(): Promise<Vehicle[]> {
-    const { data } = await apiClient.get<VehiculoApi[]>('/vehiculos');
+    const data = await obtenerTodasLasPaginas<VehiculoApi>('/vehiculos');
     return data.map((v) => mapVehiculoApi(v));
     }
 
     async getAssignedVehicles(): Promise<Vehicle[]> {
-    const { data } = await apiClient.get<VehiculoApi[]>('/vehiculos/asignados');
+    const data = await obtenerTodasLasPaginas<VehiculoApi>('/vehiculos/asignados');
     return data.map((v) => mapVehiculoApi(v));
     }
 

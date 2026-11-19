@@ -7,7 +7,7 @@ import {
 } from 'axios';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import type { User } from '@/domain/entities/User';
 import apiClient from '@/infrastructure/config/apiClient';
 import { getToken } from '@/infrastructure/config/tokenStorage';
@@ -346,5 +346,46 @@ describe('AuthProvider: ciclo de sesión frente a errores de la API', () => {
     await waitFor(() => expect(screen.getByTestId('login')).toHaveTextContent('expirada: false'));
     expect(screen.queryByTestId('panel')).not.toBeInTheDocument();
     expect(getToken()).toBeNull();
+  });
+
+  it('consume el aviso de expiración una sola vez al volver a /login', async () => {
+    useAuthStore.setState({ sesionExpirada: true });
+
+    function Login() {
+      const expiroStore = useAuthStore((s) => s.sesionExpirada);
+      return <div data-testid="login">expirada: {String(expiroStore)}</div>;
+    }
+
+    function Enlace({ to, children }: { to: string; children: string }) {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate(to)}>{children}</button>;
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <AuthProvider>
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                <>
+                  <Login />
+                  <Enlace to="/">Ir al inicio</Enlace>
+                </>
+              }
+            />
+            <Route path="/" element={<Enlace to="/login">Volver a login</Enlace>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId('login')).toHaveTextContent('expirada: true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al inicio' }));
+    await waitFor(() => expect(useAuthStore.getState().sesionExpirada).toBe(false));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a login' }));
+    expect(await screen.findByTestId('login')).toHaveTextContent('expirada: false');
   });
 });

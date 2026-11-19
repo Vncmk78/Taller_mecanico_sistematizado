@@ -65,6 +65,26 @@ describe('useOrderHistoryStore: caché del historial por orden', () => {
         expect(state.entries.map((e) => e.id)).toEqual(['h2']);
     });
 
+    it('reset vacía el historial y devuelve el estado inicial', () => {
+        useOrderHistoryStore.setState({
+            entries: [h1, h2],
+            status: 'error',
+            error: 'error previo',
+            isOffline: true,
+            requestId: 'req-1',
+        });
+
+        useOrderHistoryStore.getState().reset();
+
+        expect(useOrderHistoryStore.getState()).toMatchObject({
+            entries: [],
+            status: 'idle',
+            error: null,
+            isOffline: false,
+            requestId: null,
+        });
+    });
+
     it('un error del servidor no se marca offline', async () => {
         await useOrderHistoryStore.getState().fetchOrderHistory('101', async () => {
             throw { isAxiosError: true, response: { status: 500, data: {} } };

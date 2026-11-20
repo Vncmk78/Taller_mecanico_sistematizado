@@ -219,6 +219,25 @@ def test_listado_rechaza_paginacion_invalida(
     assert respuesta.status_code == 422
 
 
+def test_listado_desde_fuera_de_rango_devuelve_vacio_y_conserva_el_total(
+    api: TestClient,
+    admin_headers: dict[str, str],
+):
+    """Una página más allá del final no se inventa datos ni pierde el total."""
+
+    total = api.get("/auth/usuarios", headers=admin_headers).headers["x-total-count"]
+    respuesta = api.get(
+        "/auth/usuarios",
+        params={"limite": 2, "desde": 999},
+        headers=admin_headers,
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == []
+    assert respuesta.headers["x-total-count"] == total
+    assert total != "0"
+
+
 def test_listado_incluye_cuenta_sin_roles_con_lista_vacia(
     api: TestClient,
     admin_headers: dict[str, str],

@@ -170,6 +170,9 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
         render(<AdminInventoryPage />);
 
         expect(await screen.findByText('No hay repuestos registrados')).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de inventario' })
+        ).not.toBeInTheDocument();
     });
 
     it('explica que no hay coincidencias cuando los filtros no devuelven nada', async () => {

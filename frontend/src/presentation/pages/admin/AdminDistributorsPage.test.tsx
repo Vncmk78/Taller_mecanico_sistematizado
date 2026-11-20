@@ -114,6 +114,9 @@ describe('AdminDistributorsPage: listado y estados', () => {
         render(<AdminDistributorsPage />);
 
         expect(await screen.findByText('No hay distribuidores registrados')).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de distribuidores' })
+        ).not.toBeInTheDocument();
     });
 
     it('en modo mecánico lista los distribuidores sin acciones de escritura', async () => {

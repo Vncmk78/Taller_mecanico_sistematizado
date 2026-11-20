@@ -898,6 +898,63 @@ def test_cancelaciones_pendientes_rechaza_paginacion_invalida(
         assert respuesta.status_code == 422
 
 
+def test_listados_ordenes_desde_fuera_de_rango_devuelven_vacio_y_conservan_el_total(
+    api_ordenes: TestClient,
+    db_ordenes: Session,
+):
+    """Los cuatro listados operativos devuelven [] sin perder X-Total-Count."""
+
+    orden = _crear_orden(
+        db_ordenes,
+        usuario_cliente=10,
+        estado_codigo=ESPERANDO_APROBACION_PRESUPUESTO,
+    )
+    db_ordenes.add_all(
+        [
+            HistorialEstado(
+                orden_id=orden.orden_id,
+                estado_anterior=None,
+                estado_nuevo=RECIBIDO,
+                actor_usuario_id=99,
+                origen="usuario",
+                fecha_hora=datetime.now(timezone.utc),
+            ),
+            BitacoraOrden(
+                orden_id=orden.orden_id,
+                autor_usuario_id=99,
+                tipo="observacion",
+                descripcion="Entrada de prueba",
+                creado_en=datetime.now(timezone.utc),
+            ),
+        ]
+    )
+    db_ordenes.commit()
+    solicitud = api_ordenes.post(
+        f"/ordenes/{orden.orden_id}/cancelacion",
+        json={"motivo": "Prueba de lista vacía"},
+        headers=_headers_para(10, NombreRol.CLIENTE),
+    )
+    assert solicitud.status_code == 201, solicitud.text
+
+    headers = _headers_para(99, NombreRol.ADMINISTRADOR)
+    rutas = (
+        "/ordenes",
+        f"/ordenes/{orden.orden_id}/historial",
+        f"/ordenes/{orden.orden_id}/bitacora",
+        "/ordenes/cancelaciones/pendientes",
+    )
+    for ruta in rutas:
+        total = api_ordenes.get(ruta, headers=headers).headers["x-total-count"]
+        respuesta = api_ordenes.get(
+            ruta, params={"limite": 2, "desde": 999}, headers=headers
+        )
+
+        assert respuesta.status_code == 200, ruta
+        assert respuesta.json() == [], ruta
+        assert respuesta.headers["x-total-count"] == total, ruta
+        assert total != "0", ruta
+
+
 def test_historial_vehiculo_admin_pagina_y_ordena_de_forma_estable(
     api_ordenes: TestClient,
     db_ordenes: Session,

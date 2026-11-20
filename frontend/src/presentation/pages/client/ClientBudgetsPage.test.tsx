@@ -62,6 +62,15 @@ describe('ClientBudgetsPage: listado de presupuestos del cliente', () => {
         vi.clearAllMocks();
     });
 
+    it('muestra el skeleton accesible mientras carga los presupuestos', () => {
+        vi.mocked(orderService.getOrders).mockImplementation(() => new Promise<Order[]>(() => {}));
+
+        renderPage();
+
+        expect(screen.getByText('Cargando órdenes...')).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    });
+
     it('lista los presupuestos y destaca los pendientes de decisión', async () => {
         vi.mocked(orderService.getOrders).mockResolvedValue([servicio('101', 3), servicio('102', 5)]);
         vi.mocked(presupuestoService.getByOrder).mockImplementation((ordenId) =>
@@ -104,6 +113,9 @@ describe('ClientBudgetsPage: listado de presupuestos del cliente', () => {
         renderPage();
 
         expect(await screen.findByText('Aún no tiene presupuestos')).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de presupuestos' })
+        ).not.toBeInTheDocument();
     });
 
     it('un error del servidor sin caché lo muestra con ErrorState y reintento', async () => {

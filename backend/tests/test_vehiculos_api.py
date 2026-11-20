@@ -214,6 +214,7 @@ def test_administrador_sin_vehiculos_devuelve_200(api_ms2: TestClient):
 
     assert respuesta.status_code == 200
     assert respuesta.json() == []
+    assert respuesta.headers["x-total-count"] == "0"
 
 
 def test_usuario_multirol_con_cliente_es_permitido(
@@ -615,6 +616,29 @@ def test_asignados_sin_ordenes_devuelve_200_vacio(api_ms2: TestClient):
 
     assert respuesta.status_code == 200
     assert respuesta.json() == []
+    assert respuesta.headers["x-total-count"] == "0"
+
+
+def test_listados_vehiculos_desde_fuera_de_rango_conservan_el_total(
+    api_ms2: TestClient,
+    db_ms2: Session,
+):
+    cliente = _crear_cliente(db_ms2, usuario_id=1)
+    vehiculo = _crear_vehiculo(db_ms2, cliente, patente="FUERA1")
+    _asignar_vehiculo_a_mecanico(db_ms2, vehiculo, mecanico_usuario_id=50)
+
+    rutas = (
+        ("/vehiculos", _headers_para(99, NombreRol.ADMINISTRADOR)),
+        ("/vehiculos/asignados", _headers_para(50, NombreRol.MECANICO)),
+    )
+    for ruta, headers in rutas:
+        total = api_ms2.get(ruta, headers=headers).headers["x-total-count"]
+        respuesta = api_ms2.get(ruta, params={"desde": 999}, headers=headers)
+
+        assert respuesta.status_code == 200
+        assert respuesta.json() == []
+        assert respuesta.headers["x-total-count"] == total
+        assert total != "0"
 
 
 @pytest.mark.parametrize("rol", [NombreRol.CLIENTE, NombreRol.ADMINISTRADOR])

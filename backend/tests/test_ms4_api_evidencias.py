@@ -499,6 +499,31 @@ def test_listado_rechaza_paginacion_invalida(
     assert respuesta.status_code == 422
 
 
+def test_listado_vacio_y_desde_fuera_de_rango(
+    api: TestClient, sesion: Session
+) -> None:
+    headers = {"Authorization": f"Bearer {_token(1, NombreRol.ADMINISTRADOR)}"}
+
+    vacia = api.get(
+        "/evidencias", params={"orden_id": ORDEN}, headers=headers
+    )
+    assert vacia.status_code == 200
+    assert vacia.json() == []
+    assert vacia.headers["x-total-count"] == "0"
+
+    escenario = _escenario_visibilidad()
+    _sembrar(sesion, *escenario)
+    fuera_de_rango = api.get(
+        "/evidencias",
+        params={"orden_id": ORDEN, "limite": 2, "desde": 999},
+        headers=headers,
+    )
+
+    assert fuera_de_rango.status_code == 200
+    assert fuera_de_rango.json() == []
+    assert fuera_de_rango.headers["x-total-count"] == str(len(escenario))
+
+
 def test_listado_sin_orden_id_responde_422(api: TestClient) -> None:
     respuesta = api.get(
         "/evidencias",

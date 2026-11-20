@@ -25,6 +25,7 @@ Católica de Temuco (UCT)**.
 | [06 — Runbook de operación](06-runbook-operacion.md) | Infraestructura / soporte | Reiniciar, ver logs, actualizar versión, migrar, respaldar y resolver problemas |
 | [07 — Pruebas realizadas](07-pruebas-realizadas.md) | Todo el equipo / evaluación | Matriz de verificaciones con resultados reales |
 | [08 — Pendientes y deuda técnica](08-pendientes-y-deuda.md) | Todo el equipo | Limitaciones conocidas, decisiones tomadas y próximos pasos |
+| [09 — Health checks](09-health-checks.md) | Infraestructura / evaluación | Health checks de contenedores y servicios, script de verificación y evidencia |
 
 ---
 

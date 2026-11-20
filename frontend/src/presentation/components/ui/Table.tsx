@@ -78,13 +78,3 @@ export function TableCell({ className = '', children, ...props }: TableCellProps
     </td>
   );
 }
-
-export function TableEmptyState({ message = 'Sin resultados', colSpan = 1 }: { message?: string; colSpan?: number }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="text-center py-8 text-text-muted">
-        {message}
-      </td>
-    </tr>
-  );
-}

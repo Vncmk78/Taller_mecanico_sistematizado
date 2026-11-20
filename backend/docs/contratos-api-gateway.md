@@ -15,7 +15,8 @@ En 3.1.0, los listados operativos de MS1, MS2 y MS4 aceptan `limite` (1–100,
 por defecto 50) y `desde` (≥ 0, por defecto 0), mantienen el cuerpo como arreglo
 plano y publican el total en la cabecera `X-Total-Count`. Los valores fuera de
 rango responden `422`. El detalle por ruta está en
-[`versionado-contrato-openapi.md`](versionado-contrato-openapi.md).
+[`versionado-contrato-openapi.md`](versionado-contrato-openapi.md) y en
+[`docs/05-api-app-movil.md`](../../docs/05-api-app-movil.md).
 
 En 3.0.0, `POST /api/ordenes` responde `409` si el vehículo ya tiene una orden
 activa (cualquier estado salvo Entregado o Cancelado), indicando su número.

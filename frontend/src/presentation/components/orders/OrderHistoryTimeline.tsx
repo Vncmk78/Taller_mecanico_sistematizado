@@ -86,7 +86,7 @@ export function OrderHistoryTimeline({ entries, loading, failed = false }: Order
                                         <UserCircle2 className="w-4 h-4" aria-hidden />
                                     )}
                                     {entry.origen === 'usuario'
-                                        ? (entry.usuarioNombre ?? `Usuario ${entry.actorUsuarioId ?? '?'}`)
+                                        ? `Usuario ${entry.actorUsuarioId ?? '?'}`
                                         : 'Sistema'}
                                 </span>
                             </div>

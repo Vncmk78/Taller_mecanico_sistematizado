@@ -73,4 +73,22 @@ describe('Input: campo de formulario accesible', () => {
     expect(input).toBeRequired();
     expect(input).toHaveAttribute('aria-required', 'true');
   });
+
+  it('reserva espacio para un control al final del campo', () => {
+    render(
+      <Input
+        label="Contraseña"
+        trailingControl={<button type="button" aria-label="Mostrar contraseña" />}
+      />
+    );
+
+    expect(screen.getByLabelText('Contraseña')).toHaveClass('pr-14');
+    expect(screen.getByRole('button', { name: 'Mostrar contraseña' })).toBeInTheDocument();
+  });
+
+  it('mantiene el padding derecho por defecto cuando no hay control final', () => {
+    render(<Input label="Correo" />);
+
+    expect(screen.getByLabelText('Correo')).toHaveClass('pr-4');
+  });
 });

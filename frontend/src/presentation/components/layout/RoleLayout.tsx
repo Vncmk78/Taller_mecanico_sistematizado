@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Outlet } from 'react-router-dom';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { AppBrand } from '@/presentation/components/layout/AppBrand';
 import { AppNavLink, type NavSection } from '@/presentation/components/layout/AppNavLink';
 import { NotificationBell } from '@/presentation/components/notifications/NotificationBell';
@@ -28,20 +28,27 @@ export function RoleLayout({
   headerLeft,
   headerRightPrepend,
 }: RoleLayoutProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname } = useLocation();
+  // Se guarda la ruta en la que se abrió el menú, no un booleano: al cambiar de
+  // ruta (atras/adelante o navegación programática) `menuOpen` pasa a false por
+  // derivación, sin un efecto que fuerce un render adicional.
+  const [menuPath, setMenuPath] = useState<string | null>(null);
+  const menuOpen = menuPath === pathname;
+
+  const cerrarMenu = useCallback(() => setMenuPath(null), []);
 
   useEffect(() => {
     if (!menuOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false);
+      if (event.key === 'Escape') cerrarMenu();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [menuOpen]);
+  }, [menuOpen, cerrarMenu]);
 
   if (variant === 'topnav') {
     return (
-      <div className="min-h-screen flex flex-col animate-fade-in">
+      <div className="min-h-[var(--viewport-height)] flex flex-col animate-fade-in">
         <a
           href="#contenido-principal"
           className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-text-main"
@@ -86,19 +93,19 @@ export function RoleLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-[var(--viewport-height)]">
       <a
         href="#contenido-principal"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-surface focus:px-4 focus:py-2 focus:text-text-main"
       >
         Saltar al contenido principal
       </a>
-      <SidebarNav sections={sections} open={menuOpen} onClose={() => setMenuOpen(false)} />
+      <SidebarNav sections={sections} open={menuOpen} onClose={cerrarMenu} />
 
       <main
         id="contenido-principal"
         tabIndex={-1}
-        className="flex min-w-0 flex-grow flex-col bg-bg-secondary min-h-screen lg:h-screen lg:overflow-y-auto focus:outline-none"
+        className="flex min-w-0 flex-grow flex-col bg-bg-secondary min-h-[var(--viewport-height)] lg:h-[var(--viewport-height)] lg:overflow-y-auto focus:outline-none"
       >
         <TopBar
           left={headerLeft}
@@ -107,7 +114,7 @@ export function RoleLayout({
           userName={userName}
           userSubtitle={userSubtitle}
           onLogout={onLogout}
-          onOpenMenu={() => setMenuOpen(true)}
+          onOpenMenu={() => setMenuPath(pathname)}
           menuOpen={menuOpen}
         />
 

@@ -22,7 +22,6 @@ const h1b: OrderHistoryEntry = {
     origen: 'usuario',
     fecha: '2026-09-02T10:00:00',
     observacion: 'avance',
-    usuarioNombre: 'Martín Herrera',
 };
 
 const h2: OrderHistoryEntry = {
@@ -63,6 +62,26 @@ describe('useOrderHistoryStore: caché del historial por orden', () => {
         expect(state.isOffline).toBe(true);
         expect(state.status).toBe('error');
         expect(state.entries.map((e) => e.id)).toEqual(['h2']);
+    });
+
+    it('reset vacía el historial y devuelve el estado inicial', () => {
+        useOrderHistoryStore.setState({
+            entries: [h1, h2],
+            status: 'error',
+            error: 'error previo',
+            isOffline: true,
+            requestId: 'req-1',
+        });
+
+        useOrderHistoryStore.getState().reset();
+
+        expect(useOrderHistoryStore.getState()).toMatchObject({
+            entries: [],
+            status: 'idle',
+            error: null,
+            isOffline: false,
+            requestId: null,
+        });
     });
 
     it('un error del servidor no se marca offline', async () => {

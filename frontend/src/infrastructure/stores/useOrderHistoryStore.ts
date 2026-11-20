@@ -11,12 +11,17 @@ import {
 interface OrderHistoryState extends AsyncStatus {
     entries: OrderHistoryEntry[];
     fetchOrderHistory: (ordenId: string, loader: OrderPort['getOrderHistory']) => Promise<void>;
+    /**
+     * Vacía la caché al cerrar sesión: el historial incluye nombres de quienes
+     * intervinieron en la orden y no debe heredarlos otro usuario del navegador.
+     */
+    reset: () => void;
 }
 
 // Caché plana compartida entre portales, con la misma filosofía que
 // asyncCollection: al llegar una respuesta del servidor para una orden, se
 // reemplaza por completo su historial (fuente autoritativa de esa orden) para
-// no mezclar datos reales con los demos de la misma orden.
+// no mezclar el historial de una orden con el de otra.
 export const useOrderHistoryStore = create<OrderHistoryState>((set) => ({
     entries: [],
     ...initialAsyncStatus,
@@ -27,4 +32,6 @@ export const useOrderHistoryStore = create<OrderHistoryState>((set) => ({
             set,
             (state, fetched) => ({ entries: replaceWhere(state.entries, 'ordenId', ordenId, fetched) })
         ),
+
+    reset: () => set({ entries: [], ...initialAsyncStatus }),
 }));

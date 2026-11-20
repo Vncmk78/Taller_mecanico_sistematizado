@@ -14,7 +14,6 @@ const entries: OrderHistoryEntry[] = [
         origen: 'usuario',
         fecha: '2026-09-02T12:00:00',
         observacion: 'Trabajo autorizado',
-        usuarioNombre: 'Martín Herrera',
     },
     {
         id: 'h2',
@@ -51,7 +50,7 @@ describe('OrderHistoryTimeline: historial de estados de la orden', () => {
         expect(
             screen.getByText('desde Esperando aprobación de presupuesto')
         ).toBeInTheDocument();
-        expect(screen.getByText('Martín Herrera')).toBeInTheDocument();
+        expect(screen.getByText('Usuario 1')).toBeInTheDocument();
         expect(screen.getByText(formatDateTime(entries[0].fecha))).toBeInTheDocument();
         expect(screen.getByText('Trabajo autorizado')).toBeInTheDocument();
         expect(screen.getAllByText('Sistema').length).toBeGreaterThan(0);

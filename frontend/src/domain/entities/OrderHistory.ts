@@ -11,6 +11,4 @@ export interface OrderHistoryEntry {
     origen: 'usuario' | 'sistema';
     fecha: string;
     observacion?: string;
-    // Solo presentación/demo: no viene en el contrato del historial.
-    usuarioNombre?: string;
 }

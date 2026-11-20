@@ -21,6 +21,7 @@ import { BudgetStatusBadge } from '@/presentation/components/budgets/BudgetStatu
 import { orderService } from '@/infrastructure/api/OrderService';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
 import { getApiErrorMessage } from '@/infrastructure/api/errors';
+import { generarIdOperacion } from '@/infrastructure/utils/idOperacion';
 import type { ResultadoDisponibilidad } from '@/domain/entities/Inventario';
 import type { Order } from '@/domain/entities/Order';
 import { useOrderStore } from '@/infrastructure/stores/useOrderStore';
@@ -163,7 +164,7 @@ export function AdminOrderDetailPage() {
         setStockActionError(null);
         setStockActionSuccess(null);
         try {
-            await inventarioService.liberar(Number(order.id), crypto.randomUUID());
+            await inventarioService.liberar(Number(order.id), generarIdOperacion());
             setStockActionSuccess('Reserva liberada correctamente.');
             const disp = await inventarioService.getDisponibilidadOrden(Number(order.id));
             setDisponibilidad(disp);

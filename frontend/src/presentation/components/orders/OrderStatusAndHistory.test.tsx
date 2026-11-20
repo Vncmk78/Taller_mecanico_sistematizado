@@ -53,7 +53,7 @@ describe('OrderStatusAndHistory: representación visual de estados e historial',
 
         expect(await screen.findByText('Ingreso registrado por el administrador')).toBeInTheDocument();
         expect(screen.getAllByText('desde Recibido')).toHaveLength(1);
-        expect(screen.getByText('Martín Herrera')).toBeInTheDocument();
+        expect(screen.getByText('Usuario 1')).toBeInTheDocument();
         expect(screen.getAllByText('Sistema').length).toBeGreaterThan(0);
     });
 

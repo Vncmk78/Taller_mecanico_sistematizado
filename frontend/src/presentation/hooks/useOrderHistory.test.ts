@@ -13,7 +13,6 @@ const e1: OrderHistoryEntry = {
     origen: 'usuario',
     fecha: '2026-09-02T12:00:00',
     observacion: 'a',
-    usuarioNombre: 'Martín Herrera',
 };
 
 const e2: OrderHistoryEntry = {

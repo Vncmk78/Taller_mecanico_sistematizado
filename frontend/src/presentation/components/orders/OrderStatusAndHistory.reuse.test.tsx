@@ -41,7 +41,6 @@ const historialOrden101: OrderHistoryEntry[] = [
         origen: 'usuario',
         fecha: '2026-09-01T11:00:00',
         observacion: 'Asignada a Martín Herrera',
-        usuarioNombre: 'Administrador del taller',
     },
     {
         id: 'h-101-3',
@@ -52,7 +51,6 @@ const historialOrden101: OrderHistoryEntry[] = [
         origen: 'usuario',
         fecha: '2026-09-02T09:20:00',
         observacion: 'Presupuesto v1 enviado al cliente',
-        usuarioNombre: 'Martín Herrera',
     },
 ];
 

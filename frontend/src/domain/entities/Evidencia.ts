@@ -56,9 +56,6 @@ export interface EvidenciaEntradaCrear {
     visibleCliente?: boolean;
 }
 
-/** Límite del Gateway para `/api/evidencias` (multipart): 12 MiB. */
-export const TAMANO_MAXIMO_EVIDENCIA_BYTES = 12 * 1024 * 1024;
-
 /** true si la evidencia es una imagen mostrable en un `<img>`. */
 export function esImagen(evidencia: Evidencia): boolean {
     return evidencia.tipoArchivo === 'foto' || evidencia.contentType.startsWith('image/');

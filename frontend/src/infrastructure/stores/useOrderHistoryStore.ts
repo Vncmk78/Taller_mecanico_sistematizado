@@ -21,7 +21,7 @@ interface OrderHistoryState extends AsyncStatus {
 // Caché plana compartida entre portales, con la misma filosofía que
 // asyncCollection: al llegar una respuesta del servidor para una orden, se
 // reemplaza por completo su historial (fuente autoritativa de esa orden) para
-// no mezclar datos reales con los demos de la misma orden.
+// no mezclar el historial de una orden con el de otra.
 export const useOrderHistoryStore = create<OrderHistoryState>((set) => ({
     entries: [],
     ...initialAsyncStatus,

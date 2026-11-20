@@ -22,7 +22,6 @@ const h1b: OrderHistoryEntry = {
     origen: 'usuario',
     fecha: '2026-09-02T10:00:00',
     observacion: 'avance',
-    usuarioNombre: 'Martín Herrera',
 };
 
 const h2: OrderHistoryEntry = {

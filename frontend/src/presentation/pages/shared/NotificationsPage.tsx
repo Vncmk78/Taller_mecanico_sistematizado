@@ -7,6 +7,8 @@ import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { Pagination } from '@/presentation/components/ui/Pagination';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 
 type FiltroLectura = 'todas' | 'no-leidas';
 
@@ -96,6 +98,8 @@ export function NotificationsPage() {
       // Reintento manual disponible
     }
   };
+
+  const paginacion = useClientPagination(items, { resetDeps: [filtro] });
 
   const resumen = useMemo(() => {
     if (loading) return 'Cargando avisos...';
@@ -190,7 +194,7 @@ export function NotificationsPage() {
         />
       ) : (
         <ul className="space-y-3" aria-label="Lista de notificaciones">
-          {items.map((n) => (
+          {paginacion.pageItems.map((n) => (
             <li
               key={n.id}
               className={`rounded-xl border p-4 sm:p-5 transition-colors ${
@@ -234,6 +238,21 @@ export function NotificationsPage() {
           ))}
         </ul>
       )}
+
+      <Pagination
+        className="mt-6"
+        page={paginacion.page}
+        pageCount={paginacion.pageCount}
+        onPageChange={paginacion.setPage}
+        pageSize={paginacion.pageSize}
+        onPageSizeChange={paginacion.setPageSize}
+        rangeStart={paginacion.rangeStart}
+        rangeEnd={paginacion.rangeEnd}
+        total={paginacion.total}
+        label="notificaciones"
+        ariaLabel="Paginación de notificaciones"
+        sizeLabel="Notificaciones por página"
+      />
     </div>
   );
 }

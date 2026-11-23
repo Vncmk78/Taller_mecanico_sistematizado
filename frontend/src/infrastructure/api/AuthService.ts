@@ -8,6 +8,7 @@ import type {
 } from '@/domain/entities/User';
 import type { AuthPort } from '@/domain/ports/AuthPort';
 import apiClient from '../config/apiClient';
+import { obtenerTodasLasPaginas } from './paginacion';
 
 interface ApiUser {
   id: number;
@@ -87,7 +88,7 @@ class AuthService implements AuthPort {
   }
 
   async listarUsuarios(): Promise<UsuarioListado[]> {
-    const { data } = await apiClient.get<ApiUser[]>('/auth/usuarios');
+    const data = await obtenerTodasLasPaginas<ApiUser>('/auth/usuarios');
     return data.map(toUsuarioListado);
   }
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from services.ms1_auth.config import settings
@@ -29,6 +29,7 @@ from services.ms1_auth.services.autenticacion import (
     asignar_rol_restringido,
     autenticar_usuario,
     buscar_usuario_por_id,
+    contar_usuarios,
     listar_usuarios,
     registrar_cliente,
     retirar_rol_restringido,
@@ -167,12 +168,16 @@ def consultar_usuario_actual(
     },
 )
 def consultar_usuarios(
+    response: Response,
+    limite: int = Query(default=50, ge=1, le=100),
+    desde: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> list[UsuarioRespuesta]:
     try:
+        response.headers["X-Total-Count"] = str(contar_usuarios(db))
         return [
             _serializar_usuario_para_consulta(usuario)
-            for usuario in listar_usuarios(db)
+            for usuario in listar_usuarios(db, limite=limite, desde=desde)
         ]
     except (ConfiguracionRolesError, PersistenciaAutenticacionError) as exc:
         raise HTTPException(

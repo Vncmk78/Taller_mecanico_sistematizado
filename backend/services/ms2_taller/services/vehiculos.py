@@ -7,7 +7,7 @@ la futura integración de autenticación no obligue a reescribirlas.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -77,8 +77,27 @@ def crear_vehiculo(
         ) from exc
 
 
-def listar_vehiculos(db: Session, cliente: Cliente) -> list[Vehiculo]:
-    """Lista únicamente los vehículos del ``Cliente`` recibido."""
+def _paginar_consulta(
+    db: Session, consulta, *, limite: int | None, desde: int
+) -> tuple[list[Vehiculo], int]:
+    """Devuelve una página de ``consulta`` y el total antes de paginar."""
+
+    total = db.scalar(
+        select(func.count()).select_from(consulta.order_by(None).subquery())
+    ) or 0
+    if limite is not None:
+        consulta = consulta.limit(limite).offset(desde)
+    return list(db.scalars(consulta).unique().all()), int(total)
+
+
+def listar_vehiculos(
+    db: Session,
+    cliente: Cliente,
+    *,
+    limite: int | None = None,
+    desde: int = 0,
+) -> tuple[list[Vehiculo], int]:
+    """Lista los vehículos del ``Cliente`` recibido, paginados si se pide."""
 
     try:
         consulta = (
@@ -86,7 +105,7 @@ def listar_vehiculos(db: Session, cliente: Cliente) -> list[Vehiculo]:
             .where(Vehiculo.cliente_id == cliente.cliente_id)
             .order_by(Vehiculo.vehiculo_id)
         )
-        return list(db.scalars(consulta).all())
+        return _paginar_consulta(db, consulta, limite=limite, desde=desde)
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaVehiculoError(
@@ -94,12 +113,14 @@ def listar_vehiculos(db: Session, cliente: Cliente) -> list[Vehiculo]:
         ) from exc
 
 
-def listar_vehiculos_taller(db: Session) -> list[Vehiculo]:
-    """Lista todo el parque vehicular (visión global del Administrador)."""
+def listar_vehiculos_taller(
+    db: Session, *, limite: int | None = None, desde: int = 0
+) -> tuple[list[Vehiculo], int]:
+    """Lista el parque vehicular global del Administrador, paginado."""
 
     try:
         consulta = select(Vehiculo).order_by(Vehiculo.vehiculo_id)
-        return list(db.scalars(consulta).all())
+        return _paginar_consulta(db, consulta, limite=limite, desde=desde)
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaVehiculoError(
@@ -110,12 +131,16 @@ def listar_vehiculos_taller(db: Session) -> list[Vehiculo]:
 def listar_vehiculos_para_mecanico(
     db: Session,
     mecanico_usuario_id: int,
-) -> list[Vehiculo]:
+    *,
+    limite: int | None = None,
+    desde: int = 0,
+) -> tuple[list[Vehiculo], int]:
     """Lista los vehículos con órdenes asignadas al mecánico, sin duplicados.
 
     Un vehículo puede aparecer en más de una orden activa del mismo mecánico;
     el join devuelve una fila por orden, por eso se eliminan los duplicados con
-    ``unique()`` conservando el orden por identificador.
+    ``unique()`` conservando el orden por identificador. El total se calcula
+    sobre la misma consulta, de modo que no cuenta duplicados.
     """
 
     try:
@@ -124,8 +149,9 @@ def listar_vehiculos_para_mecanico(
             .join(OrdenTrabajo, OrdenTrabajo.vehiculo_id == Vehiculo.vehiculo_id)
             .where(OrdenTrabajo.mecanico_actual_id == mecanico_usuario_id)
             .order_by(Vehiculo.vehiculo_id)
+            .distinct()
         )
-        return list(db.scalars(consulta).unique().all())
+        return _paginar_consulta(db, consulta, limite=limite, desde=desde)
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaVehiculoError(

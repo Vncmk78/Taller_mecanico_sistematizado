@@ -271,7 +271,7 @@ def _operaciones_documentadas(esquema: dict) -> dict[tuple[str, str], dict]:
 
 def test_openapi_responde_con_metadatos(esquema: dict) -> None:
     assert esquema["info"]["title"] == "SGTM — API Gateway"
-    assert esquema["info"]["version"] == "3.0.1"
+    assert esquema["info"]["version"] == "3.1.0"
     assert esquema["openapi"].startswith("3.")
 
 
@@ -654,8 +654,9 @@ def test_contrato_evidencias_documenta_formulario_y_seguridad(esquema: dict) -> 
     ]
     assert "415" in subir
     listado = paths["/api/evidencias"]["get"]
-    [query] = [p for p in listado["parameters"] if p["in"] == "query"]
-    assert query["name"] == "orden_id" and query["required"] is True
+    consultas = {p["name"]: p for p in listado["parameters"] if p["in"] == "query"}
+    assert consultas["orden_id"]["required"] is True
+    assert {"limite", "desde"} <= set(consultas)
     descarga = paths["/api/evidencias/{evidencia_id}/descarga"]["get"]["responses"]["200"]
     assert {"Cache-Control", "X-Content-Type-Options"} <= set(descarga["headers"])
 

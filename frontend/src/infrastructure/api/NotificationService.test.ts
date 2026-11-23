@@ -30,7 +30,9 @@ it('consulta y reintenta solo los canales del aviso indicado', async () => {
   vi.mocked(apiClient.post).mockResolvedValue({ data: [api] });
   expect((await notificationService.getDeliveries('8'))[0]).toMatchObject({ id: '3', estado: 'pendiente' });
   await notificationService.retryDeliveries('8');
-  expect(apiClient.get).toHaveBeenCalledWith('/notificaciones/8/entregas');
+  expect(apiClient.get).toHaveBeenCalledWith('/notificaciones/8/entregas', {
+    params: { limite: 100, desde: 0 },
+  });
   expect(apiClient.post).toHaveBeenCalledWith('/notificaciones/8/reintentos');
 });
 

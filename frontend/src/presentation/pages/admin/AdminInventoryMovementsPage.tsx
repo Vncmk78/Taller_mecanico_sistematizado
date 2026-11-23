@@ -4,6 +4,7 @@ import { repuestoService } from '@/infrastructure/api/RepuestoService';
 import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
 import { generarIdOperacion } from '@/infrastructure/utils/idOperacion';
 import type { Movimiento, TipoMovimiento } from '@/domain/entities/Inventario';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { FormActions } from '@/presentation/components/ui/FormActions';
@@ -11,8 +12,10 @@ import { FormModal } from '@/presentation/components/ui/FormModal';
 import { Input } from '@/presentation/components/ui/Input';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
 import { Select } from '@/presentation/components/ui/Select';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import { isAdminInventoryMode, type InventoryPortalMode } from '@/presentation/utils/inventoryPortal';
 import {
     Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow,
@@ -26,6 +29,13 @@ const TIPOS: TipoMovimiento[] = ['ingreso', 'ajuste', 'compromiso', 'consumo', '
  * ajustes son exclusivos del administrador (MS3 responde 403).
  */
 const TIPOS_MECANICO: TipoMovimiento[] = ['compromiso', 'consumo', 'liberacion'];
+
+/**
+ * Tope de una sola página de `GET /inventario/movimientos`: el backend rechaza
+ * con 422 cualquier `limite` mayor a 200 (`LIMITE_MAXIMO` de MS3). Se carga el
+ * máximo y la tabla pagina en el cliente, igual que el resto de listados.
+ */
+const LIMITE_MOVIMIENTOS = 200;
 
 interface AdminInventoryMovementsPageProps {
     mode?: InventoryPortalMode;
@@ -68,7 +78,7 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
             const response = await inventarioService.listMovimientos({
                 repuestoId: repuestoId ? Number(repuestoId) : null,
                 tipo: tipo ? (tipo as TipoMovimiento) : null,
-                limite: 50,
+                limite: LIMITE_MOVIMIENTOS,
             });
             setMovimientos(response.movimientos);
             setTotal(response.total);
@@ -133,6 +143,10 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
             setMovementSubmitting(false);
         }
     };
+    const paginacion = useClientPagination(movimientos, {
+        resetDeps: [repuestoId, tipo],
+    });
+
     const isServerError = status === 'error' && !isOffline;
 
     return (
@@ -194,6 +208,13 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
                 </div>
             )}
 
+            {status === 'success' && total > movimientos.length && (
+                <Alert tone="info" className="mb-6">
+                    El historial tiene {total} movimientos; esta vista muestra los primeros{' '}
+                    {movimientos.length}.
+                </Alert>
+            )}
+
             {status === 'loading' ? (
                 <div className="card p-16 flex justify-center"><LoadingState message="Cargando movimientos..." /></div>
             ) : isServerError && movimientos.length === 0 ? (
@@ -218,7 +239,7 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {movimientos.map((m) => (
+                            {paginacion.pageItems.map((m) => (
                                 <TableRow key={m.movimientoId}>
                                     <TableCell className="text-text-muted">{new Date(m.fechaHora).toLocaleString('es-CL')}</TableCell>
                                     <TableCell className="font-medium">
@@ -234,6 +255,21 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
                     </Table>
                 </div>
             )}
+
+            <Pagination
+                className="mt-4"
+                page={paginacion.page}
+                pageCount={paginacion.pageCount}
+                onPageChange={paginacion.setPage}
+                pageSize={paginacion.pageSize}
+                onPageSizeChange={paginacion.setPageSize}
+                rangeStart={paginacion.rangeStart}
+                rangeEnd={paginacion.rangeEnd}
+                total={paginacion.total}
+                label="movimientos"
+                ariaLabel="Paginación de movimientos"
+                sizeLabel="Movimientos por página"
+            />
 
             {movementOpen && (
                 <FormModal

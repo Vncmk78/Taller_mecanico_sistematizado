@@ -15,7 +15,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from services.ms4_evidencias.config import settings
@@ -291,15 +291,21 @@ def _compensar_subida_fallida(
 
 
 def listar_por_orden(
-    db: Session, orden_id: int, *, vista_cliente: bool, incluir_eliminadas: bool = False
-) -> list[Evidencia]:
+    db: Session,
+    orden_id: int,
+    *,
+    vista_cliente: bool,
+    incluir_eliminadas: bool = False,
+    limite: int | None = None,
+    desde: int = 0,
+) -> tuple[list[Evidencia], int]:
     """Evidencias de una orden, filtradas según quien consulta.
 
     Cliente: solo `visible_cliente = true`, `estado = confirmada` y no eliminadas.
     Otros roles (mecánico): todas las no eliminadas.
     Admin (`incluir_eliminadas=True`): todas, incluidas las eliminadas
     (auditoría, matriz §4.5).
-    Ordena por `creada_en`.
+    Ordena por `creada_en` y devuelve la página pedida junto con el total.
     """
     consulta = select(Evidencia).where(Evidencia.orden_id == orden_id)
     if not incluir_eliminadas:
@@ -309,8 +315,13 @@ def listar_por_orden(
             Evidencia.visible_cliente.is_(True),
             Evidencia.estado == EstadoEvidencia.CONFIRMADA,
         )
+    total = db.scalar(
+        select(func.count()).select_from(consulta.order_by(None).subquery())
+    ) or 0
     consulta = consulta.order_by(Evidencia.creada_en)
-    return list(db.scalars(consulta))
+    if limite is not None:
+        consulta = consulta.limit(limite).offset(desde)
+    return list(db.scalars(consulta)), int(total)
 
 
 def buscar_por_id(db: Session, evidencia_id: uuid.UUID) -> Evidencia | None:

@@ -6,7 +6,9 @@ import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner'
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 import { isInitialLoad } from '@/infrastructure/stores/asyncCollection';
 import { vehicleService } from '@/infrastructure/api/VehicleService';
@@ -31,6 +33,10 @@ export function AdminVehiclesPage() {
         [v.patent, v.brand, v.model].some((field) => field.toLowerCase().includes(term))
     );
     }, [vehicles, debouncedSearch]);
+
+    const paginacion = useClientPagination(filtered, {
+        resetDeps: [debouncedSearch],
+    });
 
     // El store solo marca isOffline ante fallos de transporte: un error HTTP del
     // servidor se muestra aparte para no rotularlo como "sin conexión".
@@ -82,7 +88,7 @@ export function AdminVehiclesPage() {
         />
         ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-4 sm:px-6 lg:px-10 pb-10">
-            {filtered.map((vehicle) => (
+            {paginacion.pageItems.map((vehicle) => (
             <VehicleCard
                 key={vehicle.id}
                 vehicle={vehicle}
@@ -107,6 +113,21 @@ export function AdminVehiclesPage() {
             )}
         </div>
         )}
+
+        <Pagination
+            className="px-4 sm:px-6 lg:px-10 pb-10"
+            page={paginacion.page}
+            pageCount={paginacion.pageCount}
+            onPageChange={paginacion.setPage}
+            pageSize={paginacion.pageSize}
+            onPageSizeChange={paginacion.setPageSize}
+            rangeStart={paginacion.rangeStart}
+            rangeEnd={paginacion.rangeEnd}
+            total={paginacion.total}
+            label="vehículos"
+            ariaLabel="Paginación de vehículos"
+            sizeLabel="Vehículos por página"
+        />
     </div>
     );
 }

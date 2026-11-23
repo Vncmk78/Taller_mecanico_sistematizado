@@ -15,7 +15,9 @@ import { ConfirmDialog } from '@/presentation/components/ui/ConfirmDialog';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import {
     Table,
     TableBody,
@@ -98,6 +100,10 @@ export function AdminUsersPage() {
         if (term === '') return usuarios;
         return usuarios.filter((usuario) => textoBuscable(usuario).includes(term));
     }, [usuarios, debouncedSearch]);
+
+    const paginacion = useClientPagination(filtrados, {
+        resetDeps: [debouncedSearch],
+    });
 
     const hasActiveFilters = search.trim() !== '';
     const isServerError = status === 'error' && !isOffline;
@@ -348,7 +354,7 @@ export function AdminUsersPage() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {filtrados.map((usuario) => {
+                            {paginacion.pageItems.map((usuario) => {
                                 const esPropiaCuenta = usuario.id === user?.id;
                                 return (
                                     <TableRow key={usuario.id}>
@@ -416,6 +422,21 @@ export function AdminUsersPage() {
                     </Table>
                 </div>
             )}
+
+            <Pagination
+                className="mt-4"
+                page={paginacion.page}
+                pageCount={paginacion.pageCount}
+                onPageChange={paginacion.setPage}
+                pageSize={paginacion.pageSize}
+                onPageSizeChange={paginacion.setPageSize}
+                rangeStart={paginacion.rangeStart}
+                rangeEnd={paginacion.rangeEnd}
+                total={paginacion.total}
+                label="usuarios"
+                ariaLabel="Paginación de usuarios"
+                sizeLabel="Usuarios por página"
+            />
 
             <ConfirmDialog
                 open={confirmarSinRoles}

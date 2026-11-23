@@ -5,7 +5,9 @@ import { OfflineBanner } from '@/presentation/components/vehicles/OfflineBanner'
 import { Alert } from '@/presentation/components/ui/Alert';
 import { EmptyState } from '@/presentation/components/ui/EmptyState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
+import { Pagination } from '@/presentation/components/ui/Pagination';
 import { RetryButton } from '@/presentation/components/ui/RetryButton';
+import { useClientPagination } from '@/presentation/hooks/useClientPagination';
 import { orderPatente, orderVehicleLabel } from '@/presentation/utils/orderDisplay';
 import { useClientBudgets } from '@/presentation/hooks/useClientBudgets';
 import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
@@ -13,6 +15,8 @@ import { useVehicleStore } from '@/infrastructure/stores/useVehicleStore';
 export function ClientBudgetsPage() {
     const { items, loading, error, isOffline, requestId, failed, refetch } = useClientBudgets();
     const vehicles = useVehicleStore((s) => s.vehicles);
+
+    const paginacion = useClientPagination(items);
 
     const isServerError = !isOffline && Boolean(error);
 
@@ -52,7 +56,7 @@ export function ClientBudgetsPage() {
                 />
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-                    {items.map(({ order, presupuesto }) => (
+                    {paginacion.pageItems.map(({ order, presupuesto }) => (
                         <BudgetCard
                             key={presupuesto.id}
                             order={order}
@@ -63,6 +67,21 @@ export function ClientBudgetsPage() {
                     ))}
                 </div>
             )}
+
+            <Pagination
+                className="mt-6"
+                page={paginacion.page}
+                pageCount={paginacion.pageCount}
+                onPageChange={paginacion.setPage}
+                pageSize={paginacion.pageSize}
+                onPageSizeChange={paginacion.setPageSize}
+                rangeStart={paginacion.rangeStart}
+                rangeEnd={paginacion.rangeEnd}
+                total={paginacion.total}
+                label="presupuestos"
+                ariaLabel="Paginación de presupuestos"
+                sizeLabel="Presupuestos por página"
+            />
         </div>
     );
 }

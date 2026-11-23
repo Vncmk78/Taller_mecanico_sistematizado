@@ -37,7 +37,9 @@ describe('VehicleService: contrato HTTP de MS2 (vehículos)', () => {
 
     const vehicles = await vehicleService.getMyVehicles('cliente-1');
 
-    expect(apiClient.get).toHaveBeenCalledWith('/vehiculos');
+    expect(apiClient.get).toHaveBeenCalledWith('/vehiculos', {
+      params: { limite: 100, desde: 0 },
+    });
     expect(vehicles[0]).toEqual({
       id: '7',
       patent: 'KKTT11',
@@ -54,7 +56,9 @@ describe('VehicleService: contrato HTTP de MS2 (vehículos)', () => {
 
     const vehicles = await vehicleService.getAllVehicles();
 
-    expect(apiClient.get).toHaveBeenCalledWith('/vehiculos');
+    expect(apiClient.get).toHaveBeenCalledWith('/vehiculos', {
+      params: { limite: 100, desde: 0 },
+    });
     expect(vehicles[0].brand).toBe('Toyota');
     // Sin identidad de sesión, el propietario es el cliente_id real de MS2.
     expect(vehicles[0].clientId).toBe('4');
@@ -65,7 +69,9 @@ describe('VehicleService: contrato HTTP de MS2 (vehículos)', () => {
 
     const vehicles = await vehicleService.getAssignedVehicles();
 
-    expect(apiClient.get).toHaveBeenCalledWith('/vehiculos/asignados');
+    expect(apiClient.get).toHaveBeenCalledWith('/vehiculos/asignados', {
+      params: { limite: 100, desde: 0 },
+    });
     expect(vehicles[0].clientId).toBe('4');
   });
 

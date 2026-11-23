@@ -4,6 +4,7 @@ import type { OrderHistoryEntry } from '@/domain/entities/OrderHistory';
 import type { SolicitudCancelacion } from '@/domain/entities/SolicitudCancelacion';
 import type { OrderPort } from '@/domain/ports/OrderPort';
 import apiClient from '../config/apiClient';
+import { obtenerTodasLasPaginas } from './paginacion';
 
 // Contrato HTTP de MS2 (OrdenRespuesta) a través de la API Gateway (/api/ordenes).
 // Al igual que en vehículos, el backend usa nombres en español y el dominio del
@@ -179,7 +180,7 @@ class OrderService implements OrderPort {
     }
 
     async getOrders(): Promise<Order[]> {
-        const { data } = await apiClient.get<OrdenRespuesta[]>('/ordenes');
+        const data = await obtenerTodasLasPaginas<OrdenRespuesta>('/ordenes');
         return data.map(mapOrdenApi);
     }
 
@@ -191,12 +192,16 @@ class OrderService implements OrderPort {
     }
 
     async getOrderHistory(ordenId: string): Promise<OrderHistoryEntry[]> {
-        const { data } = await apiClient.get<HistorialEstadoApi[]>(`/ordenes/${ordenId}/historial`);
+        const data = await obtenerTodasLasPaginas<HistorialEstadoApi>(
+            `/ordenes/${ordenId}/historial`
+        );
         return data.map(mapHistorialApi);
     }
 
     async getOrderBitacora(ordenId: string): Promise<BitacoraEntry[]> {
-        const { data } = await apiClient.get<BitacoraApi[]>(`/ordenes/${ordenId}/bitacora`);
+        const data = await obtenerTodasLasPaginas<BitacoraApi>(
+            `/ordenes/${ordenId}/bitacora`
+        );
         return data.map(mapBitacoraApi);
     }
 
@@ -249,7 +254,7 @@ class OrderService implements OrderPort {
     }
 
     async getCancelacionesPendientes(): Promise<SolicitudCancelacion[]> {
-        const { data } = await apiClient.get<SolicitudCancelacionApi[]>(
+        const data = await obtenerTodasLasPaginas<SolicitudCancelacionApi>(
             '/ordenes/cancelaciones/pendientes'
         );
         return data.map(mapSolicitudCancelacionApi);

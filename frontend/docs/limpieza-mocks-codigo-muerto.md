@@ -2,7 +2,8 @@
 
 **Tarea (Semana 11):** Eliminar mocks componentes muertos y código temporal
 **Alcance:** Frontend Web (React). Sin backend, sin móvil, sin cambios de diseño.
-**Entregable:** código + ajustes de pruebas + este documento. **No se crea commit.**
+**Entregable:** código + ajustes de pruebas + este documento. Commit `477305f` en
+`Gustavo`, promovido por `Develop` → `main` → `kubero-deploy`.
 **Base:** rama `Gustavo`, commit `5a5dd64`, sincronizada con `origin/Gustavo` antes de empezar.
 
 ## 1. Metodología
@@ -17,12 +18,20 @@ Regla aplicada: **si un archivo o símbolo lo usa un test, no es muerto** y no s
 
 ## 2. Eliminado
 
-### 2.1 Componente muerto y su constants huérfana
+### 2.1 Componente muerto y su constants huérfana (no eliminados en el resultado final)
 
-| Archivo | Motivo |
-|---|---|
-| `src/presentation/components/ui/Pagination.tsx` (122 líneas) | Ningún import entrante en código ni tests; no alcanzable desde `main.tsx`. Es una copia casi literal de `components/orders/OrderPagination.tsx`, que sí está en uso en 4 portales y tiene sus propias pruebas |
-| `src/presentation/constants/pagination.ts` (`PAGE_SIZES`, `DEFAULT_PAGE_SIZE`) | Su único importador era el archivo anterior. Producción usa `ORDER_PAGE_SIZES` y un `DEFAULT_PAGE_SIZE` local en `hooks/useOrderListFilters.ts` |
+En el análisis sobre `Gustavo` (`5a5dd64`), `src/presentation/components/ui/Pagination.tsx`
+y `src/presentation/constants/pagination.ts` no tenían imports entrantes y parecían
+duplicados de `components/orders/OrderPagination.tsx`, por lo que el commit de limpieza
+los eliminó.
+
+Al promover a `main`, ese branch ya incluía el trabajo de otro integrante
+(`0ffdae1 feat(paginacion): unificar los listados operativos de MS1, MS2 y MS4`), que
+adopta `ui/Pagination` en 12 pantallas y `constants/pagination.ts` desde
+`hooks/useClientPagination.ts`. En la resolución del conflicto se conservó **su versión
+de ambos archivos**: eliminarlos habría borrado una feature ajena recién integrada.
+El efecto neto en `main`/`kubero-deploy` es que estos dos archivos **siguen presentes**;
+la limpieza efectiva se limita a §2.2 y §2.3.
 
 ### 2.2 Exportaciones sin uso
 
@@ -73,11 +82,13 @@ Se eliminó el campo de la entidad y de todos sus consumidores:
 | `npm test` | 135 archivos, 1181 pruebas: **1179 pasan y 2 fallan**, los ya conocidos de `src/infrastructure/api/contratosOpenApi.test.ts` (archivo no versionado, ajeno) |
 | `npm run build` | Correcto (`tsc -b && vite build`), 2159 módulos |
 | Pruebas focalizadas de historial/tablas/evidencias | 8 archivos, 55 pruebas, todas pasan |
-| Búsqueda final | 0 coincidencias de `usuarioNombre`, `TAMANO_MAXIMO_EVIDENCIA_BYTES`, `TableEmptyState` ni de rutas a los archivos borrados |
+| Búsqueda final | 0 coincidencias de `usuarioNombre`, `TAMANO_MAXIMO_EVIDENCIA_BYTES` ni `TableEmptyState`. Los archivos de paginación se conservan según §2.1 |
 
 ## 5. Archivos modificados
 
-14 archivos: 2 eliminados, 12 editados (entidad, mock, store, componente de timeline,
-tabla y 7 pruebas). No se tocaron los archivos no versionados ajenos
+En el resultado final de `main`: 12 archivos editados (entidad, mock, store,
+componente de timeline, tabla y 7 pruebas), más este documento. Los 2 archivos de
+paginación se restauraron desde `main` durante la resolución del conflicto (§2.1).
+No se tocaron los archivos no versionados ajenos
 `contratosOpenApi.test.ts` ni `diseno-responsive-accesibilidad-admin.md`, ni el
 documento de estudio anterior `estudio-herramientas-navegador-diagnostico.md`.

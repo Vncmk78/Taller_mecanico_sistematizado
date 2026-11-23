@@ -36,7 +36,7 @@ from shared.contratos_decisiones import (
 )
 
 _TITULO = "SGTM — API Gateway"
-_VERSION = "3.0.1"
+_VERSION = "3.1.0"
 _DESCRIPCION = """Único punto de entrada del backend del SGTM (taller mecánico). \
 Documenta los endpoints reales que la Gateway enruta hacia los cuatro \
 microservicios: MS1 (Autenticación y Usuarios), MS2 (Vehículos y Órdenes), MS3 \
@@ -332,6 +332,43 @@ _PARAMETRO_ORDEN_ID_QUERY: dict[str, object] = {
     "schema": {"type": "integer", "format": "int64", "minimum": 1, "example": 31},
 }
 
+_PARAMETRO_LIMITE: dict[str, object] = {
+    "name": "limite",
+    "in": "query",
+    "required": False,
+    "description": "Cantidad máxima de elementos a devolver (1–100).",
+    "schema": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100},
+}
+
+_PARAMETRO_DESDE: dict[str, object] = {
+    "name": "desde",
+    "in": "query",
+    "required": False,
+    "description": "Cantidad de elementos que se omiten al paginar.",
+    "schema": {"type": "integer", "default": 0, "minimum": 0},
+}
+
+# Contrato común de paginación de las colecciones operativas: el cuerpo sigue
+# siendo un arreglo plano y el total viaja en la cabecera `X-Total-Count`.
+_PARAMETROS_PAGINACION: list[dict[str, object]] = [
+    _PARAMETRO_LIMITE,
+    _PARAMETRO_DESDE,
+]
+
+_CABECERA_TOTAL: dict[str, object] = {
+    "description": "Total de elementos que cumplen los filtros antes de paginar.",
+    "schema": {"type": "integer", "minimum": 0},
+}
+
+
+def _respuesta_paginada(respuesta: dict[str, object]) -> dict[str, object]:
+    """Agrega `X-Total-Count` a una respuesta 200 ya construida."""
+
+    cabeceras = dict(respuesta.get("headers", {}))  # type: ignore[arg-type]
+    cabeceras["X-Total-Count"] = _CABECERA_TOTAL
+    return {**respuesta, "headers": cabeceras}
+
+
 _PARAMETROS_NOTIFICACIONES: list[dict[str, object]] = [
     {"name": "solo_no_leidas", "in": "query", "required": False,
      "schema": {"type": "boolean", "default": False},
@@ -558,11 +595,13 @@ def _caminos_evidencias() -> dict[str, dict[str, object]]:
                 ),
                 operation_id="listar_evidencias",
                 cuerpo=None,
-                parametros_extra=[_PARAMETRO_ORDEN_ID_QUERY],
+                parametros_extra=[_PARAMETRO_ORDEN_ID_QUERY, *_PARAMETROS_PAGINACION],
                 respuestas_ok={
-                    "200": _respuesta(
-                        "Evidencias de la orden.",
-                        {"type": "array", "items": _ref("EvidenciaRespuesta")},
+                    "200": _respuesta_paginada(
+                        _respuesta(
+                            "Evidencias de la orden.",
+                            {"type": "array", "items": _ref("EvidenciaRespuesta")},
+                        )
                     )
                 },
                 errores_ms={
@@ -716,9 +755,11 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 respuestas_ok={str(c): _respuesta("Dispositivo propio registrado.", _ref("DispositivoRespuesta")) for c in (200,201)},
                 errores_ms={"401":"JWT requerido","409":"Registro concurrente; reintentar","422":"Token o plataforma inválidos"}),
             "get": _operacion(tag="Notificaciones", resumen="Listar mis dispositivos",
-                descripcion="Solo registros propios, sin tokens ni claves.", operation_id="listar_dispositivos",
-                cuerpo=None, requiere_auth=True, respuestas_ok={"200":_respuesta("Dispositivos propios.",{"type":"array","items":_ref("DispositivoRespuesta")})},
-                errores_ms={"401":"JWT requerido"}),
+                descripcion="Solo registros propios, sin tokens ni claves. Paginado con `limite`/`desde`; el total viaja en `X-Total-Count`.",
+                operation_id="listar_dispositivos", parametros_extra=_PARAMETROS_PAGINACION,
+                cuerpo=None, requiere_auth=True,
+                respuestas_ok={"200":_respuesta_paginada(_respuesta("Dispositivos propios.",{"type":"array","items":_ref("DispositivoRespuesta")}))},
+                errores_ms={"401":"JWT requerido","422":"Parámetros de paginación inválidos"}),
         },
         "/api/notificaciones/dispositivos/{dispositivo_id}": {
             "delete": _operacion(tag="Notificaciones", resumen="Desactivar mi dispositivo",
@@ -734,8 +775,17 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 metodo: _operacion(tag="Notificaciones", resumen=resumen,
                     descripcion="Solo el destinatario del aviso. Aceptada significa aceptación por SMTP/FCM, no lectura por la persona. Un reintento no vuelve a enviar canales ya aceptados ni duplica el aviso lógico.",
                     operation_id=f"notificacion_{sufijo}", cuerpo=None, requiere_auth=True,
-                    parametros_extra=[{"name":"notificacion_id","in":"path","required":True,"schema":{"type":"integer","minimum":1}}],
-                    respuestas_ok={"200":_respuesta("Estado e intentos de los canales.",{"type":"array","items":_ref("EntregaRespuesta")})},
+                    parametros_extra=[
+                        {"name":"notificacion_id","in":"path","required":True,"schema":{"type":"integer","minimum":1}},
+                        *(_PARAMETROS_PAGINACION if metodo == "get" else []),
+                    ],
+                    respuestas_ok={
+                        "200": (
+                            _respuesta_paginada(_respuesta("Estado e intentos de los canales.",{"type":"array","items":_ref("EntregaRespuesta")}))
+                            if metodo == "get"
+                            else _respuesta("Estado e intentos de los canales.",{"type":"array","items":_ref("EntregaRespuesta")})
+                        )
+                    },
                     errores_ms={"401":"JWT requerido","422":"Identificador inválido"},
                     descripcion_404="Notificación inexistente o ajena.",esquema_404=error_404_recurso)
             }
@@ -956,15 +1006,19 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 ),
                 operation_id="listar_vehiculos",
                 cuerpo=None,
+                parametros_extra=_PARAMETROS_PAGINACION,
                 respuestas_ok={
-                    "200": _respuesta(
-                        "Lista de vehículos.",
-                        {"type": "array", "items": _ref("VehiculoRespuesta")},
+                    "200": _respuesta_paginada(
+                        _respuesta(
+                            "Lista de vehículos.",
+                            {"type": "array", "items": _ref("VehiculoRespuesta")},
+                        )
                     )
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Cliente o Administrador",
+                    "422": "Parámetros de paginación inválidos",
                 },
                 requiere_auth=True,
                 descripcion_404=(
@@ -984,15 +1038,19 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 ),
                 operation_id="listar_vehiculos_asignados",
                 cuerpo=None,
+                parametros_extra=_PARAMETROS_PAGINACION,
                 respuestas_ok={
-                    "200": _respuesta(
-                        "Lista de vehículos asignados (sin duplicados).",
-                        {"type": "array", "items": _ref("VehiculoRespuesta")},
+                    "200": _respuesta_paginada(
+                        _respuesta(
+                            "Lista de vehículos asignados (sin duplicados).",
+                            {"type": "array", "items": _ref("VehiculoRespuesta")},
+                        )
                     )
                 },
                 errores_ms={
                     "401": "JWT ausente o inválido",
                     "403": "Se requiere rol Mecánico",
+                    "422": "Parámetros de paginación inválidos",
                 },
                 requiere_auth=True,
             ),
@@ -1187,13 +1245,19 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 ),
                 operation_id="listar_ordenes",
                 cuerpo=None,
+                parametros_extra=_PARAMETROS_PAGINACION,
                 respuestas_ok={
-                    "200": _respuesta(
-                        "Lista de órdenes visibles.",
-                        {"type": "array", "items": _ref("OrdenRespuesta")},
+                    "200": _respuesta_paginada(
+                        _respuesta(
+                            "Lista de órdenes visibles.",
+                            {"type": "array", "items": _ref("OrdenRespuesta")},
+                        )
                     )
                 },
-                errores_ms={"401": "JWT ausente o inválido"},
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "422": "Parámetros de paginación inválidos",
+                },
                 requiere_auth=True,
             ),
         },
@@ -1421,13 +1485,16 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 ),
                 operation_id="consultar_historial_orden",
                 cuerpo=None,
+                parametros_extra=_PARAMETROS_PAGINACION,
                 respuestas_ok={
-                    "200": _respuesta(
-                        "Historial de estados.",
-                        {
-                            "type": "array",
-                            "items": _ref("HistorialEstadoRespuesta"),
-                        },
+                    "200": _respuesta_paginada(
+                        _respuesta(
+                            "Historial de estados.",
+                            {
+                                "type": "array",
+                                "items": _ref("HistorialEstadoRespuesta"),
+                            },
+                        )
                     )
                 },
                 errores_ms={
@@ -1455,10 +1522,13 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 ),
                 operation_id="consultar_bitacora_orden",
                 cuerpo=None,
+                parametros_extra=_PARAMETROS_PAGINACION,
                 respuestas_ok={
-                    "200": _respuesta(
-                        "Bitácora de trabajo de la orden.",
-                        {"type": "array", "items": _ref("BitacoraRespuesta")},
+                    "200": _respuesta_paginada(
+                        _respuesta(
+                            "Bitácora de trabajo de la orden.",
+                            {"type": "array", "items": _ref("BitacoraRespuesta")},
+                        )
                     )
                 },
                 errores_ms={
@@ -1638,11 +1708,16 @@ def _caminos_documentados() -> dict[str, dict[str, object]]:
                 descripcion="Solo Administrador. Devuelve los datos necesarios para revisar la solicitud.",
                 operation_id="listar_cancelaciones_pendientes",
                 cuerpo=None,
-                respuestas_ok={"200": _respuesta(
+                parametros_extra=_PARAMETROS_PAGINACION,
+                respuestas_ok={"200": _respuesta_paginada(_respuesta(
                     "Solicitudes pendientes.",
                     {"type": "array", "items": _ref("SolicitudCancelacionRespuesta")},
-                )},
-                errores_ms={"401": "JWT ausente o inválido", "403": "Se requiere rol Administrador"},
+                ))},
+                errores_ms={
+                    "401": "JWT ausente o inválido",
+                    "403": "Se requiere rol Administrador",
+                    "422": "Parámetros de paginación inválidos",
+                },
                 requiere_auth=True,
             )
         },
@@ -1737,6 +1812,10 @@ def _caminos_usuarios() -> dict[str, dict[str, object]]:
         "401": "JWT ausente o inválido",
         "403": "Se requiere rol Administrador",
     }
+    errores_admin_paginado = {
+        **errores_admin,
+        "422": "Parámetros de paginación inválidos",
+    }
     asignar = _operacion_usuarios(
         resumen="Asignar un rol restringido a un usuario",
         descripcion=(
@@ -1767,13 +1846,16 @@ def _caminos_usuarios() -> dict[str, dict[str, object]]:
                 ),
                 operation_id="listar_usuarios",
                 cuerpo=None,
+                parametros_extra=_PARAMETROS_PAGINACION,
                 respuestas_ok={
-                    "200": _respuesta(
-                        "Usuarios registrados.",
-                        {"type": "array", "items": _ref("UsuarioRespuesta")},
+                    "200": _respuesta_paginada(
+                        _respuesta(
+                            "Usuarios registrados.",
+                            {"type": "array", "items": _ref("UsuarioRespuesta")},
+                        )
                     )
                 },
-                errores_ms=errores_admin,
+                errores_ms=errores_admin_paginado,
                 ejemplo=[_EJEMPLO_USUARIO_MECANICO],
             )
         },

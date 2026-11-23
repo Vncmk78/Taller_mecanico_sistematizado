@@ -1,5 +1,20 @@
 # CONEXIONES — Integración TallerConnect y preparación de Kubero
 
+> **Documento histórico.** Este archivo describe el proceso de planificación y
+> las primeras pruebas de integración. El ambiente ya está desplegado y
+> verificado; la **fuente de verdad vigente** es la carpeta [`docs/`](docs/README.md):
+> - [Arquitectura](docs/01-arquitectura.md)
+> - [Despliegue en Kubero](docs/02-despliegue-kubero.md)
+> - [Variables de entorno](docs/03-variables-entorno.md)
+> - [Datos de prueba](docs/04-datos-de-prueba.md)
+> - [API para la app móvil](docs/05-api-app-movil.md)
+> - [Runbook de operación](docs/06-runbook-operacion.md)
+> - [Pruebas realizadas](docs/07-pruebas-realizadas.md)
+> - [Pendientes y deuda](docs/08-pendientes-y-deuda.md)
+>
+> Donde este documento diga "aún debe asignarse" o "no está verificado", vale lo
+> que dice `docs/`.
+
 ## 1. Estado y límites de esta guía
 
 Panel de administración: https://kubero.inf.uct.cl. **No es la URL de la API**.
@@ -808,3 +823,45 @@ lectura existente del portal Cliente.
 Verificación frontend: `npm test` **557 passed** (80 archivos), `npm run lint`
 0 warnings / 0 errors (223 archivos), `npx tsc -p tsconfig.app.json --noEmit`
 sin errores.
+
+## Paginación uniforme de los listados operativos (2026-11-17)
+
+Se completó la paginación de los listados de MS1, MS2 y MS4 con un contrato
+común, sin cambiar el cuerpo de las respuestas.
+
+### Backend / Gateway
+
+- Las diez colecciones que se publicaban completas aceptan `limite` (1–100,
+  por defecto 50) y `desde` (≥ 0, por defecto 0), y devuelven el total en la
+  cabecera `X-Total-Count`: `/api/auth/usuarios`,
+  `/api/notificaciones/dispositivos`, `/api/notificaciones/{id}/entregas`,
+  `/api/vehiculos`, `/api/vehiculos/asignados`, `/api/ordenes`,
+  `/api/ordenes/{id}/historial`, `/api/ordenes/{id}/bitacora`,
+  `/api/ordenes/cancelaciones/pendientes` y `/api/evidencias`.
+- El cuerpo sigue siendo un arreglo plano; los parámetros fuera de rango
+  responden `422`. Se conservan `limit`/`offset` en `/api/notificaciones` y en
+  `/api/ordenes/vehiculo/{id}/historial`, que además acepta `limite`/`desde`.
+- La Gateway expone `X-Total-Count` por CORS, documenta parámetros, cabecera y
+  `422`, y sube a **3.1.0**. Contrato congelado:
+  `docs/openapi/sgtm-gateway-3.1.0.json`.
+
+### Frontend
+
+- `infrastructure/api/paginacion.ts` recorre todas las páginas (`limite=100` +
+  `X-Total-Count`); `AuthService`, `VehicleService`, `OrderService` y
+  `EvidenciaService` devuelven la colección completa al dominio.
+- `ui/Pagination` se generalizó (`ariaLabel`, `sizeLabel`, `pageSizes`) y
+  `OrderPagination` quedó como envoltorio con los textos históricos.
+- `useClientPagination` pagina en el cliente (6/12/24) los listados de usuarios,
+  clientes, vehículos (admin/cliente/mecánico), notificaciones, inventario,
+  movimientos, distribuidores, cancelaciones y presupuestos del cliente.
+
+### Pruebas
+
+- Backend: **2380 passed, 133 skipped**. Nuevos casos de `limite`/`desde`,
+  `X-Total-Count` y `422` en `test_usuarios_roles.py`, `test_vehiculos_api.py`,
+  `test_ordenes_api.py`, `test_ms4_api_evidencias.py` y
+  `test_canales_notificaciones.py`.
+- Frontend: **1237 passed** (139 archivos), `npm run lint` sin errores y
+  `npx tsc --noEmit` sin errores. Incluye `paginacion.test.ts` y las
+  expectativas de URL con `params: { limite: 100, desde: 0 }`.

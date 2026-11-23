@@ -149,12 +149,23 @@ class SalidaVehiculoNoPermitidaError(Exception):
     """El ingreso físico no permite registrar la salida solicitada."""
 
 
-def listar_solicitudes_cancelacion_pendientes(db: Session) -> list[SolicitudCancelacion]:
-    return list(db.scalars(
-        select(SolicitudCancelacion)
-        .where(SolicitudCancelacion.estado == "pendiente")
-        .order_by(SolicitudCancelacion.solicitada_en, SolicitudCancelacion.solicitud_id)
-    ))
+def listar_solicitudes_cancelacion_pendientes(
+    db: Session, *, limite: int | None = None, desde: int = 0
+) -> tuple[list[SolicitudCancelacion], int]:
+    """Solicitudes pendientes en orden de llegada, paginadas si se pide."""
+
+    consulta = select(SolicitudCancelacion).where(
+        SolicitudCancelacion.estado == "pendiente"
+    )
+    total = db.scalar(
+        select(func.count()).select_from(consulta.order_by(None).subquery())
+    ) or 0
+    consulta = consulta.order_by(
+        SolicitudCancelacion.solicitada_en, SolicitudCancelacion.solicitud_id
+    )
+    if limite is not None:
+        consulta = consulta.limit(limite).offset(desde)
+    return list(db.scalars(consulta)), int(total)
 
 
 def solicitar_cancelacion_orden(
@@ -602,15 +613,27 @@ def asignar_mecanico(
 def listar_ordenes(
     db: Session,
     principal: PrincipalAutenticado,
-) -> list[OrdenTrabajo]:
-    """Lista la unión de órdenes visibles para todos los roles del principal."""
+    *,
+    limite: int | None = None,
+    desde: int = 0,
+) -> tuple[list[OrdenTrabajo], int]:
+    """Lista la unión de órdenes visibles para todos los roles del principal.
+
+    Devuelve la página pedida (o todas si ``limite`` es ``None``) junto con el
+    total visible antes de paginar.
+    """
 
     try:
         consulta = select(OrdenTrabajo).order_by(OrdenTrabajo.orden_id)
         filtro = _filtro_visibilidad(principal)
         if filtro is not None:
             consulta = consulta.where(filtro)
-        return list(db.scalars(consulta).unique().all())
+        total = db.scalar(
+            select(func.count()).select_from(consulta.order_by(None).subquery())
+        ) or 0
+        if limite is not None:
+            consulta = consulta.limit(limite).offset(desde)
+        return list(db.scalars(consulta).unique().all()), int(total)
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaOrdenError("No fue posible consultar las órdenes") from exc
@@ -709,22 +732,31 @@ def obtener_historial_orden(
     db: Session,
     principal: PrincipalAutenticado,
     orden_id: int,
-) -> list[HistorialEstado]:
+    *,
+    limite: int | None = None,
+    desde: int = 0,
+) -> tuple[list[HistorialEstado], int]:
     """Devuelve el historial cronológico de una orden visible al principal.
 
     Aplica la misma autorización por recurso del detalle: una orden inexistente
-    o ajena responde el mismo error de recurso ausente.
+    o ajena responde el mismo error de recurso ausente. Devuelve la página
+    pedida y el total de cambios de estado.
     """
 
     obtener_orden_visible(db, principal, orden_id)
     try:
-        consulta = (
-            select(HistorialEstado)
-            .where(HistorialEstado.orden_id == orden_id)
+        base = select(HistorialEstado).where(HistorialEstado.orden_id == orden_id)
+        total = db.scalar(
+            select(func.count()).select_from(base.order_by(None).subquery())
+        ) or 0
+        consulta = base.order_by(
             # El orden por id desempata filas con la misma fecha_hora.
-            .order_by(HistorialEstado.fecha_hora, HistorialEstado.historial_id)
+            HistorialEstado.fecha_hora,
+            HistorialEstado.historial_id,
         )
-        return list(db.scalars(consulta).all())
+        if limite is not None:
+            consulta = consulta.limit(limite).offset(desde)
+        return list(db.scalars(consulta).all()), int(total)
     except SQLAlchemyError as exc:
         db.rollback()
         raise PersistenciaOrdenError(

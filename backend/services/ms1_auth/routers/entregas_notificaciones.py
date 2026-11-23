@@ -1,8 +1,8 @@
 """Registro propio de dispositivos y seguimiento/reintento de canales."""
 
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Response, Path
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, Path
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from services.ms1_auth.db import get_db
@@ -66,14 +66,23 @@ def registrar(
 
 @router.get("/dispositivos", response_model=list[DispositivoRespuesta])
 def listar(
+    response: Response,
+    limite: int = Query(default=50, ge=1, le=100),
+    desde: int = Query(default=0, ge=0),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     db: Session = Depends(get_db),
 ):
+    propios = select(DispositivoPush).where(
+        DispositivoPush.usuario_id == principal.usuario_id
+    )
+    response.headers["X-Total-Count"] = str(
+        db.scalar(select(func.count()).select_from(propios.subquery())) or 0
+    )
     return list(
         db.scalars(
-            select(DispositivoPush)
-            .where(DispositivoPush.usuario_id == principal.usuario_id)
-            .order_by(DispositivoPush.creado_en)
+            propios.order_by(DispositivoPush.creado_en)
+            .limit(limite)
+            .offset(desde)
         )
     )
 
@@ -119,12 +128,15 @@ def propia(db, uid, nid):
     return n
 
 
-def respuestas(db, nid):
-    entregas = db.scalars(
+def respuestas(db, nid, *, limite: int | None = None, desde: int = 0):
+    consulta = (
         select(EntregaNotificacion)
         .where(EntregaNotificacion.notificacion_id == nid)
         .order_by(EntregaNotificacion.entrega_id)
     )
+    if limite is not None:
+        consulta = consulta.limit(limite).offset(desde)
+    entregas = db.scalars(consulta)
     return [
         EntregaRespuesta(
             entrega_id=e.entrega_id,
@@ -152,12 +164,23 @@ def respuestas(db, nid):
     responses={404: {"description": "Aviso inexistente o ajeno"}},
 )
 def consultar(
+    response: Response,
     notificacion_id: int = Path(gt=0),
+    limite: int = Query(default=50, ge=1, le=100),
+    desde: int = Query(default=0, ge=0),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
     db: Session = Depends(get_db),
 ):
     propia(db, principal.usuario_id, notificacion_id)
-    return respuestas(db, notificacion_id)
+    response.headers["X-Total-Count"] = str(
+        db.scalar(
+            select(func.count(EntregaNotificacion.entrega_id)).where(
+                EntregaNotificacion.notificacion_id == notificacion_id
+            )
+        )
+        or 0
+    )
+    return respuestas(db, notificacion_id, limite=limite, desde=desde)
 
 
 @router.post(

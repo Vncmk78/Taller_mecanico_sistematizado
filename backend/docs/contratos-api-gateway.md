@@ -116,6 +116,25 @@ documentar o si se documenta uno que no existe. Los contratos de MS3 son copias
 en `gateway/contratos/{presupuestos,catalogo,inventario}.py` y otra prueba
 compara sus campos y obligatoriedad con los modelos reales de MS3.
 
+### Validar autenticación desde Swagger UI
+
+En <http://localhost:8000/docs>:
+
+1. Ejecutar `POST /api/auth/register` (público) y después `POST /api/auth/login`;
+   copiar el `access_token` de la respuesta.
+2. Clic en **Authorize**, esquema `bearerAuth`, y pegar **solo el token**, sin
+   el prefijo `Bearer `: Swagger construye la cabecera
+   `Authorization: Bearer <token>`.
+3. Ejecutar una operación protegida, por ejemplo `GET /api/auth/me`: debe
+   responder `200`. Sin **Authorize**, la misma operación responde `401` con
+   `WWW-Authenticate: Bearer`. Las operaciones protegidas muestran el candado.
+
+`tests/test_swagger_autenticacion.py` automatiza el flujo: valida el esquema
+`http`/`bearer`/JWT que publica `/docs` y comprueba, con los cuatro
+microservicios reales en proceso, que un endpoint protegido representativo por
+prefijo responde `401` sin autorizar y deja de responder `401` con el token del
+login.
+
 ### Respuestas reutilizables
 
 `components.responses` publica las respuestas que se repiten en todas las

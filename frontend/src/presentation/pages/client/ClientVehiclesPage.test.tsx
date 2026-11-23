@@ -83,6 +83,9 @@ describe('ClientVehiclesPage: mis vehículos y sus estados', () => {
         expect(
             screen.getAllByRole('link', { name: /Registrar vehículo/ }).length
         ).toBeGreaterThan(0);
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de vehículos' })
+        ).not.toBeInTheDocument();
     });
 
     it('distingue el vacío por búsqueda del catálogo vacío', async () => {

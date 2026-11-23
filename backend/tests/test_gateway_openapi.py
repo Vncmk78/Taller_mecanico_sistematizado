@@ -661,6 +661,34 @@ def test_contrato_evidencias_documenta_formulario_y_seguridad(esquema: dict) -> 
     assert {"Cache-Control", "X-Content-Type-Options"} <= set(descarga["headers"])
 
 
+def test_todos_los_listados_paginados_documentan_422_y_total(esquema: dict) -> None:
+    """Los diez GET operativos comparten el mismo contrato de paginación."""
+
+    rutas_paginadas = (
+        "/api/auth/usuarios",
+        "/api/notificaciones/dispositivos",
+        "/api/notificaciones/{notificacion_id}/entregas",
+        "/api/vehiculos",
+        "/api/vehiculos/asignados",
+        "/api/ordenes",
+        "/api/ordenes/{orden_id}/historial",
+        "/api/ordenes/{orden_id}/bitacora",
+        "/api/ordenes/cancelaciones/pendientes",
+        "/api/evidencias",
+    )
+    for ruta in rutas_paginadas:
+        operacion = esquema["paths"][ruta]["get"]
+        consultas = {p["name"] for p in operacion.get("parameters", []) if p["in"] == "query"}
+        assert {"limite", "desde"} <= consultas, ruta
+        respuestas = operacion["responses"]
+        assert "422" in respuestas, ruta
+        assert "X-Total-Count" in respuestas["200"].get("headers", {}), ruta
+        limite = next(p for p in operacion["parameters"] if p["name"] == "limite")
+        desde = next(p for p in operacion["parameters"] if p["name"] == "desde")
+        assert limite["schema"]["minimum"] == 1 and limite["schema"]["maximum"] == 100
+        assert desde["schema"]["minimum"] == 0
+
+
 def test_componentes_incluyen_contratos_y_formato_comun(esquema: dict) -> None:
     schemas = esquema["components"]["schemas"]
     for nombre in (

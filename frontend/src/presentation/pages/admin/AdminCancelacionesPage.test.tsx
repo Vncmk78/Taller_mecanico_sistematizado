@@ -53,6 +53,19 @@ describe('AdminCancelacionesPage: bandeja de solicitudes pendientes', () => {
         expect(screen.getByText('Cliente #42')).toBeInTheDocument();
         expect(screen.getByText('Esperando aprobación de presupuesto')).toBeInTheDocument();
         expect(orderService.getCancelacionesPendientes).toHaveBeenCalledTimes(1);
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de cancelaciones' })
+        ).not.toBeInTheDocument();
+    });
+
+    it('muestra el estado de carga mientras espera las solicitudes', () => {
+        vi.mocked(orderService.getCancelacionesPendientes).mockImplementation(
+            () => new Promise<never>(() => {})
+        );
+
+        renderPage();
+
+        expect(screen.getByText('Cargando cancelaciones pendientes...')).toBeInTheDocument();
     });
 
     it('muestra un estado vacío cuando no hay solicitudes', async () => {
@@ -61,6 +74,9 @@ describe('AdminCancelacionesPage: bandeja de solicitudes pendientes', () => {
         renderPage();
 
         expect(await screen.findByText('No hay cancelaciones pendientes')).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de cancelaciones' })
+        ).not.toBeInTheDocument();
     });
 
     it('confirma la cancelación solo después del diálogo y la quita de la bandeja', async () => {

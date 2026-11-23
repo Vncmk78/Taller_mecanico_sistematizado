@@ -83,6 +83,30 @@ describe('AdminUsersPage: gestión de roles de las cuentas', () => {
         expect(
             within(filaDe('Ana Pérez')).getByRole('button', { name: 'Editar roles' })
         ).toBeEnabled();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de usuarios' })
+        ).not.toBeInTheDocument();
+    });
+
+    it('muestra el estado de carga mientras espera el listado de usuarios', () => {
+        vi.mocked(authService.listarUsuarios).mockImplementation(
+            () => new Promise<UsuarioListado[]>(() => {})
+        );
+
+        renderPage();
+
+        expect(screen.getByText('Cargando usuarios...')).toBeInTheDocument();
+    });
+
+    it('muestra el estado vacío y oculta la paginación cuando no hay cuentas', async () => {
+        vi.mocked(authService.listarUsuarios).mockResolvedValue([]);
+
+        renderPage();
+
+        expect((await screen.findAllByText('No hay usuarios registrados')).length).toBeGreaterThan(0);
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de usuarios' })
+        ).not.toBeInTheDocument();
     });
 
     it('asigna y retira roles con los endpoints idempotentes y refleja la respuesta', async () => {

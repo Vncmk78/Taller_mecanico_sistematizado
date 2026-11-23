@@ -85,6 +85,23 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
         ).toBeInTheDocument();
     });
 
+    it('muestra el skeleton accesible mientras cargan los vehículos asignados', () => {
+        vi.mocked(useVehicleStore).mockReturnValue({
+            vehicles: [],
+            status: 'loading',
+            error: null,
+            isOffline: false,
+            requestId: null,
+            fetchVehicles: vi.fn(),
+        });
+        vi.mocked(orderService.getOrders).mockImplementation(() => new Promise<Order[]>(() => {}));
+
+        renderPage();
+
+        expect(screen.getByText('Cargando vehículos...')).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    });
+
     it('filtra los vehículos asignados al escribir en la búsqueda', async () => {
         vi.mocked(useVehicleStore).mockReturnValue({
             vehicles: vehiculosAsignados,
@@ -177,6 +194,9 @@ describe('MechanicVehiclesPage: buscador de vehículos asignados', () => {
         renderPage();
 
         expect(screen.getByText('No tiene vehículos asignados por el momento.')).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de vehículos' })
+        ).not.toBeInTheDocument();
     });
 
     it('un error del servidor sin caché muestra el estado de error, no el banner offline', () => {

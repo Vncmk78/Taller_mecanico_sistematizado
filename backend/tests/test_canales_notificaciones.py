@@ -159,6 +159,29 @@ def test_dispositivos_rechazan_paginacion_invalida(api, db, params):
     assert respuesta.status_code == 422
 
 
+def test_dispositivos_vacios_y_desde_fuera_de_rango(api, db):
+    _crear_cliente(db, 7)
+
+    vacia = api.get("/notificaciones/dispositivos", headers=auth())
+    assert vacia.status_code == 200
+    assert vacia.json() == []
+    assert vacia.headers["x-total-count"] == "0"
+
+    api.post(
+        "/notificaciones/dispositivos",
+        headers=auth(),
+        json={"token": f"token-vacio-{uuid4()}", "plataforma": "android"},
+    )
+    fuera_de_rango = api.get(
+        "/notificaciones/dispositivos",
+        params={"desde": 999},
+        headers=auth(),
+    )
+    assert fuera_de_rango.status_code == 200
+    assert fuera_de_rango.json() == []
+    assert fuera_de_rango.headers["x-total-count"] == "1"
+
+
 def test_entregas_paginadas_con_total(api, db, monkeypatch):
     nid = aviso(api, db, monkeypatch)
 
@@ -177,6 +200,22 @@ def test_entregas_paginadas_con_total(api, db, monkeypatch):
             f"/notificaciones/{nid}/entregas", params=params, headers=auth()
         )
         assert respuesta.status_code == 422
+
+
+def test_entregas_desde_fuera_de_rango_devuelve_vacio_y_conserva_el_total(
+    api, db, monkeypatch
+):
+    nid = aviso(api, db, monkeypatch)
+
+    respuesta = api.get(
+        f"/notificaciones/{nid}/entregas",
+        params={"limite": 1, "desde": 999},
+        headers=auth(),
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == []
+    assert respuesta.headers["x-total-count"] == "2"
 
 
 def test_cambio_de_cuenta_en_mismo_dispositivo_no_entrega_avisos_del_anterior(api, db, monkeypatch):

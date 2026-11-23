@@ -58,6 +58,9 @@ describe('AdminVehiclesPage: catálogo de vehículos y sus estados', () => {
         renderPage();
 
         expect(await screen.findByText('Aún no hay vehículos registrados en el taller.')).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de vehículos' })
+        ).not.toBeInTheDocument();
     });
 
     it('distingue el vacío por búsqueda del catálogo vacío', async () => {

@@ -113,6 +113,9 @@ describe('AdminClientsPage: listado y estados', () => {
         render(<AdminClientsPage />);
 
         expect(await screen.findByText('No hay clientes registrados')).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de clientes' })
+        ).not.toBeInTheDocument();
     });
 
     it('distingue el vacío por búsqueda y permite limpiar los filtros', async () => {

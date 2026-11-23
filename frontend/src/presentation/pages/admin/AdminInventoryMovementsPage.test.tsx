@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Movimiento, ResultadoMovimiento } from '@/domain/entities/Inventario';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
+import { errorAxios } from '@/infrastructure/mocks/payloads.reales';
 import { AdminInventoryMovementsPage } from './AdminInventoryMovementsPage';
 
 vi.mock('@/infrastructure/api/InventarioService', () => ({
@@ -69,6 +70,36 @@ describe('AdminInventoryMovementsPage', () => {
         vi.unstubAllGlobals();
     });
 
+    it('muestra el estado de carga mientras espera los movimientos', () => {
+        vi.mocked(inventarioService.listMovimientos).mockImplementation(
+            () => new Promise<ReturnType<typeof pagina>>(() => {})
+        );
+
+        render(<AdminInventoryMovementsPage />);
+
+        expect(screen.getByText('Cargando movimientos...')).toBeInTheDocument();
+    });
+
+    it('muestra el error de la lista con reintento y oculta la paginación', async () => {
+        vi.mocked(inventarioService.listMovimientos)
+            .mockRejectedValueOnce(errorAxios(500, { detail: 'Servicio no disponible' }))
+            .mockResolvedValueOnce(pagina([MOVIMIENTO]));
+
+        render(<AdminInventoryMovementsPage />);
+
+        expect(
+            await screen.findByText('No se pudieron cargar los movimientos')
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de movimientos' })
+        ).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+        expect(await screen.findByText('ingreso')).toBeInTheDocument();
+        expect(inventarioService.listMovimientos).toHaveBeenCalledTimes(2);
+    });
+
     it('lista movimientos', async () => {
         render(<AdminInventoryMovementsPage />);
 
@@ -80,6 +111,9 @@ describe('AdminInventoryMovementsPage', () => {
         render(<AdminInventoryMovementsPage />);
 
         expect(await screen.findByText('No hay movimientos')).toBeInTheDocument();
+        expect(
+            screen.queryByRole('navigation', { name: 'Paginación de movimientos' })
+        ).not.toBeInTheDocument();
     });
 });
 

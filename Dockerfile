@@ -17,4 +17,10 @@ COPY backend/scripts ./scripts
 
 USER app
 EXPOSE 8000
+
+# Docker marca el contenedor healthy/unhealthy consultando el endpoint de vida
+# del servicio (gateway: /api/health, ms1..ms4: /health). Sin curl: usa Python.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["python", "scripts/healthcheck_contenedor.py"]
+
 CMD ["python", "scripts/iniciar_servicio.py"]

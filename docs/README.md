@@ -4,12 +4,13 @@ Esta carpeta reúne la documentación operativa y técnica del sistema **TallerC
 tal como quedó desplegado y verificado en el clúster **Kubero de la Universidad
 Católica de Temuco (UCT)**.
 
-> **Fecha de la verificación:** 15 de noviembre de 2026
-> **Versión desplegada en esa verificación:** imágenes `sha-c855bab` del commit
-> `18d02b9`. El flujo vigente es `Vicente → Develop → main`: el workflow de
-> imágenes está en `main`, publica solo con `push` a `main` y actualiza Kubero
-> al tag `sha-<commit>`; `kubero-deploy` se conserva fuera del flujo (su copia
-> del workflow también dispara solo en `main`).
+> **Fecha de la verificación:** 24 de noviembre de 2026 (anterior: 15 de noviembre).
+> **Versión desplegada:** imágenes `sha-ee84ed4` del commit `ee84ed4` de `main`,
+> publicadas y desplegadas por el job automático de `docker-build.yml`
+> (detalle en [07 — Pruebas realizadas](07-pruebas-realizadas.md#18-despliegue-automático-sha-ee84ed4-24-11-2026)).
+> El flujo vigente es `Vicente → Develop → main`: el workflow de imágenes está
+> en `main`, publica solo con `push` a `main` y actualiza Kubero al tag
+> `sha-<commit>`; `kubero-deploy` se conserva fuera del flujo.
 > **Estado:** los 7 componentes (Gateway, MS1–MS4, web y MinIO) están levantados y
 > respondiendo. Los flujos funcionales principales fueron probados de punta a punta
 > contra el ambiente real.

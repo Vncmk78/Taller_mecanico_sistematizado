@@ -39,6 +39,7 @@ extremo a extremo por HTTP contra los dominios públicos.
 | B3 | Imagen frontend publicada | ✅ `ghcr.io/vncmk78/tallerconnect-frontend:latest` y `:sha-c855bab` |
 | B4 | Workflow en `main` con `branches: [main]` | ✅ Run `45306353919` desde `main`, conclusión `success` |
 | B5 | Job de deploy automático (tags `sha-<commit>` + redeploy + salud) | ✅ Job `Actualizar Kubero al sha publicado` en `success`; imágenes `:sha-40106f5` |
+| B6 | Deploy automático de `main` @ `ee84ed4` | ✅ Docker Build en `success` (4 jobs); Kubero en `:sha-ee84ed4` — ver sección 18 |
 
 ---
 
@@ -369,3 +370,60 @@ El contrato usado por `PresupuestoService.listar()` se confirmó leyendo
 para personal, `limite` acepta hasta 200 y el cliente solo ve versiones enviadas
 de su propia orden. Queda pendiente repetir la comprobación real cuando el
 gateway responda `200` al login.
+
+---
+
+## 18. Despliegue automático `sha-ee84ed4` (24-11-2026)
+
+Despliegue de la Gateway y de los servicios en el ambiente público tras el merge
+de `Develop` en `main` (commit `ee84ed4`, "panel operativo del administrador").
+
+### 18.1 Pipeline
+
+| # | Paso | Resultado |
+| --- | --- | --- |
+| D1 | Trigger | ✅ `push` a `main`, commit `ee84ed4` |
+| D2 | Job `Solo ejecutable desde main` | ✅ `success` (3 s) |
+| D3 | Job `Backend (Gateway + MS1-MS4)` | ✅ `success` (48 s) → `ghcr.io/vncmk78/tallerconnect-backend:sha-ee84ed4` |
+| D4 | Job `Frontend (React + Nginx)` | ✅ `success` (1 min 7 s) → `ghcr.io/vncmk78/tallerconnect-frontend:sha-ee84ed4` |
+| D5 | Job `Actualizar Kubero al sha publicado` | ✅ `success` (30 s): `gateway`, `ms1`–`ms4` y `web` en `sha-ee84ed4`; `minio` sin cambios |
+| D6 | Salud verificada por el propio job | ✅ `/api/health/servicios` y `/healthz` en `ok` |
+| D7 | Migraciones | ✅ No aplica: el commit no trae migraciones nuevas (el job las detecta y omite el deploy si existen) |
+| D8 | Workflow `Verificación SGTM` del mismo merge | ✅ `success` (backend 4 min 20 s, frontend 1 min 51 s) |
+
+Duración total del Docker Build: 1 min 47 s.
+
+### 18.2 Verificación posterior (24-11-2026 15:51 UTC)
+
+Ejecutada desde fuera del clúster con `backend/scripts/verificar_salud.py`:
+
+```
+[ OK ] gateway              HTTP 200          ok
+[ OK ] servicios (bases)    HTTP 200          ok
+[ OK ] ms1_auth             HTTP 200          proceso=ok (11 ms), base=ok (23 ms)
+[ OK ] ms2_taller           HTTP 200          proceso=ok (11 ms), base=ok (23 ms)
+[ OK ] ms3_presupuestos     HTTP 200          proceso=ok (10 ms), base=ok (20 ms)
+[ OK ] ms4_evidencias       HTTP 200          proceso=ok (16 ms), base=ok (67 ms), almacenamiento=ok (141 ms)
+6/6 comprobaciones OK
+```
+
+| # | Comprobación | Resultado |
+| --- | --- | --- |
+| V1 | `GET https://api-tallerconnect.inf.uct.cl/openapi.json` → `info.version` | ✅ `3.1.0` (contrato vigente) |
+| V2 | `GET https://api-tallerconnect.inf.uct.cl/api/health` | ✅ `200`, con cabecera `X-Request-ID` |
+| V3 | `GET https://api-tallerconnect.inf.uct.cl/docs` | ✅ `200` |
+| V4 | `GET https://tallerconnect.inf.uct.cl/` | ✅ `200` |
+| V5 | `GET https://tallerconnect.inf.uct.cl/healthz` | ✅ `200` |
+| V6 | `GET https://ms4-tallerconnect.inf.uct.cl/minio/health/live` | ✅ `200` |
+
+### 18.3 Reproducir
+
+```bash
+cd backend
+python scripts/verificar_salud.py --base https://api-tallerconnect.inf.uct.cl --json salidas-integracion/salud-despliegue.json
+```
+
+### 18.4 Rollback
+
+Volver las 6 apps al tag anterior en Kubero y redeploy (runbook §4.3). Como
+esta versión no trae migraciones, no hace falta restaurar la base.

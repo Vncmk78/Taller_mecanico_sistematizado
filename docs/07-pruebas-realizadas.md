@@ -427,3 +427,71 @@ python scripts/verificar_salud.py --base https://api-tallerconnect.inf.uct.cl --
 
 Volver las 6 apps al tag anterior en Kubero y redeploy (runbook §4.3). Como
 esta versión no trae migraciones, no hace falta restaurar la base.
+
+---
+
+## 19. Integración web, base de datos y app móvil (24-11-2026)
+
+Verificación de que los clientes (web de Integra II y app móvil de Integra IV)
+llegan a la Gateway y, a través de ella, a las cuatro bases y a MinIO, con la
+versión desplegada `sha-ee84ed4`. Solo lectura: no se crearon datos en producción.
+
+```
+Web (tallerconnect.inf.uct.cl)            ─┐
+App móvil (frontend-movil.inf.uct.cl)     ─┼─► Gateway ─► MS1–MS4 ─► PostgreSQL ×4 + MinIO
+App móvil (tallerconnect-frontend…)       ─┘
+```
+
+### 19.1 Web de Integra II ↔ Gateway ↔ bases
+
+Recorrida manual como Administrador en `https://tallerconnect.inf.uct.cl`, con
+DevTools → Network (Fetch/XHR). Todas las llamadas salen del bundle
+`index-BaVgsO8G.js` (versión desplegada).
+
+| # | Llamada (`/api/...`) | Microservicio / base | Resultado |
+| --- | --- | --- | --- |
+| W1 | `usuarios?limite=100`, `notificaciones?limite=15` | MS1 | ✅ 200 |
+| W2 | `ordenes?limite=100`, detalle `ordenes/{4,6,7}`, `historial` | MS2 | ✅ 200 |
+| W3 | `presupuestos?orden_id={6,7}` | MS3 | ✅ 200 |
+| W4 | `repuestos`, `proveedores`, `inventario/movimientos`, `inventario/alertas`, `umbral-general`, `historial-umbral` | MS3 | ✅ 200 |
+| W5 | `inventario/ordenes/{4,6}/disponibilidad` | MS3 | ✅ 200 |
+| W6 | `evidencias?orden_id={6,7}` | MS4 | ✅ 200 |
+| W7 | `inventario/ordenes/7/disponibilidad` | MS3 | ⚠️ 404 — ver hallazgo H1 |
+
+### 19.2 App móvil de Integra IV ↔ Gateway ↔ bases
+
+Las dos builds web de la app Expo usan como `API_URL` su propio dominio + `/api`
+y su servidor reenvía a la Gateway (mismo origen: sin CORS).
+
+| # | Comprobación | `frontend-movil.inf.uct.cl` | `tallerconnect-frontend.inf.uct.cl` |
+| --- | --- | --- | --- |
+| M1 | `GET /login` | ✅ 200 | ✅ 200 |
+| M2 | `GET /api/health` (vía su proxy) | ✅ `{"status":"ok","servicio":"gateway"}` | ✅ igual |
+| M3 | `GET /api/health/servicios` | ✅ 4 servicios `ok` | ✅ igual |
+| M4 | `POST /api/auth/login` con credenciales inválidas | ✅ 401 de MS1 | ✅ 401 de MS1 |
+| M5 | Login como Cliente + `GET /api/ordenes` | — | ✅ `200 OK`, `x-total-count: 7`, `x-request-id` de la Gateway, HSTS |
+| M6 | `verificar_salud.py --base https://frontend-movil.inf.uct.cl` (todo el diagnóstico a través del proxy de la app) | ✅ 6/6 OK (MS4: base 190 ms, almacenamiento 444 ms) | — |
+
+M5 (captura en DevTools): `Request URL https://tallerconnect-frontend.inf.uct.cl/api/ordenes`,
+`Status 200`, cabeceras `x-total-count` y `x-request-id` emitidas por la Gateway,
+lo que prueba el recorrido app móvil → proxy → Gateway → MS2 → base.
+
+### 19.3 Hallazgos
+
+| # | Hallazgo | Responsable | Gravedad |
+| --- | --- | --- | --- |
+| H1 | La web trata el **404** de `GET /api/inventario/ordenes/{id}/disponibilidad` como error. MS3 responde 404 cuando la orden **aún no tiene presupuesto** (contrato), pero `ConsumoRepuestosPanel.tsx` solo reconoce el 409 como "sin presupuesto" y muestra *"No se pudo cargar la disponibilidad de repuestos"* en órdenes nuevas. Arreglo: tratar 404 igual que 409 y agregar la prueba. | Frontend Integra II | Baja (UX) |
+| H2 | La build desplegada de `frontend-movil` define el servicio de `/notificaciones` pero ninguna pantalla lo usa: la app no muestra notificaciones. El endpoint funciona (la web lo consume con 200). | Integra IV | Media |
+| H3 | El código de la app móvil conserva `https://tallerconect.vercel.app/api` como URL por defecto (`INTEGRATION`/`PRODUCTION`). Ese despliegue ya no existe (`404 DEPLOYMENT_NOT_FOUND`). La build web no lo usa, pero una build nativa (Expo Go/APK) sin `EXPO_PUBLIC_API_URL` caería ahí. Debe usar `https://api-tallerconnect.inf.uct.cl/api`. | Integra IV | Media |
+| H4 | Las apps `frontend-movil` y `frontend` de Integra IV no estaban documentadas; se agregaron a [02 — Despliegue](02-despliegue-kubero.md#3-pipeline-y-aplicaciones). | Integra II | — |
+
+### 19.4 Reproducir
+
+```bash
+cd backend
+python scripts/verificar_salud.py --base https://api-tallerconnect.inf.uct.cl
+python scripts/verificar_salud.py --base https://frontend-movil.inf.uct.cl   # a través del proxy de la app móvil
+```
+
+En el navegador: login con las cuentas de [04 — Datos de prueba](04-datos-de-prueba.md),
+DevTools → Network → Fetch/XHR, filtrar por `ordenes`, `evidencias`, `presupuestos`.

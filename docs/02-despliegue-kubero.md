@@ -88,6 +88,19 @@ En el pipeline `tallerconnect` (fase `Production`) existen **7 aplicaciones**:
 | `web` | frontend | `ghcr.io/vncmk78/tallerconnect-frontend` | 80 | `/healthz` |
 | `minio` | almacenamiento | `elestio/minio:latest` | 9000 | `/minio/health/live` |
 
+Además, en Kubero hay **apps del equipo de Integra IV (app móvil)** que **no
+administra Integra II** y que el deploy automático **no modifica**:
+
+| App | Pipeline | Imagen | Dominio | Qué es |
+| --- | --- | --- | --- | --- |
+| `frontend-movil` | `tallerconnect` | `ghcr.io/victor-agsp/tallerconnect-f…` (tag = commit fijo) | `frontend-movil.inf.uct.cl` | App móvil Expo compilada para web |
+| `frontend` | `taller connect-frontend` | `ghcr.io/victor-agsp/tallerconnect-f…` (tag = commit fijo) | `tallerconnect-frontend.inf.uct.cl` | Otra build web de la misma app Expo |
+
+Ambas reenvían `/api/*` de su propio dominio a la Gateway (mismo origen para el
+navegador), así que **no necesitan estar en `GATEWAY_CORS_ORIGINS`**. Se
+actualizan solo cuando Integra IV cambia su tag en Kubero. Verificación de
+integración: [07 — Pruebas realizadas §19](07-pruebas-realizadas.md#19-integración-web-base-de-datos-y-app-móvil-24-11-2026).
+
 ### 3.1 Configuración común de las apps backend
 
 - **Imagen:** `ghcr.io/vncmk78/tallerconnect-backend:latest` (o `:sha-c855bab`).
@@ -177,6 +190,8 @@ postgresql+psycopg://postgres:<PASSWORD>@<app>-postgres:5432/<base>
 | `ms3-tallerconnect.inf.uct.cl` | app `ms3` | Diagnóstico directo |
 | `ms4-tallerconnect.inf.uct.cl` | app `minio` | Endpoint S3 público de MinIO |
 | `ms4-interno-tallerconnect.inf.uct.cl` | app `ms4` | Diagnóstico directo de MS4 |
+| `frontend-movil.inf.uct.cl` | app `frontend-movil` (Integra IV) | App móvil (build web); proxy `/api` → Gateway |
+| `tallerconnect-frontend.inf.uct.cl` | app `frontend` (Integra IV) | App móvil (build web); proxy `/api` → Gateway |
 
 Todos con TLS. El único dominio que debe consumir el equipo móvil es
 `api-tallerconnect.inf.uct.cl`.

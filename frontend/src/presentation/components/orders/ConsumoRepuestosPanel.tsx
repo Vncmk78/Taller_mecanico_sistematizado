@@ -101,8 +101,10 @@ export function ConsumoRepuestosPanel({
             setDisponibilidad(resultado);
             setStatus('success');
         } catch (err) {
-            // 409: la orden no tiene presupuesto aprobado del que sacar los repuestos.
-            if (estadoHttp(err) === 409) {
+            // 404: la orden aún no tiene presupuesto; 409: lo tiene, pero no aprobado.
+            // En ambos casos no hay repuestos que consumir: se muestra el aviso, no un error.
+            const estado = estadoHttp(err);
+            if (estado === 404 || estado === 409) {
                 setDisponibilidad(null);
                 setSinPresupuesto(true);
                 setStatus('success');

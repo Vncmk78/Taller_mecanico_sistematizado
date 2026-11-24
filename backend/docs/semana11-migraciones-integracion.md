@@ -34,47 +34,14 @@ Cambios en `services/ms3_presupuestos/services/presupuestos.py`:
 
 Comando: `python scripts/verificar_backend.py services/ms3_presupuestos/tests`
 
-## 3. SCRUM-651 — Reproducir y clasificar errores de persistencia
+## 3. SCRUM-649 — Corregir defectos ORM encontrados en las pruebas de integración
 
-Fecha: 2026-11-24. Ambiente `sgtm_pruebas` (PostgreSQL 16 ×4 + MinIO), Python 3.14.
+Se corrigieron tres defectos vistos al correr la suite con PostgreSQL real
+(`python scripts/verificar_backend.py`): dos de sesión / modelo ORM y uno de la
+prueba de drift, que ocultaba errores de migración. Los de migración quedan para la
+tarea de migraciones (ver Pendientes).
 
-Cómo se reprodujo (desde `backend/`):
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-python scripts/ambiente_pruebas.py infra
-python scripts/verificar_backend.py               # suite completa con PostgreSQL real
-python scripts/diagnosticar_migraciones.py        # heads, drift, check, downgrade/upgrade (MS1-MS4)
-```
-
-Resultado de la suite: **2976 passed, 59 warnings** (5 min). De las advertencias,
-2 son de persistencia; el resto son deprecaciones de Starlette/AnyIO ajenas a la
-persistencia. `diagnosticar_migraciones.py` (nuevo) migra cada servicio en una base
-descartable y compara modelo ↔ migraciones con `compare_type` y
-`compare_server_default` (la prueba de integridad solo usa `compare_type`).
-
-| ID | Tipo | Severidad | Error / advertencia | Archivo:línea | Cómo se reproduce |
-|---|---|---|---|---|---|
-| MIG-1 | Migración | Media | `downgrade base` de MS2 falla: `constraint "ck_cliente_ck_cliente_usuario_id_positivo" does not exist`. El `downgrade()` pasa el nombre ya prefijado y la convención de nombres lo vuelve a prefijar. Las líneas 72-74 tienen el mismo patrón. No afecta `upgrade`; impide revertir MS2 hasta la base. | `services/ms2_taller/alembic/versions/0002_restricciones_ms2.py:71` | `python scripts/diagnosticar_migraciones.py ms2_taller` |
-| MIG-2 | Migración / modelo ORM | Media | Drift MS3: los índices GIN `ix_repuesto_nombre_trgm`, `ix_proveedor_nombre_trgm` e `ix_proveedor_contacto_trgm` existen en la migración y no en el modelo. `alembic check` falla y `revision --autogenerate` propondría borrarlos. Aceptado hoy en `DIFERENCIAS_ACEPTADAS`. **Es de la tarea bloqueada de Bastián**: no se toca. | `services/ms3_presupuestos/alembic/versions/0006_indices_busqueda_ms3.py:45` · `models/proveedor.py` | `python scripts/diagnosticar_migraciones.py ms3_presupuestos` |
-| MIG-3 | Migración (herramienta de verificación) | Media | `PytestUnhandledThreadExceptionWarning`: `UnicodeDecodeError: 'charmap' codec can't decode byte 0x8d`. La prueba de drift lee la salida de `alembic upgrade` con `text=True` (cp1252 en Windows) y los títulos de las migraciones vienen en UTF-8 (`Í` = `C3 8D`). Si la migración fallara, el mensaje de error se perdería. | `tests/test_integridad_referencial_servicios.py:103` | `python scripts/verificar_backend.py tests/test_integridad_referencial_servicios.py` (ver *warnings summary*) |
-| SES-1 | Sesión | Baja | `SAWarning: Object of type <MovimientoInventario> not in session, add operation along 'Repuesto.movimientos' will not proceed`. El movimiento se construye con `repuesto=...` antes del `begin_nested()`; el backref lo mete en la colección, pero en SQLAlchemy 2.0 no entra a la sesión (sin `cascade_backrefs`) y el autoflush lo ignora. El código de producción no lo hace (construye y agrega en la misma línea), pero la advertencia pasaba inadvertida. | `services/ms3_presupuestos/tests/test_persistencia_orm.py:110` y `:116` | `python scripts/verificar_backend.py services/ms3_presupuestos/tests/test_persistencia_orm.py` (ver *warnings summary*) |
-| SES-2 | Sesión / modelo ORM | Baja (rendimiento) | Las 13 lecturas repetidas pendientes: al aprobar, `disponibilidad.evaluar(bloquear=True)` y luego `reservas.ajustar_reserva` hacen cada uno el `SELECT ... FOR UPDATE` de los repuestos (con `populate_existing`, que relanza el selectin de proveedores) y la consulta de lo comprometido, en la misma transacción y con las filas ya bloqueadas. Medido en una aprobación con 2 repuestos: 2 bloqueos, 2 lecturas de lo comprometido, 4 de proveedores. | `services/ms3_presupuestos/services/presupuestos.py:362-368` · `services/disponibilidad.py:92,103` · `services/reservas.py:79-80` | `python scripts/verificar_backend.py services/ms3_presupuestos/tests/test_consultas_reserva.py` (prueba agregada en SCRUM-649; con el código anterior falla) |
-
-Sin hallazgos: heads múltiples (cada servicio tiene un solo head), drift en MS1, MS2 y
-MS4, errores de transacción (rollback, aislamiento, bloqueos) ni de datos en la suite.
-
-Fuera de alcance (no son de persistencia): `StarletteDeprecationWarning` por
-`HTTP_413_REQUEST_ENTITY_TOO_LARGE` / `HTTP_422_UNPROCESSABLE_ENTITY` en MS4, y el aviso de
-`httpx` con `starlette.testclient`.
-
-## 4. SCRUM-649 — Corregir defectos ORM encontrados en las pruebas de integración
-
-Se corrigieron los hallazgos de tipo sesión / modelo ORM (SES-1, SES-2) y la
-herramienta de drift (MIG-3), porque ocultaba errores de migración. MIG-1 y MIG-2
-son de migración y quedan para la tarea de migraciones (ver Pendientes).
-
-**SES-2: una sola lectura de los repuestos bloqueados al aprobar.** Nuevo
+**Una sola lectura de los repuestos bloqueados al aprobar** (las 13 lecturas repetidas que quedaban). Nuevo
 `disponibilidad.bloquear_y_leer_compromisos(uow, ids)`: bloquea los repuestos
 (`FOR UPDATE`) y lee lo comprometido una vez. `decidir_version` pasa ese resultado a
 `evaluar(..., bloqueo=)` y a `reservas.ajustar_reserva(..., bloqueo=)`. Ambos
@@ -95,12 +62,12 @@ La lectura de proveedor que queda bajo el `FOR UPDATE` es intencional:
 `populate_existing` refresca la fila bloqueada. Quitarla obligaría a cambiar
 `bloquear_varios`, que usan otros flujos, y podría volver el N+1 que el selectin evitó.
 
-**SES-1: SAWarning en las pruebas de persistencia.** Las dos pruebas construyen el
+**SAWarning en las pruebas de persistencia.** Las dos pruebas construyen el
 movimiento con `repuesto_id=` en vez de `repuesto=`. Además, el `conftest.py` de MS3
 convierte toda `SAWarning` en error, así que la próxima falla de la prueba en vez de
 pasar inadvertida.
 
-**MIG-3: salida de Alembic ilegible en la prueba de drift.** Nuevo helper `_alembic()`
+**Salida de Alembic ilegible en la prueba de drift** (`UnicodeDecodeError` en Windows). Nuevo helper `_alembic()`
 en `tests/test_integridad_referencial_servicios.py`: fija `PYTHONIOENCODING=utf-8`
 en el proceso hijo y decodifica en UTF-8 con `errors="replace"`.
 
@@ -115,10 +82,10 @@ Suite completa: `python scripts/verificar_backend.py` → **2981 passed, 56 warn
 
 ## Pendientes
 
-- MIG-1 (para la tarea de migraciones): en el `downgrade()` de
-  `0002_restricciones_ms2.py`, usar los nombres sin prefijo (`"usuario_id_positivo"`)
-  o `op.f("ck_cliente_usuario_id_positivo")` en las líneas 71-74. Verificar con
-  `python scripts/diagnosticar_migraciones.py ms2_taller`.
-- MIG-2 (tarea bloqueada de Bastián): los índices GIN de búsqueda de MS3
+- Para la tarea de migraciones: `alembic downgrade base` de MS2 falla con
+  `constraint "ck_cliente_ck_cliente_usuario_id_positivo" does not exist`. En el
+  `downgrade()` de `0002_restricciones_ms2.py` (líneas 71-74), usar los nombres sin
+  prefijo (`"usuario_id_positivo"`) o `op.f("ck_cliente_usuario_id_positivo")`.
+- Tarea bloqueada de Bastián: los índices GIN de búsqueda de MS3
   (`ix_*_trgm`, `0006_ms3`) existen en la migración pero no en el modelo, por lo que
   `alembic revision --autogenerate` propondría borrarlos.

@@ -38,6 +38,7 @@ extremo a extremo por HTTP contra los dominios públicos.
 | B2 | Imagen backend publicada | ✅ `ghcr.io/vncmk78/tallerconnect-backend:latest` y `:sha-c855bab` |
 | B3 | Imagen frontend publicada | ✅ `ghcr.io/vncmk78/tallerconnect-frontend:latest` y `:sha-c855bab` |
 | B4 | Workflow en `main` con `branches: [main]` | ⏳ Configurado en `Vicente` el 23-11-2026; pendiente del primer run tras el merge a `main` |
+| B5 | Job `deploy-kubero` (tags `sha-<commit>` + redeploy + salud) | ⏳ Configurado en `Vicente` el 23-11-2026; requiere `KUBERO_TOKEN` y el primer run en `main` |
 
 ---
 

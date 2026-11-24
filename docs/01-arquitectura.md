@@ -213,7 +213,7 @@ Canales de entrega:
 | MS4 con dominio `ms4-interno-tallerconnect` | El dominio anterior quedó para MinIO |
 | Usuario MinIO limitado (`ms4-evidencias`) | MS4 no necesita root; solo el bucket `evidencias` |
 | URLs internas sin puerto | El Service de Kubero escucha en 80 y apunta a `http` |
-| Workflow en `main` | Publica imágenes solo desde la rama integrada (`Vicente → Develop → main`) |
+| Workflow en `main` | Publica imágenes y actualiza Kubero solo desde la rama integrada (`Vicente → Develop → main`) |
 
 ## 8. Versiones y artefactos
 
@@ -221,7 +221,7 @@ Canales de entrega:
 | --- | --- |
 | Repositorio | <https://github.com/Vncmk78/Taller_mecanico_sistematizado> |
 | Rama integrada que publica imágenes | `main` (flujo `Vicente → Develop → main`) |
-| Rama histórica conservada | `kubero-deploy` (fuera del flujo; su copia del workflow se ajustará aparte) |
+| Rama histórica conservada | `kubero-deploy` (fuera del flujo; su copia del workflow también dispara solo en `main`) |
 | Commit verificado en la última revisión | `18d02b9` (`main`) |
 | Commit de las imágenes verificadas | `c855bab` |
 | Imagen backend | `ghcr.io/vncmk78/tallerconnect-backend:latest` · `:sha-c855bab` |
@@ -229,8 +229,8 @@ Canales de entrega:
 | Build verificado | GitHub Actions run `43548759119` (conclusión: success) |
 
 > Las imágenes llevan dos etiquetas: `latest` y `sha-<commit>`. Para producción se
-> recomienda fijar `sha-<commit>` y no depender de `latest`. Desde el 23 de
-> noviembre de 2026, `.github/workflows/docker-build.yml` está en `main` y solo
-> se dispara con `push` a `main`. La rama `kubero-deploy` se conserva fuera del
-> flujo; mientras su copia antigua del workflow siga ahí, un push a esa rama sí
-> publicaría imágenes.
+> usa `sha-<commit>`, no `latest`. Desde el 23 de noviembre de 2026,
+> `.github/workflows/docker-build.yml` está en `main`, solo se dispara con
+> `push` a `main` y su job `deploy-kubero` fija ese tag en las 6 apps Docker.
+> La rama `kubero-deploy` se conserva fuera del flujo; su copia del workflow
+> también quedó con `branches: [main]`, así que no publica imágenes.

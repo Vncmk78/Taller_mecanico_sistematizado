@@ -63,11 +63,13 @@ Prioridad sugerida:
 
 - **Decisión:** `.github/workflows/docker-build.yml` queda en `main` con
   `branches: [main]`. El flujo es `Vicente → Develop → main`.
-- **Estado:** la rama `kubero-deploy` se conserva fuera del flujo. Su copia
-  antigua del workflow aún podría publicar si alguien hiciera push a esa rama;
-  hay que ajustarla por separado (sin borrar la rama).
+- **Estado:** la rama `kubero-deploy` se conserva fuera del flujo y su copia del
+  workflow también quedó con `branches: [main]`; un push a esa rama ya no
+  publica imágenes.
+- **Deploy automático:** el mismo workflow fija el tag `sha-<commit>` en las 6
+  apps Docker y redeploya. Requiere el secreto `KUBERO_TOKEN`.
 - **Pendiente de verificación:** el primer run de **Actions → Docker Build**
-  tras el merge a `main`.
+  tras el merge a `main`, incluido el job `deploy-kubero`.
 
 ### 2.3 Sin respaldos automáticos — Prioridad alta
 
@@ -103,14 +105,24 @@ Prioridad sugerida:
 - **Para cerrarlo:** restringir el acceso por red/firewall o deshabilitar la
   consola si no se usa.
 
-### 2.7 Etiqueta `latest` en producción — Prioridad alta
+### 2.7 Etiqueta `latest` en producción — En cierre el 23-11-2026
 
-- **Situación:** en la revisión del panel del 23-11-2026, el apartado
-  **Despliegue** de las apps muestra `latest`.
-- **Riesgo:** con el workflow publicando desde `main`, el tag `latest` se moverá
-  automáticamente y un redeploy puede traer código distinto al probado.
-- **Para cerrarlo:** antes del merge a `main`, fijar `sha-<commit>` en las seis
-  apps (gateway, ms1–ms4 y web) según el runbook §4.2.
+- **Situación:** el usuario fijó `sha-c855bab` en las seis apps (gateway,
+  ms1–ms4 y web) antes del merge a `main`. `minio` conserva `latest` a propósito.
+- **Riesgo:** si se vuelve a `latest`, un redeploy puede traer código distinto al
+  probado.
+- **Cierre:** el job `deploy-kubero` mantiene las apps en `sha-<commit>`; queda
+  confirmar visualmente los 6 tags en el panel y el primer run automático.
+
+### 2.8 Secreto `KUBERO_TOKEN` — Prioridad alta
+
+- **Situación:** el job `deploy-kubero` necesita un token de Kubero con permisos
+  `app:read` y `app:write` guardado como secreto de GitHub Actions.
+- **Riesgo:** si falta, el build publica las imágenes pero el deploy falla con
+  un mensaje explícito; Kubero queda en la versión anterior.
+- **Para cerrarlo:** crear el token en **Perfil → API Tokens** de Kubero y
+  guardarlo en **Settings → Secrets and variables → Actions** con el nombre
+  `KUBERO_TOKEN` (runbook §4.2). Rotarlo cuando expire.
 
 ---
 

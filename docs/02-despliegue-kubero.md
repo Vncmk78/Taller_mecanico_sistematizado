@@ -10,7 +10,8 @@ y conocimientos básicos de contenedores.
 
 > Kubero UCT **no construye imágenes**. Solo despliega imágenes ya publicadas en
 > un registro. Por eso el repositorio incluye un workflow de GitHub Actions que
-> publica las imágenes en GHCR.
+> publica las imágenes en GHCR y, al terminar, actualiza las 6 apps Docker al tag
+> `sha-<commit>` recién publicado.
 
 ---
 
@@ -33,6 +34,10 @@ Archivo: `.github/workflows/docker-build.yml`
   - Frontend (contexto `frontend/`, `frontend/Dockerfile`): React + Nginx.
 - Publica en GHCR con dos etiquetas: `latest` y `sha-<7 caracteres del commit>`.
 - Usa la caché de GitHub Actions para acelerar builds.
+- Después publica, el job `deploy-kubero` fija ese `sha-...` en `gateway`,
+  `ms1`–`ms4` y `web`, solicita el redeploy y espera a que la salud vuelva a `ok`.
+  `minio` no se toca. Requiere el secreto `KUBERO_TOKEN` (ver
+  [06 — Runbook](06-runbook-operacion.md#42-desplegar-en-kubero)).
 
 Resultado verificado:
 
@@ -44,8 +49,8 @@ Resultado verificado:
 > **Flujo vigente (23 de noviembre de 2026):** el workflow está en `main` y
 > `on.push.branches` solo incluye `main`. La rama `kubero-deploy` se conserva,
 > pero queda fuera del flujo; no hace falta fusionarla para publicar imágenes.
-> Su copia antigua del workflow todavía puede disparar builds si alguien hace
-> push a esa rama, así que debe ajustarse por separado.
+> Su copia del workflow también quedó con `branches: [main]`, así que un push a
+> esa rama ya no publica imágenes.
 
 Para publicar una versión nueva:
 
@@ -58,9 +63,12 @@ git push origin main       # dispara Actions → Docker Build
 ```
 
 > Si las apps de Kubero están en `:latest`, fija `sha-<commit>` antes de este
-> push: el tag `latest` se moverá con la nueva imagen.
+> push: el tag `latest` se moverá con la nueva imagen. Con el deploy automático,
+> el job hará ese cambio por ti al terminar el build.
 
-Esperar el run en **Actions → Docker Build** y luego actualizar el tag en Kubero
+Esperar el run en **Actions → Docker Build**. El job `deploy-kubero` actualiza
+los tags y verifica la salud; si el commit incluye migraciones nuevas, omite el
+cambio y deja la instrucción en el resumen del run
 (ver [06 — Runbook](06-runbook-operacion.md#4-actualizar-la-versión-desplegada)).
 
 ---

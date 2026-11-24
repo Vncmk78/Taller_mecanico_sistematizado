@@ -876,13 +876,17 @@ común, sin cambiar el cuerpo de las respuestas.
 - El flujo acordado es **`Vicente → Develop → main`**. El workflow
   `.github/workflows/docker-build.yml` está en `main` y su disparador quedó en
   `branches: [main]`. La rama `kubero-deploy` se conserva fuera del flujo; su
-  copia antigua del workflow se ajustará aparte para que no publique.
-- Este cambio se sube solo a `Vicente`; los merges a `Develop` y `main` los hace
-  manualmente el responsable del repo.
-- Kubero consume imágenes de GHCR, no una rama. El panel muestra `latest` en el
-  apartado Despliegue: antes del merge a `main` conviene fijar `sha-<commit>` en
-  gateway, ms1–ms4 y web (runbook §4.2), porque `latest` se moverá con el primer
-  build publicado desde `main`.
+  copia del workflow también quedó con `branches: [main]` para que no publique.
+- El workflow publica las imágenes y, con el secreto `KUBERO_TOKEN`, fija el tag
+  `sha-<commit>` en las 6 apps Docker (gateway, ms1–ms4 y web) y solicita el
+  redeploy. Si el commit trae migraciones, omite el deploy y lo avisa. `minio`
+  no se modifica.
+- Este cambio se sube solo a `Vicente` (más el ajuste del workflow en
+  `kubero-deploy`); los merges a `Develop` y `main` los hace manualmente el
+  responsable del repo.
+- Kubero consume imágenes de GHCR, no una rama. El usuario fijó `sha-c855bab`
+  en las seis apps antes del merge; el job automático mantendrá ese patrón con
+  cada build.
 - Los documentos `docs/01`, `docs/02`, `docs/06`, `docs/07`, `docs/08` y
   `docs/README.md` se ajustaron a este flujo; la verificación del primer run en
-  GitHub Actions queda pendiente.
+  GitHub Actions, incluido el job `deploy-kubero`, queda pendiente.

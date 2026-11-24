@@ -1,9 +1,10 @@
 name: Docker Build
 
-# Kubero UCT no construye imágenes: este workflow las publica en ghcr.io.
+# Kubero UCT no construye imágenes: este workflow las publica en ghcr.io y
+# actualiza las 6 apps Docker al tag sha-<commit> recién publicado.
 # El flujo es Vicente -> Develop -> main; solo este workflow (en main) publica.
-# La rama kubero-deploy se conserva; su copia antigua del workflow se ajustará
-# por separado para que tampoco dispare builds.
+# La rama kubero-deploy se conserva; su copia del workflow también disparaba
+# solo desde main, así que no publica imágenes.
 on:
   push:
     branches: [main]
@@ -104,3 +105,22 @@ jobs:
             ${{ env.REGISTRY }}/${{ steps.owner.outputs.lc }}/${{ env.FRONTEND_IMAGE }}:sha-${{ steps.sha.outputs.short }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+  deploy-kubero:
+    name: Actualizar Kubero al sha publicado
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      KUBERO_URL: https://kubero.inf.uct.cl
+      KUBERO_PIPELINE: tallerconnect
+      KUBERO_PHASE: production
+      KUBERO_TOKEN: ${{ secrets.KUBERO_TOKEN }}
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Actualizar tags y redeploy de las 6 apps
+        run: bash .github/scripts/actualizar-kubero.sh

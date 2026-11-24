@@ -83,6 +83,32 @@ describe('PresupuestoService: contrato HTTP de MS3 (presupuestos)', () => {
         expect(await presupuestoService.getByOrder('999')).toBeNull();
     });
 
+    it('listar consulta GET /presupuestos con limite y traduce cada resumen', async () => {
+        vi.mocked(apiClient.get).mockResolvedValue({
+            data: {
+                total: 2,
+                desde: 0,
+                limite: 200,
+                presupuestos: [
+                    resumenApi,
+                    { ...resumenApi, presupuesto_id: 502, orden_id: 102, estado_ultima_version: 'aprobada' },
+                ],
+            },
+        });
+
+        const presupuestos = await presupuestoService.listar();
+
+        expect(apiClient.get).toHaveBeenCalledWith('/presupuestos', { params: { limite: 200 } });
+        expect(presupuestos).toHaveLength(2);
+        expect(presupuestos[0]).toMatchObject({
+            id: '501',
+            orderId: '101',
+            estadoUltimaVersion: 'enviada',
+            totalUltimaVersion: 108000,
+        });
+        expect(presupuestos[1].estadoUltimaVersion).toBe('aprobada');
+    });
+
     it('getById consulta el detalle y normaliza dinero e ítems a number', async () => {
         vi.mocked(apiClient.get).mockResolvedValue({
             data: { ...resumenApi, versiones: [versionApi] },

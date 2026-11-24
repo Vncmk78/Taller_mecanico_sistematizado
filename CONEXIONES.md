@@ -865,3 +865,24 @@ común, sin cambiar el cuerpo de las respuestas.
 - Frontend: **1237 passed** (139 archivos), `npm run lint` sin errores y
   `npx tsc --noEmit` sin errores. Incluye `paginacion.test.ts` y las
   expectativas de URL con `params: { limite: 100, desde: 0 }`.
+
+---
+
+## Flujo de publicación de imágenes desde `main` (2026-11-23)
+
+- Se actualizó el repo local completo con `git fetch --all --prune`: `main`
+  avanzó a `5f0db19`, `Develop` a `49b172d` y `kubero-deploy` quedó en
+  `6245e4b`. `Vicente` se sincronizó por fast-forward con `origin/main`.
+- El flujo acordado es **`Vicente → Develop → main`**. El workflow
+  `.github/workflows/docker-build.yml` está en `main` y su disparador quedó en
+  `branches: [main]`. La rama `kubero-deploy` se conserva, pero ya no publica
+  imágenes ni dispara builds.
+- Este cambio se sube solo a `Vicente`; los merges a `Develop` y `main` los hace
+  manualmente el responsable del repo.
+- Kubero consume imágenes de GHCR, no una rama. El panel muestra `latest` en el
+  apartado Despliegue: antes del merge a `main` conviene fijar `sha-<commit>` en
+  gateway, ms1–ms4 y web (runbook §4.2), porque `latest` se moverá con el primer
+  build publicado desde `main`.
+- Los documentos `docs/01`, `docs/02`, `docs/06`, `docs/07`, `docs/08` y
+  `docs/README.md` se ajustaron a este flujo; la verificación del primer run en
+  GitHub Actions queda pendiente.

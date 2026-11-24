@@ -34,9 +34,10 @@ extremo a extremo por HTTP contra los dominios públicos.
 
 | # | Prueba | Resultado |
 | --- | --- | --- |
-| B1 | Workflow `docker-build.yml` en `kubero-deploy` | ✅ Run `43548759119`, conclusión `success` |
+| B1 | Workflow `docker-build.yml` (histórico en `kubero-deploy`) | ✅ Run `43548759119`, conclusión `success` |
 | B2 | Imagen backend publicada | ✅ `ghcr.io/vncmk78/tallerconnect-backend:latest` y `:sha-c855bab` |
 | B3 | Imagen frontend publicada | ✅ `ghcr.io/vncmk78/tallerconnect-frontend:latest` y `:sha-c855bab` |
+| B4 | Workflow en `main` con `branches: [main]` | ⏳ Configurado en `Vicente` el 23-11-2026; pendiente del primer run tras el merge a `main` |
 
 ---
 

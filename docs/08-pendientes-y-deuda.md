@@ -59,17 +59,14 @@ Prioridad sugerida:
   [02 — Despliegue](02-despliegue-kubero.md#5-dominios).
 - **Para cerrarlo:** solicitar el DNS a la UCT y migrar MinIO cuando exista.
 
-### 2.2 Workflow solo en `kubero-deploy` — Prioridad media
+### 2.2 Estrategia del workflow — Resuelta el 23-11-2026
 
-- **Situación:** `.github/workflows/docker-build.yml` existe solo en la rama
-  `kubero-deploy`. `main` no compila imágenes.
-- **Riesgo:** si se fusiona `kubero-deploy` en `main`, el workflow también se
-  ejecutará en `main` (así está declarado en `on.push.branches`). Eso puede
-  publicar imágenes desde una rama que no está probada para despliegue.
-- **Para cerrarlo:** decidir la estrategia definitiva:
-  - dejar el workflow solo en `kubero-deploy`, o
-  - moverlo a `main` y quitar `main` de `on.push.branches`, o
-  - usar solo `workflow_dispatch` + tags.
+- **Decisión:** `.github/workflows/docker-build.yml` queda en `main` con
+  `branches: [main]`. El flujo es `Vicente → Develop → main`.
+- **Estado:** la rama `kubero-deploy` se conserva, pero ya no dispara builds;
+  queda como referencia histórica del primer despliegue.
+- **Pendiente de verificación:** el primer run de **Actions → Docker Build**
+  tras el merge a `main`.
 
 ### 2.3 Sin respaldos automáticos — Prioridad alta
 
@@ -105,12 +102,14 @@ Prioridad sugerida:
 - **Para cerrarlo:** restringir el acceso por red/firewall o deshabilitar la
   consola si no se usa.
 
-### 2.7 Etiqueta `latest` en producción — Prioridad media
+### 2.7 Etiqueta `latest` en producción — Prioridad alta
 
-- **Situación:** las apps pueden desplegar `latest`.
-- **Riesgo:** un redeploy trae una imagen distinta a la probada.
-- **Para cerrarlo:** fijar `sha-<commit>` en todas las apps (ya está
-  recomendado en el runbook).
+- **Situación:** en la revisión del panel del 23-11-2026, el apartado
+  **Despliegue** de las apps muestra `latest`.
+- **Riesgo:** con el workflow publicando desde `main`, el tag `latest` se moverá
+  automáticamente y un redeploy puede traer código distinto al probado.
+- **Para cerrarlo:** antes del merge a `main`, fijar `sha-<commit>` en las seis
+  apps (gateway, ms1–ms4 y web) según el runbook §4.2.
 
 ---
 
@@ -188,8 +187,8 @@ Estas no son tareas pendientes: son decisiones conscientes.
 1. Configurar SMTP y habilitar el worker de correo.
 2. Configurar FCM y completar el push (coordinar con app móvil).
 3. Programar respaldos automáticos y ensayar una restauración.
-4. Fijar `sha-<commit>` en todas las apps.
-5. Definir la estrategia del workflow (`main` vs `kubero-deploy`).
+4. Fijar `sha-<commit>` en las seis apps antes del primer merge a `main`.
+5. Verificar el primer run del workflow publicando desde `main`.
 6. Agregar tests al CI.
 7. Resolver `auth-service/` y `presupuestos-service/`.
 8. Completar la tabla de responsables.

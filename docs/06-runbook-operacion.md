@@ -112,12 +112,15 @@ kubectl -n tallerconnect-production logs deployment/ms2 --previous
 
 ### 4.1 Publicar la imagen
 
-El workflow solo está en la rama `kubero-deploy`:
+El workflow está en `main` y publica solo con `push` a `main`. El flujo es
+`Vicente → Develop → main`:
 
 ```bash
-git checkout kubero-deploy
-git merge main                 # traer lo que se quiera desplegar
-git push origin kubero-deploy
+git checkout Develop
+git merge Vicente              # integrar la tarea terminada
+git checkout main
+git merge Develop
+git push origin main           # dispara Actions → Docker Build
 ```
 
 Esperar **Actions → Docker Build** en GitHub. Al terminar, GHCR tiene:
@@ -135,7 +138,9 @@ Esperar **Actions → Docker Build** en GitHub. Al terminar, GHCR tiene:
 4. Verificar salud y, si hay migraciones nuevas, ejecutarlas (sección 5).
 
 > **Recomendación:** fijar `sha-<commit>` en producción. `latest` cambia sin
-> aviso y un redeploy puede traer código distinto al probado.
+> aviso y un redeploy puede traer código distinto al probado. Si hoy las apps
+> están en `:latest`, fija el tag antes del `push` a `main`, porque `latest` se
+> moverá automáticamente.
 
 ### 4.3 Volver atrás (rollback)
 

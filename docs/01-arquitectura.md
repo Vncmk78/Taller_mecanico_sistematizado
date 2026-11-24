@@ -213,19 +213,23 @@ Canales de entrega:
 | MS4 con dominio `ms4-interno-tallerconnect` | El dominio anterior quedó para MinIO |
 | Usuario MinIO limitado (`ms4-evidencias`) | MS4 no necesita root; solo el bucket `evidencias` |
 | URLs internas sin puerto | El Service de Kubero escucha en 80 y apunta a `http` |
-| Workflow solo en `kubero-deploy` | Evita publicar imágenes desde `main` mientras se estabiliza |
+| Workflow en `main` | Publica imágenes solo desde la rama integrada (`Vicente → Develop → main`) |
 
 ## 8. Versiones y artefactos
 
 | Artefacto | Valor |
 | --- | --- |
 | Repositorio | <https://github.com/Vncmk78/Taller_mecanico_sistematizado> |
-| Rama de despliegue | `kubero-deploy` |
-| Commit de código desplegado | `18d02b9` (`main`) |
-| Commit del workflow | `c855bab` |
+| Rama integrada que publica imágenes | `main` (flujo `Vicente → Develop → main`) |
+| Rama histórica conservada | `kubero-deploy` (ya no dispara builds) |
+| Commit verificado en la última revisión | `18d02b9` (`main`) |
+| Commit de las imágenes verificadas | `c855bab` |
 | Imagen backend | `ghcr.io/vncmk78/tallerconnect-backend:latest` · `:sha-c855bab` |
 | Imagen frontend | `ghcr.io/vncmk78/tallerconnect-frontend:latest` · `:sha-c855bab` |
-| Build | GitHub Actions run `43548759119` (conclusión: success) |
+| Build verificado | GitHub Actions run `43548759119` (conclusión: success) |
 
 > Las imágenes llevan dos etiquetas: `latest` y `sha-<commit>`. Para producción se
-> recomienda fijar `sha-<commit>` y no depender de `latest`.
+> recomienda fijar `sha-<commit>` y no depender de `latest`. Desde el 23 de
+> noviembre de 2026, `.github/workflows/docker-build.yml` está en `main` y solo
+> se dispara con `push` a `main`; `kubero-deploy` se conserva pero ya no publica
+> imágenes.

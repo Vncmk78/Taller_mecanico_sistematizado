@@ -1,10 +1,11 @@
 name: Docker Build
 
 # Kubero UCT no construye imágenes: este workflow las publica en ghcr.io.
-# Se ejecuta al empujar a main o a la rama de despliegue, y también a mano.
+# El flujo es Vicente -> Develop -> main; solo main publica imágenes. La rama
+# kubero-deploy se conserva por motivos históricos, pero ya no dispara builds.
 on:
   push:
-    branches: [main, kubero-deploy]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

@@ -2,6 +2,11 @@
 
 Documento de referencia de los escenarios funcionales cubiertos por el frontend del sistema TallerConect, basado en las pruebas existentes y la implementación actual.
 
+> **Validación real (24-11-2026):** los flujos principales de los tres portales
+> se verificaron en la web desplegada con navegador y cuentas demo, sin mutar
+> datos de negocio. Detalle y resultados en
+> [`../../docs/07-pruebas-realizadas.md#18-validación-funcional-de-los-principales-flujos-web-24-11-2026`](../../docs/07-pruebas-realizadas.md).
+
 ## 1. Autenticación y Navegación por Roles
 
 | Escenario | Descripción | Estado |

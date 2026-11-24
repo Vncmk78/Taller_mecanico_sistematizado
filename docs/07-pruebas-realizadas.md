@@ -326,8 +326,9 @@ permisos.**
 
 ## 17. Panel operativo del administrador (24-11-2026)
 
-Cambios verificados en `Vicente`, aún **no desplegados**: el dashboard dejó de
-mostrar valores de relleno y ahora consulta datos reales con `Promise.allSettled`.
+Cambios verificados en `Vicente` y ya visibles en la web desplegada: el dashboard
+dejó de mostrar valores de relleno y ahora consulta datos reales con
+`Promise.allSettled`.
 
 ### 17.1 Verificación local
 
@@ -354,18 +355,106 @@ Casos cubiertos por las pruebas nuevas:
 
 ### 17.2 Verificación de ambiente (solo lectura)
 
-Se intentó comprobar el contrato real de `GET /api/presupuestos?limite=200` con
-la cuenta demo de administrador. **No se completó por una incidencia del
-ambiente, no por el cambio del frontend**:
+Inicialmente `POST /api/auth/login` devolvió `504` y `/api/health/servicios`
+devolvió `503` con `ms1_auth` y `ms4_evidencias` en `tiempo_agotado`. La
+incidencia fue transitoria: en la validación de la tarea siguiente el login de
+las tres cuentas demo respondió `200` y todos los flujos cargaron.
 
-- `POST /api/auth/login` → `504` (`TIEMPO_AGOTADO`) en dos intentos.
-- `GET /api/health/servicios` → `503` con `ms4_evidencias: tiempo_agotado` y
-  resto en `ok`.
-- No se hicieron `POST/PATCH/DELETE` de datos de negocio ni se reintentó en
-  bucle; el frontend modificado todavía no está publicado.
+Comprobación real cerrada con la cuenta de administrador:
 
-El contrato usado por `PresupuestoService.listar()` se confirmó leyendo
+```
+GET /api/presupuestos?limite=200  → 200
+{ total: 4, devueltos: 4, enviadas: 0 }
+```
+
+Coincide con el KPI “Presupuestos por Revisar” mostrado por el dashboard real
+(`0`). El contrato también se confirmó leyendo
 `backend/services/ms3_presupuestos/routers/presupuestos.py`: sin `orden_id` aplica
 para personal, `limite` acepta hasta 200 y el cliente solo ve versiones enviadas
-de su propia orden. Queda pendiente repetir la comprobación real cuando el
-gateway responda `200` al login.
+de su propia orden. No se hicieron `POST/PATCH/DELETE` de datos de negocio.
+
+---
+
+## 18. Validación funcional de los principales flujos web (24-11-2026)
+
+Validación **en la web desplegada** (`tallerconnect.inf.uct.cl`) con el
+navegador integrado y las cuentas demo de
+[04 — Datos de prueba](04-datos-de-prueba.md). No se usaron credenciales
+versionadas ni se alteraron datos de negocio.
+
+### 18.1 Criterio
+
+- Solo navegación `GET`; los únicos `POST` fueron `auth/login` y el cierre de
+  sesión.
+- No se aprobaron/rechazaron presupuestos, no se confirmaron cancelaciones, no
+  se crearon órdenes/repuestos/proveedores, no se subió evidencia, no se
+  registraron movimientos ni se marcaron notificaciones como leídas.
+- Se tomaron como fallo los textos “No se pudo…”, “Sin conexión” o errores de
+  consola. El único `4xx` esperado fue el `404` de una orden no asignada.
+
+### 18.2 Flujos públicos y de sesión
+
+| Flujo | Resultado |
+| --- | --- |
+| Landing `/` | ✅ “El taller del futuro, hoy.” y accesos a ingresar/registro |
+| `/admin`, `/client`, `/mechanic` sin sesión | ✅ los tres redirigen a `/login` |
+| Login administrador / cliente / mecánico | ✅ `200`, redirección a `/admin`, `/client` y `/mechanic` según rol |
+| Cierre de sesión | ✅ vuelve a `/login` y `localStorage.token` queda nulo |
+| Tras logout, `/admin` | ✅ vuelve a `/login` |
+
+### 18.3 Administrador
+
+| Ruta | Comprobación | Resultado |
+| --- | --- | --- |
+| `/admin` | KPIs 7 órdenes / 4 activas / 6 vehículos / 4 mecánicos / 0 presupuestos por revisar; cola con órdenes 7, 5, 1 y 6; alertas, movimientos y accesos rápidos | ✅ |
+| Cola activa → detalle | Enlace `Orden #7` abre `/admin/ordenes/7` | ✅ |
+| Alerta de stock → detalle | Enlace del dashboard abre `/admin/inventario/stock/1` y muestra stock 2 / comprometido 1 / disponible 1 | ✅ |
+| `/admin/ordenes` | Listado con 6 órdenes y filtros de estado | ✅ |
+| `/admin/ordenes/1` | Ciclo, historial, presupuesto, consumo, disponibilidad y evidencias | ✅ |
+| `/admin/nuevas-atenciones`, `/admin/cancelaciones` | Bandejas con estados vacíos/ocupados según datos demo | ✅ |
+| `/admin/usuarios`, `/admin/clientes`, `/admin/vehiculos` | 9 usuarios, 6 clientes y catálogo de 6 vehículos | ✅ |
+| `/admin/configuracion` | Capacidad del taller e historial | ✅ |
+| `/admin/inventario` y `/alertas`, `/movimientos`, `/umbral`, `/stock/1`, `/distribuidores` | Catálogo, 1 alerta, 7 movimientos, umbral 3 y distribuidores | ✅ |
+| `/admin/notificaciones` | 7 notificaciones, 6 sin leer | ✅ |
+
+### 18.4 Cliente
+
+| Ruta | Comprobación | Resultado |
+| --- | --- | --- |
+| `/client` | Portal con accesos a vehículos y nuevas atenciones | ✅ |
+| `/client/vehiculos` | 6 vehículos propios con ficha técnica | ✅ |
+| `/client/ordenes`, `/ordenes/1` | 7 órdenes propias y detalle de la orden 1 | ✅ |
+| `/client/presupuestos` | 4 presupuestos propios en estados Aprobado/Rechazado; sin botones de decisión | ✅ |
+| `/client/ordenes/1/evidencias` | Exactamente **2** evidencias visibles (Presupuesto y Reparación) y **sin** control de subida | ✅ |
+| `/client/servicios` | 4 servicios en proceso y 3 finalizados | ✅ |
+| `/client/nuevas-atenciones`, `/notificaciones` | Solicitud n° 1 y 28 notificaciones, 10 sin leer | ✅ |
+| `/admin` y `/mechanic` | Redirección a `/acceso-denegado` con `403` y rol `cliente` | ✅ |
+
+### 18.5 Mecánico
+
+| Ruta | Comprobación | Resultado |
+| --- | --- | --- |
+| `/mechanic` | 5 asignadas, 3 activas, 2 con avance pendiente | ✅ |
+| `/mechanic/ordenes`, `/ordenes/1` | 5 órdenes asignadas; detalle con ciclo, disponibilidad y presupuesto | ✅ |
+| `/mechanic/ordenes/1/presupuesto` | Versión 1 aprobada; el texto indica que el Administrador revisa precios | ✅ |
+| `/mechanic/ordenes/1/evidencias` | Control “Subir evidencia” presente | ✅ |
+| `/mechanic/estados`, `/vehiculos` | 2 órdenes con avance y 5 vehículos asignados | ✅ |
+| `/mechanic/inventario*`, `/umbral` y `/distribuidores` | Catálogo, 1 alerta, 7 movimientos, umbral y distribuidores; sin botones “Nuevo repuesto”, “Nuevo proveedor” ni “Guardar” umbral | ✅ |
+| `/mechanic/notificaciones` | Bandeja vacía acorde a la cuenta | ✅ |
+| `/mechanic/ordenes/4` (no asignada) | Texto “Orden no encontrada” y `GET /api/ordenes/4` → `404` | ✅ |
+| `/admin` y `/client` | Redirección a `/acceso-denegado` con `403` y rol `mecanico` | ✅ |
+
+### 18.6 Resultado
+
+- **Todos los flujos principales cargaron sin errores de consola.**
+- El único `4xx` de red fue el `404` esperado de la orden no asignada al
+  mecánico.
+- `/api/health/servicios` había marcado `ms1_auth`/`ms4_evidencias` como
+  `tiempo_agotado` al inicio, pero los login y las evidencias funcionaron
+  después: se trata de una señal transitoria del healthcheck, no de un fallo de
+  los flujos validados.
+- No se detectaron brechas de rol: el cliente y el mecánico quedan fuera de
+  `/admin`, y el mecánico no ve acciones administrativas de inventario.
+
+**Conclusión: validación funcional satisfactoria de los flujos web principales
+en los tres portales.**

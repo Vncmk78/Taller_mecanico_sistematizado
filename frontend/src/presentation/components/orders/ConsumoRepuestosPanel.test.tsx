@@ -199,6 +199,23 @@ describe('ConsumoRepuestosPanel: descuento de repuestos de la orden', () => {
         ).toBeInTheDocument();
     });
 
+    it('avisa sin error cuando la orden aún no tiene presupuesto (404 de MS3)', async () => {
+        vi.mocked(inventarioService.getDisponibilidadOrden).mockRejectedValue(
+            errorAxios(404, { detail: 'La orden 101 no tiene presupuesto' })
+        );
+
+        renderPanel();
+
+        expect(
+            await screen.findByText(
+                /La orden no tiene un presupuesto aprobado del que obtener los repuestos a consumir/
+            )
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByText('No se pudo cargar la disponibilidad de repuestos')
+        ).not.toBeInTheDocument();
+    });
+
     it('permite reintentar cuando falla la carga de disponibilidad', async () => {
         vi.mocked(inventarioService.getDisponibilidadOrden)
             .mockRejectedValueOnce(errorAxios(500, { detail: 'Servicio no disponible' }))

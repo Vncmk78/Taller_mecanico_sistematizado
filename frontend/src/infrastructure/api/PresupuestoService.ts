@@ -176,6 +176,13 @@ class PresupuestoService implements PresupuestoPort {
         return resumen ? mapResumenApi(resumen) : null;
     }
 
+    async listar(limite = 200): Promise<Presupuesto[]> {
+        const { data } = await apiClient.get<PaginaPresupuestosApi>('/presupuestos', {
+            params: { limite },
+        });
+        return data.presupuestos.map(mapResumenApi);
+    }
+
     async getById(presupuestoId: string): Promise<Presupuesto> {
         const { data } = await apiClient.get<PresupuestoDetalleApi>(`/presupuestos/${presupuestoId}`);
         return mapDetalleApi(data);

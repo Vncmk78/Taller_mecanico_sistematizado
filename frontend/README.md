@@ -31,8 +31,9 @@ y arquitectura hexagonal.
 - Cierre de sesión desde el panel de administrador.
 
 ### Extras
-- Panel de administrador: layout con sidebar y dashboard de ejemplo
-  (estadísticas, cola de trabajo, actividad reciente).
+- Panel de administrador: layout con sidebar y dashboard operativo con
+  indicadores reales, cola de trabajo, inventario/proveedores y accesos rápidos
+  (la sección “Actividad Reciente” de relleno fue eliminada).
 - Skills de desarrollo (`src/skills/`) para el flujo de trabajo asistido
   (excluidas del control de versiones).
 
@@ -352,6 +353,32 @@ y arquitectura hexagonal.
   retardo y de que se hace una sola consulta al escribir rápido en
   `AdminInventoryPage.test.tsx` y `AdminDistributorsPage.test.tsx`.
 
+### Completar panel y vistas operativas de órdenes, inventario y proveedores
+- **Dashboard administrativo real** (`/admin`): reemplaza los valores fijos por
+  datos de la API. Muestra órdenes totales/activas, vehículos, mecánicos,
+  esperando diagnóstico (estado 2), listos para entrega (estado 6), vehículos en
+  taller y **Presupuestos por Revisar** (versión `enviada`).
+- **Cola de trabajo activa**: hasta 5 órdenes con estado distinto de 7
+  (entregada) y 8 (cancelada), ordenadas por estado y fecha, con vehículo,
+  patente, mecánico y enlace al detalle. Incluye acceso a `/admin/ordenes`.
+- **Panel de inventario y proveedores**: totales de alertas, repuestos, repuestos
+  bajo umbral y distribuidores; últimas alertas y movimientos con enlaces a
+  `/admin/inventario/alertas`, `/admin/inventario/movimientos` y
+  `/admin/inventario/stock/:repuestoId`.
+- **Accesos rápidos**: órdenes, inventario, alertas y distribuidores. Se
+  eliminaron el guion `'—'` permanentemente visible y la sección de relleno
+  “Actividad Reciente”.
+- **Carga parcial y estados**: usa `Promise.allSettled`; si falla un servicio se
+  avisa con “Datos parciales” y se conserva el resto del panel. Solo se muestra
+  error general si fallan simultáneamente vehículos, usuarios y órdenes.
+  Mantiene carga, reintento y paginación de la carga de mecánicos.
+- **`PresupuestoService.listar()`**: `GET /presupuestos?limite=200` para roles de
+  personal (`AdminDashboardPage` lo usa para el KPI). El cliente sigue usando
+  `getByOrder`, porque el listado global no filtra por orden.
+- Pruebas: `AdminDashboardPage.test.tsx` (indicadores, cola, inventario, enlaces,
+  fallo parcial, carga, reintento y paginación) y
+  `PresupuestoService.test.ts` (listado y normalización).
+
 ## ¿Qué puede hacer el sistema en estos momentos?
 
 El mapa completo de rutas está documentado en
@@ -361,7 +388,7 @@ El mapa completo de rutas está documentado en
 | --- | --- | --- |
 | `/` | Landing | Funcional |
 | `/login`, `/registro` | Inicio de sesión y registro público de cliente | Funcional |
-| `/admin` | Dashboard del administrador | Funcional (solo rol administrador) |
+| `/admin` | Dashboard operativo del administrador (KPIs, cola activa, inventario y accesos) | Funcional (solo rol administrador) |
 | `/admin/ordenes` (+ `/:id`, `/:id/presupuesto`, `/:id/evidencias`) | Gestión de órdenes, detalle, presupuesto y evidencia | Funcional |
 | `/admin/nuevas-atenciones` (+ `/:id`) | Nuevas atenciones | Funcional |
 | `/admin/cancelaciones` | Cancelaciones pendientes (bandeja y confirmación) | Funcional |

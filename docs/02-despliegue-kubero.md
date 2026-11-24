@@ -28,7 +28,8 @@ y conocimientos básicos de contenedores.
 
 Archivo: `.github/workflows/docker-build.yml`
 
-- Se dispara con `push` a `main`, y también manualmente (`workflow_dispatch`).
+- Se dispara con `push` a `main`. La ejecución manual (`workflow_dispatch`)
+  solo funciona si se elige `main`; una guarda rechaza otras ramas.
 - Construye **dos** imágenes para `linux/amd64`:
   - Backend (contexto raíz, `Dockerfile`): Gateway + MS1–MS4.
   - Frontend (contexto `frontend/`, `frontend/Dockerfile`): React + Nginx.

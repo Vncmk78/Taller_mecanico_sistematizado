@@ -874,9 +874,10 @@ común, sin cambiar el cuerpo de las respuestas.
   avanzó a `5f0db19`, `Develop` a `49b172d` y `kubero-deploy` quedó en
   `6245e4b`. `Vicente` se sincronizó por fast-forward con `origin/main`.
 - El flujo acordado es **`Vicente → Develop → main`**. El workflow
-  `.github/workflows/docker-build.yml` está en `main` y su disparador quedó en
-  `branches: [main]`. La rama `kubero-deploy` se conserva fuera del flujo; su
-  copia del workflow también quedó con `branches: [main]` para que no publique.
+  `.github/workflows/docker-build.yml` está en `main`, su disparador quedó en
+  `branches: [main]` y una guarda rechaza ejecuciones manuales en otras ramas.
+  La rama `kubero-deploy` se conserva fuera del flujo; su copia del workflow
+  también quedó con `branches: [main]` y la misma guarda.
 - El workflow publica las imágenes y, con el secreto `KUBERO_TOKEN`, fija el tag
   `sha-<commit>` en las 6 apps Docker (gateway, ms1–ms4 y web) y solicita el
   redeploy. Si el commit trae migraciones, omite el deploy y lo avisa. `minio`

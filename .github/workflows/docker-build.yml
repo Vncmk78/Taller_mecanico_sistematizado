@@ -24,8 +24,19 @@ env:
   FRONTEND_IMAGE: tallerconnect-frontend
 
 jobs:
+  validar-rama:
+    name: Solo ejecutable desde main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rechazar otras ramas (incluye ejecución manual)
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Este workflow solo publica/despliega desde main. Rama actual: ${GITHUB_REF}"
+          exit 1
+
   backend:
     name: Backend (Gateway + MS1-MS4)
+    needs: [validar-rama]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -68,6 +79,7 @@ jobs:
 
   frontend:
     name: Frontend (React + Nginx)
+    needs: [validar-rama]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

@@ -30,6 +30,7 @@ Católica de Temuco (UCT)**.
 | [07 — Pruebas realizadas](07-pruebas-realizadas.md) | Todo el equipo / evaluación | Matriz de verificaciones con resultados reales |
 | [08 — Pendientes y deuda técnica](08-pendientes-y-deuda.md) | Todo el equipo | Limitaciones conocidas, decisiones tomadas y próximos pasos |
 | [09 — Health checks](09-health-checks.md) | Infraestructura / evaluación | Health checks de contenedores y servicios, script de verificación y evidencia |
+| [10 — Smoke test de contenedores](10-smoke-test-contenedores.md) | Backend / infraestructura | Construir las imágenes y levantar la topología completa en Docker local antes de hacer push a `main` |
 
 ---
 

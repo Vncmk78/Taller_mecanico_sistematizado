@@ -11,8 +11,9 @@ pruebas levantado (`python scripts/ambiente_pruebas.py infra`).
 ### Primer paso: ¿en qué estado está cada base?
 
 ```powershell
-python scripts/verificar_migraciones.py        # revisión actual vs head, sin modificar nada
-python scripts/diagnosticar_migraciones.py     # heads, drift, check, downgrade/upgrade en bases descartables
+python scripts/verificar_migraciones.py                         # revisión actual vs head, sin modificar nada
+python -m alembic -c services/<servicio>/alembic.ini heads      # un solo head por servicio
+python -m alembic -c services/<servicio>/alembic.ini check      # drift: lo que propondría autogenerate
 ```
 
 ### Heads múltiples
@@ -40,7 +41,7 @@ solución es el merge: con dos heads, el orden entre ramas no está garantizado.
 **Síntoma:** `alembic check` falla, o `revision --autogenerate` propone cambios que nadie
 pidió (por ejemplo, borrar índices).
 
-**Ejemplo real (MIG-2):** los índices GIN `ix_*_trgm` de MS3 existen en
+**Ejemplo real:** los índices GIN `ix_*_trgm` de MS3 existen en
 `0006_indices_busqueda_ms3.py` pero no en el modelo. `compare_metadata` devuelve
 `remove_index ix_repuesto_nombre_trgm`. Hoy se acepta a propósito en
 `DIFERENCIAS_ACEPTADAS` de `tests/test_integridad_referencial_servicios.py`.
@@ -58,7 +59,7 @@ un `String(200)` pasa inadvertido.
 
 ### Downgrade roto y convención de nombres
 
-**Ejemplo real (MIG-1):** `downgrade base` de MS2 falla con
+**Ejemplo real:** `downgrade base` de MS2 falla con
 `constraint "ck_cliente_ck_cliente_usuario_id_positivo" does not exist`. La
 `NAMING_CONVENTION` de `shared/db.py` antepone `ck_<tabla>_` a los nombres.
 `0002_restricciones_ms2.py` crea el CHECK con `"usuario_id_positivo"` (bien), pero lo
@@ -119,14 +120,14 @@ puede usar `raiseload()`.
 - `flush()` envía los INSERT/UPDATE sin confirmar. Los repositorios de MS3 hacen
   `add()` + `flush()` en `agregar()` para que la base valide en ese momento y el error
   salga en la línea que lo causó, no en el commit.
-- **Caso real (SES-1):** `SAWarning: Object of type <MovimientoInventario> not in
+- **Caso real:** `SAWarning: Object of type <MovimientoInventario> not in
   session, add operation along 'Repuesto.movimientos' will not proceed`. Se construyó
   `MovimientoInventario(repuesto=repuesto)` y luego `begin_nested()` hizo autoflush antes
   del `add()`. El backref ya había metido el objeto en la colección, pero en SQLAlchemy
   2.0 eso no lo agrega a la sesión. Solo pasaba en las pruebas, porque su sesión tiene
   `autoflush=True` y la de producción no. Ahora las pruebas de MS3 convierten toda
   `SAWarning` en error (`services/ms3_presupuestos/tests/conftest.py`).
-- **Lecturas repetidas (SES-2):** `populate_existing=True` en un `FOR UPDATE` relee la
+- **Lecturas repetidas:** `populate_existing=True` en un `FOR UPDATE` relee la
   fila y sus relaciones selectin. Si se bloquea dos veces en la misma transacción, todo
   se lee dos veces. La solución fue bloquear una vez y pasar el resultado
   (`disponibilidad.bloquear_y_leer_compromisos`).
@@ -180,7 +181,7 @@ puede usar `raiseload()`.
 | Síntoma | Primer comando | Tipo |
 |---|---|---|
 | `Multiple head revisions` | `alembic -c ... heads` | Migración |
-| `autogenerate` propone borrar cosas | `python scripts/diagnosticar_migraciones.py <servicio>` | Migración (drift) |
+| `autogenerate` propone borrar cosas | `alembic -c ... check` / `compare_metadata` | Migración (drift) |
 | `downgrade` falla con "does not exist" | revisar los nombres contra `NAMING_CONVENTION` | Migración |
 | La migración no avanza | `pg_stat_activity` + `pg_blocking_pids` | Transacción (lock) |
 | `DetachedInstanceError` | ¿la sesión se cerró? ¿`expire_on_commit`? | Sesión |

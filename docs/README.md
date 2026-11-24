@@ -8,7 +8,7 @@ Católica de Temuco (UCT)**.
 > **Versión desplegada en esa verificación:** imágenes `sha-c855bab` del commit
 > `18d02b9`. El flujo vigente es `Vicente → Develop → main`: el workflow de
 > imágenes está en `main` y publica solo con `push` a `main`; `kubero-deploy`
-> se conserva pero ya no dispara builds.
+> se conserva fuera del flujo (su copia antigua del workflow se ajustará aparte).
 > **Estado:** los 7 componentes (Gateway, MS1–MS4, web y MinIO) están levantados y
 > respondiendo. Los flujos funcionales principales fueron probados de punta a punta
 > contra el ambiente real.

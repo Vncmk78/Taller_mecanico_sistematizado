@@ -63,8 +63,9 @@ Prioridad sugerida:
 
 - **Decisión:** `.github/workflows/docker-build.yml` queda en `main` con
   `branches: [main]`. El flujo es `Vicente → Develop → main`.
-- **Estado:** la rama `kubero-deploy` se conserva, pero ya no dispara builds;
-  queda como referencia histórica del primer despliegue.
+- **Estado:** la rama `kubero-deploy` se conserva fuera del flujo. Su copia
+  antigua del workflow aún podría publicar si alguien hiciera push a esa rama;
+  hay que ajustarla por separado (sin borrar la rama).
 - **Pendiente de verificación:** el primer run de **Actions → Docker Build**
   tras el merge a `main`.
 
@@ -188,7 +189,8 @@ Estas no son tareas pendientes: son decisiones conscientes.
 2. Configurar FCM y completar el push (coordinar con app móvil).
 3. Programar respaldos automáticos y ensayar una restauración.
 4. Fijar `sha-<commit>` en las seis apps antes del primer merge a `main`.
-5. Verificar el primer run del workflow publicando desde `main`.
+5. Verificar el primer run del workflow publicando desde `main` y ajustar la
+   copia del workflow en `kubero-deploy` sin borrar la rama.
 6. Agregar tests al CI.
 7. Resolver `auth-service/` y `presupuestos-service/`.
 8. Completar la tabla de responsables.

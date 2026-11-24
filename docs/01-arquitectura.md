@@ -221,7 +221,7 @@ Canales de entrega:
 | --- | --- |
 | Repositorio | <https://github.com/Vncmk78/Taller_mecanico_sistematizado> |
 | Rama integrada que publica imágenes | `main` (flujo `Vicente → Develop → main`) |
-| Rama histórica conservada | `kubero-deploy` (ya no dispara builds) |
+| Rama histórica conservada | `kubero-deploy` (fuera del flujo; su copia del workflow se ajustará aparte) |
 | Commit verificado en la última revisión | `18d02b9` (`main`) |
 | Commit de las imágenes verificadas | `c855bab` |
 | Imagen backend | `ghcr.io/vncmk78/tallerconnect-backend:latest` · `:sha-c855bab` |
@@ -231,5 +231,6 @@ Canales de entrega:
 > Las imágenes llevan dos etiquetas: `latest` y `sha-<commit>`. Para producción se
 > recomienda fijar `sha-<commit>` y no depender de `latest`. Desde el 23 de
 > noviembre de 2026, `.github/workflows/docker-build.yml` está en `main` y solo
-> se dispara con `push` a `main`; `kubero-deploy` se conserva pero ya no publica
-> imágenes.
+> se dispara con `push` a `main`. La rama `kubero-deploy` se conserva fuera del
+> flujo; mientras su copia antigua del workflow siga ahí, un push a esa rama sí
+> publicaría imágenes.

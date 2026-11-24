@@ -875,8 +875,8 @@ común, sin cambiar el cuerpo de las respuestas.
   `6245e4b`. `Vicente` se sincronizó por fast-forward con `origin/main`.
 - El flujo acordado es **`Vicente → Develop → main`**. El workflow
   `.github/workflows/docker-build.yml` está en `main` y su disparador quedó en
-  `branches: [main]`. La rama `kubero-deploy` se conserva, pero ya no publica
-  imágenes ni dispara builds.
+  `branches: [main]`. La rama `kubero-deploy` se conserva fuera del flujo; su
+  copia antigua del workflow se ajustará aparte para que no publique.
 - Este cambio se sube solo a `Vicente`; los merges a `Develop` y `main` los hace
   manualmente el responsable del repo.
 - Kubero consume imágenes de GHCR, no una rama. El panel muestra `latest` en el

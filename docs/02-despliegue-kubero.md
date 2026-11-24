@@ -42,9 +42,10 @@ Resultado verificado:
 | `ghcr.io/vncmk78/tallerconnect-frontend` | `latest`, `sha-c855bab` |
 
 > **Flujo vigente (23 de noviembre de 2026):** el workflow está en `main` y
-> `on.push.branches` solo incluye `main`. La rama `kubero-deploy` se conserva por
-> motivos históricos, pero ya no dispara builds; no hace falta fusionarla para
-> publicar imágenes.
+> `on.push.branches` solo incluye `main`. La rama `kubero-deploy` se conserva,
+> pero queda fuera del flujo; no hace falta fusionarla para publicar imágenes.
+> Su copia antigua del workflow todavía puede disparar builds si alguien hace
+> push a esa rama, así que debe ajustarse por separado.
 
 Para publicar una versión nueva:
 

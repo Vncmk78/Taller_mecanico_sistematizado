@@ -10,7 +10,8 @@ y conocimientos básicos de contenedores.
 
 > Kubero UCT **no construye imágenes**. Solo despliega imágenes ya publicadas en
 > un registro. Por eso el repositorio incluye un workflow de GitHub Actions que
-> publica las imágenes en GHCR.
+> publica las imágenes en GHCR y, al terminar, actualiza las 6 apps Docker al tag
+> `sha-<commit>` recién publicado.
 
 ---
 
@@ -27,13 +28,17 @@ y conocimientos básicos de contenedores.
 
 Archivo: `.github/workflows/docker-build.yml`
 
-- Se dispara con `push` a `main` o `kubero-deploy`, y también manualmente
-  (`workflow_dispatch`).
+- Se dispara con `push` a `main`. La ejecución manual (`workflow_dispatch`)
+  solo funciona si se elige `main`; una guarda rechaza otras ramas.
 - Construye **dos** imágenes para `linux/amd64`:
   - Backend (contexto raíz, `Dockerfile`): Gateway + MS1–MS4.
   - Frontend (contexto `frontend/`, `frontend/Dockerfile`): React + Nginx.
 - Publica en GHCR con dos etiquetas: `latest` y `sha-<7 caracteres del commit>`.
 - Usa la caché de GitHub Actions para acelerar builds.
+- Después publica, el job `deploy-kubero` fija ese `sha-...` en `gateway`,
+  `ms1`–`ms4` y `web`, solicita el redeploy y espera a que la salud vuelva a `ok`.
+  `minio` no se toca. Requiere el secreto `KUBERO_TOKEN` (ver
+  [06 — Runbook](06-runbook-operacion.md#42-desplegar-en-kubero)).
 
 Resultado verificado:
 
@@ -42,21 +47,29 @@ Resultado verificado:
 | `ghcr.io/vncmk78/tallerconnect-backend` | `latest`, `sha-c855bab` |
 | `ghcr.io/vncmk78/tallerconnect-frontend` | `latest`, `sha-c855bab` |
 
-> **Importante:** hoy el archivo del workflow solo existe en la rama
-> `kubero-deploy`. Por eso `main` no construye nada. Si en el futuro se fusiona
-> `kubero-deploy` en `main`, el workflow también se ejecutará en `main` (así está
-> declarado en `on.push.branches`). Si no se quiere eso, hay que editar esa lista
-> antes del merge.
+> **Flujo vigente (23 de noviembre de 2026):** el workflow está en `main` y
+> `on.push.branches` solo incluye `main`. La rama `kubero-deploy` se conserva,
+> pero queda fuera del flujo; no hace falta fusionarla para publicar imágenes.
+> Su copia del workflow también quedó con `branches: [main]`, así que un push a
+> esa rama ya no publica imágenes.
 
 Para publicar una versión nueva:
 
 ```bash
-git checkout kubero-deploy
-git merge main            # traer los cambios que se quieran desplegar
-git push origin kubero-deploy
+git checkout Develop
+git merge Vicente          # integrar la tarea terminada
+git checkout main
+git merge Develop
+git push origin main       # dispara Actions → Docker Build
 ```
 
-Esperar el run en **Actions → Docker Build** y luego actualizar el tag en Kubero
+> Si las apps de Kubero están en `:latest`, fija `sha-<commit>` antes de este
+> push: el tag `latest` se moverá con la nueva imagen. Con el deploy automático,
+> el job hará ese cambio por ti al terminar el build.
+
+Esperar el run en **Actions → Docker Build**. El job `deploy-kubero` actualiza
+los tags y verifica la salud; si el commit incluye migraciones nuevas, omite el
+cambio y deja la instrucción en el resumen del run
 (ver [06 — Runbook](06-runbook-operacion.md#4-actualizar-la-versión-desplegada)).
 
 ---

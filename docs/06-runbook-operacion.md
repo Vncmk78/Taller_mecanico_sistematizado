@@ -112,12 +112,15 @@ kubectl -n tallerconnect-production logs deployment/ms2 --previous
 
 ### 4.1 Publicar la imagen
 
-El workflow solo está en la rama `kubero-deploy`:
+El workflow está en `main` y publica solo con `push` a `main`. El flujo es
+`Vicente → Develop → main`:
 
 ```bash
-git checkout kubero-deploy
-git merge main                 # traer lo que se quiera desplegar
-git push origin kubero-deploy
+git checkout Develop
+git merge Vicente              # integrar la tarea terminada
+git checkout main
+git merge Develop
+git push origin main           # dispara Actions → Docker Build
 ```
 
 Esperar **Actions → Docker Build** en GitHub. Al terminar, GHCR tiene:
@@ -128,14 +131,41 @@ Esperar **Actions → Docker Build** en GitHub. Al terminar, GHCR tiene:
 
 ### 4.2 Desplegar en Kubero
 
-1. En cada app backend (`gateway`, `ms1`–`ms4`), cambiar el tag de la imagen de
-   `latest` a `sha-<commit>`.
+El job `deploy-kubero` del mismo workflow hace esto automáticamente al terminar
+el build:
+
+1. Toma el tag `sha-<commit>` recién publicado.
+2. Actualiza `gateway`, `ms1`–`ms4` (imagen backend) y `web` (imagen frontend).
+3. Solicita el redeploy de esas 6 apps y verifica `/api/health/servicios` y
+   `/healthz`.
+4. No modifica `minio`.
+
+**Configuración única:** crear el secreto `KUBERO_TOKEN`.
+
+1. En Kubero, ir a **Perfil → API Tokens** y crear un token con un nombre como
+   `github-actions-deploy` y una expiración larga. Copiar el valor (solo se
+   muestra una vez).
+2. En GitHub, ir a **Settings → Secrets and variables → Actions → New
+   repository secret**, nombre `KUBERO_TOKEN`, y pegar el valor.
+3. La cuenta de Kubero debe tener permisos `app:read` y `app:write` sobre
+   `tallerconnect` → `production` (la UI muestra la fase como `Production`).
+
+> **Migraciones:** si el commit incluye archivos nuevos en
+> `backend/services/*/alembic/versions/`, el job **no despliega** y lo avisa en
+> el resumen del run. Primero aplicar las migraciones (sección 5) y luego
+> desplegar de forma manual con los pasos siguientes.
+
+**Despliegue manual (o después de migraciones):**
+
+1. En cada app backend (`gateway`, `ms1`–`ms4`), cambiar el tag de la imagen a
+   `sha-<commit>`.
 2. En `web`, cambiar el tag de `tallerconnect-frontend`.
-3. Redeploy de las apps afectadas.
-4. Verificar salud y, si hay migraciones nuevas, ejecutarlas (sección 5).
+3. Redeploy de las apps afectadas, en este orden: `ms1`–`ms4`, `gateway`, `web`.
+4. Verificar salud (sección 1).
 
 > **Recomendación:** fijar `sha-<commit>` en producción. `latest` cambia sin
-> aviso y un redeploy puede traer código distinto al probado.
+> aviso y un redeploy puede traer código distinto al probado. El job automático
+> ya deja las apps en `sha-<commit>`; no volver a `latest`.
 
 ### 4.3 Volver atrás (rollback)
 

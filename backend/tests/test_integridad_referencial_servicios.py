@@ -72,6 +72,29 @@ FK_SIN_INDICE_ACEPTADAS: dict[str, dict[str, str]] = {
 }
 
 
+def _alembic(servicio: str, entorno: dict[str, str], *argumentos: str) -> subprocess.CompletedProcess:
+    """Ejecuta alembic para el servicio y devuelve su salida como texto UTF-8.
+
+    Semana 11: con `text=True` la salida se decodificaba con la codificación de
+    Windows (cp1252), pero el proceso hijo escribe UTF-8 (hereda
+    PYTHONIOENCODING de pytest) y los títulos de las migraciones llevan tildes:
+    el hilo lector moría con UnicodeDecodeError y, si la migración fallaba, el
+    mensaje de error se perdía. Ahora ambos lados usan UTF-8.
+    """
+    entorno = {**entorno, "PYTHONIOENCODING": "utf-8"}
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", f"services/{servicio}/alembic.ini", *argumentos],
+        cwd=RAIZ_BACKEND, env=entorno, capture_output=True, encoding="utf-8", errors="replace",
+        timeout=120,
+    )
+
+
+def test_la_salida_de_alembic_se_lee_completa_con_tildes() -> None:
+    resultado = _alembic("ms3_presupuestos", dict(os.environ), "history")
+    assert resultado.returncode == 0, resultado.stderr
+    assert "Índices de búsqueda" in resultado.stdout
+
+
 @pytest.fixture(scope="module")
 def admin() -> Iterator[Engine]:
     url = os.environ.get("INTEGRIDAD_PG_ADMIN_URL")
@@ -98,10 +121,7 @@ def base_migrada(request, admin: Engine) -> Iterator[tuple[str, Engine]]:
     entorno.setdefault(f"{prefijo}_JWT_SECRET_KEY", "clave-local-de-pruebas-de-integridad-1234567890")
     motor = create_engine(url)
     try:
-        resultado = subprocess.run(
-            [sys.executable, "-m", "alembic", "-c", f"services/{servicio}/alembic.ini", "upgrade", "head"],
-            cwd=RAIZ_BACKEND, env=entorno, capture_output=True, text=True, timeout=120,
-        )
+        resultado = _alembic(servicio, entorno, "upgrade", "head")
         assert resultado.returncode == 0, resultado.stderr[-2000:]
         yield servicio, motor
     finally:

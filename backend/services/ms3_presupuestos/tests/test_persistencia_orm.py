@@ -107,13 +107,16 @@ def test_clave_de_operacion_repetida_es_rechazada(db: Session) -> None:
     db.add(MovimientoInventario(clave_operacion="op-dup", repuesto=repuesto, orden_id=10,
                                 tipo="consumo", cantidad=1, registrado_por_id=MECANICO))
     db.flush()
-    _rechaza(db, MovimientoInventario(clave_operacion="op-dup", repuesto=repuesto, orden_id=10,
+    # repuesto_id y no repuesto=: con la relación, el backref mete el movimiento
+    # en repuesto.movimientos antes de que esté en la sesión, y el autoflush de
+    # begin_nested() avisa con SAWarning que no lo guardará (semana 11).
+    _rechaza(db, MovimientoInventario(clave_operacion="op-dup", repuesto_id=repuesto.repuesto_id, orden_id=10,
                                       tipo="consumo", cantidad=1, registrado_por_id=MECANICO))
 
 
 def test_consumo_sin_orden_es_rechazado(db: Session) -> None:
     repuesto = nuevo_repuesto(db)
-    _rechaza(db, MovimientoInventario(clave_operacion="op-sin-orden", repuesto=repuesto,
+    _rechaza(db, MovimientoInventario(clave_operacion="op-sin-orden", repuesto_id=repuesto.repuesto_id,
                                       tipo="consumo", cantidad=1, registrado_por_id=MECANICO))
 
 

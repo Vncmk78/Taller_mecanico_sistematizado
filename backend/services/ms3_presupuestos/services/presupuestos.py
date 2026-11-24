@@ -359,13 +359,20 @@ def decidir_version(
 
         # Lo que falta usar se calcula UNA vez y sirve para evaluar y reservar.
         pendientes = _pendientes(uow, version) if decision == "aprobado" else {}
-        faltantes = _repuestos_faltantes(uow, version, pendientes) if decision == "aprobado" else []
+        # Los repuestos se bloquean y lo comprometido se lee UNA vez: la
+        # evaluación y la reserva usan el mismo resultado (antes cada una
+        # repetía el FOR UPDATE y la lectura de lo comprometido).
+        bloqueo = (disponibilidad.bloquear_y_leer_compromisos(uow, pendientes)
+                   if pendientes else None)
+        faltantes = (_repuestos_faltantes(uow, version, pendientes, bloqueo=bloqueo)
+                     if decision == "aprobado" else [])
         reservados: dict[int, int] = {}
         if decision == "aprobado" and not faltantes:
             # Regla de reserva: con stock suficiente, las unidades quedan
             # comprometidas para la orden en esta misma transacción.
             reservas.ajustar_reserva(
-                uow, presupuesto.orden_id, pendientes, usuario_id=cliente_usuario_id)
+                uow, presupuesto.orden_id, pendientes, usuario_id=cliente_usuario_id,
+                bloqueo=bloqueo)
             reservados = {rid: n for rid, n in pendientes.items() if n}
         registro = DecisionPresupuesto(
             version=version, cliente_usuario_id=cliente_usuario_id,
@@ -417,6 +424,7 @@ def _pendientes(uow: UnidadDeTrabajo, version: VersionPresupuesto) -> dict[int, 
 
 def _repuestos_faltantes(
     uow: UnidadDeTrabajo, version: VersionPresupuesto, pendientes: dict[int, int] | None = None,
+    *, bloqueo: disponibilidad.Bloqueo | None = None,
 ) -> list[RepuestoFaltante]:
     """Repuestos de la versión cuya disponibilidad no cubre lo que falta usar.
 
@@ -430,7 +438,7 @@ def _repuestos_faltantes(
     if not pendientes:
         return []
     resultado = disponibilidad.evaluar(
-        uow, pendientes, orden_id=version.presupuesto.orden_id, bloquear=True)
+        uow, pendientes, orden_id=version.presupuesto.orden_id, bloquear=True, bloqueo=bloqueo)
     return [
         RepuestoFaltante(repuesto_id=d.repuesto_id, nombre=d.nombre,
                          requerido=_dos_decimales(Decimal(d.requerido)), disponible=d.disponible)

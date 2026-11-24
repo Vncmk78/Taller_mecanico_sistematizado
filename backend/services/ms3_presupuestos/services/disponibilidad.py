@@ -40,6 +40,23 @@ from services.ms3_presupuestos.schemas.inventario import (
 )
 
 
+# Repuestos bloqueados (FOR UPDATE) y lo comprometido por orden para ellos:
+# ({repuesto_id: Repuesto}, {repuesto_id: {orden_id: reservado}}).
+Bloqueo = tuple[dict[int, Repuesto], dict[int, dict[int, int]]]
+
+
+def bloquear_y_leer_compromisos(uow: UnidadDeTrabajo, repuesto_ids: Iterable[int]) -> Bloqueo:
+    """Bloquea los repuestos y lee lo comprometido: UNA vez por transacción.
+
+    Mientras la transacción siga abierta, otra no puede mover esos repuestos, así
+    que el resultado sirve para evaluar la disponibilidad y después reservar
+    (`evaluar(..., bloqueo=)` y `reservas.ajustar_reserva(..., bloqueo=)`) sin
+    volver a leerlos (semana 11: eran lecturas repetidas al aprobar).
+    """
+    ids = list(repuesto_ids)
+    return uow.repuestos.bloquear_varios(ids), uow.movimientos.comprometido_por_ordenes(ids)
+
+
 def unidades(cantidad: Decimal | int) -> int:
     """Cantidad presupuestada → unidades enteras de stock (redondeo hacia arriba)."""
     return math.ceil(Decimal(cantidad))
@@ -86,9 +103,16 @@ def evaluar(
     *,
     orden_id: int | None = None,
     bloquear: bool = False,
+    bloqueo: Bloqueo | None = None,
 ) -> ResultadoDisponibilidad:
-    """Disponibilidad de cada repuesto requerido (404 si alguno no existe)."""
-    if bloquear:
+    """Disponibilidad de cada repuesto requerido (404 si alguno no existe).
+
+    `bloqueo`: resultado de `bloquear_y_leer_compromisos` de esta transacción;
+    si se entrega, no se vuelven a leer los repuestos ni lo comprometido.
+    """
+    if bloqueo is not None:
+        repuestos = bloqueo[0]
+    elif bloquear:
         repuestos = uow.repuestos.bloquear_varios(requeridos)
     else:
         repuestos = {
@@ -100,7 +124,8 @@ def evaluar(
         raise RecursoNoEncontrado(
             "No existen los repuestos: " + ", ".join(str(i) for i in inexistentes))
     # Una sola consulta para lo comprometido de todos los repuestos.
-    compromisos = uow.movimientos.comprometido_por_ordenes(requeridos)
+    compromisos = (bloqueo[1] if bloqueo is not None
+                   else uow.movimientos.comprometido_por_ordenes(requeridos))
     detalle = [evaluar_repuesto(uow, repuestos[rid], cantidad, orden_id, compromisos.get(rid, {}))
                for rid, cantidad in sorted(requeridos.items())]
     return ResultadoDisponibilidad(

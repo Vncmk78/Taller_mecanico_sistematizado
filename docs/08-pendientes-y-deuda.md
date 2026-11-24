@@ -68,8 +68,9 @@ Prioridad sugerida:
   publica imágenes.
 - **Deploy automático:** el mismo workflow fija el tag `sha-<commit>` en las 6
   apps Docker y redeploya. Requiere el secreto `KUBERO_TOKEN`.
-- **Pendiente de verificación:** el primer run de **Actions → Docker Build**
-  tras el merge a `main`, incluido el job `deploy-kubero`.
+- **Verificado el 24-11-2026:** run `45306353919` desde `main`, conclusión
+  `success`, incluido el job `Actualizar Kubero al sha publicado`. Ver
+  [07 — Pruebas realizadas](07-pruebas-realizadas.md#2-build-e-imágenes).
 
 ### 2.3 Sin respaldos automáticos — Prioridad alta
 
@@ -105,24 +106,25 @@ Prioridad sugerida:
 - **Para cerrarlo:** restringir el acceso por red/firewall o deshabilitar la
   consola si no se usa.
 
-### 2.7 Etiqueta `latest` en producción — En cierre el 23-11-2026
+### 2.7 Etiqueta `latest` en producción — Resuelta el 24-11-2026
 
-- **Situación:** el usuario fijó `sha-c855bab` en las seis apps (gateway,
-  ms1–ms4 y web) antes del merge a `main`. `minio` conserva `latest` a propósito.
+- **Situación:** las seis apps (gateway, ms1–ms4 y web) quedaron fijadas en
+  `:sha-40106f5` por el run `45306353919`. `minio` conserva `latest` a propósito.
 - **Riesgo:** si se vuelve a `latest`, un redeploy puede traer código distinto al
   probado.
-- **Cierre:** el job `deploy-kubero` mantiene las apps en `sha-<commit>`; queda
-  confirmar visualmente los 6 tags en el panel y el primer run automático.
+- **Cierre:** el job de deploy mantiene las apps en `sha-<commit>` en cada push a
+  `main`. No se confirmó el tag uno por uno en el panel, pero el job terminó en
+  `success` y la salud pública respondió correctamente.
 
-### 2.8 Secreto `KUBERO_TOKEN` — Prioridad alta
+### 2.8 Secreto `KUBERO_TOKEN` — Creado, con expiración conocida
 
-- **Situación:** el job `deploy-kubero` necesita un token de Kubero con permisos
-  `app:read` y `app:write` guardado como secreto de GitHub Actions.
-- **Riesgo:** si falta, el build publica las imágenes pero el deploy falla con
-  un mensaje explícito; Kubero queda en la versión anterior.
-- **Para cerrarlo:** crear el token en **Perfil → API Tokens** de Kubero y
-  guardarlo en **Settings → Secrets and variables → Actions** con el nombre
-  `KUBERO_TOKEN` (runbook §4.2). Rotarlo cuando expire.
+- **Situación:** el token con permisos `app:read` y `app:write` ya está guardado
+  como secreto de GitHub Actions; el deploy automático funcionó con él.
+- **Riesgo:** el usuario lo creó con expiración de ~2 meses. Al vencer, Kubero
+  seguirá sirviendo la versión desplegada, pero fallarán los deploys futuros.
+- **Para cerrarlo:** rotar el token antes de que expire, repitiendo
+  **Perfil → API Tokens** de Kubero y **Settings → Secrets and variables →
+  Actions** (runbook §4.2).
 
 ---
 

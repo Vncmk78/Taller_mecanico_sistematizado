@@ -37,8 +37,8 @@ extremo a extremo por HTTP contra los dominios públicos.
 | B1 | Workflow `docker-build.yml` (histórico en `kubero-deploy`) | ✅ Run `43548759119`, conclusión `success` |
 | B2 | Imagen backend publicada | ✅ `ghcr.io/vncmk78/tallerconnect-backend:latest` y `:sha-c855bab` |
 | B3 | Imagen frontend publicada | ✅ `ghcr.io/vncmk78/tallerconnect-frontend:latest` y `:sha-c855bab` |
-| B4 | Workflow en `main` con `branches: [main]` | ⏳ Configurado en `Vicente` el 23-11-2026; pendiente del primer run tras el merge a `main` |
-| B5 | Job `deploy-kubero` (tags `sha-<commit>` + redeploy + salud) | ⏳ Configurado en `Vicente` el 23-11-2026; requiere `KUBERO_TOKEN` y el primer run en `main` |
+| B4 | Workflow en `main` con `branches: [main]` | ✅ Run `45306353919` desde `main`, conclusión `success` |
+| B5 | Job de deploy automático (tags `sha-<commit>` + redeploy + salud) | ✅ Job `Actualizar Kubero al sha publicado` en `success`; imágenes `:sha-40106f5` |
 
 ---
 
@@ -241,3 +241,83 @@ curl -s "$BASE/api/evidencias?orden_id=1" -H "Authorization: Bearer $TOKEN"
 
 Para un flujo completo, seguir el guion de
 [04 — Datos de prueba](04-datos-de-prueba.md#10-guion-mínimo-de-demostración).
+
+---
+
+## 16. Permisos, roles y datos visibles (24-11-2026)
+
+Verificación específica de que **acciones y datos visibles** respetan los roles.
+Se hizo en el ambiente real (`api-tallerconnect.inf.uct.cl` y
+`tallerconnect.inf.uct.cl`) con las 8 cuentas demo de
+[04 — Datos de prueba](04-datos-de-prueba.md).
+
+### 16.1 Criterio de no mutación
+
+Solo se usaron `GET`, login y navegación. Los únicos `POST` fueron rechazos
+controlados contra identificadores inexistentes, para comprobar el guard sin
+crear nada: crear orden como cliente → `403`, subir evidencia como cliente →
+`403`, subir evidencia como mecánico a orden `999999` → `404`. No se marcaron
+notificaciones como leídas ni se cambió ninguna orden, presupuesto o evidencia.
+
+### 16.2 Pruebas automatizadas locales
+
+| Conjunto | Resultado |
+| --- | --- |
+| `backend/tests/test_autorizacion.py` | ✅ 6 passed |
+| `test_acceso_indebido_roles`, `test_acceso_recursos_ajenos_mismo_rol`, `test_exposicion_indebida_datos`, `test_ms4_autorizacion_evidencias`, `test_credenciales_vacias_y_multirol` | ✅ 103 passed |
+| Usuarios/roles, órdenes, vehículos, perfil, notificaciones, evidencias, JWT, seguridad y MS3 | ✅ 411 passed, 112 skipped |
+| `OrderActions`, `OrderActionsPanel`, `RoleLayout` (Vitest) | ✅ 54 passed |
+| `ProtectedRoute` (Vitest) | ✅ 7 passed |
+
+**Total local: 581 passed, 112 skipped.** Los skips son casos ya cubiertos o
+no aplicables al ambiente de pruebas; ningún fallo.
+
+### 16.3 API real: 73/73 comprobaciones
+
+| Área | Verificaciones | Resultado |
+| --- | --- | --- |
+| Login y `/auth/me` de las 8 cuentas, anónimo y token inválido | 18 | ✅ `200` con roles correctos; sin token y token inválido → `401` |
+| Órdenes: listado por cuenta, detalle, `solo_propietario` y ajenas | 21 | ✅ Cliente ve 1–7; mecánico ve 1,2,3,5,6; administrador y multirroles con administrador ven 1–7; cliente 8 y multirol sin propiedad ven `[]`; orden no asignada/ajena → `404` |
+| Presupuestos y catálogos | 12 | ✅ Cliente ve solo versión enviada de su orden; ajeno → `404`; cliente no crea/envía ni ve repuestos/inventario → `403`; mecánico y administrador sí ven catálogo |
+| Evidencias | 15 | ✅ Cliente ve 2 visibles y no la interna; mecánico y administrador ven 3; detalle interno para cliente → `404`; ajeno y orden no asignada → `404`; subida rechazada según rol |
+| Notificaciones | 7 | ✅ Cada cuenta ve solo su bandeja; intersecciones vacías entre cliente/mecánico/administrador |
+
+Detalles destacados:
+
+- `solo_propietario=true` devuelve `200` al dueño, `404` a mecánico,
+  administrador y multirol que no es dueño: **no filtra, oculta**.
+- Multirol = unión de roles para **alcance**, pero no para **datos**: la cuenta
+  4 (`cliente+mecánico`) no ve órdenes porque no tiene vehículo ni asignación.
+- Las bandejas reales devolvieron 28 notificaciones al cliente 1, 0 al
+  mecánico 2, 7 al administrador 3 y 0 al cliente 8, sin solapamiento.
+
+### 16.4 Web real: portales, menús y acciones
+
+| Cuenta | `/client` | `/mechanic` | `/admin` | Resultado |
+| --- | --- | --- | --- | --- |
+| 1 `cliente` | ✅ | 🔒 `cliente` | 🔒 `cliente` | Menú sin inventario, usuarios ni reasignación |
+| 2 `mecánico` | 🔒 `mecanico` | ✅ | 🔒 `mecanico` | Orden 4 no asignada → “Orden no encontrada”; orden 5 asignada con presupuesto, bitácora y evidencias |
+| 3 `administrador` | 🔒 `administrador` | 🔒 `administrador` | ✅ | Orden 5 con reasignación de mecánico y subida de evidencia |
+| 4 `cliente+mecánico` | ✅ | ✅ | 🔒 `cliente, mecanico` | Sin escalada: no ve órdenes ajenas |
+| 5 `cliente+administrador` | ✅ | 🔒 `administrador, cliente` | ✅ | Redirige al portal admin al entrar |
+| 6 `mecanico+administrador` | 🔒 `administrador, mecanico` | ✅ | ✅ | Redirige al portal admin al entrar |
+| 7 los tres roles | ✅ | ✅ | ✅ | Redirige al portal admin al entrar |
+
+Comprobaciones adicionales en la UI:
+
+- Sin sesión, las tres rutas protegidas redirigen a `/login` y `localStorage`
+  queda sin `token`.
+- El cliente ve en `/client/ordenes/1/evidencias` exactamente **2** imágenes
+  (`Presupuesto`, `Reparación`), sin control de subida y sin la evidencia
+  interna de `Diagnóstico`. El mecánico ve el formulario “Subir evidencia” en
+  la misma orden.
+- En `/client/presupuestos` solo aparecen los presupuestos propios con estado
+  `Aprobado`/`Rechazado`; como todos los de demo ya están decididos, no se
+  muestran botones de aprobar/rechazar. Ese comportamiento por estado está
+  cubierto por los 54 tests de `OrderActions`/`OrderActionsPanel`.
+- El texto de denegación usa la unión de roles de `getUserRoles()`, por ejemplo
+  `Tu rol (cliente, mecanico) no tiene permisos para acceder a esta sección.`
+
+**Resultado global de esta verificación: 73/73 en API, 581 passed en local y
+todas las comprobaciones visuales acordes al rol. No se encontraron brechas de
+permisos.**

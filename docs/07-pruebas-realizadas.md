@@ -321,3 +321,51 @@ Comprobaciones adicionales en la UI:
 **Resultado global de esta verificación: 73/73 en API, 581 passed en local y
 todas las comprobaciones visuales acordes al rol. No se encontraron brechas de
 permisos.**
+
+---
+
+## 17. Panel operativo del administrador (24-11-2026)
+
+Cambios verificados en `Vicente`, aún **no desplegados**: el dashboard dejó de
+mostrar valores de relleno y ahora consulta datos reales con `Promise.allSettled`.
+
+### 17.1 Verificación local
+
+| Comando | Resultado |
+| --- | --- |
+| `npm test -- --run src/presentation/pages/admin/AdminDashboardPage.test.tsx src/infrastructure/api/PresupuestoService.test.ts` | ✅ 22 passed |
+| `npm test` (suite completa de `frontend/`) | ✅ **1277 passed**, 143 archivos, 0 fallos |
+| `npm run lint` | ✅ sin errores; solo 2 warnings preexistentes en notificaciones |
+| `npm run build` (`tsc -b && vite build`) | ✅ build correcto (aviso no bloqueante: chunk > 500 kB) |
+
+Casos cubiertos por las pruebas nuevas:
+
+- KPIs desde la API, sin `'—'` permanente ni sección “Actividad Reciente”.
+- Cola activa: excluye estados 7 y 8, enlaza al detalle y muestra patente,
+  vehículo, estado y mecánico.
+- KPI “Presupuestos por Revisar” cuenta solo `estadoUltimaVersion === 'enviada'`
+  y llama a `GET /presupuestos` con `limite: 200`.
+- Panel de inventario/proveedores: alertas, repuestos, bajo umbral,
+  distribuidores, últimos movimientos y accesos rápidos con sus `href`.
+- Degradación parcial: si falla solo presupuestos, el resto del panel sigue y
+  aparece “Datos parciales”; si fallan las tres fuentes básicas aparece
+  `ErrorState` y el botón “Reintentar” recupera los datos.
+- Carga de mecánicos paginada (5 por página).
+
+### 17.2 Verificación de ambiente (solo lectura)
+
+Se intentó comprobar el contrato real de `GET /api/presupuestos?limite=200` con
+la cuenta demo de administrador. **No se completó por una incidencia del
+ambiente, no por el cambio del frontend**:
+
+- `POST /api/auth/login` → `504` (`TIEMPO_AGOTADO`) en dos intentos.
+- `GET /api/health/servicios` → `503` con `ms4_evidencias: tiempo_agotado` y
+  resto en `ok`.
+- No se hicieron `POST/PATCH/DELETE` de datos de negocio ni se reintentó en
+  bucle; el frontend modificado todavía no está publicado.
+
+El contrato usado por `PresupuestoService.listar()` se confirmó leyendo
+`backend/services/ms3_presupuestos/routers/presupuestos.py`: sin `orden_id` aplica
+para personal, `limite` acepta hasta 200 y el cliente solo ve versiones enviadas
+de su propia orden. Queda pendiente repetir la comprobación real cuando el
+gateway responda `200` al login.

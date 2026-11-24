@@ -18,9 +18,12 @@ Documento de referencia de los escenarios funcionales cubiertos por el frontend 
 
 | Escenario | Descripción | Estado |
 |---|---|---|
-| **Panel inicial** | Acceso al dashboard con resumen operativo (órdenes totales/activas, vehículos, mecánicos, estados). | Cubierto |
+| **Panel inicial** | Acceso al dashboard con resumen operativo real (órdenes totales/activas, vehículos, mecánicos, estados 2 y 6, vehículos en taller y presupuestos enviados). | Cubierto |
+| **Cola de trabajo activa** | Hasta 5 órdenes activas (excluye estados 7 y 8) con vehículo, patente, mecánico y enlace al detalle; avisa cuándo hay más. | Cubierto |
+| **Panel de inventario/proveedores** | Alertas, repuestos, bajo umbral, distribuidores, últimas alertas y movimientos con enlaces a sus vistas. | Cubierto |
+| **Accesos rápidos** | Enlaces directos a órdenes, inventario, alertas y distribuidores; sin texto de relleno “Actividad Reciente”. | Cubierto |
 | **Carga de indicadores** | Muestra estado de carga mientras se obtienen los datos. | Cubierto |
-| **Manejo de errores** | Muestra `ErrorState` con botón "Reintentar" ante fallos en la carga del resumen. | Cubierto |
+| **Manejo de errores** | Muestra `ErrorState` con botón "Reintentar" ante fallos en la carga del resumen; si falla un servicio operativo, avisa de datos parciales sin tumbar el panel. | Cubierto |
 | **Carga de mecánicos** | Visualización de mecánicos con sus órdenes totales y activas, ordenados por carga. | Cubierto |
 | **Paginación** | Paginación de la carga de mecánicos (5 por página) con navegación y contador. | Cubierto |
 | **Navegación del panel** | Acceso a órdenes, nuevas atenciones, cancelaciones, clientes, usuarios y roles, configuración, avisos, vehículos, inventario y distribuidores desde el menú lateral. | Cubierto |
@@ -158,6 +161,7 @@ Las pruebas funcionales se encuentran en:
 - `frontend/src/presentation/pages/admin/AdminThresholdPage.test.tsx` - Umbral general y modo mecánico
 - `frontend/src/presentation/pages/admin/AdminDistributorsPage.test.tsx` - Distribuidores y modo mecánico
 - `frontend/src/presentation/pages/client/ClientVehicleEditPage.test.tsx` - Edición de vehículo
-- `frontend/src/presentation/pages/admin/AdminDashboardPage.test.tsx` - Dashboard administrativo
+- `frontend/src/presentation/pages/admin/AdminDashboardPage.test.tsx` - Dashboard administrativo (KPIs reales, cola, inventario, fallo parcial y reintento)
+- `frontend/src/infrastructure/api/PresupuestoService.test.ts` - Listado global `GET /presupuestos?limite=200` para el KPI administrativo
 - `frontend/src/presentation/hooks/useOrderListFilters.test.ts` (si aplica) - Filtros y paginación
 - Pruebas unitarias de componentes UI y utilidades

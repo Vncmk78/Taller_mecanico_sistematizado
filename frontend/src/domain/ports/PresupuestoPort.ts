@@ -42,6 +42,12 @@ export interface PresupuestoPort {
      * cuando la orden todavía no tiene un presupuesto enviado.
      */
     getByOrder(ordenId: string): Promise<Presupuesto | null>;
+    /**
+     * Listado global para roles de personal (Administrador/Mecánico), más
+     * reciente primero. El Cliente debe usar `getByOrder`: esta llamada no
+     * filtra por orden.
+     */
+    listar(limite?: number): Promise<Presupuesto[]>;
     /** Detalle de un presupuesto con sus versiones e ítems (404 si es ajeno). */
     getById(presupuestoId: string): Promise<Presupuesto>;
     /** Crea el presupuesto de una orden con su versión 1 en borrador. */

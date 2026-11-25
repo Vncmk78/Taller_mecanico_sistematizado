@@ -70,14 +70,17 @@ def _salida(movimientos: list[MovimientoInventario]) -> list[MovimientoSalida]:
 
 def ajustar_reserva(
     uow: UnidadDeTrabajo, orden_id: int, objetivo: Mapping[int, int], *, usuario_id: int,
+    bloqueo: disponibilidad.Bloqueo | None = None,
 ) -> tuple[list[FaltanteStock], list[MovimientoInventario]]:
     """Deja reservado para la orden exactamente `objetivo` (por repuesto). Todo o nada.
 
     Debe llamarse dentro de una transacción. Devuelve (faltantes, movimientos):
-    con faltantes no se escribe nada.
+    con faltantes no se escribe nada. `bloqueo`: el de
+    `disponibilidad.bloquear_y_leer_compromisos` hecho en ESTA transacción para
+    los mismos repuestos; evita bloquearlos y leer lo comprometido otra vez.
     """
-    repuestos = uow.repuestos.bloquear_varios(objetivo)
-    todos = uow.movimientos.comprometido_por_ordenes(objetivo)
+    repuestos, todos = (bloqueo if bloqueo is not None
+                        else disponibilidad.bloquear_y_leer_compromisos(uow, objetivo))
     cambios: list[tuple[Repuesto, int]] = []
     faltantes: list[FaltanteStock] = []
     for rid, quiero in sorted(objetivo.items()):

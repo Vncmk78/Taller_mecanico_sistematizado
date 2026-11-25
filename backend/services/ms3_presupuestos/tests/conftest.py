@@ -38,6 +38,19 @@ def ordenes_verificadas_para_persistencia():
     yield
     app.dependency_overrides.pop(obtener_verificador_ordenes, None)
 
+def pytest_collection_modifyitems(items) -> None:
+    """En las pruebas de MS3 una SAWarning es un error (semana 11).
+
+    SQLAlchemy avisa con SAWarning cuando la sesión no puede hacer lo que el
+    código espera (p. ej. un objeto en una colección que no está en la sesión
+    y por eso NO se guarda). Como aviso pasaba inadvertido en la suite.
+    """
+    marca = pytest.mark.filterwarnings("error::sqlalchemy.exc.SAWarning")
+    for item in items:
+        if "ms3_presupuestos" in item.path.parts:
+            item.add_marker(marca)
+
+
 URL_POR_DEFECTO = "postgresql+psycopg://taller:taller@localhost:5435/taller_ms3"
 RUTA_ALEMBIC = "services/ms3_presupuestos/alembic.ini"
 

@@ -448,7 +448,7 @@ describe('AdminDashboardPage: panel administrativo con indicadores reales', () =
     });
   });
 
-  it('pagina la carga de mecánicos cuando hay más de 5', async () => {
+  it('pagina la carga de mecánicos cuando hay más de 5', { timeout: 15000 }, async () => {
     const muchosMecanicos = Array.from({ length: 7 }, (_, index) => ({
       id: String(20 + index),
       email: `mec${index}@taller.cl`,

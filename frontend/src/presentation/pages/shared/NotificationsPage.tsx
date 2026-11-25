@@ -80,7 +80,7 @@ export function NotificationsPage() {
       setNoLeidas((prev) => Math.max(0, prev - 1));
       setTotal((prev) => (filtro === 'no-leidas' ? Math.max(0, prev - 1) : prev));
     } catch {
-      // Reintento manual disponible
+      setError('No se pudo marcar el aviso como leído. Puede reintentar.');
     }
   };
 
@@ -95,7 +95,7 @@ export function NotificationsPage() {
       }
       setNoLeidas(0);
     } catch {
-      // Reintento manual disponible
+      setError('No se pudieron marcar todos los avisos como leídos. Puede reintentar.');
     }
   };
 

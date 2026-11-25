@@ -59,6 +59,37 @@ describe('MechanicBudgetPage', () => {
         // El botón "Agregar ítem" está presente.
         expect(screen.getByRole('button', { name: /Agregar ítem/i })).toBeInTheDocument();
     });
+    it('avisa si falla el catálogo y permite reintentarlo', async () => {
+        vi.mocked(repuestoService.getRepuestos)
+            .mockRejectedValueOnce(new Error('Sin conexión'))
+            .mockResolvedValueOnce({
+                total: 1,
+                desde: 0,
+                limite: 200,
+                umbralGeneral: null,
+                repuestos: [{ repuestoId: 7, nombre: 'Bujía' }],
+            } as never);
+
+        render(
+            <MemoryRouter initialEntries={['/mechanic/ordenes/101/presupuesto']}>
+                <Routes>
+                    <Route path="/mechanic/ordenes/:id/presupuesto" element={<MechanicBudgetPage />} />
+                </Routes>
+            </MemoryRouter>
+        );
+        await screen.findByText(/Presupuesto de la orden/);
+
+        expect(
+            await screen.findByText('No se pudo cargar el catálogo de repuestos.')
+        ).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reintentar catálogo' }));
+        await waitFor(() => {
+            expect(screen.queryByText('No se pudo cargar el catálogo de repuestos.')).not.toBeInTheDocument();
+        });
+        expect(repuestoService.getRepuestos).toHaveBeenCalledTimes(2);
+    });
+
     it.each([false, true])('el envío es exclusivo de la vista administrativa (%s)', async (administrador) => {
         const presupuesto = { id: '501', orderId: '101', versiones: [{ numero: 1, estado: 'borrador', total: 100, items: [{ id: '1', tipo: 'mano_de_obra', descripcion: 'Diagnóstico', cantidad: 1, precioUnitario: 100, subtotal: 100, repuestoId: null }] }] };
         vi.mocked(presupuestoService.getByOrder).mockResolvedValue(presupuesto as never);

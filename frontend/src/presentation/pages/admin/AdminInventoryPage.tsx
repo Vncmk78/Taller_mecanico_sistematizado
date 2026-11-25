@@ -80,6 +80,7 @@ export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) 
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<Repuesto | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     const debouncedSearch = useDebouncedValue(search);
 
@@ -222,12 +223,15 @@ export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) 
     const handleDelete = async () => {
         if (!deleteTarget) return;
         setDeleteSubmitting(true);
+        setDeleteError(null);
         try {
             await repuestoService.deleteRepuesto(deleteTarget.repuestoId);
             setDeleteTarget(null);
             await recargar();
-        } catch {
-            setDeleteTarget(null);
+        } catch (err) {
+            // MS3 responde 409 si el repuesto tiene historial: no cerrar la
+            // confirmación como si la eliminación hubiera funcionado.
+            setDeleteError(getApiErrorMessage(err, 'No se pudo eliminar el repuesto.'));
         } finally {
             setDeleteSubmitting(false);
         }
@@ -452,7 +456,7 @@ export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) 
                                         {isAdmin ? (
                                             <div className="flex justify-center gap-2">
                                                 <Button variant="secondary" onClick={() => { setEditing(repuesto); setFormError(null); setFormOpen(true); }}>Editar</Button>
-                                                <Button variant="danger" onClick={() => setDeleteTarget(repuesto)}>Eliminar</Button>
+                                                <Button variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(repuesto); }}>Eliminar</Button>
                                             </div>
                                         ) : (
                                             <Link
@@ -499,10 +503,17 @@ export function AdminInventoryPage({ mode = 'admin' }: AdminInventoryPageProps) 
                     <ConfirmDialog
                         open={!!deleteTarget}
                         title="Eliminar repuesto"
-                        description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
+                        description={(
+                            <>
+                                <span>¿Eliminar {deleteTarget?.nombre ?? ''}?</span>
+                                {deleteError && (
+                                    <Alert tone="error" className="mt-3 text-left">{deleteError}</Alert>
+                                )}
+                            </>
+                        )}
                         isLoading={deleteSubmitting}
                         onConfirm={handleDelete}
-                        onCancel={() => setDeleteTarget(null)}
+                        onCancel={() => { setDeleteError(null); setDeleteTarget(null); }}
                     />
                 </>
             )}

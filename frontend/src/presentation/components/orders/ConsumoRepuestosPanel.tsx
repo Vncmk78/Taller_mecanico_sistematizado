@@ -46,6 +46,11 @@ function estadoHttp(error: unknown): number | undefined {
     return (error as ErrorConRespuesta)?.response?.status;
 }
 
+function detalleHttp(error: unknown): string {
+    const detail = (error as ErrorConRespuesta)?.response?.data?.detail;
+    return typeof detail === 'string' ? detail : '';
+}
+
 /** Máximo que la orden puede consumir de un repuesto según el presupuesto y el stock. */
 function maximoConsumible(repuesto: DisponibilidadRepuesto): number {
     return Math.max(0, Math.min(repuesto.requerido, repuesto.disponible));
@@ -83,6 +88,7 @@ export function ConsumoRepuestosPanel({
     const [cantidades, setCantidades] = useState<Record<number, string>>({});
     const [erroresCampo, setErroresCampo] = useState<Record<number, string>>({});
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const [refreshError, setRefreshError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
@@ -96,15 +102,19 @@ export function ConsumoRepuestosPanel({
         setRequestId(null);
         setIsOffline(false);
         setSinPresupuesto(false);
+        setRefreshError(null);
         try {
             const resultado = await inventarioService.getDisponibilidadOrden(orderIdNumerico);
             setDisponibilidad(resultado);
             setStatus('success');
         } catch (err) {
-            // 404: la orden aún no tiene presupuesto; 409: lo tiene, pero no aprobado.
-            // En ambos casos no hay repuestos que consumir: se muestra el aviso, no un error.
+            // 404 solo es "sin presupuesto" cuando MS3 lo dice: con el guard de
+            // H-01 el otro 404 significa orden inexistente o no asignada al
+            // mecánico y debe mostrarse como error, no como estado normal.
+            // 409: hay presupuesto, pero no aprobado.
             const estado = estadoHttp(err);
-            if (estado === 404 || estado === 409) {
+            const sinPresupuestoApi = /no tiene presupuesto/i.test(detalleHttp(err));
+            if ((estado === 404 && sinPresupuestoApi) || estado === 409) {
                 setDisponibilidad(null);
                 setSinPresupuesto(true);
                 setStatus('success');
@@ -128,13 +138,20 @@ export function ConsumoRepuestosPanel({
         void cargar();
     }, [cargar]);
 
-    const refrescarDisponibilidad = async () => {
+    const refrescarDisponibilidad = async (): Promise<boolean> => {
         try {
             setDisponibilidad(await inventarioService.getDisponibilidadOrden(orderIdNumerico));
             setSinPresupuesto(false);
+            setRefreshError(null);
+            return true;
         } catch {
-            // El consumo ya se aplicó; se conserva el detalle anterior si el
-            // refresco de stock falla.
+            // El consumo ya se aplicó, pero la vista tiene datos viejos: no se
+            // puede descartar la clave ni dejar el formulario listo para reenviar.
+            setRefreshError(
+                'El consumo se registró, pero no se pudo actualizar la disponibilidad. '
+                + 'Recargue antes de volver a consumir.'
+            );
+            return false;
         }
     };
 
@@ -183,14 +200,14 @@ export function ConsumoRepuestosPanel({
 
         try {
             const resultado = await inventarioService.consumir(orderIdNumerico, items, clave);
-            claveRef.current = null;
             setCantidades({});
             setSuccess(
                 resultado.repetido
                     ? 'El consumo ya estaba registrado; no se descontó dos veces.'
                     : `Consumo registrado para ${items.length} ${items.length === 1 ? 'repuesto' : 'repuestos'}.`
             );
-            await refrescarDisponibilidad();
+            // La clave solo se descarta cuando la vista ya refleja el consumo.
+            if (await refrescarDisponibilidad()) claveRef.current = null;
             try {
                 await onConsumed?.();
             } catch {
@@ -249,6 +266,14 @@ export function ConsumoRepuestosPanel({
             {success && (
                 <Alert tone="success" className="mb-4">
                     {success}
+                </Alert>
+            )}
+            {refreshError && (
+                <Alert tone="warning" className="mb-4">
+                    <span className="block mb-2">{refreshError}</span>
+                    <Button variant="secondary" onClick={() => void cargar()}>
+                        Recargar disponibilidad
+                    </Button>
                 </Alert>
             )}
 
@@ -347,6 +372,7 @@ export function ConsumoRepuestosPanel({
                             variant="success"
                             onClick={() => void consumir()}
                             isLoading={submitting}
+                            disabled={Boolean(refreshError)}
                         >
                             Registrar consumo
                         </Button>

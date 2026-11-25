@@ -85,24 +85,18 @@ def reservar_repuestos_aprobados(
         }):
             repuestos[repuesto_id] = uow.repuestos.obtener_para_actualizar(repuesto_id)
 
-        movimientos = uow.movimientos.de_repuestos(list(repuestos))
-        saldos: dict[tuple[int, int], int] = defaultdict(int)
-        for movimiento in movimientos:
-            if movimiento.orden_id is None:
-                continue
-            if movimiento.tipo == "compromiso":
-                saldos[(movimiento.repuesto_id, movimiento.orden_id)] += movimiento.cantidad
-            elif movimiento.tipo in {"liberacion", "consumo"}:
-                saldos[(movimiento.repuesto_id, movimiento.orden_id)] -= movimiento.cantidad
-
+        # Misma regla que `RepositorioMovimientos.comprometido_por_ordenes`:
+        # saldo = max(0, saldo − cantidad) en orden de movimiento. Un consumo
+        # mayor que la reserva toma stock libre y no deja "deuda" que se coma
+        # una reserva posterior; sumar/restar en ciego daba un falso 409/500.
+        compromisos = uow.movimientos.comprometido_por_ordenes(repuestos)
         comprometido_orden: dict[int, int] = defaultdict(int)
         comprometido_total: dict[int, int] = defaultdict(int)
-        for (repuesto_id, reserva_orden_id), cantidad in saldos.items():
-            if cantidad < 0:
-                raise ReglaDeDatosViolada("El historial de compromisos de inventario es inconsistente")
-            comprometido_total[repuesto_id] += cantidad
-            if reserva_orden_id == orden_id:
-                comprometido_orden[repuesto_id] += cantidad
+        for repuesto_id, por_orden in compromisos.items():
+            for reserva_orden_id, cantidad in por_orden.items():
+                comprometido_total[repuesto_id] += cantidad
+                if reserva_orden_id == orden_id:
+                    comprometido_orden[repuesto_id] += cantidad
 
         faltantes = []
         for repuesto_id, requerido in sorted(requeridos.items()):
@@ -208,20 +202,12 @@ def revertir_reserva_rechazada(
             raise ConflictoDeDatos("No se puede compensar una reserva inconsistente")
         if list(uow.movimientos.por_prefijo_clave_operacion(f"{clave_operacion}:reversa:")):
             return
-        for repuesto_id in sorted({m.repuesto_id for m in reservas}):
+        ids_repuestos = sorted({m.repuesto_id for m in reservas})
+        for repuesto_id in ids_repuestos:
             uow.repuestos.obtener_para_actualizar(repuesto_id)
-        saldos: dict[int, int] = defaultdict(int)
-        for movimiento in uow.movimientos.de_repuestos(
-            sorted({m.repuesto_id for m in reservas})
-        ):
-            if movimiento.orden_id == orden_id:
-                if movimiento.tipo == "compromiso":
-                    saldos[movimiento.repuesto_id] += movimiento.cantidad
-                elif movimiento.tipo in {"liberacion", "consumo"}:
-                    saldos[movimiento.repuesto_id] -= movimiento.cantidad
-        for repuesto_id, cantidad in sorted(saldos.items()):
-            if cantidad < 0:
-                raise ConflictoDeDatos("El saldo comprometido quedó inconsistente")
+        saldos = uow.movimientos.comprometido_por_ordenes(ids_repuestos)
+        for repuesto_id in ids_repuestos:
+            cantidad = saldos.get(repuesto_id, {}).get(orden_id, 0)
             if cantidad:
                 uow.movimientos.agregar(MovimientoInventario(
                     clave_operacion=f"{clave_operacion}:reversa:{repuesto_id}",

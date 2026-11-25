@@ -167,6 +167,45 @@ Prioridad sugerida:
   campos `(completar)`.
 - **Para cerrarlo:** llenarla antes de entregar el proyecto.
 
+### 3.6 Hallazgo H-01 — Corregido (no es deuda pendiente)
+
+- **Situación:** hasta esta revisión, las consultas de disponibilidad por orden,
+  la reserva, los consumos y la liberación de stock de MS3 no comprobaban que el
+  Mecánico tuviera asignada la orden.
+- **Corrección aplicada:** las cinco operaciones usan
+  `_exigir_orden_asignada_al_mecanico` en
+  `backend/services/ms3_presupuestos/routers/inventario.py`, con el mismo
+  verificador de MS2 que ya usaba `POST /inventario/movimientos`. Administrador
+  queda exento; si MS2 no responde, la operación falla cerrada con `503` antes
+  de leer o mover stock.
+- **Cobertura:** `backend/tests/test_acceso_indebido_roles.py` y
+  `backend/services/ms3_presupuestos/tests/test_disponibilidad_stock.py`.
+- **Estado:** cerrado en `Vicente`; no queda trabajo pendiente. El detalle y la
+  evidencia están en [07 — Pruebas realizadas](07-pruebas-realizadas.md#19).
+
+### 3.7 Correcciones derivadas de la revisión de formularios — Cerradas
+
+- **Situación:** la auditoría de `frontend/` encontró un reintento que generaba
+  una nueva `clave_operacion` (posible doble movimiento de stock), un `404` de
+  orden no asignada mostrado como «sin presupuesto», un refresco fallido tras un
+  consumo confirmado que dejaba datos stale, un dashboard que podía decir
+  «Sistema En línea» con KPIs en «—», errores de borrado silenciados, fallos de
+  consulta de presupuesto confundidos con ausencia, notificaciones sin aviso de
+  error y catálogos vacíos sin explicación.
+- **Corrección aplicada:** se reutiliza la clave mientras el resultado sea
+  incierto; el `404` se discrimina por `detail`; el refresco fallido bloquea un
+  nuevo envío y ofrece recarga; las cargas fallidas se marcan como datos
+  parciales; los `catch` de borrado/notificaciones muestran el motivo y el
+  catálogo ofrece reintento. Además, el coordinador de reservas de MS3 usa el
+  saldo cronológico canónico de `comprometido_por_ordenes` (un consumo libre
+  previo no deja saldo negativo falso).
+- **Cobertura:** pruebas nuevas en `AdminInventoryMovementsPage`,
+  `ConsumoRepuestosPanel`, `AdminDashboardPage`, `AdminDistributorsPage`,
+  `AdminInventoryPage`, `EvidenceUploadForm` (dos archivos), `NotificationsPage`,
+  `MechanicBudgetPage` y `test_disponibilidad_repuestos.py`.
+- **Estado:** cerrado en `Vicente`. El detalle y los comandos están en
+  [07 — Pruebas realizadas](07-pruebas-realizadas.md#20).
+
 ---
 
 ## 4. Decisiones que se mantienen (no son deuda)

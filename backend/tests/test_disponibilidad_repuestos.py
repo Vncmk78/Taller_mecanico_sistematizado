@@ -143,6 +143,49 @@ def test_reserva_solo_stock_libre_y_reintento_idempotente(
     assert compromisos[0].cantidad == 4
 
 
+def test_coordinador_usa_saldo_cronologico_tras_consumo_libre(
+    db_disponibilidad: Session,
+) -> None:
+    """Un consumo previo sin reserva no debe dejar saldo negativo falso (H-01 audit)."""
+    proveedor = Proveedor(nombre="Proveedor saldos", contacto="contacto")
+    repuesto = Repuesto(nombre="Bujía", stock=10, proveedor=proveedor)
+    db_disponibilidad.add(proveedor)
+    db_disponibilidad.flush()
+    _presupuesto_aprobado(
+        db_disponibilidad, orden_id=9020, repuesto=repuesto, cantidad=Decimal("3.00")
+    )
+    db_disponibilidad.add(MovimientoInventario(
+        clave_operacion="consumo-libre-9020",
+        repuesto=repuesto,
+        orden_id=9020,
+        tipo="consumo",
+        cantidad=5,
+        registrado_por_id=80,
+    ))
+    db_disponibilidad.commit()
+
+    reserva = reservar_repuestos_aprobados(
+        UnidadDeTrabajo(db_disponibilidad), orden_id=9020, actor_usuario_id=99
+    )
+
+    assert reserva["repuestos"] == [{"repuesto_id": repuesto.repuesto_id, "cantidad": 3}]
+    compromisos = db_disponibilidad.query(MovimientoInventario).filter_by(
+        orden_id=9020, tipo="compromiso"
+    ).all()
+    assert [m.cantidad for m in compromisos] == [3]
+
+    # La reversa por rechazo de MS2 debe liberar la reserva vigente, no fallar
+    # por un consumo cronológicamente anterior.
+    revertir_reserva_rechazada(
+        UnidadDeTrabajo(db_disponibilidad), orden_id=9020,
+        clave_operacion=str(reserva["clave_operacion"]), actor_usuario_id=99,
+    )
+    liberaciones = db_disponibilidad.query(MovimientoInventario).filter_by(
+        orden_id=9020, tipo="liberacion"
+    ).all()
+    assert [m.cantidad for m in liberaciones] == [3]
+
+
 def test_reserva_rechaza_cantidad_fraccionaria_de_repuesto(
     db_disponibilidad: Session,
 ) -> None:

@@ -222,6 +222,40 @@ describe('AdminInventoryMovementsPage: formulario de registro', () => {
         );
     });
 
+    it('reutiliza la clave si la respuesta es incierta para no mover stock dos veces', async () => {
+        vi.stubGlobal('crypto', {
+            randomUUID: vi.fn()
+                .mockReturnValueOnce('clave-1')
+                .mockReturnValueOnce('clave-2'),
+        });
+        vi.mocked(inventarioService.registrarMovimiento)
+            .mockRejectedValueOnce(errorAxios(503, { detail: 'Servicio no disponible' }))
+            .mockResolvedValueOnce(RESULTADO);
+
+        render(<AdminInventoryMovementsPage />);
+        await screen.findByText('No hay movimientos');
+        const dialog = await abrirFormulario();
+
+        escribirEn(dialog, 'Repuesto ID', '2');
+        escribirEn(dialog, 'Cantidad', '5');
+        submit(dialog);
+
+        expect(
+            await within(dialog).findByText(
+                /La operación pudo quedar registrada; reintentar con los mismos datos es seguro/
+            )
+        ).toBeInTheDocument();
+
+        submit(dialog);
+
+        await waitFor(() =>
+            expect(inventarioService.registrarMovimiento).toHaveBeenCalledTimes(2)
+        );
+        const claves = vi.mocked(inventarioService.registrarMovimiento).mock.calls
+            .map(([body]) => body.claveOperacion);
+        expect(claves).toEqual(['clave-1', 'clave-1']);
+    });
+
     it('muestra el error del servidor y deja el diálogo abierto', async () => {
         vi.mocked(inventarioService.registrarMovimiento).mockRejectedValue({
             isAxiosError: true,

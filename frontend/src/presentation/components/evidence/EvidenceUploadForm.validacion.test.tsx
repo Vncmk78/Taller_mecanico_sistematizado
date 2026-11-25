@@ -278,22 +278,29 @@ describe('EvidenceUploadForm: datos enviados según el contexto', () => {
     });
 
     it.each([
-        ['la orden no tiene presupuesto', () => vi.mocked(presupuestoService.getByOrder).mockResolvedValue(null)],
-        ['falla la consulta del presupuesto', () =>
-            vi.mocked(presupuestoService.getByOrder).mockRejectedValue(new Error('caído'))],
-    ])('no sube evidencia de presupuesto si %s', async (_caso, preparar) => {
+        [
+            'la orden no tiene presupuesto',
+            () => vi.mocked(presupuestoService.getByOrder).mockResolvedValue(null),
+            'Esta orden no tiene un presupuesto registrado.',
+            'Esta orden no tiene un presupuesto al que asociar la evidencia.',
+        ],
+        [
+            'falla la consulta del presupuesto',
+            () => vi.mocked(presupuestoService.getByOrder).mockRejectedValue(new Error('caído')),
+            'No se pudo consultar el presupuesto de la orden.',
+            'No se pudo consultar el presupuesto de la orden. Reintente antes de subir la evidencia.',
+        ],
+    ])('no sube evidencia de presupuesto si %s', async (_caso, preparar, aviso, mensajeBloqueo) => {
         preparar();
         renderForm();
 
         fireEvent.change(screen.getByLabelText('Contexto'), { target: { value: 'presupuesto' } });
-        expect(await screen.findByText('Esta orden no tiene un presupuesto registrado.')).toBeInTheDocument();
+        expect(await screen.findByText(aviso)).toBeInTheDocument();
 
         seleccionar(foto());
         fireEvent.click(botonSubir());
 
-        expect(
-            await screen.findByText('Esta orden no tiene un presupuesto al que asociar la evidencia.')
-        ).toBeInTheDocument();
+        expect(await screen.findByText(mensajeBloqueo)).toBeInTheDocument();
         expect(evidenciaService.crear).not.toHaveBeenCalled();
     });
 

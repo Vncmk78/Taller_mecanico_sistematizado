@@ -235,6 +235,11 @@ export function AdminDashboardPage() {
       }
 
       const fallos: string[] = [];
+      // Estas tres fuentes sostienen los KPIs principales: si una falla, el
+      // panel no puede anunciar "Sistema En línea" aunque el resto responda.
+      if (vehiculosRes.status === 'rejected') fallos.push('vehículos');
+      if (usuariosRes.status === 'rejected') fallos.push('mecánicos');
+      if (ordenesRes.status === 'rejected') fallos.push('órdenes');
       if (presupuestosRes.status === 'rejected') fallos.push('presupuestos');
       if (alertasRes.status === 'rejected') fallos.push('alertas de stock');
       if (movimientosRes.status === 'rejected') fallos.push('movimientos');

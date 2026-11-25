@@ -131,6 +131,33 @@ describe('ConsumoRepuestosPanel: descuento de repuestos de la orden', () => {
         expect(onConsumed).toHaveBeenCalledTimes(1);
     });
 
+    it('avisa y bloquea reenviar si falla el refresco tras un consumo aplicado', async () => {
+        vi.mocked(inventarioService.consumir).mockResolvedValue({
+            ordenId: 101,
+            movimientos: [],
+            repetido: false,
+        });
+        vi.mocked(inventarioService.getDisponibilidadOrden)
+            .mockResolvedValueOnce(disponibilidad)
+            .mockRejectedValueOnce(errorAxios(500, { detail: 'Servicio no disponible' }));
+
+        renderPanel();
+
+        fireEvent.change(await screen.findByLabelText('Cantidad de Pastillas de freno'), {
+            target: { value: '2' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Registrar consumo' }));
+
+        expect(
+            await screen.findByText(
+                /El consumo se registró, pero no se pudo actualizar la disponibilidad/
+            )
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Registrar consumo' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Recargar disponibilidad' })).toBeInTheDocument();
+        expect(inventarioService.consumir).toHaveBeenCalledTimes(1);
+    });
+
     it('traduce el 409 con faltantes, no descuenta nada y refresca', async () => {
         vi.mocked(inventarioService.consumir).mockRejectedValue(
             errorAxios(409, {
@@ -213,6 +240,24 @@ describe('ConsumoRepuestosPanel: descuento de repuestos de la orden', () => {
         ).toBeInTheDocument();
         expect(
             screen.queryByText('No se pudo cargar la disponibilidad de repuestos')
+        ).not.toBeInTheDocument();
+    });
+
+    it('muestra error cuando el 404 es orden inexistente o no asignada', async () => {
+        vi.mocked(inventarioService.getDisponibilidadOrden).mockRejectedValue(
+            errorAxios(404, { detail: 'Orden 101 no existe' })
+        );
+
+        renderPanel();
+
+        expect(
+            await screen.findByText('No se pudo cargar la disponibilidad de repuestos')
+        ).toBeInTheDocument();
+        expect(await screen.findByText('Orden 101 no existe')).toBeInTheDocument();
+        expect(
+            screen.queryByText(
+                /La orden no tiene un presupuesto aprobado del que obtener los repuestos a consumir/
+            )
         ).not.toBeInTheDocument();
     });
 

@@ -250,13 +250,14 @@ asignada (`_orden_para_el_personal`, `presupuestos.py:120-134`).
 
 Guards: `_personal`, `_administrador` (`ms3_presupuestos/routers/inventario.py:67-68`).
 `POST /movimientos` valida la asignación del Mecánico contra MS2
-(`inventario.py:111-123`); las tres operaciones de reserva/consumo/liberación
-**no** hacen esa validación (ver **H-01**).
+(`inventario.py:111-123`). Las tres operaciones de reserva/consumo/liberación y
+las dos consultas de disponibilidad por orden usan el mismo guard desde la
+corrección de **H-01** (`_exigir_orden_asignada_al_mecanico`).
 
 | Operación | AuthN | Rol | Propiedad / visibilidad | Validación | Estado |
 |---|---|---|---|---|---|
 | `POST /api/inventario/ordenes/{orden_id}/disponibilidad` | JWT | Administrador | reserva y coordinación contra MS2; 404/409 | `Path(gt=0)` | ✅ |
-| `GET /api/inventario/ordenes/{orden_id}/disponibilidad` | JWT | Mecánico o Administrador | **sin verificar asignación**; revela si la orden tiene presupuesto | `Path(gt=0)` | ⚠️ H-01 |
+| `GET /api/inventario/ordenes/{orden_id}/disponibilidad` | JWT | Mecánico o Administrador | asignación verificada en MS2 antes de revelar presupuesto | `Path(gt=0)` + guard MS2 | ✅ |
 | `POST /api/inventario/movimientos` | JWT | Mecánico o Administrador | ingreso/ajuste: solo Admin; Mecánico: solo orden asignada (MS2); 404/503 | DTO; `clave_operacion` idempotente | ✅ |
 | `GET /api/inventario/movimientos` | JWT | Mecánico o Administrador | — | filtros + paginación con tope | ✅ |
 | `GET /api/inventario/stock/{repuesto_id}` | JWT | Mecánico o Administrador | — | `Path(gt=0)` | ✅ |
@@ -264,10 +265,10 @@ Guards: `_personal`, `_administrador` (`ms3_presupuestos/routers/inventario.py:6
 | `GET /api/inventario/umbral-general` | JWT | Mecánico o Administrador | — | — | ✅ |
 | `PUT /api/inventario/umbral-general` | JWT | Administrador | — | DTO; 422 si el valor es inválido | ✅ |
 | `GET /api/inventario/historial-umbral` | JWT | Mecánico o Administrador | — | filtros + paginación con tope | ✅ |
-| `POST /api/inventario/disponibilidad` | JWT | Mecánico o Administrador | solo lectura; no mueve stock | DTO de ítems | ✅ |
-| `POST /api/inventario/ordenes/{orden_id}/reserva` | JWT | Mecánico o Administrador | **sin verificar asignación** | `Path(gt=0)`; 404/409 | ❌ H-01 |
-| `POST /api/inventario/ordenes/{orden_id}/consumos` | JWT | Mecánico o Administrador | **sin verificar asignación**; acepta repuestos del cuerpo | DTO + `clave_operacion`; 409 stock insuficiente | ❌ H-01 |
-| `POST /api/inventario/ordenes/{orden_id}/liberacion` | JWT | Mecánico o Administrador | **sin verificar asignación** | DTO `clave_operacion` | ❌ H-01 |
+| `POST /api/inventario/disponibilidad` | JWT | Mecánico o Administrador | si lleva `orden_id`, exige asignación; no mueve stock | DTO de ítems + guard MS2 | ✅ |
+| `POST /api/inventario/ordenes/{orden_id}/reserva` | JWT | Mecánico o Administrador | asignación verificada en MS2 antes de reservar | `Path(gt=0)` + guard MS2; 404/409 | ✅ |
+| `POST /api/inventario/ordenes/{orden_id}/consumos` | JWT | Mecánico o Administrador | asignación verificada en MS2 antes de descontar | DTO + guard MS2; 409 stock insuficiente | ✅ |
+| `POST /api/inventario/ordenes/{orden_id}/liberacion` | JWT | Mecánico o Administrador | asignación verificada en MS2 antes de liberar | DTO `clave_operacion` + guard MS2 | ✅ |
 
 ### 3.9 MS3 — Repuestos (6)
 
@@ -373,7 +374,15 @@ cuatro rutas, antes de escribir stock; o restringirlas a Administrador si el
 flujo es solo de coordinación. Añadir pruebas de acceso indebido por Mecánico
 no asignado.
 
-**Estado.** No corregido: este documento solo registra el hallazgo.
+**Estado.** Corregido en `Vicente`: las cinco operaciones por orden (las dos
+consultas de disponibilidad, reserva, consumos y liberación) llaman a
+`_exigir_orden_asignada_al_mecanico` antes de leer o mover stock. El
+Administrador queda exento, igual que en `POST /inventario/movimientos`; si MS2
+no responde, la operación falla cerrada con `503`. Cobertura:
+`tests/test_acceso_indebido_roles.py` (rechazo `404`, sin escrituras, multirol,
+MS2 caído y mecánico asignado) y
+`services/ms3_presupuestos/tests/test_disponibilidad_stock.py` (override que
+simula orden no asignada).
 
 ### H-02 — Rutas internas sin aislamiento de red garantizado · **Media (condicional)**
 
@@ -506,10 +515,17 @@ valorar limitar el detalle a un healthcheck agregado. No implementado.
   de cada operación (autenticación, rol y verificadores de propiedad).
 - Lectura de los routers y servicios citados en cada fila; las referencias
   `archivo:línea` corresponden a la base `1df4132` de la rama `DerisA`.
-- No se ejecutaron pruebas de pytest para este documento: no cambia código ni
-  contrato. La suite existente de autorización
-  (`backend/tests/test_acceso_indebido_roles.py`) cubre parte de los controles
-  listados, pero **no** cubre H-01.
+- Este documento no cambiaba código ni contrato cuando se escribió. Tras la
+  corrección de **H-01** sí se ejecutaron pruebas: la cobertura nueva está en
+  `backend/tests/test_acceso_indebido_roles.py` y en
+  `backend/services/ms3_presupuestos/tests/test_disponibilidad_stock.py`, con el
+  detalle en `docs/07-pruebas-realizadas.md` §19.
+- La auditoría posterior de los formularios detectó que el frontend trataba
+  cualquier `404` de disponibilidad como «sin presupuesto», ocultando el rechazo
+  por orden inexistente/no asignada de **H-01**. Ese discriminador y las demás
+  correcciones de idempotencia y errores silenciados quedaron cubiertos en
+  `frontend/src/**/*.test.tsx`; el resumen está en
+  `docs/07-pruebas-realizadas.md` §20.
 
 ---
 

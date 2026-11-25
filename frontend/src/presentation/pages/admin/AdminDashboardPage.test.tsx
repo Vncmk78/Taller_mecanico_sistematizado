@@ -388,6 +388,18 @@ describe('AdminDashboardPage: panel administrativo con indicadores reales', () =
     expect(screen.queryByText('No se pudo cargar el resumen del panel')).not.toBeInTheDocument();
   });
 
+  it('no anuncia "Sistema En línea" si falla solo el listado de vehículos', async () => {
+    vi.mocked(vehicleService.getAllVehicles).mockRejectedValue(new Error('Error de red'));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(kpiValor('kpi-ordenes-totales')).toBe('5');
+    });
+    expect(screen.getByText('Datos parciales')).toBeInTheDocument();
+    expect(screen.queryByText('Sistema En línea')).not.toBeInTheDocument();
+  });
+
   it('muestra estado de carga mientras se obtienen los indicadores', () => {
     vi.mocked(vehicleService.getAllVehicles).mockReturnValue(new Promise(() => {}));
     vi.mocked(authService.listarUsuarios).mockReturnValue(new Promise(() => {}));

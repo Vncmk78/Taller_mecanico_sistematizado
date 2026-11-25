@@ -64,6 +64,7 @@ export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageP
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<Proveedor | null>(null);
     const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
 
     const debouncedSearch = useDebouncedValue(search);
 
@@ -179,12 +180,15 @@ export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageP
     const handleDelete = async () => {
         if (!deleteTarget) return;
         setDeleteSubmitting(true);
+        setDeleteError(null);
         try {
             await proveedorService.deleteProveedor(deleteTarget.proveedorId);
             setDeleteTarget(null);
             await loadProveedores(debouncedSearch, { force: true });
-        } catch {
-            setDeleteTarget(null);
+        } catch (err) {
+            // MS3 responde 409 si el proveedor está en uso: hay que mostrar el
+            // motivo y conservar la confirmación para corregir o cancelar.
+            setDeleteError(getApiErrorMessage(err, 'No se pudo eliminar el proveedor.'));
         } finally {
             setDeleteSubmitting(false);
         }
@@ -356,7 +360,7 @@ export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageP
                                         <TableCell className="text-center">
                                             <div className="flex justify-center gap-2">
                                                 <Button variant="secondary" onClick={() => { setEditing(proveedor); setFormError(null); setFormOpen(true); }}>Editar</Button>
-                                                <Button variant="danger" onClick={() => setDeleteTarget(proveedor)}>Eliminar</Button>
+                                                <Button variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(proveedor); }}>Eliminar</Button>
                                             </div>
                                         </TableCell>
                                     )}
@@ -395,10 +399,17 @@ export function AdminDistributorsPage({ mode = 'admin' }: AdminDistributorsPageP
                     <ConfirmDialog
                         open={!!deleteTarget}
                         title="Eliminar proveedor"
-                        description={`¿Eliminar ${deleteTarget?.nombre ?? ''}?`}
+                        description={(
+                            <>
+                                <span>¿Eliminar {deleteTarget?.nombre ?? ''}?</span>
+                                {deleteError && (
+                                    <Alert tone="error" className="mt-3 text-left">{deleteError}</Alert>
+                                )}
+                            </>
+                        )}
                         isLoading={deleteSubmitting}
                         onConfirm={handleDelete}
-                        onCancel={() => setDeleteTarget(null)}
+                        onCancel={() => { setDeleteError(null); setDeleteTarget(null); }}
                     />
                 </>
             )}

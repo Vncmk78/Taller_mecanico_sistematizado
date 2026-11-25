@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { inventarioService } from '@/infrastructure/api/InventarioService';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
-import { getApiErrorMessage, getApiErrorRequestId, isOfflineError } from '@/infrastructure/api/errors';
+import {
+    esResultadoIncierto,
+    getApiErrorMessage,
+    getApiErrorRequestId,
+    isOfflineError,
+} from '@/infrastructure/api/errors';
 import { generarIdOperacion } from '@/infrastructure/utils/idOperacion';
 import type { Movimiento, TipoMovimiento } from '@/domain/entities/Inventario';
 import { Alert } from '@/presentation/components/ui/Alert';
@@ -61,6 +66,9 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
     const [mOrdenId, setMOrdenId] = useState('');
     const [mProveedorId, setMProveedorId] = useState('');
     const [nombres, setNombres] = useState<Record<string, string>>({});
+    // Misma clave mientras el resultado sea incierto: si MS3 aplicó el
+    // movimiento pero se perdió la respuesta, reintentar no debe mover stock dos veces.
+    const claveMovimientoRef = useRef<{ clave: string; firma: string } | null>(null);
 
     useEffect(() => {
         // Nombres de repuestos para mostrar el movimiento con su repuesto, no solo el id.
@@ -120,17 +128,26 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
                 return;
             }
         }
+        const ordenIdNum = mOrdenId ? Number(mOrdenId) : null;
+        const proveedorIdNum = isAdmin && mProveedorId ? Number(mProveedorId) : null;
+        const firma = JSON.stringify([repuestoIdNum, cantidadNum, mTipo, ordenIdNum, proveedorIdNum]);
+        if (!claveMovimientoRef.current || claveMovimientoRef.current.firma !== firma) {
+            claveMovimientoRef.current = { clave: generarIdOperacion(), firma };
+        }
+        const claveOperacion = claveMovimientoRef.current.clave;
+
         setMovementSubmitting(true);
         setMovementError(null);
         try {
             await inventarioService.registrarMovimiento({
-                claveOperacion: generarIdOperacion(),
+                claveOperacion,
                 repuestoId: repuestoIdNum,
                 tipo: mTipo,
                 cantidad: cantidadNum,
-                ordenId: mOrdenId ? Number(mOrdenId) : null,
-                proveedorId: isAdmin && mProveedorId ? Number(mProveedorId) : null,
+                ordenId: ordenIdNum,
+                proveedorId: proveedorIdNum,
             });
+            claveMovimientoRef.current = null;
             setMovementOpen(false);
             setMRepuestoId('');
             setMCantidad('');
@@ -138,7 +155,15 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
             setMProveedorId('');
             await load();
         } catch (err) {
-            setMovementError(mensajeMovimiento(err));
+            if (esResultadoIncierto(err)) {
+                // No descartar la clave: el servidor pudo confirmar la operación.
+                setMovementError(
+                    'La operación pudo quedar registrada; reintentar con los mismos datos es seguro.'
+                );
+            } else {
+                claveMovimientoRef.current = null;
+                setMovementError(mensajeMovimiento(err));
+            }
         } finally {
             setMovementSubmitting(false);
         }

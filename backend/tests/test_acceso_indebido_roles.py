@@ -521,6 +521,112 @@ def _presupuesto_admin(escenario: SimpleNamespace) -> dict:
     return creada.json()
 
 
+def _operacion_stock_orden(escenario: SimpleNamespace, operacion: str,
+                           **cabeceras_extra) -> httpx.Response:
+    """Las cuatro operaciones de stock por orden que deben exigir asignación."""
+
+    ruta = f"/inventario/ordenes/{escenario.orden_id}"
+    headers = _cabeceras(**cabeceras_extra)
+    if operacion == "disponibilidad_orden":
+        return escenario.ms3.get(f"{ruta}/disponibilidad", headers=headers)
+    if operacion == "disponibilidad_body":
+        return escenario.ms3.post("/inventario/disponibilidad", headers=headers, json={
+            "orden_id": escenario.orden_id,
+            "items": [{"repuesto_id": escenario.repuesto_id, "cantidad": 1}],
+        })
+    if operacion == "reserva":
+        return escenario.ms3.post(f"{ruta}/reserva", headers=headers)
+    if operacion == "consumos":
+        return escenario.ms3.post(f"{ruta}/consumos", headers=headers, json={
+            "clave_operacion": "clv-consumo-asignado",
+            "items": [{"repuesto_id": escenario.repuesto_id, "cantidad": 1}],
+        })
+    if operacion == "liberacion":
+        return escenario.ms3.post(f"{ruta}/liberacion", headers=headers, json={
+            "clave_operacion": "clv-libera-asignada",
+        })
+    raise AssertionError(f"Operación desconocida: {operacion}")
+
+
+@pytest.mark.parametrize("operacion", [
+    "disponibilidad_orden", "disponibilidad_body", "reserva", "consumos", "liberacion",
+])
+def test_mecanico_no_asignado_no_consulta_ni_mueve_stock_ajeno(escenario, operacion):
+    """H-01: las cinco operaciones por orden exigen la asignación del mecánico."""
+
+    antes = _datos_guardados(escenario)
+
+    respuesta = _operacion_stock_orden(
+        escenario, operacion, usuario_id=77, roles=NombreRol.MECANICO
+    )
+
+    assert respuesta.status_code == 404, respuesta.text
+    assert respuesta.json()["detail"] == f"Orden {escenario.orden_id} no existe"
+    assert _datos_guardados(escenario) == antes
+
+
+@pytest.mark.parametrize("operacion", [
+    "disponibilidad_orden", "disponibilidad_body", "reserva", "consumos", "liberacion",
+])
+def test_cliente_mecanico_propietario_no_opera_stock_sin_asignacion(escenario, operacion):
+    """Ser dueño de la orden no sustituye la asignación como mecánico."""
+
+    antes = _datos_guardados(escenario)
+
+    respuesta = _operacion_stock_orden(
+        escenario, operacion, usuario_id=42,
+        roles=(NombreRol.CLIENTE, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 404
+    assert _datos_guardados(escenario) == antes
+
+
+def test_mecanico_asignado_consulta_y_descuenta_stock_de_su_orden(escenario):
+    """El guard no bloquea las operaciones legítimas del mecánico asignado."""
+
+    assert _asignar_mecanico(escenario, 77, usuario_id=99,
+                             roles=NombreRol.ADMINISTRADOR).status_code == 200
+    cabeceras = dict(usuario_id=77, roles=NombreRol.MECANICO)
+
+    consulta = _operacion_stock_orden(
+        escenario, "disponibilidad_body", **cabeceras
+    )
+    assert consulta.status_code == 200, consulta.text
+    assert consulta.json()["orden_id"] == escenario.orden_id
+
+    consumo = _operacion_stock_orden(escenario, "consumos", **cabeceras)
+    assert consumo.status_code == 201, consumo.text
+    assert consumo.json()["movimientos"][0]["cantidad"] == 1
+
+
+def test_administrador_oper_stock_ajeno_sin_llamar_ms2(escenario):
+    """El administrador está exento: no se introduce una dependencia de red innecesaria."""
+
+    llamadas_antes = len(escenario.llamadas)
+    respuesta = _operacion_stock_orden(
+        escenario, "disponibilidad_body", usuario_id=99,
+        roles=(NombreRol.ADMINISTRADOR, NombreRol.MECANICO),
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert len(escenario.llamadas) == llamadas_antes
+
+
+def test_stock_no_se_toca_si_ms2_no_valida_la_orden(escenario):
+    """Sin MS2 no se puede confirmar la asignación: fail-closed (503)."""
+
+    antes = _datos_guardados(escenario)
+    escenario.fallos["ms2"] = True
+
+    respuesta = _operacion_stock_orden(
+        escenario, "consumos", usuario_id=77, roles=NombreRol.MECANICO
+    )
+
+    assert respuesta.status_code == 503
+    assert _datos_guardados(escenario) == antes
+
+
 @pytest.mark.parametrize("tipo", ["compromiso", "consumo", "liberacion"])
 def test_cliente_mecanico_propietario_no_mueve_stock_sin_asignacion(escenario, tipo):
     antes = _datos_guardados(escenario)

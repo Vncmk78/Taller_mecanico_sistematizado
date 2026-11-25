@@ -32,16 +32,26 @@ from services.ms3_presupuestos.dependencies import (
     requerir_roles,
 )
 from services.ms3_presupuestos.integracion_ms2 import (
+    AplicacionDisponibilidadPendienteError,
+    CoordinadorDisponibilidadRepuestos,
     OrdenNoVisible,
+    ReservaRepuestosNoAplicableError,
     VerificadorOrdenes,
+    obtener_coordinador_disponibilidad_repuestos,
     obtener_verificador_ordenes,
 )
-from services.ms3_presupuestos.persistencia import RecursoNoEncontrado, UnidadDeTrabajo
+from services.ms3_presupuestos.persistencia import (
+    ConflictoDeDatos,
+    RecursoNoEncontrado,
+    UnidadDeTrabajo,
+)
 from services.ms3_presupuestos.persistencia.repositorios import LIMITE_MAXIMO
 from services.ms3_presupuestos.schemas.inventario import (
     CambioUmbral,
     ConsultaDisponibilidad,
     ConsumoOrden,
+    DisponibilidadRepuestosRespuesta,
+    DisponibilidadRepuestosVerificada,
     LiberacionOrden,
     MovimientoCrear,
     MovimientoSalida,
@@ -60,12 +70,39 @@ from services.ms3_presupuestos.schemas.inventario import (
 from services.ms3_presupuestos.services import disponibilidad
 from services.ms3_presupuestos.services import inventario as casos
 from services.ms3_presupuestos.services import reservas
+from services.ms3_presupuestos.services.disponibilidad_repuestos import (
+    RepuestosInsuficientesError,
+    reservar_repuestos_aprobados,
+    revertir_reserva_rechazada,
+    verificar_reserva_confirmada,
+)
 from shared.auth import NombreRol, PrincipalAutenticado
 
 router = APIRouter(prefix="/inventario", tags=["inventario"])
 
 _personal = requerir_roles(NombreRol.MECANICO, NombreRol.ADMINISTRADOR)
 _administrador = requerir_roles(NombreRol.ADMINISTRADOR)
+
+
+def _exigir_orden_asignada_al_mecanico(
+    orden_id: int,
+    token: str,
+    principal: PrincipalAutenticado,
+    verificador: VerificadorOrdenes,
+) -> None:
+    """§4.4: Mecánico solo opera sobre su orden asignada; Administrador, sobre todas.
+
+    Se llama antes de consultar o mover stock. Reutiliza el mismo verificador que
+    `registrar_movimiento`: MS2 comprueba `mecanico_actual_id` y el JWT reenviado.
+    """
+    if NombreRol.ADMINISTRADOR in principal.roles:
+        return
+    try:
+        verificador.verificar_creacion_presupuesto(orden_id, token, principal)
+    except OrdenNoVisible as exc:
+        raise RecursoNoEncontrado(f"Orden {orden_id} no existe") from exc
+    # ServicioOrdenesNoDisponible viaja al manejador global de MS3 (503).
+
 
 _401 = {status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente, inválido o expirado"}}
 _403 = {status.HTTP_403_FORBIDDEN: {"description": "Rol no permitido"}}
@@ -205,13 +242,19 @@ def historial_umbral(
         "Con `orden_id` cuenta como disponible lo que esa orden ya reservó y descuenta "
         "lo reservado por otras órdenes."
     ),
-    responses={**_401, **_403, _404_REPUESTOS: {"description": "Algún repuesto no existe"},
+    responses={**_401, **_403,
+               _404_REPUESTOS: {"description": "Algún repuesto no existe; orden inexistente o no asignada al mecánico"},
+               status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "MS2 no disponible para validar la orden del mecánico"},
                422: {"description": "Datos inválidos"}},
-    dependencies=[Depends(_personal)],
 )
 def validar_disponibilidad(
     body: ConsultaDisponibilidad, uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> ResultadoDisponibilidad:
+    if body.orden_id is not None:
+        _exigir_orden_asignada_al_mecanico(body.orden_id, token, principal, verificador)
     return disponibilidad.evaluar(
         uow, disponibilidad.requeridos_de_items(body.items), orden_id=body.orden_id)
 
@@ -224,13 +267,17 @@ def validar_disponibilidad(
         "Sirve para saber si una orden en 'Esperando repuestos' ya puede continuar."
     ),
     responses={**_401, **_403,
-               _404_REPUESTOS: {"description": "La orden no tiene presupuesto"},
-               status.HTTP_409_CONFLICT: {"description": "La orden no tiene un presupuesto aprobado"}},
-    dependencies=[Depends(_personal)],
+               _404_REPUESTOS: {"description": "La orden no tiene presupuesto, no existe o no está asignada al mecánico"},
+               status.HTTP_409_CONFLICT: {"description": "La orden no tiene un presupuesto aprobado"},
+               status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "MS2 no disponible para validar la orden del mecánico"}},
 )
 def disponibilidad_de_orden(
     orden_id: int = Path(gt=0), uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
+    principal: PrincipalAutenticado = Depends(_personal),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> ResultadoDisponibilidad:
+    _exigir_orden_asignada_al_mecanico(orden_id, token, principal, verificador)
     return disponibilidad.evaluar_orden(uow, orden_id)
 
 
@@ -247,13 +294,18 @@ _409_STOCK = {status.HTTP_409_CONFLICT: {
         "falta y libera lo que sobra. Si algún repuesto no alcanza no reserva nada y responde "
         "`reservado: false` con los faltantes (la orden sigue esperando repuestos)."
     ),
-    responses={**_401, **_403, _404_REPUESTOS: {"description": "La orden no tiene presupuesto"},
-               status.HTTP_409_CONFLICT: {"description": "La orden no tiene un presupuesto aprobado"}},
+    responses={**_401, **_403,
+               _404_REPUESTOS: {"description": "La orden no tiene presupuesto, no existe o no está asignada al mecánico"},
+               status.HTTP_409_CONFLICT: {"description": "La orden no tiene un presupuesto aprobado"},
+               status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "MS2 no disponible para validar la orden del mecánico"}},
 )
 def reservar(
     orden_id: int = Path(gt=0), uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> ResultadoReserva:
+    _exigir_orden_asignada_al_mecanico(orden_id, token, principal, verificador)
     return reservas.reservar_presupuesto_aprobado(uow, orden_id, usuario_id=principal.usuario_id)
 
 
@@ -267,15 +319,19 @@ def reservar(
         "con 200 y `repetido: true`."
     ),
     responses={**_401, **_403, **_409_STOCK,
-               _404_REPUESTOS: {"description": "Algún repuesto no existe"},
+               _404_REPUESTOS: {"description": "Algún repuesto no existe; orden inexistente o no asignada al mecánico"},
                status.HTTP_200_OK: {"description": "Clave repetida: no se descontó de nuevo"},
+               status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "MS2 no disponible para validar la orden del mecánico"},
                422: {"description": "Datos inválidos"}},
 )
 def consumir(
     body: ConsumoOrden, response: Response, orden_id: int = Path(gt=0),
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> ResultadoOperacionOrden:
+    _exigir_orden_asignada_al_mecanico(orden_id, token, principal, verificador)
     resultado = reservas.consumir_para_orden(
         uow, orden_id, disponibilidad.requeridos_de_items(body.items),
         usuario_id=principal.usuario_id, clave_operacion=body.clave_operacion)
@@ -287,30 +343,22 @@ def consumir(
 @router.post(
     "/ordenes/{orden_id}/liberacion", response_model=ResultadoOperacionOrden,
     summary="Liberar todo lo reservado por la orden (p. ej. al cancelarla)",
-    responses={**_401, **_403, 422: {"description": "Datos inválidos"}},
+    responses={**_401, **_403,
+               status.HTTP_404_NOT_FOUND: {"description": "Orden inexistente o no asignada al mecánico"},
+               status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "MS2 no disponible para validar la orden del mecánico"},
+               422: {"description": "Datos inválidos"}},
 )
 def liberar(
     body: LiberacionOrden, orden_id: int = Path(gt=0),
     uow: UnidadDeTrabajo = Depends(obtener_unidad_de_trabajo),
     principal: PrincipalAutenticado = Depends(_personal),
+    token: str = Depends(obtener_token_bearer),
+    verificador: VerificadorOrdenes = Depends(obtener_verificador_ordenes),
 ) -> ResultadoOperacionOrden:
+    _exigir_orden_asignada_al_mecanico(orden_id, token, principal, verificador)
     return reservas.liberar_orden(uow, orden_id, usuario_id=principal.usuario_id,
                                   clave_operacion=body.clave_operacion)
 
-
-from services.ms3_presupuestos.dependencies import obtener_token_bearer
-from services.ms3_presupuestos.integracion_ms2 import (
-    AplicacionDisponibilidadPendienteError, CoordinadorDisponibilidadRepuestos,
-    ReservaRepuestosNoAplicableError, obtener_coordinador_disponibilidad_repuestos,
-)
-from services.ms3_presupuestos.persistencia import ConflictoDeDatos
-from services.ms3_presupuestos.schemas.inventario import (
-    DisponibilidadRepuestosRespuesta, DisponibilidadRepuestosVerificada,
-)
-from services.ms3_presupuestos.services.disponibilidad_repuestos import (
-    RepuestosInsuficientesError, reservar_repuestos_aprobados,
-    revertir_reserva_rechazada, verificar_reserva_confirmada,
-)
 
 _solo_administrador = requerir_roles(NombreRol.ADMINISTRADOR)
 

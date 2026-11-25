@@ -23,7 +23,7 @@ interface EvidenceUploadFormProps {
     className?: string;
 }
 
-type EstadoPresupuesto = 'idle' | 'loading' | 'listo' | 'ausente';
+type EstadoPresupuesto = 'idle' | 'loading' | 'listo' | 'ausente' | 'error';
 
 /**
  * Formulario de carga de evidencia (Mecánico/Administrador). Muestra el progreso
@@ -50,13 +50,21 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
         orderId: string;
         id: string | null;
     } | null>(null);
+    const [errorConsulta, setErrorConsulta] = useState<{
+        orderId: string;
+        mensaje: string;
+    } | null>(null);
+    const [intentoPresupuesto, setIntentoPresupuesto] = useState(0);
 
     const esPresupuesto = contexto === 'presupuesto';
     const resultadoActual = presupuestoResuelto?.orderId === orderId ? presupuestoResuelto : null;
+    const errorPresupuesto = errorConsulta?.orderId === orderId ? errorConsulta.mensaje : null;
     const presupuestoId = resultadoActual?.id ?? null;
-    const estadoPresupuesto: EstadoPresupuesto = resultadoActual
-        ? (presupuestoId ? 'listo' : 'ausente')
-        : (esPresupuesto ? 'loading' : 'idle');
+    const estadoPresupuesto: EstadoPresupuesto = errorPresupuesto
+        ? 'error'
+        : resultadoActual
+            ? (presupuestoId ? 'listo' : 'ausente')
+            : (esPresupuesto ? 'loading' : 'idle');
 
     // Reutiliza la petición de esta orden al cambiar de contexto. Cada efecto
     // observa la misma promesa y descarta su resultado cuando deja de estar activo.
@@ -73,15 +81,29 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
             .then((presupuesto) => {
                 if (!active) return;
                 setPresupuestoResuelto({ orderId, id: presupuesto?.id ?? null });
+                setErrorConsulta(null);
             })
             .catch(() => {
                 if (!active) return;
-                setPresupuestoResuelto({ orderId, id: null });
+                // "No encontrado" y "falló la consulta" no son lo mismo: un
+                // error de red/500 no puede afirmar que la orden no tiene
+                // presupuesto ni bloquear la carga sin ofrecer reintento.
+                setErrorConsulta({
+                    orderId,
+                    mensaje: 'No se pudo consultar el presupuesto de la orden.',
+                });
+                setPresupuestoResuelto(null);
             });
         return () => {
             active = false;
         };
-    }, [esPresupuesto, orderId]);
+    }, [esPresupuesto, orderId, intentoPresupuesto]);
+
+    const reintentarPresupuesto = () => {
+        consultaPresupuestoRef.current = null;
+        setErrorConsulta(null);
+        setIntentoPresupuesto((n) => n + 1);
+    };
 
     const limpiarResultado = () => {
         reset();
@@ -130,6 +152,10 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
         }
         if (esPresupuesto && estadoPresupuesto === 'loading') {
             setErrorLocal('Esperando el presupuesto de la orden...');
+            return;
+        }
+        if (errorPresupuesto) {
+            setErrorLocal(`${errorPresupuesto} Reintente antes de subir la evidencia.`);
             return;
         }
         if (esPresupuesto && !presupuestoId) {
@@ -212,15 +238,25 @@ export function EvidenceUploadForm({ orderId, onSuccess, className }: EvidenceUp
             </div>
 
             {esPresupuesto ? (
-                <p id="evidencia-contexto-hint" className="mt-3 text-sm text-text-muted">
-                    La evidencia del presupuesto se asocia automáticamente y siempre es visible para
-                    el cliente.
-                    {estadoPresupuesto === 'ausente' && (
-                        <span className="block mt-1 text-status-yellow">
-                            Esta orden no tiene un presupuesto registrado.
-                        </span>
+                <>
+                    <p id="evidencia-contexto-hint" className="mt-3 text-sm text-text-muted">
+                        La evidencia del presupuesto se asocia automáticamente y siempre es visible para
+                        el cliente.
+                        {estadoPresupuesto === 'ausente' && (
+                            <span className="block mt-1 text-status-yellow">
+                                Esta orden no tiene un presupuesto registrado.
+                            </span>
+                        )}
+                    </p>
+                    {errorPresupuesto && (
+                        <Alert tone="error" className="mt-3">
+                            <span className="block mb-2">{errorPresupuesto}</span>
+                            <Button variant="secondary" onClick={reintentarPresupuesto}>
+                                Reintentar consulta
+                            </Button>
+                        </Alert>
                     )}
-                </p>
+                </>
             ) : (
                 <div className="mt-4 flex items-center justify-between rounded-lg border border-border-custom px-4 py-3">
                     <div>

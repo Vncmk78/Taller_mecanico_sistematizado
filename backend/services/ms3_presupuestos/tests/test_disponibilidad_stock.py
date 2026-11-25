@@ -19,6 +19,10 @@ from sqlalchemy.orm import Session
 from services.ms3_presupuestos import datos_prueba as datos
 from services.ms3_presupuestos.config import settings
 from services.ms3_presupuestos.db import get_db
+from services.ms3_presupuestos.integracion_ms2 import (
+    OrdenNoVisible,
+    obtener_verificador_ordenes,
+)
 from services.ms3_presupuestos.main import app
 from services.ms3_presupuestos.models import ItemPresupuesto, Repuesto
 from services.ms3_presupuestos.persistencia import UnidadDeTrabajo
@@ -211,6 +215,40 @@ def test_aprobar_usa_la_misma_validacion(db: Session) -> None:
     # Solo 2 libres (3 son de otra orden): queda esperando repuestos.
     assert resultado.efecto_en_orden == "esperando_repuestos"
     assert [(f.repuesto_id, f.disponible) for f in resultado.repuestos_faltantes] == [(r.repuesto_id, 2)]
+
+
+# ======================================================== H-01: asignación ==
+
+class _Ms2RechazaOrden:
+    """MS2 simula que la orden existe pero no está asignada al mecánico."""
+
+    def verificar_creacion_presupuesto(self, orden_id, token, principal):
+        raise OrdenNoVisible(orden_id)
+
+
+@pytest.mark.parametrize("metodo,ruta,cuerpo", [
+    ("post", "/inventario/disponibilidad",
+     {"orden_id": ORDEN_A, "items": [{"repuesto_id": 1, "cantidad": 1}]}),
+    ("get", f"/inventario/ordenes/{ORDEN_A}/disponibilidad", None),
+    ("post", f"/inventario/ordenes/{ORDEN_A}/reserva", None),
+    ("post", f"/inventario/ordenes/{ORDEN_A}/consumos",
+     {"clave_operacion": "clv-h01-consumo", "items": [{"repuesto_id": 1, "cantidad": 1}]}),
+    ("post", f"/inventario/ordenes/{ORDEN_A}/liberacion",
+     {"clave_operacion": "clv-h01-libera"}),
+])
+def test_orden_no_asignada_se_rechaza_antes_de_leer_stock(
+    api: TestClient, monkeypatch: pytest.MonkeyPatch,
+    metodo: str, ruta: str, cuerpo: dict | None,
+) -> None:
+    """El guard depende de MS2, no del verificador permisivo de la suite MS3."""
+
+    # `monkeypatch` restaura el override al terminar: las demás pruebas MS3 del
+    # mismo proceso no deben heredar un verificador que rechaza todas las órdenes.
+    monkeypatch.setitem(app.dependency_overrides, obtener_verificador_ordenes, _Ms2RechazaOrden)
+    respuesta = api.request(metodo, ruta, headers=MECANICO, json=cuerpo)
+
+    assert respuesta.status_code == 404, respuesta.text
+    assert respuesta.json()["detail"] == f"Orden {ORDEN_A} no existe"
 
 
 def test_evaluar_con_bloqueo_devuelve_lo_mismo(db: Session, repuesto: Repuesto) -> None:

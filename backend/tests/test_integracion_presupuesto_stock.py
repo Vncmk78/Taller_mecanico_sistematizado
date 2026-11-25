@@ -26,6 +26,7 @@ import uuid
 import pytest
 from sqlalchemy import select, text
 
+from services.ms2_taller.models import OrdenTrabajo
 from services.ms2_taller.models.estado_orden import (
     CANCELADO,
     EN_REPARACION,
@@ -67,6 +68,11 @@ def entorno(request):
     with entorno.db3() as db:
         db.execute(text(_TRIGGER_APROBACION_SQLITE))
         db.commit()
+    # El guard de H-01 exige asignación: este flujo prueba operaciones del
+    # mecánico 77 sobre su propia orden, no sobre una ajena.
+    with entorno.db2() as db:
+        db.get(OrdenTrabajo, entorno.orden_id).mecanico_actual_id = 77
+        db.commit()
     return entorno
 
 
@@ -95,8 +101,8 @@ def _ingreso(entorno, cantidad: int) -> None:
     assert r.status_code == 201, r.text
 
 
-def _consumir(entorno, orden_id: int, cantidad: int):
-    return entorno.ms3.post(f"/inventario/ordenes/{orden_id}/consumos", headers=MECANICO, json={
+def _consumir(entorno, orden_id: int, cantidad: int, headers=None):
+    return entorno.ms3.post(f"/inventario/ordenes/{orden_id}/consumos", headers=headers or MECANICO, json={
         "clave_operacion": f"uso-{uuid.uuid4().hex[:20]}",
         "items": [{"repuesto_id": entorno.repuesto_id, "cantidad": cantidad}]})
 
@@ -123,8 +129,9 @@ def test_aprobar_con_el_stock_exacto(entorno) -> None:
     assert r.json()["efecto_en_orden"] == "en_reparacion"
     assert _estado_y_historial(entorno)[0] == EN_REPARACION
 
-    # Todo lo que hay quedó para esta orden: otra no puede tomarlo.
-    otra = _consumir(entorno, entorno.orden_id + 1000, 1)
+    # Todo lo que hay quedó para esta orden: otra no puede tomarlo. La consulta
+    # se hace como Administrador porque el mecánico ya no opera órdenes ajenas.
+    otra = _consumir(entorno, entorno.orden_id + 1000, 1, headers=ADMIN)
     assert otra.status_code == 409
     assert otra.json()["faltantes"][0]["disponible"] == 0
 

@@ -31,6 +31,8 @@ Católica de Temuco (UCT)**.
 | [08 — Pendientes y deuda técnica](08-pendientes-y-deuda.md) | Todo el equipo | Limitaciones conocidas, decisiones tomadas y próximos pasos |
 | [09 — Health checks](09-health-checks.md) | Infraestructura / evaluación | Health checks de contenedores y servicios, script de verificación y evidencia |
 | [10 — Smoke test de contenedores](10-smoke-test-contenedores.md) | Backend / infraestructura | Construir las imágenes y levantar la topología completa en Docker local antes de hacer push a `main` |
+| [11 — Secretos y configuración por ambiente](11-verificacion-secretos-configuracion.md) | Backend / infraestructura | Script que verifica repo, `.env` local y variables de Kubero sin mostrar secretos; resultado y hallazgos |
+| [12 — Endpoints y evidencia del despliegue](12-endpoints-y-evidencia-despliegue.md) | Todo el equipo / evaluación | Endpoints públicos, prefijos de la Gateway y evidencia de 19 llamadas con request ID |
 
 ---
 

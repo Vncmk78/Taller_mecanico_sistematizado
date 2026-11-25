@@ -1,4 +1,4 @@
-﻿"""API del microservicio MS2: Vehículos y Órdenes de Trabajo."""
+"""API del microservicio MS2: Vehículos y Órdenes de Trabajo."""
 from __future__ import annotations
 
 import asyncio

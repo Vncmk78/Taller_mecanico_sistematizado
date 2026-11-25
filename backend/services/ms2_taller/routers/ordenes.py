@@ -1,4 +1,4 @@
-﻿"""Router de creación, listado y detalle inicial de órdenes de trabajo."""
+"""Router de creación, listado y detalle inicial de órdenes de trabajo."""
 
 
 

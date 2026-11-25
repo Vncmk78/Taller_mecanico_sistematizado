@@ -1,4 +1,4 @@
-﻿"""API del microservicio MS1: Autenticación y Usuarios."""
+"""API del microservicio MS1: Autenticación y Usuarios."""
 
 from __future__ import annotations
 

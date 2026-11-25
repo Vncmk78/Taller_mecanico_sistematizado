@@ -1,4 +1,4 @@
-﻿"""Pruebas rápidas de migración — MS2 (Semana 2).
+"""Pruebas rápidas de migración — MS2 (Semana 2).
 
 Verifican que el esquema producido por las migraciones hasta `0005_ms2`
 realmente hace cumplir en la base:

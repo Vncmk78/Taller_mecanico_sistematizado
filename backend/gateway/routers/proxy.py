@@ -1,4 +1,4 @@
-﻿"""Reenvío (proxy) de `/api/*` hacia los microservicios.
+"""Reenvío (proxy) de `/api/*` hacia los microservicios.
 
 Captura cualquier petición bajo `/api/` que la Gateway no responda por sí
 misma (índice y healthcheck) y la reenvía al microservicio que indica la tabla

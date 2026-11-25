@@ -1,7 +1,7 @@
-"""Reenvío (proxy) de `/api/*` hacia los microservicios.
+﻿"""ReenvÃ­o (proxy) de `/api/*` hacia los microservicios.
 
-Captura cualquier petición bajo `/api/` que la Gateway no responda por sí
-misma (índice y healthcheck) y la reenvía al microservicio que indica la tabla
+Captura cualquier peticiÃ³n bajo `/api/` que la Gateway no responda por sÃ­
+misma (Ã­ndice y healthcheck) y la reenvÃ­a al microservicio que indica la tabla
 de enrutamiento (`gateway.rutas`), usando el cliente HTTPX compartido
 (`gateway.cliente_http`), timeouts por fase y el mapeo de errores de la Semana
 4 (decisiones 1 a 6 de `docs/estudio-httpx-proxy.md`).
@@ -43,8 +43,8 @@ logger = logging.getLogger("gateway")
 
 router = APIRouter()
 
-# Cabeceras HTTP que no se reenvían al microservicio (son del salto local) ni
-# al cliente (así las reconstruye la Gateway o Starlette).
+# Cabeceras HTTP que no se reenvÃ­an al microservicio (son del salto local) ni
+# al cliente (asÃ­ las reconstruye la Gateway o Starlette).
 _CABECERAS_PROHIBIDAS = {
     "host",
     "content-length",
@@ -58,12 +58,12 @@ _CABECERAS_PROHIBIDAS = {
     "upgrade",
 }
 
-# HTTPX anuncia sus propios formatos de compresión. Los del navegador pueden
-# requerir un decodificador opcional que no esté instalado en la Gateway.
+# HTTPX anuncia sus propios formatos de compresiÃ³n. Los del navegador pueden
+# requerir un decodificador opcional que no estÃ© instalado en la Gateway.
 _CABECERAS_SOLICITUD_EXCLUIDAS = _CABECERAS_PROHIBIDAS | {"accept-encoding"}
 
 # Cabeceras de la respuesta del microservicio que no llegan al cliente: las
-# hop-by-hop, las que HTTPX ya procesó (content-encoding: el body viene
+# hop-by-hop, las que HTTPX ya procesÃ³ (content-encoding: el body viene
 # descomprimido) y las que la propia Gateway reconstruye (content-length,
 # x-request-id lo pone el middleware; server y date son de la Gateway).
 _CABECERAS_RESPUESTA_EXCLUIDAS = _CABECERAS_PROHIBIDAS | {
@@ -73,8 +73,8 @@ _CABECERAS_RESPUESTA_EXCLUIDAS = _CABECERAS_PROHIBIDAS | {
     "date",
 }
 
-# 4xx sin JSON que se normalizan con un código del catálogo propio, no con
-# ERROR_MICROSERVICIO (decisión 3).
+# 4xx sin JSON que se normalizan con un cÃ³digo del catÃ¡logo propio, no con
+# ERROR_MICROSERVICIO (decisiÃ³n 3).
 _CATALOGO_NO_JSON: dict[int, tuple[str, str]] = {
     404: (RUTA_NO_ENCONTRADA, MENSAJE_RUTA_NO_ENCONTRADA),
     405: (METODO_NO_PERMITIDO, MENSAJE_METODO_NO_PERMITIDO),
@@ -82,7 +82,7 @@ _CATALOGO_NO_JSON: dict[int, tuple[str, str]] = {
 
 
 class _CuerpoDemasiadoGrande(Exception):
-    """Interna del proxy: el body supera el límite del prefijo (checklist 4.2)."""
+    """Interna del proxy: el body supera el lÃ­mite del prefijo (checklist 4.2)."""
 
     def __init__(self, limite: int, declarado: int | None) -> None:
         super().__init__(limite, declarado)
@@ -91,15 +91,15 @@ class _CuerpoDemasiadoGrande(Exception):
 
 
 class _ContentLengthInvalida(Exception):
-    """Interna del proxy: `Content-Length` no es un número válido."""
+    """Interna del proxy: `Content-Length` no es un nÃºmero vÃ¡lido."""
 
 
 def limite_para(prefijo: str) -> int:
-    """Límite de body a rechazar para un prefijo (checklist 4.2).
+    """LÃ­mite de body a rechazar para un prefijo (checklist 4.2).
 
     `evidencias` admite hasta `MAX_BODY_ARCHIVOS_BYTES` (multipart con la foto
     de 10 MB del checklist 1.3); el resto de los prefijos (JSON de MS1/MS2/MS3)
-    usan `MAX_BODY_BYTES`, ver estudio-almacenamiento-objetos.md §6.
+    usan `MAX_BODY_BYTES`, ver estudio-almacenamiento-objetos.md Â§6.
     """
     if prefijo == "evidencias":
         return settings.MAX_BODY_ARCHIVOS_BYTES
@@ -109,12 +109,12 @@ def limite_para(prefijo: str) -> int:
 async def _leer_cuerpo_limitado(request: Request, limite: int) -> bytes:
     """Lee el body con tope de `limite` bytes, sin pasarse nunca.
 
-    - Con `Content-Length` numérica mayor al límite responde de inmediato (el
-      propio microservicio nunca se entera de la petición, checklist 4.2).
-    - `Content-Length` no numérica se rechaza con 400 (código ERROR_HTTP).
+    - Con `Content-Length` numÃ©rica mayor al lÃ­mite responde de inmediato (el
+      propio microservicio nunca se entera de la peticiÃ³n, checklist 4.2).
+    - `Content-Length` no numÃ©rica se rechaza con 400 (cÃ³digo ERROR_HTTP).
     - Sin `Content-Length` (chunked) se usa `request.stream()` y se corta en
-      cuanto se supera el límite: nunca se acumulan más de `limite + un trozo`
-      bytes (riesgo 4.3 acotado por el límite).
+      cuanto se supera el lÃ­mite: nunca se acumulan mÃ¡s de `limite + un trozo`
+      bytes (riesgo 4.3 acotado por el lÃ­mite).
     """
     content_length = request.headers.get("content-length")
     declarado: int | None = None
@@ -140,12 +140,12 @@ async def _leer_cuerpo_limitado(request: Request, limite: int) -> bytes:
     include_in_schema=False,
 )
 async def proxy(ruta: str, request: Request) -> Response:
-    """Reenvía la petición `/api/*` al microservicio que corresponda.
+    """ReenvÃ­a la peticiÃ³n `/api/*` al microservicio que corresponda.
 
     El body se lee con tope por prefijo (`limite_para`): 413/400 antes de
     llamar al microservicio (checklist 4.2). NO hay streaming real hacia MS4
-    (riesgo 4.3): la Gateway carga el multipart en memoria hasta el límite; los
-    videos no entran por acá, usan el flujo C (POST prefirmado, Semana 6+).
+    (riesgo 4.3): la Gateway carga el multipart en memoria hasta el lÃ­mite; los
+    videos no entran por acÃ¡, usan el flujo C (POST prefirmado, Semana 6+).
     """
     primer_segmento = _primer_segmento(ruta)
     base = resolver_microservicio(ruta)
@@ -170,8 +170,8 @@ async def proxy(ruta: str, request: Request) -> Response:
     if request_id:
         cabeceras["x-request-id"] = request_id
 
-    # X-Forwarded-*: origen real de la petición, para logs y (más adelante)
-    # el límite de frecuencia (checklist 4.4).
+    # X-Forwarded-*: origen real de la peticiÃ³n, para logs y (mÃ¡s adelante)
+    # el lÃ­mite de frecuencia (checklist 4.4).
     host_original = request.headers.get("host")
     if request.client is not None:
         ip_cliente = request.client.host
@@ -186,9 +186,9 @@ async def proxy(ruta: str, request: Request) -> Response:
     try:
         cuerpo = await _leer_cuerpo_limitado(request, limite_para(primer_segmento))
     except _CuerpoDemasiadoGrande as exc:
-        # Solo prefijo, límite y request_id: nunca el contenido del body.
+        # Solo prefijo, lÃ­mite y request_id: nunca el contenido del body.
         logger.info(
-            "Body sobre el límite para '%s' (límite=%s, declarado=%s, request_id=%s)",
+            "Body sobre el lÃ­mite para '%s' (lÃ­mite=%s, declarado=%s, request_id=%s)",
             primer_segmento,
             exc.limite,
             exc.declarado,
@@ -196,14 +196,14 @@ async def proxy(ruta: str, request: Request) -> Response:
         )
         return respuesta_error(
             request,
-            estado=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            estado=status.HTTP_413_CONTENT_TOO_LARGE,
             codigo=CUERPO_DEMASIADO_GRANDE,
             detalle=MENSAJE_CUERPO_DEMASIADO_GRANDE,
         )
     except _ContentLengthInvalida:
         # Loguea el prefijo y el request_id: nunca la cabecera ni el body.
         logger.warning(
-            "Content-Length inválida en '/%s' (request_id=%s)",
+            "Content-Length invÃ¡lida en '/%s' (request_id=%s)",
             primer_segmento,
             request_id,
         )
@@ -214,9 +214,9 @@ async def proxy(ruta: str, request: Request) -> Response:
             detalle=MENSAJE_CONTENT_LENGTH_INVALIDA,
         )
     except ClientDisconnect:
-        # Semana 10: el cliente cortó la subida a mitad (red móvil, pestaña
-        # cerrada). No se reenvía un body incompleto al microservicio, así que
-        # no queda nada a medias aguas abajo. Antes caía como error no
+        # Semana 10: el cliente cortÃ³ la subida a mitad (red mÃ³vil, pestaÃ±a
+        # cerrada). No se reenvÃ­a un body incompleto al microservicio, asÃ­ que
+        # no queda nada a medias aguas abajo. Antes caÃ­a como error no
         # controlado (500 con traceback en el log); ahora es un evento esperado.
         logger.info(
             "Solicitud interrumpida por el cliente en '/%s' (request_id=%s)",
@@ -240,8 +240,8 @@ async def proxy(ruta: str, request: Request) -> Response:
             timeout=timeout,
         )
     except httpx.RequestError as exc:
-        # Servicio (nombre público), excepción, timeout aplicado y request_id:
-        # nunca la URL interna ni el texto del error (decisión R4).
+        # Servicio (nombre pÃºblico), excepciÃ³n, timeout aplicado y request_id:
+        # nunca la URL interna ni el texto del error (decisiÃ³n R4).
         logger.warning(
             "Fallo de red hacia el microservicio %s: %s (timeout_lectura=%ss, request_id=%s)",
             nombre_servicio(primer_segmento) or "-",
@@ -258,13 +258,13 @@ async def proxy(ruta: str, request: Request) -> Response:
 
 
 def _reescribir_location(request: Request, location: str, base: str) -> str:
-    """Traduce un `Location` del microservicio a la URL pública de la Gateway.
+    """Traduce un `Location` del microservicio a la URL pÃºblica de la Gateway.
 
-    El microservicio conoce su propia URL interna (p. ej. la redirección 307
+    El microservicio conoce su propia URL interna (p. ej. la redirecciÃ³n 307
     de FastAPI por la barra final, o el `Location` de un 201). Reenviarla tal
-    cual filtraría la red interna y el cliente no podría seguirla. Como el
+    cual filtrarÃ­a la red interna y el cliente no podrÃ­a seguirla. Como el
     microservicio publica sus rutas sin `/api` (`/vehiculos/...`), se vuelve a
-    anteponer `/api` y el origen público de la Gateway.
+    anteponer `/api` y el origen pÃºblico de la Gateway.
     """
     base = base.rstrip("/")
     if location.startswith(base + "/") or location == base:
@@ -284,8 +284,8 @@ def _construir_respuesta(
     """Convierte la respuesta del microservicio en la respuesta al cliente.
 
     - 2xx/3xx pasan con su body y sus cabeceras.
-    - 4xx/5xx con body JSON pasan tal cual (decisión 3).
-    - 4xx/5xx sin body JSON se normalizan al formato común, conservando
+    - 4xx/5xx con body JSON pasan tal cual (decisiÃ³n 3).
+    - 4xx/5xx sin body JSON se normalizan al formato comÃºn, conservando
       `WWW-Authenticate` y `Retry-After`.
     """
     if respuesta.status_code >= 400 and not _tiene_body_json(respuesta):
@@ -320,9 +320,9 @@ def _tiene_body_json(respuesta: httpx.Response) -> bool:
 def _declara_json_invalido(respuesta: httpx.Response) -> bool:
     """True si un 2xx declara JSON pero su body no se puede parsear (Semana 10).
 
-    Un body vacío no cuenta (204, HEAD): no hay nada que el cliente vaya a
-    parsear. Sin esta comprobación el frontend recibía un 200 y fallaba al
-    leerlo, sin `request_id` ni mensaje útil.
+    Un body vacÃ­o no cuenta (204, HEAD): no hay nada que el cliente vaya a
+    parsear. Sin esta comprobaciÃ³n el frontend recibÃ­a un 200 y fallaba al
+    leerlo, sin `request_id` ni mensaje Ãºtil.
     """
     if not respuesta.content:
         return False
@@ -340,12 +340,12 @@ def _respuesta_exitosa_invalida(
 ) -> Response:
     """Reemplaza un 2xx con JSON roto por un 502 `RESPUESTA_INVALIDA`.
 
-    El body recibido no se reenvía ni se registra (puede traer datos o trazas
+    El body recibido no se reenvÃ­a ni se registra (puede traer datos o trazas
     internas); el log solo deja estado, servicio y `request_id`.
     """
     request_id = getattr(request.state, "request_id", None)
     logger.warning(
-        "Microservicio %s respondió %s con JSON inválido (request_id=%s)",
+        "Microservicio %s respondiÃ³ %s con JSON invÃ¡lido (request_id=%s)",
         nombre_servicio(request.url.path.removeprefix("/api/")) or "-",
         respuesta.status_code,
         request_id,
@@ -359,7 +359,7 @@ def _respuesta_exitosa_invalida(
 
 
 def _cabecera_cliente_permitida(clave: str) -> bool:
-    """Cabeceras de la respuesta del microservicio que sí llegan al cliente."""
+    """Cabeceras de la respuesta del microservicio que sÃ­ llegan al cliente."""
     clave_min = clave.lower()
     if clave_min in _CABECERAS_RESPUESTA_EXCLUIDAS:
         return False
@@ -370,10 +370,10 @@ def _cabecera_cliente_permitida(clave: str) -> bool:
 
 
 def _normalizar_error_no_json(request: Request, respuesta: httpx.Response) -> Response:
-    """Reemplaza un 4xx/5xx sin JSON por el formato común de la Gateway."""
+    """Reemplaza un 4xx/5xx sin JSON por el formato comÃºn de la Gateway."""
     request_id = getattr(request.state, "request_id", None)
     logger.warning(
-        "Microservicio respondió %s sin cuerpo JSON (request_id=%s)",
+        "Microservicio respondiÃ³ %s sin cuerpo JSON (request_id=%s)",
         respuesta.status_code,
         request_id,
     )
@@ -392,3 +392,4 @@ def _normalizar_error_no_json(request: Request, respuesta: httpx.Response) -> Re
         if valor:
             error.headers[cabecera] = valor
     return error
+

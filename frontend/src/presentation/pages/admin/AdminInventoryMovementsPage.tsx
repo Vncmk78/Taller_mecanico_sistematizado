@@ -176,7 +176,7 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
 
     return (
         <div className="p-4 sm:p-6 lg:p-10 animate-fade-in">
-            <div className="mb-6 flex justify-between items-center gap-4 flex-wrap">
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
                 <div>
                     <h2 className="text-3xl font-bold mb-2 tracking-tight">Movimientos de inventario</h2>
                     <p className="text-text-muted text-lg">
@@ -193,7 +193,7 @@ export function AdminInventoryMovementsPage({ mode = 'admin' }: AdminInventoryMo
                         if (!isAdmin) setMTipo('compromiso');
                         setMovementOpen(true);
                     }}
-                    className="px-4 py-2 rounded-lg bg-primary-blue text-white text-sm font-medium"
+                    className="px-4 py-2.5 rounded-lg bg-primary-blue text-white text-sm font-medium hover:bg-primary-blue-hover transition-colors shrink-0"
                 >
                     Registrar movimiento
                 </button>

@@ -207,11 +207,17 @@ export function ClientBudgetDetailPage() {
                 <ArrowLeft className="w-4 h-4" aria-hidden /> Volver a mis presupuestos
             </Link>
 
-            {incierto && <section className="card p-4 mb-4" aria-label="Decisión sin confirmar">
-                <p>Resultado incierto. La información consultada puede provenir de otra pestaña.</p>
-                <Button variant="secondary" onClick={refetch}>Comprobar de nuevo</Button>
-                <Button variant="secondary" onClick={() => setIncierto(false)}>Ya lo revisé: permitir decidir otra vez</Button>
-            </section>}
+            {incierto && (
+                <section className="card p-4 sm:p-5 mb-6 border-status-yellow/40 bg-status-yellow/5" aria-label="Decisión sin confirmar">
+                    <p className="text-sm text-text-main mb-3">
+                        Resultado incierto. La información consultada puede provenir de otra pestaña.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="secondary" onClick={refetch}>Comprobar de nuevo</Button>
+                        <Button variant="secondary" onClick={() => setIncierto(false)}>Ya lo revisé: permitir decidir otra vez</Button>
+                    </div>
+                </section>
+            )}
             {isOffline && <OfflineBanner message={error} onRetry={refetch} requestId={requestId} className="mb-6" />}
 
             {decisionPendiente && <PresupuestoAplicacionPanel

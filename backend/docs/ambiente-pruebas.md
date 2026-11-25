@@ -131,6 +131,22 @@ python scripts/ambiente_pruebas.py ejecutar -- python scripts/flujos_e2e_gateway
 `ejecutar` corre cualquier comando con la configuración de pruebas, después de
 verificar el destino. Los logs quedan en `backend/.pruebas/logs/`.
 
+### Rotar la clave de firma
+
+```bash
+python scripts/ambiente_pruebas.py rotar
+```
+
+Genera una clave nueva, actualiza `MS1_JWT_SECRET_KEY` … `MS4_JWT_SECRET_KEY`
+a la vez en `.env.pruebas` y conserva los demás secretos. Verifica la
+configuración antes y después; si la configuración actual no es válida, no
+modifica el archivo. La clave no se muestra en la salida.
+
+El contrato JWT es HS256 de una sola clave (sin `kid`), así que la rotación
+invalida los tokens vigentes en este ambiente: reiniciar MS1–MS4 y volver a
+iniciar sesión en `http://127.0.0.1:5183`. No afecta al ambiente existente ni a
+sus tokens, porque `.env.pruebas` es independiente de `.env`.
+
 ## Reconstruir desde cero
 
 Elimina **solo** los contenedores y volúmenes del proyecto `sgtm_pruebas`:

@@ -20,6 +20,7 @@ Aislamiento:
 Uso, desde backend/:
     python scripts/ambiente_pruebas.py configurar     # crea .env.pruebas (una vez)
     python scripts/ambiente_pruebas.py verificar      # solo configuración
+    python scripts/ambiente_pruebas.py rotar          # rota la clave JWT de firma
     python scripts/ambiente_pruebas.py infra          # levanta PostgreSQL x4 + MinIO
     python scripts/ambiente_pruebas.py verificar --destino
     python scripts/ambiente_pruebas.py migrar         # alembic desde cero, 4 bases
@@ -156,6 +157,51 @@ def configurar() -> int:
     except OSError:
         pass
     print(f"Se creó backend/{ARCHIVO} con secretos propios (no se muestran).")
+    return 0
+
+
+def rotar_clave_firma() -> int:
+    """Rota la clave JWT del ambiente de pruebas sin mostrarla.
+
+    Actualiza las cuatro variables a la vez, conserva los demás secretos y
+    verifica la configuración antes y después. Si la configuración actual no es
+    válida, no modifica el archivo.
+    """
+
+    if not ARCHIVO.exists():
+        raise ErrorAmbiente("Falta backend/.env.pruebas: ejecutar `configurar` primero")
+    errores = verificar_configuracion(entorno_pruebas())
+    if errores:
+        raise ErrorAmbiente("Configuración rechazada antes de rotar:\n  - "
+                            + "\n  - ".join(errores))
+
+    nueva = secrets.token_urlsafe(48)
+    nombres = {f"{servicio}_JWT_SECRET_KEY" for servicio in PUERTOS_BASES}
+    lineas: list[str] = []
+    reemplazadas = 0
+    for linea in ARCHIVO.read_text(encoding="utf-8").splitlines():
+        es_comentario = linea.lstrip().startswith("#")
+        nombre = linea.split("=", 1)[0] if "=" in linea and not es_comentario else ""
+        if nombre in nombres:
+            lineas.append(f"{nombre}={nueva}")
+            reemplazadas += 1
+        else:
+            lineas.append(linea)
+    if reemplazadas != len(nombres):
+        raise ErrorAmbiente("No se encontraron las cuatro *_JWT_SECRET_KEY; no se modificó nada")
+
+    ARCHIVO.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    try:
+        ARCHIVO.chmod(0o600)
+    except OSError:
+        pass
+
+    errores = verificar_configuracion(entorno_pruebas())
+    if errores:
+        raise ErrorAmbiente("Configuración rechazada después de rotar:\n  - "
+                            + "\n  - ".join(errores))
+    print("Clave de firma rotada en MS1-MS4 (no se muestra). "
+          "Reiniciar los servicios y volver a iniciar sesión.")
     return 0
 
 
@@ -606,6 +652,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Ambiente de pruebas separado (sgtm_pruebas)")
     sub = parser.add_subparsers(dest="accion", required=True)
     sub.add_parser("configurar")
+    sub.add_parser("rotar", help="rota la clave JWT de firma en las cuatro variables")
     p_ver = sub.add_parser("verificar")
     p_ver.add_argument("--destino", action="store_true", help="también conecta y revisa las marcas")
     sub.add_parser("infra")
@@ -629,6 +676,8 @@ def main() -> int:
     try:
         if args.accion == "configurar":
             return configurar()
+        if args.accion == "rotar":
+            return rotar_clave_firma()
         entorno = entorno_pruebas()
         if args.accion == "verificar":
             exigir(entorno, destino=args.destino)

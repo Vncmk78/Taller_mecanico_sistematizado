@@ -22,6 +22,12 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 
 from scripts import ambiente_pruebas as amb  # noqa: E402
+from shared.auth import (  # noqa: E402
+    NombreRol,
+    TokenInvalidoError,
+    crear_token_acceso,
+    validar_token_acceso,
+)
 
 COMPOSE_EXISTENTE = (BACKEND / "docker-compose.yml").read_text(encoding="utf-8")
 COMPOSE_PRUEBAS = (BACKEND / "docker-compose.pruebas.yml").read_text(encoding="utf-8")
@@ -125,6 +131,72 @@ def test_configurar_genera_secretos_propios_y_no_sobrescribe(archivos: Path, cap
 
 def test_la_configuracion_generada_apunta_solo_al_ambiente_de_pruebas(archivos: Path):
     assert amb.verificar_configuracion(amb.entorno_pruebas()) == []
+
+
+# ── rotación de la clave de firma ──────────────────────────────────────────
+
+
+def test_rotar_clave_firma_actualiza_las_cuatro_y_no_muestra_claves(archivos: Path, capsys):
+    ruta = archivos / ".env.pruebas"
+    antes = amb.leer_archivo(ruta)
+    vieja = antes["MS1_JWT_SECRET_KEY"]
+
+    assert amb.rotar_clave_firma() == 0
+    captura = capsys.readouterr()
+    valores = amb.leer_archivo(ruta)
+    nueva = valores["MS1_JWT_SECRET_KEY"]
+
+    assert nueva != vieja and len(nueva) >= 32
+    assert all(valores[f"MS{n}_JWT_SECRET_KEY"] == nueva for n in range(1, 5))
+    visible = captura.out + captura.err + ruta.read_text(encoding="utf-8")
+    assert nueva not in captura.out + captura.err
+    assert vieja not in visible
+    for clave, valor in antes.items():
+        if not clave.endswith("_JWT_SECRET_KEY"):
+            assert valores[clave] == valor
+    assert amb.verificar_configuracion(amb.entorno_pruebas()) == []
+
+
+def test_rotar_dos_veces_da_claves_distintas(archivos: Path):
+    amb.rotar_clave_firma()
+    primera = amb.leer_archivo(archivos / ".env.pruebas")["MS1_JWT_SECRET_KEY"]
+    amb.rotar_clave_firma()
+    segunda = amb.leer_archivo(archivos / ".env.pruebas")["MS1_JWT_SECRET_KEY"]
+
+    assert segunda != primera
+    assert amb.verificar_configuracion(amb.entorno_pruebas()) == []
+
+
+def test_rotar_invalida_tokens_firmados_con_la_clave_anterior(archivos: Path):
+    vieja = amb.leer_archivo(archivos / ".env.pruebas")["MS1_JWT_SECRET_KEY"]
+    token_viejo = crear_token_acceso(7, [NombreRol.CLIENTE], clave_secreta=vieja)
+    assert validar_token_acceso(token_viejo, clave_secreta=vieja).usuario_id == 7
+
+    assert amb.rotar_clave_firma() == 0
+    nueva = amb.leer_archivo(archivos / ".env.pruebas")["MS1_JWT_SECRET_KEY"]
+
+    with pytest.raises(TokenInvalidoError):
+        validar_token_acceso(token_viejo, clave_secreta=nueva)
+    token_nuevo = crear_token_acceso(7, [NombreRol.CLIENTE], clave_secreta=nueva)
+    assert validar_token_acceso(token_nuevo, clave_secreta=nueva).usuario_id == 7
+    with pytest.raises(TokenInvalidoError):
+        validar_token_acceso(token_nuevo, clave_secreta=vieja)
+
+
+def test_rotar_rechaza_configuracion_invalida_sin_modificar(archivos: Path):
+    _entorno_modificado(archivos, MS2_JWT_SECRET_KEY="x" * 40)
+    texto = (archivos / ".env.pruebas").read_text(encoding="utf-8")
+
+    with pytest.raises(amb.ErrorAmbiente, match="antes de rotar"):
+        amb.rotar_clave_firma()
+
+    assert (archivos / ".env.pruebas").read_text(encoding="utf-8") == texto
+
+
+def test_rotar_sin_env_pruebas_no_hace_nada(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(amb, "ARCHIVO", tmp_path / ".env.pruebas")
+    with pytest.raises(amb.ErrorAmbiente, match="configurar"):
+        amb.rotar_clave_firma()
 
 
 @pytest.mark.parametrize(

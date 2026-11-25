@@ -458,3 +458,169 @@ versionadas ni se alteraron datos de negocio.
 
 **Conclusión: validación funcional satisfactoria de los flujos web principales
 en los tres portales.**
+
+---
+
+## 19. Corrección de H-01: asignación del mecánico antes de operar stock (24-11-2026)
+
+### 19.1 Cambio
+
+El checklist de seguridad (`backend/docs/checklist-revision-seguridad-rutas.md`)
+marcaba como **H-01** que MS3 permitía a un Mecánico consultar disponibilidad,
+reservar, consumir y liberar stock de una orden que no tenía asignada. Se agregó
+`_exigir_orden_asignada_al_mecanico` en
+`backend/services/ms3_presupuestos/routers/inventario.py` y se aplicó a las
+cinco operaciones con `orden_id`:
+
+- `POST /inventario/disponibilidad` (cuando el cuerpo lleva `orden_id`);
+- `GET /inventario/ordenes/{orden_id}/disponibilidad`;
+- `POST /inventario/ordenes/{orden_id}/reserva`;
+- `POST /inventario/ordenes/{orden_id}/consumos`;
+- `POST /inventario/ordenes/{orden_id}/liberacion`.
+
+La comprobación reutiliza `VerificadorOrdenesHttp.verificar_creacion_presupuesto`
+(contra MS2), igual que `POST /inventario/movimientos`. Administrador queda
+exento; `OrdenNoVisible` se traduce a `404` con
+`detail = "Orden <id> no existe"` y un fallo de MS2 propaga `503` **antes** de
+leer o mover stock. También se documentaron esos códigos en las respuestas de
+las rutas y se eliminaron los imports duplicados del módulo.
+
+### 19.2 Casos cubiertos
+
+`backend/tests/test_acceso_indebido_roles.py`:
+
+- Mecánico no asignado: las cinco operaciones devuelven `404` y no alteran
+  presupuestos ni movimientos.
+- `Cliente + Mecánico` dueño de la orden pero sin asignación: también `404` (ser
+  propietario no sustituye la asignación).
+- Mecánico asignado: consulta y consumo de su orden siguen funcionando.
+- Administrador sin asignación: permitido y sin llamada innecesaria a MS2.
+- MS2 caído: `503` y ninguna escritura (fail-closed).
+
+`backend/services/ms3_presupuestos/tests/test_disponibilidad_stock.py`:
+
+- Override del verificador que simula orden no asignada para las cinco rutas,
+  de modo que el fixture permisivo de la suite MS3 no oculte una regresión.
+
+`backend/tests/test_integracion_presupuesto_stock.py`:
+
+- El flujo del mecánico 77 ahora asigna la orden a ese mecánico.
+- La comprobación de stock insuficiente para una orden ajena se hace como
+  Administrador, coherente con el nuevo guard.
+
+### 19.3 Ejecución
+
+```
+python -m pytest tests/test_acceso_indebido_roles.py tests/test_integracion_presupuesto_stock.py -q
+59 passed, 11 skipped, 7 warnings
+
+python -m pytest services/ms3_presupuestos/tests/test_disponibilidad_stock.py -q -rs
+27 skipped, 1 warning
+
+python -m pytest -q
+1 failed, 2465 passed, 617 skipped, 55 warnings in 741.44s
+```
+
+Los `27 skipped` se deben a que el entorno local no tiene PostgreSQL de MS3 en
+`localhost:5435`; esa suite usa SQLite en otros archivos y la cobertura
+ejecutable de H-01 quedó demostrada en el primer comando. No se hicieron
+mutaciones en producción: todas las pruebas usan bases descartables o `TestClient`.
+
+### 19.4 Falla ajena al cambio
+
+La suite backend completa previa al cambio terminó en
+`1 failed, 2451 passed, 612 skipped, 55 warnings in 737.57s`; la ejecución final
+de esta revisión dio `1 failed, 2465 passed, 617 skipped, 55 warnings in 741.44s`
+(14 pruebas más y ninguna falla nueva). El único fallo fue siempre
+`test_archivo_congelado_coincide_con_el_publicado`: el entorno tiene
+`pydantic 2.14.1`, mientras `backend/requirements.txt` fija `pydantic>=2.12,<2.14`
+porque 2.14 cambia la publicación de `pattern` en esquemas `Decimal`. Se
+reprodujo el mismo fallo en un worktree limpio sobre `bb38caa`, antes de tocar
+código, por lo que **no es una regresión de H-01**. No se reexportó el contrato
+OpenAPI ni se subió su versión: la corrección congelada se debe hacer con el
+rango de dependencias declarado.
+
+---
+
+## 20. Revisión de formularios y coherencia de estados (24-11-2026)
+
+Además de **H-01**, la revisión de los cambios de los compañeros encontró
+comportamientos de frontend que podían duplicar stock, ocultar rechazos o dar
+una señal operativa falsa. Se corrigieron con prueba de regresión en cada caso:
+
+| Hallazgo | Corrección | Prueba |
+| --- | --- | --- |
+| `AdminInventoryMovementsPage` generaba una `claveOperacion` nueva en cada reintento; si el servidor aplicaba el movimiento y se perdía la respuesta, el reintento movía stock dos veces. | La clave se guarda en `useRef` con la firma de los datos; se conserva ante resultados inciertos (sin respuesta, 502/503/504 o 500 de Gateway) y solo se descarta tras éxito o rechazo definitivo. | `AdminInventoryMovementsPage.test.tsx`: el primer envío falla con 503 y el segundo reutiliza la misma clave. |
+| `ConsumoRepuestosPanel` mostraba «sin presupuesto» ante cualquier `404`, incluido el `404` de orden inexistente/no asignada de **H-01**. | El aviso benigno exige que el `detail` contenga «no tiene presupuesto»; los demás `404` van a `ErrorState`. | `ConsumoRepuestosPanel.test.tsx`: `detail: 'Orden 999 no existe'` muestra error con reintento. |
+| Tras un consumo correcto, si fallaba el refresco de disponibilidad se limpiaba la clave y quedaban cantidades viejas listas para reenviar. | El refresco fallido muestra advertencia con «Recargar disponibilidad», deshabilita «Registrar consumo» y conserva la clave hasta que la vista vuelve a estar fresca. | `ConsumoRepuestosPanel.test.tsx`: consumo resuelto + siguiente GET rechazado. |
+| `AdminDashboardPage` podía decir «Sistema En línea» con KPIs en «—» si fallaba solo una de vehículos, usuarios u órdenes. | Esas tres fuentes se agregan a `fallos`, por lo que el estado pasa a «Datos parciales» o «Sin conexión». | `AdminDashboardPage.test.tsx`: falla solo `getAllVehicles`. |
+| Al eliminar proveedor o repuesto, el `catch` cerraba el diálogo sin mostrar el `409` de MS3. | Se muestra el `detail` del servidor dentro de la confirmación y el diálogo permanece abierto. | Pruebas nuevas en `AdminDistributorsPage.test.tsx` y `AdminInventoryPage.test.tsx`. |
+| `EvidenceUploadForm` grababa `id: null` si fallaba la consulta del presupuesto y afirmaba que la orden no tenía uno. | Estado de error separado de «ausente», con botón «Reintentar consulta»; el envío se bloquea con un mensaje distinto. | Pruebas en `EvidenceUploadForm.test.tsx` y ajuste de `EvidenceUploadForm.validacion.test.tsx`. |
+| `NotificationsPage` silenciaba los fallos al marcar avisos como leídos, a diferencia de `NotificationBell`. | Ambos `catch` poblan el `error` ya existente y muestran el aviso con opción de reintento. | `NotificationsPage.test.tsx`: fallos de `markAsRead` y `markAllAsRead`. |
+| Fallos al cargar el catálogo de repuestos en el editor de presupuesto dejaban un selector vacío sin explicación. | `catalogoError` con mensaje y botón «Reintentar catálogo», distinto de un catálogo legítimamente vacío. | `MechanicBudgetPage.test.tsx`: primer `getRepuestos` rechazado y reintento correcto. |
+
+En backend se alineó además el cálculo de saldos del coordinador de reservas
+(`services/ms3_presupuestos/services/disponibilidad_repuestos.py`) con la regla
+canónica de `RepositorioMovimientos.comprometido_por_ordenes`: saldo
+`max(0, saldo − cantidad)` en orden cronológico. Antes, sumar/restar sin ordenar
+podía dejar un saldo negativo falso tras un consumo libre previo y provocar un
+`409`/`500` al reservar o al revertir una reserva rechazada. La prueba
+`test_coordinador_usa_saldo_cronologico_tras_consumo_libre` cubre reserva y
+reversa.
+
+### 20.1 Ejecución
+
+```
+npx vitest run src/presentation/pages/admin/AdminInventoryMovementsPage.test.tsx
+16 passed (16)
+
+npx vitest run src/presentation/components/orders/ConsumoRepuestosPanel.test.tsx
+20 passed (20)
+
+npx vitest run src/presentation/pages/admin/AdminDashboardPage.test.tsx
+10 passed (10)
+
+npx vitest run src/presentation/pages/admin/AdminDistributorsPage.test.tsx
+15 passed (15)
+
+npx vitest run src/presentation/pages/admin/AdminInventoryPage.test.tsx
+22 passed (22)
+
+npx vitest run src/presentation/components/evidence/EvidenceUploadForm.test.tsx
+8 passed (8)
+
+npx vitest run src/presentation/components/evidence/EvidenceUploadForm.validacion.test.tsx
+24 passed (24)
+
+npx vitest run src/presentation/pages/shared/NotificationsPage.test.tsx
+6 passed (6)
+
+npx vitest run src/presentation/pages/mechanic/MechanicBudgetPage.test.tsx
+10 passed (10)
+
+npm test
+143 files passed, 1288 tests passed
+
+npm run lint
+2 warnings preexistentes de react(set-state-in-effect) en NotificationBell y NotificationsPage
+
+npm run build
+TS + Vite correctos; único aviso: chunk >500 kB
+
+python -m pytest tests/test_disponibilidad_repuestos.py -q
+6 passed, 1 warning
+
+python -m pytest services/ms3_presupuestos/tests/test_reglas_reserva_stock.py tests/test_disponibilidad_repuestos.py tests/test_integracion_presupuesto_stock.py tests/test_acceso_indebido_roles.py -q
+65 passed, 28 skipped
+
+python -m pytest tests/test_gateway_openapi_version_estable.py -q
+1 failed, 9 passed, 7 warnings  # único fallo, preexistente (ver §19.4)
+
+python -m pytest -q
+1 failed, 2465 passed, 617 skipped, 55 warnings in 741.44s
+```
+
+No se hicieron mutaciones en producción: todas las pruebas usan `TestClient`,
+bases descartables o mocks. El desajuste de límites de video entre Gateway y MS4
+sigue documentado como deuda en `docs/08-pendientes-y-deuda.md` §1.3; no se
+cambió.

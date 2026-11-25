@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { proveedorService } from '@/infrastructure/api/ProveedorService';
+import { errorAxios } from '@/infrastructure/mocks/payloads.reales';
 import type { PaginaProveedores, Proveedor } from '@/domain/entities/Proveedor';
 import { AdminDistributorsPage, LIMITE_PROVEEDORES } from './AdminDistributorsPage';
 
 vi.mock('@/infrastructure/api/ProveedorService', () => ({
     proveedorService: {
         getProveedores: vi.fn(),
+        deleteProveedor: vi.fn(),
     },
 }));
 
@@ -79,6 +81,24 @@ describe('AdminDistributorsPage: listado y estados', () => {
         expect(screen.getByText('Genérico')).toBeInTheDocument();
         expect(screen.getByText('12')).toBeInTheDocument();
         expect(screen.getByText(/2 de 2 distribuidores/)).toBeInTheDocument();
+    });
+
+    it('muestra el motivo del 409 al eliminar y conserva la confirmación', async () => {
+        mockProveedores();
+        vi.mocked(proveedorService.deleteProveedor).mockRejectedValue(
+            errorAxios(409, { detail: 'El proveedor tiene repuestos asociados.' })
+        );
+
+        render(<AdminDistributorsPage />);
+        await screen.findByText('Repuestos del Sur');
+
+        fireEvent.click(screen.getAllByRole('button', { name: 'Eliminar' })[0]);
+        fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }));
+
+        expect(
+            await screen.findByText('El proveedor tiene repuestos asociados.')
+        ).toBeInTheDocument();
+        expect(screen.getByRole('dialog', { name: 'Eliminar proveedor' })).toBeInTheDocument();
     });
 
     it('muestra el indicador de carga mientras espera la respuesta', () => {

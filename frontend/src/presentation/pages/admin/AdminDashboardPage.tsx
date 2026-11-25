@@ -53,7 +53,7 @@ const TIPO_MOVIMIENTO_LABEL: Record<TipoMovimiento, string> = {
   ajuste: 'Ajuste',
   compromiso: 'Compromiso',
   consumo: 'Consumo',
-  liberacion: 'LiberaciÃ³n',
+  liberacion: 'Liberación',
 };
 
 function esOrdenActiva(orden: Order): boolean {
@@ -177,7 +177,7 @@ export function AdminDashboardPage() {
           if (!existente) {
             mapaMecanicos.set(orden.mecanicoActualId, {
               mecanicoId: orden.mecanicoActualId,
-              nombre: orden.mecanicoNombre || `MecÃ¡nico ${orden.mecanicoActualId}`,
+              nombre: orden.mecanicoNombre || `Mecánico ${orden.mecanicoActualId}`,
               totalOrdenes: 1,
               activas: esOrdenActiva(orden) ? 1 : 0,
             });
@@ -255,7 +255,7 @@ export function AdminDashboardPage() {
         setErrorResumen(
           getApiErrorMessage(
             vehiculosRes.reason,
-            'No se pudo cargar el resumen de Ã³rdenes, vehÃ­culos y mecÃ¡nicos.'
+            'No se pudo cargar el resumen de órdenes, vehículos y mecánicos.'
           )
         );
       }
@@ -290,7 +290,7 @@ export function AdminDashboardPage() {
 
   const stats = [
     {
-      label: 'Ã“rdenes totales',
+      label: 'Órdenes totales',
       value: formatValor(totalOrdenes),
       valueColor: 'text-text-main',
       icon: <ClipboardList className="w-6 h-6" />,
@@ -300,7 +300,7 @@ export function AdminDashboardPage() {
       testId: 'kpi-ordenes-totales',
     },
     {
-      label: 'Ã“rdenes activas',
+      label: 'Órdenes activas',
       value: formatValor(ordenesActivas),
       valueColor: 'text-primary-blue',
       icon: <TrendingUp className="w-6 h-6" />,
@@ -310,7 +310,7 @@ export function AdminDashboardPage() {
       testId: 'kpi-ordenes-activas',
     },
     {
-      label: 'VehÃ­culos registrados',
+      label: 'Vehículos registrados',
       value: formatValor(totalVehiculos),
       valueColor: 'text-text-main',
       icon: <Car className="w-6 h-6" />,
@@ -320,7 +320,7 @@ export function AdminDashboardPage() {
       testId: 'kpi-vehiculos',
     },
     {
-      label: 'MecÃ¡nicos',
+      label: 'Mecánicos',
       value: formatValor(totalMecanicos),
       valueColor: 'text-status-green',
       icon: <Users className="w-6 h-6" />,
@@ -330,7 +330,7 @@ export function AdminDashboardPage() {
       testId: 'kpi-mecanicos',
     },
     {
-      label: 'Esperando diagnÃ³stico',
+      label: 'Esperando diagnóstico',
       value: formatValor(esperandoDiagnostico),
       valueColor: 'text-status-yellow',
       icon: <Clock className="w-6 h-6" />,
@@ -350,7 +350,7 @@ export function AdminDashboardPage() {
       testId: 'kpi-listos',
     },
     {
-      label: 'VehÃ­culos en Taller',
+      label: 'Vehículos en Taller',
       value: formatValor(ordenesActivas),
       valueColor: 'text-primary-blue',
       icon: <Car className="w-6 h-6" />,
@@ -374,14 +374,14 @@ export function AdminDashboardPage() {
   const accesos = [
     {
       to: '/admin/ordenes',
-      label: 'GestiÃ³n de Ã³rdenes',
+      label: 'Gestión de órdenes',
       descripcion: 'Cola, estados y asignaciones',
       icon: <ClipboardList className="w-5 h-5" />,
     },
     {
       to: '/admin/inventario',
       label: 'Inventario',
-      descripcion: 'CatÃ¡logo y stock de repuestos',
+      descripcion: 'Catálogo y stock de repuestos',
       icon: <Package className="w-5 h-5" />,
     },
     {
@@ -413,7 +413,7 @@ export function AdminDashboardPage() {
           aria-live="polite"
           className={`px-5 py-2.5 rounded-[20px] text-sm font-bold border ${estadoSistema.className}`}
         >
-          <span className="text-xs mr-2">â—</span> {estadoSistema.label}
+          <span className="text-xs mr-2">●</span> {estadoSistema.label}
         </div>
       </div>
 
@@ -431,7 +431,7 @@ export function AdminDashboardPage() {
       {!cargandoResumen && !errorResumen && erroresOperativos.length > 0 && (
         <div className="px-4 sm:px-6 lg:px-10 pb-4">
           <Alert tone="warning">
-            No se pudieron cargar {erroresOperativos.join(', ')}. El resto del panel sÃ­ estÃ¡ disponible.
+            No se pudieron cargar {erroresOperativos.join(', ')}. El resto del panel sí está disponible.
           </Alert>
         </div>
       )}
@@ -464,8 +464,8 @@ export function AdminDashboardPage() {
         <div className="flex flex-col gap-7">
           <div className="card flex flex-col p-7">
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:items-center mb-6 border-b border-border-custom pb-4">
-              <h3 className="text-xl font-semibold">Carga de mecÃ¡nicos</h3>
-              <p className="text-text-muted text-sm">Ã“rdenes totales / activas</p>
+              <h3 className="text-xl font-semibold">Carga de mecánicos</h3>
+              <p className="text-text-muted text-sm">Órdenes totales / activas</p>
             </div>
             <div className="flex flex-col gap-3.5">
               {cargandoResumen && (
@@ -475,7 +475,7 @@ export function AdminDashboardPage() {
               )}
               {!cargandoResumen && errorResumen && cargaMecanicos.length === 0 && (
                 <ErrorState
-                  title="No se pudo cargar la carga de mecÃ¡nicos"
+                  title="No se pudo cargar la carga de mecánicos"
                   message={errorResumen}
                   onRetry={() => void cargarResumen()}
                 />
@@ -483,8 +483,8 @@ export function AdminDashboardPage() {
               {!cargandoResumen && !errorResumen && cargaMecanicos.length === 0 && (
                 <EmptyState
                   icon={Users}
-                  title="No hay mecÃ¡nicos con Ã³rdenes asignadas"
-                  description="Las Ã³rdenes asignadas a mecÃ¡nicos aparecerÃ¡n aquÃ­."
+                  title="No hay mecánicos con órdenes asignadas"
+                  description="Las órdenes asignadas a mecánicos aparecerán aquí."
                   className="py-6"
                 />
               )}
@@ -517,7 +517,7 @@ export function AdminDashboardPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2">
                   <p className="text-sm text-text-muted">
                     Mostrando {inicioCarga + 1} - {Math.min(inicioCarga + CARGA_POR_PAGINA, cargaMecanicos.length)} de{' '}
-                    {cargaMecanicos.length} mecÃ¡nicos
+                    {cargaMecanicos.length} mecánicos
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
@@ -531,7 +531,7 @@ export function AdminDashboardPage() {
                       Anterior
                     </Button>
                     <span className="text-sm text-text-muted whitespace-nowrap">
-                      PÃ¡gina {paginaCargaSegura} de {totalPaginasCarga}
+                      Página {paginaCargaSegura} de {totalPaginasCarga}
                     </span>
                     <Button
                       type="button"
@@ -553,7 +553,7 @@ export function AdminDashboardPage() {
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-6 border-b border-border-custom pb-4">
               <h3 className="text-xl font-semibold">Cola de trabajo activa</h3>
               <Link to="/admin/ordenes" className="text-primary-blue text-sm font-medium no-underline hover:underline">
-                Ver todas las Ã³rdenes
+                Ver todas las órdenes
               </Link>
             </div>
             {cargandoResumen && (
@@ -564,15 +564,15 @@ export function AdminDashboardPage() {
             {!cargandoResumen && ordenesActivas === null && (
               <ErrorState
                 title="No se pudo cargar la cola de trabajo"
-                message="No fue posible consultar las Ã³rdenes activas."
+                message="No fue posible consultar las órdenes activas."
                 onRetry={() => void cargarResumen()}
               />
             )}
             {!cargandoResumen && ordenesActivas !== null && colaActiva.length === 0 && (
               <EmptyState
                 icon={ClipboardList}
-                title="No hay Ã³rdenes activas"
-                description="Las Ã³rdenes en curso aparecerÃ¡n aquÃ­ hasta su entrega o cancelaciÃ³n."
+                title="No hay órdenes activas"
+                description="Las órdenes en curso aparecerán aquí hasta su entrega o cancelación."
                 className="py-6"
               />
             )}
@@ -597,7 +597,7 @@ export function AdminDashboardPage() {
                         <OrderStatusBadge estadoCodigo={orden.estadoCodigo} size="sm" />
                         <span className="text-xs text-text-muted">
                           {orden.mecanicoNombre ??
-                            (orden.mecanicoActualId ? `MecÃ¡nico ${orden.mecanicoActualId}` : 'Sin asignar')}
+                            (orden.mecanicoActualId ? `Mecánico ${orden.mecanicoActualId}` : 'Sin asignar')}
                         </span>
                       </div>
                     </Link>
@@ -605,7 +605,7 @@ export function AdminDashboardPage() {
                 })}
                 {ordenesActivas !== null && ordenesActivas > colaActiva.length && (
                   <p className="text-xs text-text-muted">
-                    Mostrando {colaActiva.length} de {ordenesActivas} Ã³rdenes activas.
+                    Mostrando {colaActiva.length} de {ordenesActivas} órdenes activas.
                   </p>
                 )}
               </div>
@@ -692,7 +692,7 @@ export function AdminDashboardPage() {
                   <div className="flex justify-between items-center gap-2 mb-2">
                     <h4 className="flex items-center gap-2 text-sm font-semibold">
                       <ListOrdered className="w-4 h-4" aria-hidden />
-                      Ãšltimos movimientos
+                      Últimos movimientos
                     </h4>
                     <Link to="/admin/inventario/movimientos" className="text-primary-blue text-xs font-medium no-underline hover:underline">
                       Ver movimientos
@@ -724,7 +724,7 @@ export function AdminDashboardPage() {
 
           <div className="card flex flex-col p-7">
             <div className="mb-5 border-b border-border-custom pb-3">
-              <h3 className="text-xl font-semibold">Accesos rÃ¡pidos</h3>
+              <h3 className="text-xl font-semibold">Accesos rápidos</h3>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {accesos.map((acceso) => (

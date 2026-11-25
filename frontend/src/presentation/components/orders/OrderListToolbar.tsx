@@ -43,7 +43,7 @@ export function OrderListToolbar({
                 />
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-text-muted">
+            <label className="flex w-full sm:w-auto items-center gap-2 text-sm text-text-muted">
                 <span className="whitespace-nowrap">Estado</span>
                 <select
                     value={estadoCodigo === 'all' ? 'all' : String(estadoCodigo)}
@@ -52,7 +52,7 @@ export function OrderListToolbar({
                         onEstadoChange(value === 'all' ? 'all' : Number(value));
                     }}
                     aria-label="Filtrar por estado"
-                    className="bg-surface border border-border-custom rounded-lg px-3 py-2.5 text-text-main text-sm outline-none focus:border-primary-blue"
+                    className="w-full sm:w-auto bg-surface border border-border-custom rounded-lg px-3 py-2.5 text-text-main text-sm outline-none focus:border-primary-blue"
                 >
                     <option value="all">Todos los estados</option>
                     {codigos.map((codigo) => (

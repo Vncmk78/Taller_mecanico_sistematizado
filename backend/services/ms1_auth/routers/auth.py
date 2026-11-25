@@ -1,4 +1,4 @@
-"""Endpoints de registro, autenticación y usuario actual de MS1."""
+﻿"""Endpoints de registro, autenticaciÃ³n y usuario actual de MS1."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ from services.ms1_auth.services.autenticacion import (
 from shared.auth import NombreRol, PrincipalAutenticado, crear_token_acceso
 from shared.errores_auth import error_no_autenticado
 
-router_auth = APIRouter(prefix="/auth", tags=["autenticación y usuarios"])
+router_auth = APIRouter(prefix="/auth", tags=["autenticaciÃ³n y usuarios"])
 
 
 @router_auth.post(
@@ -62,7 +62,7 @@ def registrar(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     except (ConfiguracionRolesError, UsuarioSinRolesError) as exc:
@@ -82,7 +82,7 @@ def registrar(
     response_model=TokenRespuesta,
     responses={
         status.HTTP_401_UNAUTHORIZED: {
-            "description": "Credenciales inválidas",
+            "description": "Credenciales invÃ¡lidas",
         },
         status.HTTP_403_FORBIDDEN: {
             "description": (
@@ -92,7 +92,7 @@ def registrar(
         },
         status.HTTP_429_TOO_MANY_REQUESTS: {
             "description": (
-                "Demasiados intentos fallidos: la cuenta está bloqueada "
+                "Demasiados intentos fallidos: la cuenta estÃ¡ bloqueada "
                 "temporalmente (cabecera `Retry-After`)"
             ),
         },
@@ -130,7 +130,7 @@ def login(
         ) from exc
     except UsuarioSinRolesError as exc:
         # Credenciales correctas, pero no puede emitirse un token: el contrato
-        # del JWT exige un claim `roles` no vacío. No es un fallo del servidor.
+        # del JWT exige un claim `roles` no vacÃ­o. No es un fallo del servidor.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
@@ -160,7 +160,7 @@ def consultar_usuario_actual(
     summary="Listar todos los usuarios",
     dependencies=[Depends(requerir_roles(NombreRol.ADMINISTRADOR))],
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible consultar los usuarios"
@@ -192,7 +192,7 @@ def consultar_usuarios(
     summary="Consultar un usuario por su identificador",
     dependencies=[Depends(requerir_roles(NombreRol.ADMINISTRADOR))],
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "El usuario no existe"},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
@@ -223,7 +223,7 @@ def consultar_usuario_por_id(
     response_model=UsuarioRespuesta,
     summary="Asignar un rol restringido a un usuario",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "El usuario no existe"},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
@@ -267,7 +267,7 @@ def asignar_rol_a_usuario(
     response_model=UsuarioRespuesta,
     summary="Retirar un rol restringido a un usuario",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "El usuario no existe"},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
@@ -290,8 +290,8 @@ def retirar_rol_de_usuario(
             rol=rol,
             administrador_id=principal.usuario_id,
         )
-        # La retirada ya está confirmada: si fue la última, la cuenta queda
-        # legítimamente con `roles: []` y la respuesta no debe fallar.
+        # La retirada ya estÃ¡ confirmada: si fue la Ãºltima, la cuenta queda
+        # legÃ­timamente con `roles: []` y la respuesta no debe fallar.
         return _serializar_usuario_para_consulta(usuario)
     except UsuarioNoEncontradoError as exc:
         raise HTTPException(
@@ -307,8 +307,8 @@ def retirar_rol_de_usuario(
 def _serializar_usuario(usuario: Usuario) -> UsuarioRespuesta:
     """Serializa una cuenta exigiendo al menos un rol.
 
-    Es la vía de registro, login y asignación de roles: allí una lista vacía
-    solo puede venir de una configuración rota, no del estado de la cuenta.
+    Es la vÃ­a de registro, login y asignaciÃ³n de roles: allÃ­ una lista vacÃ­a
+    solo puede venir de una configuraciÃ³n rota, no del estado de la cuenta.
     """
     return _respuesta_usuario(usuario, roles_del_usuario(usuario))
 
@@ -316,10 +316,10 @@ def _serializar_usuario(usuario: Usuario) -> UsuarioRespuesta:
 def _serializar_usuario_para_consulta(usuario: Usuario) -> UsuarioRespuesta:
     """Serializa una cuenta sin exigirle asignaciones de rol.
 
-    Es la vía de la consulta administrativa y de `/me`: una cuenta sin roles se
+    Es la vÃ­a de la consulta administrativa y de `/me`: una cuenta sin roles se
     emite con `roles: []` en lugar de fallar, porque poder consultarla es
-    justamente el objetivo de esos endpoints. Un rol desconocido sí sigue siendo
-    un error de configuración.
+    justamente el objetivo de esos endpoints. Un rol desconocido sÃ­ sigue siendo
+    un error de configuraciÃ³n.
     """
     roles = roles_del_usuario(usuario) if usuario.roles else frozenset()
     return _respuesta_usuario(usuario, roles)
@@ -333,3 +333,4 @@ def _respuesta_usuario(usuario: Usuario, roles: Iterable[NombreRol]) -> UsuarioR
         roles=sorted(roles, key=lambda rol: rol.value),
         is_active=usuario.activo,
     )
+

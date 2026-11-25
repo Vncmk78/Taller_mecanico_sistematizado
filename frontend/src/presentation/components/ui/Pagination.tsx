@@ -82,7 +82,7 @@ export function Pagination({
           </select>
         </label>
 
-        <nav aria-label={ariaLabel} className="flex items-center gap-1">
+        <nav aria-label={ariaLabel} className="flex flex-wrap items-center gap-1">
           <button
             type="button"
             onClick={() => onPageChange(page - 1)}
@@ -90,7 +90,7 @@ export function Pagination({
             className={`inline-flex items-center gap-1 ${pageButtonClass}`}
           >
             <ChevronLeft className="w-4 h-4" aria-hidden />
-            Anterior
+            <span className="hidden sm:inline">Anterior</span>
           </button>
 
           {items.map((item, index) =>
@@ -122,7 +122,7 @@ export function Pagination({
             disabled={page >= pageCount}
             className={`inline-flex items-center gap-1 ${pageButtonClass}`}
           >
-            Siguiente
+            <span className="hidden sm:inline">Siguiente</span>
             <ChevronRight className="w-4 h-4" aria-hidden />
           </button>
         </nav>

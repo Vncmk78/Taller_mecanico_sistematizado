@@ -1,4 +1,4 @@
-﻿"""Carga y verificación de los datos semilla de integración de MS3.
+"""Carga y verificación de los datos semilla de integración de MS3.
 
 `cargar_integracion` registra el catálogo de `datos_integracion.py` usando los
 MISMOS casos de uso que la API (services/catalogo.py y services/inventario.py):

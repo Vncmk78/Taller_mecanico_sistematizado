@@ -1,4 +1,4 @@
-﻿"""Creación de versiones sin sobrescribir las anteriores (PostgreSQL).
+"""Creación de versiones sin sobrescribir las anteriores (PostgreSQL).
 
 
 

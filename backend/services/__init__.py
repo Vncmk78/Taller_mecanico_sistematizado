@@ -1,4 +1,4 @@
-﻿"""API del microservicio MS4: Evidencia Multimedia.
+"""API del microservicio MS4: Evidencia Multimedia.
 
 Expone los healthchecks que verifican que el servicio levanta, que su conexión a
 PostgreSQL responde y que el bucket S3/MinIO de evidencias responde, más los

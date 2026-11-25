@@ -1,4 +1,4 @@
-﻿"""Endpoints de registro, autenticación y usuario actual de MS1."""
+"""Endpoints de registro, autenticación y usuario actual de MS1."""
 
 from __future__ import annotations
 

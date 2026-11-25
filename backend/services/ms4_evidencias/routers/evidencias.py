@@ -1,4 +1,4 @@
-﻿"""Endpoints de evidencias (MS4).
+"""Endpoints de evidencias (MS4).
 
     POST /evidencias                                   subir (Mecánico o Administrador)
     GET  /evidencias?orden_id=                         listar las de una orden

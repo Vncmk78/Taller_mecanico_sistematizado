@@ -33,7 +33,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={`px-6 py-3 rounded-lg font-bold text-base transition-all duration-300 cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed ${variantClasses[variant]} ${className}`}
+      className={`px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold text-sm sm:text-base transition-all duration-300 cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed ${variantClasses[variant]} ${className}`}
       disabled={disabled || isLoading}
       {...props}
     >

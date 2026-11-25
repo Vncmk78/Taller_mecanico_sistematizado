@@ -1,4 +1,4 @@
-"""Router de creación, listado y detalle inicial de órdenes de trabajo."""
+﻿"""Router de creaciÃ³n, listado y detalle inicial de Ã³rdenes de trabajo."""
 
 from __future__ import annotations
 
@@ -110,7 +110,7 @@ from shared.contratos_decisiones import (
     EnvioPresupuestoSolicitud,
 )
 
-router_ordenes = APIRouter(prefix="/ordenes", tags=["órdenes"])
+router_ordenes = APIRouter(prefix="/ordenes", tags=["Ã³rdenes"])
 logger = logging.getLogger(__name__)
 _REQUEST_ID_VALIDO = re.compile(r"[A-Za-z0-9-]{1,128}")
 _SQLSTATE_VALIDO = re.compile(r"[A-Z0-9]{5}")
@@ -119,7 +119,7 @@ _SQLSTATE_VALIDO = re.compile(r"[A-Z0-9]{5}")
 @router_ordenes.get(
     "/configuracion/capacidad/ingresos-diarios",
     response_model=CupoDiarioIngresosRespuesta,
-    summary="Consultar el cupo diario de ingresos físicos",
+    summary="Consultar el cupo diario de ingresos fÃ­sicos",
 )
 def consultar_cupo_diario_ingresos(
     db: Session = Depends(get_db),
@@ -128,7 +128,7 @@ def consultar_cupo_diario_ingresos(
     if NombreRol.ADMINISTRADOR not in principal.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
+            detail="No tienes permiso para realizar esta operaciÃ³n",
         )
     try:
         configuracion, jornada, cantidad, excedido = obtener_cupo_diario_ingresos(db)
@@ -150,12 +150,12 @@ def consultar_cupo_diario_ingresos(
 @router_ordenes.put(
     "/configuracion/capacidad/ingresos-diarios",
     response_model=CupoDiarioIngresosRespuesta,
-    summary="Configurar el máximo diario de ingresos físicos",
+    summary="Configurar el mÃ¡ximo diario de ingresos fÃ­sicos",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "El máximo debe ser un entero positivo"
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "El mÃ¡ximo debe ser un entero positivo"
         },
     },
 )
@@ -167,7 +167,7 @@ def actualizar_cupo_diario_ingresos(
     if NombreRol.ADMINISTRADOR not in principal.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
+            detail="No tienes permiso para realizar esta operaciÃ³n",
         )
     try:
         configuracion, jornada, cantidad, excedido = configurar_cupo_diario_ingresos(
@@ -193,7 +193,7 @@ def actualizar_cupo_diario_ingresos(
 @router_ordenes.get(
     "/configuracion/capacidad/mecanicos",
     response_model=CapacidadMecanicoRespuesta,
-    summary="Consultar el límite de órdenes activas por mecánico",
+    summary="Consultar el lÃ­mite de Ã³rdenes activas por mecÃ¡nico",
 )
 def consultar_capacidad_mecanicos(
     db: Session = Depends(get_db),
@@ -202,7 +202,7 @@ def consultar_capacidad_mecanicos(
     if NombreRol.ADMINISTRADOR not in principal.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
+            detail="No tienes permiso para realizar esta operaciÃ³n",
         )
     try:
         configuracion, sobre_limite = obtener_configuracion_capacidad_mecanicos(db)
@@ -215,22 +215,22 @@ def consultar_capacidad_mecanicos(
     except PersistenciaCapacidadError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible consultar la capacidad de los mecánicos",
+            detail="No fue posible consultar la capacidad de los mecÃ¡nicos",
         ) from exc
 
 
 @router_ordenes.put(
     "/configuracion/capacidad/mecanicos",
     response_model=CapacidadMecanicoRespuesta,
-    summary="Configurar el máximo de órdenes activas por mecánico",
+    summary="Configurar el mÃ¡ximo de Ã³rdenes activas por mecÃ¡nico",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "El máximo debe ser un entero positivo"
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "El mÃ¡ximo debe ser un entero positivo"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
-            "description": "No fue posible guardar la configuración"
+            "description": "No fue posible guardar la configuraciÃ³n"
         },
     },
 )
@@ -242,7 +242,7 @@ def actualizar_capacidad_mecanicos(
     if NombreRol.ADMINISTRADOR not in principal.roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
+            detail="No tienes permiso para realizar esta operaciÃ³n",
         )
     try:
         configuracion, sobre_limite = configurar_capacidad_mecanicos(
@@ -259,28 +259,28 @@ def actualizar_capacidad_mecanicos(
     except PersistenciaCapacidadError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible guardar la capacidad de los mecánicos",
+            detail="No fue posible guardar la capacidad de los mecÃ¡nicos",
         ) from exc
 
 
 @router_ordenes.post(
     "/{orden_id}/envios-presupuesto",
     response_model=AplicacionEnvioPresupuestoRespuesta,
-    summary="Aplicar el envío inicial de presupuesto verificado en MS3",
+    summary="Aplicar el envÃ­o inicial de presupuesto verificado en MS3",
     description=(
-        "Solo Administrador. Recibe únicamente presupuesto_id, consulta el envío "
-        "inicial a MS3 y deriva 2 → 3; no acepta actor ni estado destino. La "
-        "referencia única en HistorialEstado hace idempotente el reintento. "
-        "409 indica orden incompatible y 503 que no se pudo verificar el envío; "
+        "Solo Administrador. Recibe Ãºnicamente presupuesto_id, consulta el envÃ­o "
+        "inicial a MS3 y deriva 2 â†’ 3; no acepta actor ni estado destino. La "
+        "referencia Ãºnica en HistorialEstado hace idempotente el reintento. "
+        "409 indica orden incompatible y 503 que no se pudo verificar el envÃ­o; "
         "los rechazos no cambian estado ni historial."
     ),
     responses={
-        401: {"description": "JWT ausente o inválido"},
+        401: {"description": "JWT ausente o invÃ¡lido"},
         403: {"description": "Se requiere rol Administrador"},
-        404: {"description": "Orden o envío inicial inexistente"},
-        409: {"description": "Estado incompatible con el envío inicial"},
+        404: {"description": "Orden o envÃ­o inicial inexistente"},
+        409: {"description": "Estado incompatible con el envÃ­o inicial"},
         500: {"description": "Error de persistencia local"},
-        503: {"description": "No fue posible verificar el envío en MS3"},
+        503: {"description": "No fue posible verificar el envÃ­o en MS3"},
     },
 )
 def aplicar_envio_presupuesto(
@@ -297,7 +297,7 @@ def aplicar_envio_presupuesto(
             principal=principal, token=token, verificador=verificador,
         )
     except (OrdenNoEncontradaError, EnvioPresupuestoNoVisibleError) as exc:
-        raise HTTPException(404, "Orden o envío inicial no encontrado") from exc
+        raise HTTPException(404, "Orden o envÃ­o inicial no encontrado") from exc
     except OrdenEstadoNoAutorizadoError as exc:
         raise HTTPException(403, str(exc)) from exc
     except EnvioPresupuestoNoAplicableError as exc:
@@ -305,22 +305,22 @@ def aplicar_envio_presupuesto(
     except OrdenTransicionNoPermitidaError as exc:
         raise HTTPException(409, str(exc)) from exc
     except ServicioPresupuestosNoDisponibleError as exc:
-        raise HTTPException(503, "No fue posible verificar el envío en MS3") from exc
+        raise HTTPException(503, "No fue posible verificar el envÃ­o en MS3") from exc
     except PersistenciaOrdenError as exc:
-        raise HTTPException(500, "No fue posible aplicar el envío del presupuesto") from exc
+        raise HTTPException(500, "No fue posible aplicar el envÃ­o del presupuesto") from exc
 
 
 @router_ordenes.post(
     "/{orden_id}/decisiones-presupuesto", response_model=AplicacionDecisionRespuesta,
-    summary="Aplicar una decisión inicial de presupuesto verificada en MS3",
+    summary="Aplicar una decisiÃ³n inicial de presupuesto verificada en MS3",
     responses={
-        401: {"description": "JWT ausente o inválido"},
+        401: {"description": "JWT ausente o invÃ¡lido"},
         403: {"description": "Se requiere rol Cliente"},
-        404: {"description": "Orden o decisión inexistente o ajena"},
-        409: {"description": "Estado/evento incompatible o decisión no aplicable"},
-        422: {"description": "Referencia inválida o cancelación sin motivo"},
+        404: {"description": "Orden o decisiÃ³n inexistente o ajena"},
+        409: {"description": "Estado/evento incompatible o decisiÃ³n no aplicable"},
+        422: {"description": "Referencia invÃ¡lida o cancelaciÃ³n sin motivo"},
         500: {"description": "Error de persistencia local"},
-        503: {"description": "No fue posible verificar la decisión en MS3"},
+        503: {"description": "No fue posible verificar la decisiÃ³n en MS3"},
     },
 )
 def aplicar_decision(
@@ -336,7 +336,7 @@ def aplicar_decision(
             principal=principal, token=token, verificador=verificador,
         )
     except (OrdenNoEncontradaError, DecisionNoVisibleError) as exc:
-        raise HTTPException(404, "Orden o decisión no encontrada") from exc
+        raise HTTPException(404, "Orden o decisiÃ³n no encontrada") from exc
     except OrdenEstadoNoAutorizadoError as exc:
         raise HTTPException(403, str(exc)) from exc
     except (OrdenTransicionNoPermitidaError, DecisionNoAplicableError) as exc:
@@ -344,27 +344,27 @@ def aplicar_decision(
     except OrdenObservacionInvalidaError as exc:
         raise HTTPException(422, str(exc)) from exc
     except ServicioPresupuestosNoDisponibleError as exc:
-        raise HTTPException(503, "No fue posible verificar la decisión en MS3") from exc
+        raise HTTPException(503, "No fue posible verificar la decisiÃ³n en MS3") from exc
     except PersistenciaOrdenError as exc:
-        raise HTTPException(500, "No fue posible aplicar la decisión") from exc
+        raise HTTPException(500, "No fue posible aplicar la decisiÃ³n") from exc
 
 
 @router_ordenes.post(
     "/{orden_id}/disponibilidad-repuestos",
     response_model=AplicacionDisponibilidadRepuestosRespuesta,
     include_in_schema=False,
-    summary="Iniciar reparación tras verificar una reserva de repuestos",
+    summary="Iniciar reparaciÃ³n tras verificar una reserva de repuestos",
     description=(
         "Solo Administrador. MS2 valida la reserva persistida en MS3 antes de "
-        "derivar Esperando repuestos → En reparación. La clave de operación "
+        "derivar Esperando repuestos â†’ En reparaciÃ³n. La clave de operaciÃ³n "
         "hace idempotente el reintento y queda registrada en el historial."
     ),
     responses={
-        401: {"description": "JWT ausente o inválido"},
+        401: {"description": "JWT ausente o invÃ¡lido"},
         403: {"description": "Se requiere rol Administrador"},
         404: {"description": "Orden o reserva de repuestos no encontrada"},
         409: {"description": "Orden en estado incompatible o reserva no confirmada"},
-        422: {"description": "Clave de operación inválida"},
+        422: {"description": "Clave de operaciÃ³n invÃ¡lida"},
         500: {"description": "Error de persistencia local"},
         503: {"description": "No fue posible verificar la reserva en MS3"},
     },
@@ -400,7 +400,7 @@ def aplicar_disponibilidad(
     except ServicioPresupuestosNoDisponibleError as exc:
         raise HTTPException(503, "No fue posible verificar la reserva en MS3") from exc
     except PersistenciaOrdenError as exc:
-        raise HTTPException(500, "No fue posible iniciar la reparación") from exc
+        raise HTTPException(500, "No fue posible iniciar la reparaciÃ³n") from exc
 
 
 @router_ordenes.post(
@@ -409,18 +409,18 @@ def aplicar_disponibilidad(
     status_code=status.HTTP_201_CREATED,
     summary="Crear una orden de trabajo",
     description=(
-        "Solo Administrador. Si el vehículo no tiene un ingreso físico abierto, "
+        "Solo Administrador. Si el vehÃ­culo no tiene un ingreso fÃ­sico abierto, "
         "se valida el cupo de la jornada local antes de registrar el nuevo ingreso. "
         "Una orden nueva que reutiliza un ingreso abierto no consume otro cupo. "
-        "Solo se permite una orden activa por vehículo: cualquier estado salvo "
+        "Solo se permite una orden activa por vehÃ­culo: cualquier estado salvo "
         "Entregado o Cancelado. Si existe otra, responde 409 sin crear registros."
     ),
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
-        status.HTTP_404_NOT_FOUND: {"description": "Vehículo no encontrado"},
+        status.HTTP_404_NOT_FOUND: {"description": "VehÃ­culo no encontrado"},
         status.HTTP_409_CONFLICT: {
-            "description": "Vehículo con orden activa, cupo diario agotado o aún no configurado"
+            "description": "VehÃ­culo con orden activa, cupo diario agotado o aÃºn no configurado"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
@@ -442,17 +442,17 @@ def registrar_orden(
     except CupoDiarioNoConfiguradoError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Configura el máximo diario de ingresos físicos antes de recibir vehículos",
+            detail="Configura el mÃ¡ximo diario de ingresos fÃ­sicos antes de recibir vehÃ­culos",
         ) from exc
     except CupoDiarioExcedidoError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="El taller ya alcanzó el máximo diario de ingresos físicos",
+            detail="El taller ya alcanzÃ³ el mÃ¡ximo diario de ingresos fÃ­sicos",
         ) from exc
     except VehiculoNoEncontradoError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vehículo no encontrado",
+            detail="VehÃ­culo no encontrado",
         ) from exc
     except PersistenciaOrdenError as exc:
         raise HTTPException(
@@ -464,9 +464,9 @@ def registrar_orden(
 @router_ordenes.get(
     "",
     response_model=list[OrdenRespuesta],
-    summary="Listar órdenes visibles",
+    summary="Listar Ã³rdenes visibles",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la consulta"
         },
@@ -494,7 +494,7 @@ def consultar_ordenes(
         sqlstate = getattr(getattr(causa, "orig", None), "sqlstate", None)
         if not isinstance(sqlstate, str) or not _SQLSTATE_VALIDO.fullmatch(sqlstate):
             sqlstate = "no-disponible"
-        # No registrar la excepción completa: puede contener SQL, parámetros o DSN.
+        # No registrar la excepciÃ³n completa: puede contener SQL, parÃ¡metros o DSN.
         logger.error(
             "ms2_consulta_ordenes_fallida request_id=%s tipo=%s sqlstate=%s",
             request_id,
@@ -503,24 +503,24 @@ def consultar_ordenes(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible consultar las órdenes",
+            detail="No fue posible consultar las Ã³rdenes",
         ) from exc
 
 
 @router_ordenes.get(
     "/vehiculo/{vehiculo_id}/historial",
     response_model=HistorialOrdenesVehiculoRespuesta,
-    summary="Consultar el historial paginado de órdenes de un vehículo",
+    summary="Consultar el historial paginado de Ã³rdenes de un vehÃ­culo",
     description=(
-        "Ordena por fecha de creación descendente y desempata por ID. "
-        "Cliente ve un vehículo propio, Mecánico solo órdenes actualmente "
-        "asignadas a él y Administrador ve todas."
+        "Ordena por fecha de creaciÃ³n descendente y desempata por ID. "
+        "Cliente ve un vehÃ­culo propio, MecÃ¡nico solo Ã³rdenes actualmente "
+        "asignadas a Ã©l y Administrador ve todas."
     ),
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
-        status.HTTP_404_NOT_FOUND: {"description": "Vehículo no encontrado"},
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Identificador o parámetros de página inválidos"
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
+        status.HTTP_404_NOT_FOUND: {"description": "VehÃ­culo no encontrado"},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "Identificador o parÃ¡metros de pÃ¡gina invÃ¡lidos"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible consultar el historial"
@@ -536,8 +536,8 @@ def consultar_historial_ordenes_vehiculo(
     db: Session = Depends(get_db),
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> dict[str, object]:
-    # ``limite``/``desde`` son el contrato canónico; ``limit``/``offset`` se
-    # conservan para los clientes que ya consumían este endpoint.
+    # ``limite``/``desde`` son el contrato canÃ³nico; ``limit``/``offset`` se
+    # conservan para los clientes que ya consumÃ­an este endpoint.
     limite = limite if limite is not None else (limit if limit is not None else 20)
     desde = desde if desde is not None else (offset if offset is not None else 0)
     try:
@@ -548,12 +548,12 @@ def consultar_historial_ordenes_vehiculo(
     except VehiculoNoEncontradoError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vehículo no encontrado",
+            detail="VehÃ­culo no encontrado",
         ) from exc
     except PersistenciaOrdenError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible consultar el historial del vehículo",
+            detail="No fue posible consultar el historial del vehÃ­culo",
         ) from exc
 
 
@@ -562,7 +562,7 @@ def consultar_historial_ordenes_vehiculo(
     response_model=OrdenRespuesta,
     summary="Consultar una orden visible",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la consulta"
@@ -611,7 +611,7 @@ def consultar_orden(
         "Aplica la misma visibilidad del detalle; sin registros devuelve []."
     ),
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la consulta"
@@ -647,17 +647,17 @@ def consultar_historial_orden(
 @router_ordenes.get(
     "/{orden_id}/bitacora",
     response_model=list[BitacoraRespuesta],
-    summary="Consultar la bitácora de trabajo de una orden",
+    summary="Consultar la bitÃ¡cora de trabajo de una orden",
     description=(
         "Devuelve todos los registros por fecha/hora e identificador ascendente, "
-        "con el autor, el tipo (observación o acción), el texto y los repuestos "
+        "con el autor, el tipo (observaciÃ³n o acciÃ³n), el texto y los repuestos "
         "utilizados. Aplica la misma visibilidad del detalle: Administrador ve "
-        "todas; Cliente sus vehículos; Mecánico sus órdenes asignadas; multirol "
+        "todas; Cliente sus vehÃ­culos; MecÃ¡nico sus Ã³rdenes asignadas; multirol "
         "combina los alcances. Una orden inexistente o ajena responde 404; una "
         "visible sin registros devuelve []."
     ),
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la consulta"
@@ -686,7 +686,7 @@ def consultar_bitacora_orden(
     except PersistenciaOrdenError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible consultar la bitácora de la orden",
+            detail="No fue posible consultar la bitÃ¡cora de la orden",
         ) from exc
 
 
@@ -694,22 +694,22 @@ def consultar_bitacora_orden(
     "/{orden_id}/bitacora",
     response_model=BitacoraRespuesta,
     status_code=status.HTTP_201_CREATED,
-    summary="Registrar una observación o acción en la bitácora",
+    summary="Registrar una observaciÃ³n o acciÃ³n en la bitÃ¡cora",
     description=(
-        "Registra lo que el mecánico observa o ejecuta sobre una orden sin "
-        "cambiar su estado. Una observación es una nota libre; una acción puede "
+        "Registra lo que el mecÃ¡nico observa o ejecuta sobre una orden sin "
+        "cambiar su estado. Una observaciÃ³n es una nota libre; una acciÃ³n puede "
         "declarar los repuestos utilizados (texto libre y cantidad). Solo el "
-        "mecánico asignado o un administrador pueden registrarla. No acepta "
+        "mecÃ¡nico asignado o un administrador pueden registrarla. No acepta "
         "estado, actor ni fecha en el cuerpo."
     ),
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {
-            "description": "Se requiere ser el mecánico asignado o Administrador"
+            "description": "Se requiere ser el mecÃ¡nico asignado o Administrador"
         },
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada o ajena"},
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Tipo, descripción o repuestos inválidos"
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "Tipo, descripciÃ³n o repuestos invÃ¡lidos"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
@@ -742,12 +742,12 @@ def registrar_bitacora_orden(
         ) from exc
     except (BitacoraEntradaInvalidaError, BitacoraRepuestoInvalidoError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
     except PersistenciaOrdenError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible registrar la entrada de la bitácora",
+            detail="No fue posible registrar la entrada de la bitÃ¡cora",
         ) from exc
 
 
@@ -756,26 +756,26 @@ def registrar_bitacora_orden(
     response_model=OrdenRespuesta,
     summary="Cambiar el estado de una orden",
     description=(
-        "El PATCH genérico solo permite finalizar el trabajo (5 → 6) al Mecánico "
-        "asignado. La asignación (1 → 2), el envío de presupuesto (2 → 3) y la "
-        "decisión inicial (3 → 4/5/8) requieren sus operaciones específicas; "
-        "3 → 8 está disponible solo por el rechazo inicial verificado, no por "
-        "cancelación genérica. La "
-        "disponibilidad de repuestos (4 → 5), entrega (6 → 7) y cancelación "
-        "genérica están bloqueadas hasta contar con operaciones que verifiquen "
+        "El PATCH genÃ©rico solo permite finalizar el trabajo (5 â†’ 6) al MecÃ¡nico "
+        "asignado. La asignaciÃ³n (1 â†’ 2), el envÃ­o de presupuesto (2 â†’ 3) y la "
+        "decisiÃ³n inicial (3 â†’ 4/5/8) requieren sus operaciones especÃ­ficas; "
+        "3 â†’ 8 estÃ¡ disponible solo por el rechazo inicial verificado, no por "
+        "cancelaciÃ³n genÃ©rica. La "
+        "disponibilidad de repuestos (4 â†’ 5), entrega (6 â†’ 7) y cancelaciÃ³n "
+        "genÃ©rica estÃ¡n bloqueadas hasta contar con operaciones que verifiquen "
         "sus hechos de negocio."
     ),
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {
-            "description": "Se requiere rol Administrador o Mecánico asignado; solo este último finaliza el trabajo"
+            "description": "Se requiere rol Administrador o MecÃ¡nico asignado; solo este Ãºltimo finaliza el trabajo"
         },
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_409_CONFLICT: {
-            "description": "Transición no permitida, terminal o reservada a una operación específica"
+            "description": "TransiciÃ³n no permitida, terminal o reservada a una operaciÃ³n especÃ­fica"
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Estado de destino desconocido, cancelación sin motivo o datos inválidos"
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "Estado de destino desconocido, cancelaciÃ³n sin motivo o datos invÃ¡lidos"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
@@ -808,7 +808,7 @@ def cambiar_estado(
         ) from exc
     except (OrdenEstadoInvalidoError, OrdenObservacionInvalidaError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     except OrdenTransicionNoPermitidaError as exc:
@@ -826,23 +826,23 @@ def cambiar_estado(
 @router_ordenes.post(
     "/{orden_id}/entrega",
     response_model=EntregaOrdenRespuesta,
-    summary="Registrar la entrega física de una orden",
+    summary="Registrar la entrega fÃ­sica de una orden",
     description=(
         "Solo un Administrador puede confirmar la entrega de una orden en "
         "estado Listo. El responsable y la fecha/hora se obtienen del JWT y "
         "del servidor. Repetir una entrega ya registrada devuelve el mismo "
         "registro, sin duplicar el historial. La primera entrega cierra el "
-        "ingreso físico en la misma transacción; no corrige salidas históricas."
+        "ingreso fÃ­sico en la misma transacciÃ³n; no corrige salidas histÃ³ricas."
     ),
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_409_CONFLICT: {
             "description": "La orden debe estar en Listo para registrar su entrega"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
-            "description": "No fue posible registrar la entrega física"
+            "description": "No fue posible registrar la entrega fÃ­sica"
         },
     },
 )
@@ -888,26 +888,26 @@ def confirmar_entrega_orden(
     except PersistenciaOrdenError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible registrar la entrega física",
+            detail="No fue posible registrar la entrega fÃ­sica",
         ) from exc
 
 
 @router_ordenes.post(
     "/{orden_id}/devolucion",
     response_model=DevolucionOrdenRespuesta,
-    summary="Registrar la devolución física de una orden cancelada",
+    summary="Registrar la devoluciÃ³n fÃ­sica de una orden cancelada",
     description=(
         "Solo Administrador. Conserva Cancelado, registra fecha del servidor y "
-        "responsable del JWT, y cierra el ingreso en una sola transacción. "
-        "Un reintento conserva la auditoría original. No crea un cambio de "
+        "responsable del JWT, y cierra el ingreso en una sola transacciÃ³n. "
+        "Un reintento conserva la auditorÃ­a original. No crea un cambio de "
         "estado ni permite salir mientras otra orden del ingreso siga activa."
     ),
     responses={
-        401: {"description": "JWT ausente o inválido"},
+        401: {"description": "JWT ausente o invÃ¡lido"},
         403: {"description": "Se requiere rol Administrador"},
         404: {"description": "Orden no encontrada"},
-        409: {"description": "Estado o ingreso incompatible con la devolución"},
-        500: {"description": "No fue posible registrar la devolución física"},
+        409: {"description": "Estado o ingreso incompatible con la devoluciÃ³n"},
+        500: {"description": "No fue posible registrar la devoluciÃ³n fÃ­sica"},
     },
 )
 def confirmar_devolucion_orden(
@@ -929,25 +929,25 @@ def confirmar_devolucion_orden(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PersistenciaOrdenError as exc:
         raise HTTPException(
-            status_code=500, detail="No fue posible registrar la devolución física",
+            status_code=500, detail="No fue posible registrar la devoluciÃ³n fÃ­sica",
         ) from exc
 
 
 @router_ordenes.put(
     "/{orden_id}/mecanico",
     response_model=OrdenRespuesta,
-    summary="Asignar o reasignar el mecánico responsable",
+    summary="Asignar o reasignar el mecÃ¡nico responsable",
     responses={
-        422: {"description": "Destino inexistente, inactivo, sin rol Mecánico o datos inválidos"},
+        422: {"description": "Destino inexistente, inactivo, sin rol MecÃ¡nico o datos invÃ¡lidos"},
         503: {"description": "MS1 no disponible para validar el destino; no se guarda el cambio"},
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Administrador"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada"},
         status.HTTP_409_CONFLICT: {
             "description": (
-                "Un administrador-mecánico no puede autoasignarse o la orden "
-                "está en estado terminal, no se configuró capacidad o el "
-                "mecánico alcanzó el límite"
+                "Un administrador-mecÃ¡nico no puede autoasignarse o la orden "
+                "estÃ¡ en estado terminal, no se configurÃ³ capacidad o el "
+                "mecÃ¡nico alcanzÃ³ el lÃ­mite"
             )
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
@@ -971,7 +971,7 @@ def actualizar_mecanico_responsable(
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Un mecánico no puede autoasignarse una orden",
+            detail="Un mecÃ¡nico no puede autoasignarse una orden",
         )
 
     try:
@@ -979,12 +979,12 @@ def actualizar_mecanico_responsable(
     except MecanicoNoValidoError as exc:
         raise HTTPException(
             status_code=422,
-            detail="El usuario de destino debe existir, estar activo y tener rol Mecánico",
+            detail="El usuario de destino debe existir, estar activo y tener rol MecÃ¡nico",
         ) from exc
     except ServicioUsuariosNoDisponibleError as exc:
         raise HTTPException(
             status_code=503,
-            detail="No fue posible validar el mecánico con el servicio de usuarios",
+            detail="No fue posible validar el mecÃ¡nico con el servicio de usuarios",
         ) from exc
 
     try:
@@ -1018,7 +1018,7 @@ def actualizar_mecanico_responsable(
     except PersistenciaOrdenError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible asignar el mecánico",
+            detail="No fue posible asignar el mecÃ¡nico",
         ) from exc
 
 
@@ -1028,27 +1028,27 @@ def actualizar_mecanico_responsable(
     "/{orden_id}/cancelacion",
     response_model=SolicitudCancelacionRespuesta,
     status_code=status.HTTP_201_CREATED,
-    summary="Solicitar la cancelación administrativa de una orden",
+    summary="Solicitar la cancelaciÃ³n administrativa de una orden",
     description=(
         "Solo el Cliente propietario. Registra motivo, actor y fecha sin cambiar "
-        "el estado; el Administrador debe revisar y confirmar por la operación "
-        "específica. MS3 se consulta para rechazar órdenes con aprobación inicial."
+        "el estado; el Administrador debe revisar y confirmar por la operaciÃ³n "
+        "especÃ­fica. MS3 se consulta para rechazar Ã³rdenes con aprobaciÃ³n inicial."
     ),
     responses={
-        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o inválido"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente o invÃ¡lido"},
         status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Cliente"},
         status.HTTP_404_NOT_FOUND: {"description": "Orden no encontrada o ajena"},
         status.HTTP_409_CONFLICT: {
-            "description": "La orden avanzó, ya tiene solicitud o existe aprobación inicial"
+            "description": "La orden avanzÃ³, ya tiene solicitud o existe aprobaciÃ³n inicial"
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "description": "Motivo de cancelación vacío"
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "description": "Motivo de cancelaciÃ³n vacÃ­o"
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "description": "No fue posible completar la persistencia"
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
-            "description": "No fue posible verificar la aprobación inicial en MS3"
+            "description": "No fue posible verificar la aprobaciÃ³n inicial en MS3"
         },
     },
 )
@@ -1084,7 +1084,7 @@ def solicitar_cancelacion(
         ) from exc
     except OrdenObservacionInvalidaError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     except OrdenTransicionNoPermitidaError as exc:
@@ -1095,12 +1095,12 @@ def solicitar_cancelacion(
     except PersistenciaOrdenError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="No fue posible registrar la solicitud de cancelación",
+            detail="No fue posible registrar la solicitud de cancelaciÃ³n",
         ) from exc
     except ServicioPresupuestosNoDisponibleError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="No fue posible verificar la aprobación inicial en MS3",
+            detail="No fue posible verificar la aprobaciÃ³n inicial en MS3",
         ) from exc
     except DecisionNoVisibleError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
@@ -1110,8 +1110,8 @@ def solicitar_cancelacion(
 @router_ordenes.get(
     "/cancelaciones/pendientes",
     response_model=list[SolicitudCancelacionRespuesta],
-    summary="Listar solicitudes de cancelación pendientes de revisión",
-    responses={401: {"description": "JWT ausente o inválido"},
+    summary="Listar solicitudes de cancelaciÃ³n pendientes de revisiÃ³n",
+    responses={401: {"description": "JWT ausente o invÃ¡lido"},
                403: {"description": "Se requiere rol Administrador"}},
 )
 def listar_cancelaciones_pendientes(
@@ -1134,17 +1134,17 @@ def listar_cancelaciones_pendientes(
 @router_ordenes.post(
     "/{orden_id}/cancelacion/confirmacion",
     response_model=OrdenRespuesta,
-    summary="Confirmar administrativamente una solicitud de cancelación",
+    summary="Confirmar administrativamente una solicitud de cancelaciÃ³n",
     description=(
-        "Solo Administrador. Comprueba que la solicitud esté pendiente, que la "
+        "Solo Administrador. Comprueba que la solicitud estÃ© pendiente, que la "
         "orden siga en estado cancelable y vuelve a consultar a MS3 antes de "
-        "registrar Cancelado e historial en una sola transacción."
+        "registrar Cancelado e historial en una sola transacciÃ³n."
     ),
-    responses={401: {"description": "JWT ausente o inválido"},
+    responses={401: {"description": "JWT ausente o invÃ¡lido"},
                403: {"description": "Se requiere rol Administrador"},
                404: {"description": "Orden no encontrada"},
-               409: {"description": "Solicitud no pendiente o aprobación inicial existente"},
-               500: {"description": "No fue posible confirmar la cancelación"},
+               409: {"description": "Solicitud no pendiente o aprobaciÃ³n inicial existente"},
+               500: {"description": "No fue posible confirmar la cancelaciÃ³n"},
                503: {"description": "No fue posible verificar MS3"}},
 )
 def confirmar_cancelacion(
@@ -1171,4 +1171,5 @@ def confirmar_cancelacion(
         raise HTTPException(status_code=503, detail="No fue posible verificar MS3") from exc
     except PersistenciaOrdenError as exc:
         raise HTTPException(status_code=500,
-                            detail="No fue posible confirmar la cancelación") from exc
+                            detail="No fue posible confirmar la cancelaciÃ³n") from exc
+

@@ -1,49 +1,49 @@
-"""Endpoints de evidencias (MS4).
+﻿"""Endpoints de evidencias (MS4).
 
-    POST /evidencias                                   subir (Mecánico o Administrador)
+    POST /evidencias                                   subir (MecÃ¡nico o Administrador)
     GET  /evidencias?orden_id=                         listar las de una orden
     GET  /evidencias/{evidencia_id}                    detalle de una evidencia
     GET  /evidencias/{evidencia_id}/descarga           URL prefirmada de descarga
 
-Acceso (matriz de autorización, §4.5): MS4 vuelve a consultar a MS2
+Acceso (matriz de autorizaciÃ³n, Â§4.5): MS4 vuelve a consultar a MS2
 (`GET {MS2_URL}/ordenes/{orden_id}`, con el MISMO JWT, integracion_ms2.py) si
 la orden existe y es visible para quien llama, en subir, listar, detalle y
 descarga. MS2 responde 200 si la orden es de ese cliente o la atiende ese
-mecánico; sobre esa respuesta MS4 mapea:
+mecÃ¡nico; sobre esa respuesta MS4 mapea:
 
 - Subir y listar: la orden debe ser visible para todos los roles; si MS2
-  responde 404/403 → 404 "Orden no encontrada" (no enumera), y si MS2 no
-  responde → 503.
-- Detalle y descarga: si la evidencia no existe → 404 "Evidencia no
-  encontrada". El Administrador NO consulta a MS2 (auditoría: ve todo,
+  responde 404/403 â†’ 404 "Orden no encontrada" (no enumera), y si MS2 no
+  responde â†’ 503.
+- Detalle y descarga: si la evidencia no existe â†’ 404 "Evidencia no
+  encontrada". El Administrador NO consulta a MS2 (auditorÃ­a: ve todo,
   incluidas las eliminadas); el resto valida la orden contra MS2 y si MS2
-  responde 404/403 también responde 404 "Evidencia no encontrada" — el mismo
+  responde 404/403 tambiÃ©n responde 404 "Evidencia no encontrada" â€” el mismo
   body que una evidencia inexistente, para no revelar existencia.
 
 Roles sobre las evidencias:
-- Subir: solo Mecánico y Administrador (checklist 3.1); el 403 se resuelve en
-  una dependencia, ANTES de leer el archivo de la petición.
+- Subir: solo MecÃ¡nico y Administrador (checklist 3.1); el 403 se resuelve en
+  una dependencia, ANTES de leer el archivo de la peticiÃ³n.
 - Consultar: el Cliente aplica los tres filtros acumulativos
   (`visible_cliente = true`, `estado = confirmada`, no eliminada); el resto ve
   las no eliminadas; el Administrador ve todo, incluidas las eliminadas.
 
 Archivo (Semana 6, checklist 1.1, 1.2, 1.3 y 1.6): solo se aceptan JPG, PNG,
 WEBP, MP4 y MOV (415 para cualquier otro formato o si los bytes no
-corresponden al formato declarado), cada tipo tiene un tamaño máximo
+corresponden al formato declarado), cada tipo tiene un tamaÃ±o mÃ¡ximo
 (`MS4_MAX_BYTES_FOTO` / `MS4_MAX_BYTES_VIDEO`, 413 si se supera) y un archivo
-dañado o incompleto responde 422. Todos los rechazos ocurren antes de subir
+daÃ±ado o incompleto responde 422. Todos los rechazos ocurren antes de subir
 nada a MinIO o crear filas.
 
-Asociación con la orden (Semana 6): además de existir y ser visible (MS2), la
+AsociaciÃ³n con la orden (Semana 6): ademÃ¡s de existir y ser visible (MS2), la
 orden no puede estar entregada ni cancelada (409), y si la evidencia es de
 contexto `presupuesto`, ese presupuesto debe pertenecer a la misma orden
 (MS3, 422 si no existe o es de otra orden; 503 si MS3 no responde).
 
 Errores: 400 archivo ilegible, 401 sin token, 403 rol que no sube, 404
 evidencia/orden inexistente o fuera de alcance, 409 orden cerrada, 413 archivo
-demasiado grande, 415 formato no permitido, 422 datos/regla/archivo dañado, 503
+demasiado grande, 415 formato no permitido, 422 datos/regla/archivo daÃ±ado, 503
 MS2, MS3, almacenamiento o base no disponible (la subida se compensa). Un error
-no previsto responde 500 con un mensaje genérico (manejador en main.py).
+no previsto responde 500 con un mensaje genÃ©rico (manejador en main.py).
 """
 from __future__ import annotations
 
@@ -122,34 +122,34 @@ from shared.auth import PrincipalAutenticado
 
 router = APIRouter(prefix="/evidencias", tags=["evidencias"])
 
-_MSG_ALMACENAMIENTO = "El almacenamiento de evidencias no está disponible"
+_MSG_ALMACENAMIENTO = "El almacenamiento de evidencias no estÃ¡ disponible"
 _MSG_GUARDADO = "No se pudo guardar la evidencia, intenta nuevamente"
-_MSG_ORDENES = "El servicio de órdenes no está disponible"
-_MSG_PRESUPUESTOS = "El servicio de presupuestos no está disponible"
-_MSG_ORDEN_CERRADA = "La orden está entregada o cancelada y no admite nuevas evidencias"
+_MSG_ORDENES = "El servicio de Ã³rdenes no estÃ¡ disponible"
+_MSG_PRESUPUESTOS = "El servicio de presupuestos no estÃ¡ disponible"
+_MSG_ORDEN_CERRADA = "La orden estÃ¡ entregada o cancelada y no admite nuevas evidencias"
 _MSG_PRESUPUESTO_NO_EXISTE = "El presupuesto indicado no existe"
 _MSG_PRESUPUESTO_OTRA_ORDEN = "El presupuesto indicado no pertenece a la orden"
 
-_401 = {status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente, inválido o expirado"}}
+_401 = {status.HTTP_401_UNAUTHORIZED: {"description": "JWT ausente, invÃ¡lido o expirado"}}
 _403_SUBIR = {
-    status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol Mecánico o Administrador"}
+    status.HTTP_403_FORBIDDEN: {"description": "Se requiere rol MecÃ¡nico o Administrador"}
 }
 _NO_EXISTE = {
     status.HTTP_404_NOT_FOUND: {"description": "Evidencia inexistente o fuera del alcance del solicitante"}
 }
 _503 = {
     status.HTTP_503_SERVICE_UNAVAILABLE: {
-        "description": "El almacenamiento de evidencias no está disponible"
+        "description": "El almacenamiento de evidencias no estÃ¡ disponible"
     }
 }
 _503_ORDENES = {
     status.HTTP_503_SERVICE_UNAVAILABLE: {
-        "description": "El servicio de órdenes no está disponible (MS2)"
+        "description": "El servicio de Ã³rdenes no estÃ¡ disponible (MS2)"
     }
 }
 _413 = {
-    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {
-        "description": "El archivo supera el tamaño máximo de su tipo (foto o video)"
+    status.HTTP_413_CONTENT_TOO_LARGE: {
+        "description": "El archivo supera el tamaÃ±o mÃ¡ximo de su tipo (foto o video)"
     }
 }
 _415 = {
@@ -161,14 +161,14 @@ _ERRORES_COMUNES = {**_401, **_403_SUBIR}
 
 
 def obtener_politica_archivos() -> PoliticaArchivos:
-    """Lista blanca y límites de tamaño vigentes (configuración MS4_*)."""
+    """Lista blanca y lÃ­mites de tamaÃ±o vigentes (configuraciÃ³n MS4_*)."""
     return PoliticaArchivos.desde_settings(settings)
 
 
 def _personal_que_subira(
     principal: PrincipalAutenticado = Depends(obtener_principal_actual),
 ) -> PrincipalAutenticado:
-    """Guard 3.1: solo Mecánico o Administrador suben (antes de leer el archivo)."""
+    """Guard 3.1: solo MecÃ¡nico o Administrador suben (antes de leer el archivo)."""
     if not puede_subir(principal):
         registrar(
             "subida_rechazada",
@@ -179,15 +179,15 @@ def _personal_que_subira(
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para realizar esta operación",
+            detail="No tienes permiso para realizar esta operaciÃ³n",
         )
     return principal
 
 
 def _estado_y_motivo(exc: EvidenciaInvalidaError) -> tuple[int, str]:
-    """Código HTTP y motivo corto (para el log) de un archivo rechazado."""
+    """CÃ³digo HTTP y motivo corto (para el log) de un archivo rechazado."""
     if isinstance(exc, ArchivoDemasiadoGrandeError):
-        return status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "demasiado_grande"
+        return status.HTTP_413_CONTENT_TOO_LARGE, "demasiado_grande"
     if isinstance(exc, ContenidoNoCoincideError):
         return status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "contenido_no_coincide"
     if isinstance(exc, TipoArchivoNoPermitidoError):
@@ -195,12 +195,12 @@ def _estado_y_motivo(exc: EvidenciaInvalidaError) -> tuple[int, str]:
     if isinstance(exc, ArchivoIlegibleError):
         return status.HTTP_400_BAD_REQUEST, "archivo_ilegible"
     if isinstance(exc, ArchivoDanadoError):
-        return status.HTTP_422_UNPROCESSABLE_ENTITY, "archivo_danado"
-    return status.HTTP_422_UNPROCESSABLE_ENTITY, "archivo_invalido"
+        return status.HTTP_422_UNPROCESSABLE_CONTENT, "archivo_danado"
+    return status.HTTP_422_UNPROCESSABLE_CONTENT, "archivo_invalido"
 
 
 def _accesible(evidencia: Evidencia | None, principal: PrincipalAutenticado) -> bool:
-    """Detalle/descarga: 404 si no existe o está fuera del alcance (no enumeración)."""
+    """Detalle/descarga: 404 si no existe o estÃ¡ fuera del alcance (no enumeraciÃ³n)."""
     if evidencia is None:
         return False
     return es_visible_para(
@@ -213,7 +213,7 @@ def _accesible(evidencia: Evidencia | None, principal: PrincipalAutenticado) -> 
 def _error_422_por_validacion(exc: ValidationError) -> HTTPException:
     """Reglas del schema (presupuesto/visible_cliente) como 422 de MS2/MS3."""
     detalle = " ".join(str(err["msg"]) for err in exc.errors())
-    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detalle)
+    return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detalle)
 
 
 def _exigir_orden_accesible(
@@ -226,8 +226,8 @@ def _exigir_orden_accesible(
     """Valida la orden contra MS2 (mismo contrato que MS3, integracion_ms2.py).
 
     Devuelve el `estado_codigo` de la orden (None si MS2 no lo informa).
-    404/403 de MS2 → 404 con `detalle_no_visible` (no enumera la existencia);
-    MS2 no disponible → 503.
+    404/403 de MS2 â†’ 404 con `detalle_no_visible` (no enumera la existencia);
+    MS2 no disponible â†’ 503.
     """
     try:
         return verificador.verificar_acceso(orden_id, token)
@@ -276,8 +276,8 @@ def _exigir_presupuesto_de_la_orden(
 ) -> None:
     """El presupuesto debe existir en MS3 y pertenecer a la misma orden.
 
-    Inexistente o de otra orden → 422 (es un dato del formulario inválido);
-    MS3 no disponible → 503. Se valida ANTES de leer o subir el archivo.
+    Inexistente o de otra orden â†’ 422 (es un dato del formulario invÃ¡lido);
+    MS3 no disponible â†’ 503. Se valida ANTES de leer o subir el archivo.
     """
     try:
         orden_del_presupuesto = verificador.orden_del_presupuesto(presupuesto_id, token)
@@ -286,12 +286,12 @@ def _exigir_presupuesto_de_la_orden(
             "subida_rechazada",
             logging.WARNING,
             motivo="presupuesto_inexistente",
-            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            estado_http=status.HTTP_422_UNPROCESSABLE_CONTENT,
             presupuesto_id=presupuesto_id,
             orden_id=orden_id,
         )
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=_MSG_PRESUPUESTO_NO_EXISTE,
         ) from exc
     except ServicioPresupuestosNoDisponible as exc:
@@ -310,12 +310,12 @@ def _exigir_presupuesto_de_la_orden(
             "subida_rechazada",
             logging.WARNING,
             motivo="presupuesto_de_otra_orden",
-            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            estado_http=status.HTTP_422_UNPROCESSABLE_CONTENT,
             presupuesto_id=presupuesto_id,
             orden_id=orden_id,
         )
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=_MSG_PRESUPUESTO_OTRA_ORDEN,
         )
 
@@ -328,12 +328,12 @@ def _exigir_presupuesto_de_la_orden(
     description=(
         "Multipart: archivo + metadatos. El autor sale del JWT y el `request_id` de "
         "la cabecera X-Request-ID; el archivo se sube a MinIO/S3 y los metadatos a "
-        "la base en una sola operación con compensación. Antes de subir se valida "
-        "contra MS2 que la orden existe, la atiende el solicitante y no está "
+        "la base en una sola operaciÃ³n con compensaciÃ³n. Antes de subir se valida "
+        "contra MS2 que la orden existe, la atiende el solicitante y no estÃ¡ "
         "entregada ni cancelada (404/409/503), contra MS3 que el presupuesto es "
         "de esa orden, y el archivo: formato de la lista blanca verificado por "
-        "su contenido (415), tamaño máximo (413) y estructura completa (422). "
-        "Ningún rechazo deja archivos ni filas."
+        "su contenido (415), tamaÃ±o mÃ¡ximo (413) y estructura completa (422). "
+        "NingÃºn rechazo deja archivos ni filas."
     ),
     responses={
         **_ERRORES_COMUNES,
@@ -342,20 +342,20 @@ def _exigir_presupuesto_de_la_orden(
             "description": "La orden no existe o no la atiende el solicitante"
         },
         status.HTTP_409_CONFLICT: {
-            "description": "La orden está entregada o cancelada"
+            "description": "La orden estÃ¡ entregada o cancelada"
         },
         **_413,
         **_415,
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": (
-                "Archivo vacío o dañado, contexto inválido, o presupuesto "
+                "Archivo vacÃ­o o daÃ±ado, contexto invÃ¡lido, o presupuesto "
                 "inexistente o de otra orden"
             )
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "description": (
-                "El almacenamiento, la base, el servicio de órdenes (MS2) o el "
-                "de presupuestos (MS3) no está disponible; no quedan archivos "
+                "El almacenamiento, la base, el servicio de Ã³rdenes (MS2) o el "
+                "de presupuestos (MS3) no estÃ¡ disponible; no quedan archivos "
                 "ni filas a medias"
             )
         },
@@ -394,7 +394,7 @@ def subir(
             "subida_rechazada",
             logging.WARNING,
             motivo="formulario_invalido",
-            estado_http=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            estado_http=status.HTTP_422_UNPROCESSABLE_CONTENT,
             orden_id=orden_id,
             usuario_id=principal.usuario_id,
         )
@@ -442,10 +442,10 @@ def subir(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_MSG_ALMACENAMIENTO
         )
     except GuardadoEvidenciaError as exc:
-        # La subida ya se compensó; el cliente puede reintentar. La causa real
+        # La subida ya se compensÃ³; el cliente puede reintentar. La causa real
         # (error de la base) queda encadenada y nunca viaja en el body. Si la
-        # compensación no pudo borrar el objeto, el log lo marca para que la
-        # conciliación (scripts/limpiar_huerfanos_ms4.py) lo limpie.
+        # compensaciÃ³n no pudo borrar el objeto, el log lo marca para que la
+        # conciliaciÃ³n (scripts/limpiar_huerfanos_ms4.py) lo limpie.
         registrar(
             "subida_fallida",
             logging.ERROR,
@@ -488,7 +488,7 @@ def subir(
         status.HTTP_404_NOT_FOUND: {
             "description": "La orden no existe o no pertenece al solicitante"
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": "Falta `orden_id` o no es un entero positivo"
         },
         **_503_ORDENES,
@@ -526,7 +526,7 @@ def listar(
     description=(
         "Fuera del alcance se responde 404, no 403 (no revela existencia). La "
         "evidencia oculta responde el mismo 404 que una inexistente. El "
-        "Administrador no consulta a MS2 (auditoría)."
+        "Administrador no consulta a MS2 (auditorÃ­a)."
     ),
     responses={**_401, **_NO_EXISTE, **_503_ORDENES},
 )
@@ -559,9 +559,9 @@ def detalle(
 @router.get(
     "/{evidencia_id}/descarga",
     response_model=UrlDescarga,
-    summary="URL prefirmada de corta duración para descargar la evidencia",
+    summary="URL prefirmada de corta duraciÃ³n para descargar la evidencia",
     description=(
-        "Devuelve una URL firmada que expira (TTL de configuración) y fuerza el tipo "
+        "Devuelve una URL firmada que expira (TTL de configuraciÃ³n) y fuerza el tipo "
         "y la descarga (controles 3.3 y 3.4). Nunca expone la clave del objeto ni la "
         "URL interna del almacenamiento. La respuesta incluye `Cache-Control: no-store`. "
         "Fuera del alcance responde 404 (mismo body que una evidencia inexistente); "

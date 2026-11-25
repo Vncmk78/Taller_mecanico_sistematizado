@@ -42,6 +42,7 @@ export function NotificationsPage() {
 
   const cargar = useCallback(async (modo: 'initial' | 'refresh' = 'initial') => {
     const seq = ++requestSeqRef.current;
+    await Promise.resolve();
     if (modo === 'initial') setLoading(true);
     else setRefreshing(true);
     setError(null);
@@ -66,7 +67,8 @@ export function NotificationsPage() {
   }, [filtro]);
 
   useEffect(() => {
-    void cargar('initial');
+    const timeout = window.setTimeout(() => void cargar('initial'), 0);
+    return () => window.clearTimeout(timeout);
   }, [cargar]);
 
   const marcarLeida = async (id: string) => {

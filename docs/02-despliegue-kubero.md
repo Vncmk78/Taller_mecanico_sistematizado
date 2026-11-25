@@ -99,7 +99,7 @@ administra Integra II** y que el deploy automático **no modifica**:
 Ambas reenvían `/api/*` de su propio dominio a la Gateway (mismo origen para el
 navegador), así que **no necesitan estar en `GATEWAY_CORS_ORIGINS`**. Se
 actualizan solo cuando Integra IV cambia su tag en Kubero. Verificación de
-integración: [07 — Pruebas realizadas §20](07-pruebas-realizadas.md#20-integración-web-base-de-datos-y-app-móvil-24-11-2026).
+integración: [07 — Pruebas realizadas §22](07-pruebas-realizadas.md#22-integración-web-base-de-datos-y-app-móvil-24-11-2026).
 
 ### 3.1 Configuración común de las apps backend
 

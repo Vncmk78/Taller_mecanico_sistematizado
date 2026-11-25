@@ -72,6 +72,31 @@ describe('NotificationsPage: estados de carga, error y lista vacía', () => {
         expect(notificationService.getMyNotifications).toHaveBeenCalledTimes(2);
     });
 
+    it('muestra el error al no poder marcar un aviso como leído', async () => {
+        vi.mocked(notificationService.markAsRead).mockRejectedValue(new Error('No disponible'));
+
+        render(<NotificationsPage />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Marcar como leída' }));
+
+        expect(
+            await screen.findByText('No se pudo marcar el aviso como leído. Puede reintentar.')
+        ).toBeInTheDocument();
+        expect(screen.getByText('Su orden cambió de estado')).toBeInTheDocument();
+    });
+
+    it('muestra el error al no poder marcar todos los avisos como leídos', async () => {
+        vi.mocked(notificationService.markAllAsRead).mockRejectedValue(new Error('No disponible'));
+
+        render(<NotificationsPage />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Marcar todas como leídas' }));
+
+        expect(
+            await screen.findByText(
+                'No se pudieron marcar todos los avisos como leídos. Puede reintentar.'
+            )
+        ).toBeInTheDocument();
+    });
+
     it('muestra el estado vacío y oculta la paginación cuando no hay avisos', async () => {
         vi.mocked(notificationService.getMyNotifications).mockResolvedValue(respuesta([]));
 

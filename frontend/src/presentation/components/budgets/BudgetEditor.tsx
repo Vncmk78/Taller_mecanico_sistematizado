@@ -13,6 +13,7 @@ import { esResultadoIncierto, getApiErrorMessage } from '@/infrastructure/api/er
 import type { ItemPresupuestoInput } from '@/domain/ports/PresupuestoPort';
 import type { Presupuesto } from '@/domain/entities/Presupuesto';
 import type { Repuesto } from '@/domain/entities/Repuesto';
+import { Alert } from '@/presentation/components/ui/Alert';
 import { LoadingState } from '@/presentation/components/ui/LoadingState';
 import { ErrorState } from '@/presentation/components/ui/ErrorState';
 import { Button } from '@/presentation/components/ui/Button';
@@ -41,6 +42,7 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [repuestos, setRepuestos] = useState<Repuesto[]>([]);
+    const [catalogoError, setCatalogoError] = useState<string | null>(null);
     const [items, setItems] = useState<ItemForm[]>([emptyItem]);
     const [submitting, setSubmitting] = useState(false);
     // Una lectura tardía del servidor no debe pisar lo que la persona ya editó.
@@ -80,18 +82,26 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
         }
     }, [id]);
 
+    const loadRepuestos = useCallback(async () => {
+        try {
+            const response = await repuestoService.getRepuestos({ limite: 200 });
+            setRepuestos(response.repuestos);
+            setCatalogoError(null);
+        } catch (err) {
+            // Un selector vacío por error de red no es un catálogo vacío:
+            // dar contexto y reintento evita guardar un ítem sin repuesto.
+            setRepuestos([]);
+            setCatalogoError(
+                getApiErrorMessage(err, 'No se pudo cargar el catálogo de repuestos.')
+            );
+        }
+    }, []);
+
     useEffect(() => {
         // eslint-disable-next-line react/set-state-in-effect
         void load();
-        void (async () => {
-            try {
-                const response = await repuestoService.getRepuestos({ limite: 200 });
-                setRepuestos(response.repuestos);
-            } catch {
-                setRepuestos([]);
-            }
-        })();
-    }, [load]);
+        void loadRepuestos();
+    }, [load, loadRepuestos]);
 
     const addItem = () => { editado.current = true; setItems((prev) => [...prev, { ...emptyItem }]); };
 
@@ -210,6 +220,14 @@ export function BudgetEditor({ administrador }: { administrador: boolean }) {
                 <Button variant="secondary" onClick={() => setIncierto(false)}>Ya lo revisé: permitir enviar otra vez</Button>
             </section>}
             {actionError && <div className="card p-4 mb-6 text-status-red" role="alert">{actionError}</div>}
+            {catalogoError && (
+                <Alert tone="error" className="mb-6">
+                    <span className="block mb-2">{catalogoError}</span>
+                    <Button variant="secondary" onClick={() => void loadRepuestos()}>
+                        Reintentar catálogo
+                    </Button>
+                </Alert>
+            )}
             {aviso && <div className="card p-4 mb-6 text-status-green" role="status">{aviso}</div>}
             {!administrador && (
                 <div className="card p-4 mb-6 text-sm" aria-label="Revisión del administrador">

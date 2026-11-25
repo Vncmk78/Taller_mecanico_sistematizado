@@ -160,4 +160,29 @@ describe('EvidenceUploadForm: carga de evidencia con progreso y estados', () => 
             );
         });
     });
+
+    it('distingue el fallo al consultar el presupuesto de su ausencia y permite reintentar', async () => {
+        vi.mocked(presupuestoService.getByOrder)
+            .mockRejectedValueOnce(axios500)
+            .mockResolvedValueOnce({ id: '501' } as unknown as Presupuesto);
+        vi.mocked(evidenciaService.crear).mockResolvedValue(evidencia);
+
+        renderForm();
+        fireEvent.change(screen.getByLabelText('Contexto'), { target: { value: 'presupuesto' } });
+
+        expect(
+            await screen.findByText('No se pudo consultar el presupuesto de la orden.')
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/no tiene un presupuesto registrado/)).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reintentar consulta' }));
+        seleccionarArchivo(new File(['x'], 'presupuesto.jpg', { type: 'image/jpeg' }));
+        await waitFor(() => {
+            fireEvent.click(screen.getByRole('button', { name: /Subir evidencia/ }));
+            expect(evidenciaService.crear).toHaveBeenCalledWith(
+                expect.objectContaining({ contexto: 'presupuesto', presupuestoId: '501' }),
+                expect.any(Function)
+            );
+        });
+    });
 });

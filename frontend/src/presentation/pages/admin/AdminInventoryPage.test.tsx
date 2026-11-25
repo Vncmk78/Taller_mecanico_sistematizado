@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { repuestoService } from '@/infrastructure/api/RepuestoService';
+import { errorAxios } from '@/infrastructure/mocks/payloads.reales';
 import type { PaginaRepuestos, Repuesto } from '@/domain/entities/Repuesto';
 import { AdminInventoryPage, LIMITE_REPUESTOS } from './AdminInventoryPage';
 
@@ -9,6 +10,7 @@ vi.mock('@/infrastructure/api/RepuestoService', () => ({
     repuestoService: {
         getRepuestos: vi.fn(),
         getRepuestoById: vi.fn(),
+        deleteRepuesto: vi.fn(),
     },
 }));
 
@@ -84,6 +86,24 @@ describe('AdminInventoryPage: filtros y estado de stock', () => {
 
         await screen.findByText('Filtro de aceite');
         expect(repuestoService.getRepuestos).toHaveBeenCalledWith({ limite: 200 });
+    });
+
+    it('muestra el motivo del 409 al eliminar y conserva la confirmación', async () => {
+        mockCatalogo();
+        vi.mocked(repuestoService.deleteRepuesto).mockRejectedValue(
+            errorAxios(409, { detail: 'El repuesto tiene movimientos de inventario.' })
+        );
+
+        render(<AdminInventoryPage />);
+        await screen.findByText('Filtro de aceite');
+
+        fireEvent.click(screen.getAllByRole('button', { name: 'Eliminar' })[0]);
+        fireEvent.click(await screen.findByRole('button', { name: 'Confirmar' }));
+
+        expect(
+            await screen.findByText('El repuesto tiene movimientos de inventario.')
+        ).toBeInTheDocument();
+        expect(screen.getByRole('dialog', { name: 'Eliminar repuesto' })).toBeInTheDocument();
     });
 
     it('muestra el indicador de carga mientras espera la respuesta', () => {

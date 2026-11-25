@@ -7,7 +7,7 @@ Católica de Temuco (UCT)**.
 > **Fecha de la verificación:** 24 de noviembre de 2026 (anterior: 15 de noviembre).
 > **Versión desplegada:** imágenes `sha-ee84ed4` del commit `ee84ed4` de `main`,
 > publicadas y desplegadas por el job automático de `docker-build.yml`
-> (detalle en [07 — Pruebas realizadas](07-pruebas-realizadas.md#19-despliegue-automático-sha-ee84ed4-24-11-2026)).
+> (detalle en [07 — Pruebas realizadas](07-pruebas-realizadas.md#21-despliegue-automático-sha-ee84ed4-24-11-2026)).
 > El flujo vigente es `Vicente → Develop → main`: el workflow de imágenes está
 > en `main`, publica solo con `push` a `main` y actualiza Kubero al tag
 > `sha-<commit>`; `kubero-deploy` se conserva fuera del flujo.

@@ -2,7 +2,7 @@
 
 Semana 11 · Registrar endpoints y evidencia básica del despliegue.
 
-Versión desplegada: `sha-ee84ed4` (ver [07 §19](07-pruebas-realizadas.md)).
+Versión desplegada: `sha-ee84ed4` (ver [07 §21](07-pruebas-realizadas.md)).
 Registro: 24-11-2026, 21:13 (America/Santiago).
 
 ## Endpoints públicos
@@ -65,7 +65,7 @@ Archivo completo: [`evidencia/2026-11-24-despliegue/endpoints.json`](evidencia/2
 Los 401 son la evidencia de que la Gateway enruta al microservicio correcto y
 que cada uno valida el JWT por su cuenta ([verificación JWT independiente](../backend/docs/verificacion-jwt-independiente.md)).
 El flujo autenticado completo (login, orden, presupuesto, evidencia) ya está
-registrado en [07 §20](07-pruebas-realizadas.md).
+registrado en [07 §22](07-pruebas-realizadas.md).
 
 ### Observaciones
 

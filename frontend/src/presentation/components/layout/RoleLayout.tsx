@@ -6,6 +6,7 @@ import { NotificationBell } from '@/presentation/components/notifications/Notifi
 import { SidebarNav } from '@/presentation/components/layout/SidebarNav';
 import { TopBar } from '@/presentation/components/layout/TopBar';
 import { UserMenu } from '@/presentation/components/layout/UserMenu';
+import { PortalFooter } from '@/presentation/components/layout/PortalFooter';
 
 export interface RoleLayoutProps {
   variant: 'sidebar' | 'topnav';
@@ -90,6 +91,7 @@ export function RoleLayout({
         <main id="contenido-principal" tabIndex={-1} className="flex-grow focus:outline-none">
           <Outlet />
         </main>
+        <PortalFooter />
       </div>
     );
   }
@@ -123,6 +125,7 @@ export function RoleLayout({
         <div className="flex-grow">
           <Outlet />
         </div>
+        <PortalFooter />
       </main>
     </div>
   );

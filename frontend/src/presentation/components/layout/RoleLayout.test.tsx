@@ -72,6 +72,30 @@ describe('RoleLayout: layout y navegación reutilizable', () => {
     expect(screen.getByText('cliente@taller.cl')).toBeInTheDocument();
   });
 
+  it('variante sidebar: muestra el enlace a la política de cookies', () => {
+    renderRoleLayout();
+
+    expect(screen.getByRole('link', { name: 'Política de cookies' })).toHaveAttribute(
+      'href',
+      '/cookies'
+    );
+  });
+
+  it('variante topnav: muestra el enlace a la política de cookies', () => {
+    renderRoleLayout({
+      variant: 'topnav',
+      sections: seccionesCliente,
+      badge: 'Portal Cliente',
+      userName: 'cliente@taller.cl',
+      userSubtitle: 'Cliente',
+    }, '/client');
+
+    expect(screen.getByRole('link', { name: 'Política de cookies' })).toHaveAttribute(
+      'href',
+      '/cookies'
+    );
+  });
+
   it('navega a la vista correspondiente con un clic en el enlace', async () => {
     renderRoleLayout();
 

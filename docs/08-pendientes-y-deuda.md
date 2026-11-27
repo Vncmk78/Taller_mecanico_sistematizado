@@ -206,6 +206,28 @@ Prioridad sugerida:
 - **Estado:** cerrado en `Vicente`. El detalle y los comandos están en
   [07 — Pruebas realizadas](07-pruebas-realizadas.md#20).
 
+### 3.8 CrashLoopBackOff de MS1–MS3 por `services/__init__.py` — Corregido en el repo
+
+- **Situación:** los pods nuevos de MS1, MS2 y MS3 en `tallerconnect`
+  (`sha-1f96253`/`sha-181e65d`) entraron en `CrashLoopBackOff` con
+  `pydantic_core.ValidationError: JWT_SECRET_KEY, Field required`. El `x` de la
+  check suite de GitHub era aparte: el job `backend` de `Verificación SGTM`
+  falló en el paso «Suite completa, con PostgreSQL y S3 reales» (logs no
+  públicos); el deploy terminó en `success`.
+- **Causa raíz:** `backend/services/__init__.py` había quedado como una copia de
+  la app de MS4 (commit `0ab861f`). Python lo ejecuta al importar
+  `services.ms1_auth.main`, `services.ms2_taller.main` o
+  `services.ms3_presupuestos.main`, por lo que se instanciaba `Settings` de MS4
+  y se exigía `MS4_JWT_SECRET_KEY`, que no está definida en esos contenedores.
+- **Corrección aplicada:** el initializer vuelve a ser inerte; la app de MS4
+  sigue en `backend/services/ms4_evidencias/main.py`. No se tocó Kubero: solo se
+  leyó estado, registros, eventos y nombres de variables.
+- **Cobertura:** `backend/tests/test_import_paquete_servicios.py` (4 pruebas,
+  imports aislados sin `MS4_*` ni `.env`) y 165 pruebas de no regresión en gateway.
+- **Estado:** corregido en `Vicente`; pendiente de que el usuario autorice el
+  redeploy a `main` para que los pods nuevos arranquen con la corrección. El
+  detalle está en [07 — Pruebas realizadas](07-pruebas-realizadas.md#23).
+
 ---
 
 ## 4. Decisiones que se mantienen (no son deuda)

@@ -750,3 +750,64 @@ python scripts/verificar_salud.py --base https://frontend-movil.inf.uct.cl   # a
 
 En el navegador: login con las cuentas de [04 — Datos de prueba](04-datos-de-prueba.md),
 DevTools → Network → Fetch/XHR, filtrar por `ordenes`, `evidencias`, `presupuestos`.
+
+---
+
+## 23. Diagnóstico de Kubero tras `sha-181e65d` (27-11-2026)
+
+Inspección **solo de lectura** en `https://kubero.inf.uct.cl` (sin editar,
+reiniciar ni borrar nada). Se revisaron los dos pipelines, las etiquetas de las
+apps y los registros/eventos de MS1, MS2 y MS3.
+
+### 23.1 Evidencia observada
+
+| Elemento | Resultado leído |
+| --- | --- |
+| Pipeline `tallerconnect` (Producción) | `frontend-movil`, `gateway`, `minio`, `ms1`, `ms2`, `ms3`, `ms4`, `web`. Backend y `web` en `sha-1f96253`; `frontend-movil` en `73948df…`. |
+| Pipeline `tallerconnect-scrum641` (Test) | 12 apps `demo732-*` y `qa641-*`, todas en `sha-181e65d`. Es el pipeline inesperado; **no se tocó**. |
+| MS1 / MS2 / MS3 | Un pod sano (iniciado ayer, `GET /health` → 200) y un pod en `CrashLoopBackOff` (iniciado hace 4 h, 52–55 reinicios). Eventos: `Pulling image "…:sha-1f96253"` y `Back-off restarting failed container`. |
+| Registros de los pods caídos | `Traceback` → `services/__init__.py` → `services/ms4_evidencias/__init__.py` → `services/ms4_evidencias/config.py` → `pydantic_core.ValidationError: 1 validation error for Settings: JWT_SECRET_KEY, Field required`. Idéntico en MS1, MS2 y MS3. |
+| Variables de entorno de MS1 en Kubero | `SGTM_SERVICIO=ms1`, `MS1_DATABASE_URL`, `MS1_JWT_SECRET_KEY`, … No existe `MS4_JWT_SECRET_KEY`. |
+
+### 23.2 Causa raíz
+
+El commit `0ab861f` (25-11-2026) convirtió `backend/services/__init__.py` en una
+copia de la app de MS4: importa `services.ms4_evidencias.config` y crea `app`.
+Como Python ejecuta `__init__.py` del paquete antes que cualquier submódulo,
+arrancar `services.ms1_auth.main`, `services.ms2_taller.main` o
+`services.ms3_presupuestos.main` instancia también `Settings` de MS4. Ese modelo
+exige `MS4_JWT_SECRET_KEY` (mostrado como campo `JWT_SECRET_KEY` en el error).
+Los pods nuevos con `sha-181e65d`/`sha-1f96253` no reciben esa variable y mueren
+al arrancar; los pods anteriores seguían sirviendo con la imagen antigua.
+
+### 23.3 Corrección y prueba
+
+- `backend/services/__init__.py` vuelve a ser un initializer inerte: no importa
+  configuración ni expone `app`. La app de MS4 sigue en
+  `backend/services/ms4_evidencias/main.py`.
+- `backend/tests/test_import_paquete_servicios.py` reproduce el entorno de los
+  pods (sin `MS4_*` y sin `.env`) y comprueba que importan `services`,
+  `services.ms1_auth.main`, `services.ms2_taller.main` y
+  `services.ms3_presupuestos.main`. Antes del cambio falla con el mismo
+  `ValidationError`; después pasan las 4 pruebas.
+- Suite de no regresión: `165 passed` en
+  `test_gateway_smoke_prefijos.py`, `test_integracion_prefijos.py`,
+  `test_gateway_evidencias.py` y `test_gateway_openapi.py`.
+- Suite completa del backend: `2497 passed, 617 skipped, 1 failed`. El único
+  fallo es el preexistente `test_archivo_congelado_coincide_con_el_publicado`,
+  causado por `pydantic 2.14.1` en el equipo local (el proyecto fija
+  `pydantic>=2.12,<2.14`); no guarda relación con este cambio.
+
+### 23.4 El «x» de GitHub Actions
+
+La otra check suite del mismo SHA pertenece a `Verificación SGTM`
+(`.github/workflows/verificacion.yml`). El job `frontend` terminó en `success`;
+el job `backend` terminó en `failure` en el paso «Suite completa, con PostgreSQL
+y S3 reales» (`python scripts/verificar_backend.py`), con la anotación «Process
+completed with exit code 1». El paso previo «Comprobar contrato congelado»
+terminó en `success`, y el workflow de despliegue (`docker-build.yml`) terminó
+en `success` en sus seis jobs, incluido «Actualizar Kubero al sha publicado».
+Los logs del runner no son públicos («Sign in to view logs»), así que no se pudo
+identificar qué prueba falló; en todo caso ese `x` **no** es la causa del
+CrashLoopBackOff: el contenedor muere antes de iniciar por un `ValidationError`,
+sin llegar a ejecutar ninguna prueba.

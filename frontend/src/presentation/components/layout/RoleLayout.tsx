@@ -55,33 +55,35 @@ export function RoleLayout({
         >
           Saltar al contenido principal
         </a>
-        <header className="flex items-center justify-between gap-2 px-4 sm:px-6 lg:px-10 py-4 border-b-3 border-b-primary-orange bg-[#111318] sticky top-0 z-50 text-white shadow-[0_4px_14px_rgba(0,0,0,0.25)]">
-          <div className="flex items-center gap-2.5 shrink-0">
-            <AppBrand />
-            {badge && (
-              <span className="hidden sm:inline-flex ml-3 text-xs bg-primary-blue/15 text-primary-blue px-3 py-1 rounded-full border border-primary-blue/40 font-bold">
-                {badge}
-              </span>
-            )}
-          </div>
+        <header className="px-4 sm:px-6 lg:px-10 py-3 border-b-3 border-b-primary-orange bg-[#111318] sticky top-0 z-50 text-white shadow-[0_4px_14px_rgba(0,0,0,0.25)]">
+          <div className="flex min-h-14 items-center gap-3">
+            <div className="flex items-center gap-2.5 shrink-0">
+              <AppBrand />
+              {badge && (
+                <span className="hidden sm:inline-flex ml-1 text-xs bg-primary-blue/15 text-primary-blue px-3 py-1 rounded-full border border-primary-blue/40 font-bold">
+                  {badge}
+                </span>
+              )}
+            </div>
 
-          <nav
-            aria-label="Navegación principal"
-            className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 justify-start xl:justify-center overflow-x-auto"
-          >
-            {sections.flatMap((section) => section.items).map((item) => (
-              <AppNavLink key={item.to} variant="topnav" {...item} />
-            ))}
-          </nav>
+            <nav
+              aria-label="Navegación principal"
+              className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 justify-start xl:justify-center overflow-x-auto no-scrollbar py-1"
+            >
+              {sections.flatMap((section) => section.items).map((item) => (
+                <AppNavLink key={item.to} variant="topnav" {...item} />
+              ))}
+            </nav>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <NotificationBell tone="dark" />
-            <UserMenu
-              userName={userName}
-              subtitle={userSubtitle}
-              onLogout={onLogout}
-              tone="dark"
-            />
+            <div className="flex items-center gap-2 shrink-0">
+              <NotificationBell tone="dark" />
+              <UserMenu
+                userName={userName}
+                subtitle={userSubtitle}
+                onLogout={onLogout}
+                tone="dark"
+              />
+            </div>
           </div>
         </header>
 

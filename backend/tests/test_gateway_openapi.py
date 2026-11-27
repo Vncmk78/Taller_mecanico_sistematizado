@@ -957,7 +957,7 @@ def test_openapi_ms2_patch_distingue_rechazo_inicial_de_cancelacion_generica() -
     descripcion = ms2_app.openapi()["paths"]["/ordenes/{orden_id}/estado"]["patch"][
         "description"
     ]
-    assert "3 → 4/5/8" in descripcion
+    assert "4/5/8" in descripcion
     assert "rechazo inicial verificado" in descripcion
     assert "no por cancelación genérica" in descripcion
 

@@ -63,11 +63,12 @@ END
 @pytest.fixture(params=["sqlite", "postgresql"])
 def entorno(request):
     if request.param == "postgresql":
-        return request.getfixturevalue("flujo_pg")
-    entorno = request.getfixturevalue("flujo")
-    with entorno.db3() as db:
-        db.execute(text(_TRIGGER_APROBACION_SQLITE))
-        db.commit()
+        entorno = request.getfixturevalue("flujo_pg")
+    else:
+        entorno = request.getfixturevalue("flujo")
+        with entorno.db3() as db:
+            db.execute(text(_TRIGGER_APROBACION_SQLITE))
+            db.commit()
     # El guard de H-01 exige asignación: este flujo prueba operaciones del
     # mecánico 77 sobre su propia orden, no sobre una ajena.
     with entorno.db2() as db:

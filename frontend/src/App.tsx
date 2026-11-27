@@ -6,6 +6,7 @@ import { ToastProvider } from '@/presentation/components/ui/ToastProvider';
 import { ErrorBoundary } from '@/presentation/components/ui/ErrorBoundary';
 import { RouteErrorBoundary } from '@/presentation/components/ui/RouteErrorBoundary';
 import { RouteChangeFocus } from '@/presentation/components/layout/RouteChangeFocus';
+import { CookieConsentBanner } from '@/presentation/components/cookies/CookieConsentBanner';
 import { createQueryClient } from '@/infrastructure/api/queryClient';
 
 const queryClient = createQueryClient();
@@ -18,6 +19,7 @@ function App() {
           <AuthProvider>
             <ToastProvider>
               <RouteChangeFocus />
+              <CookieConsentBanner />
               {/* Capa externa: errores de los providers (sin recuperación por
                   navegación). Capa interna: errores de página, que se descartan
                   al cambiar de ruta sin recargar la app. */}

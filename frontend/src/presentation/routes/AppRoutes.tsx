@@ -54,6 +54,7 @@ import {
 } from '@/presentation/pages/mechanic/MechanicInventoryPages';
 import { OrderEvidencePage } from '@/presentation/pages/shared/OrderEvidencePage';
 import { NotificationsPage } from '@/presentation/pages/shared/NotificationsPage';
+import { CookiesPage } from '@/presentation/pages/shared/CookiesPage';
 import { ProtectedRoute } from '@/presentation/components/auth/ProtectedRoute';
 import { PublicOnlyRoute } from '@/presentation/components/auth/PublicOnlyRoute';
 import { ClientProfileGate } from '@/presentation/components/auth/ClientProfileGate';
@@ -79,6 +80,7 @@ export function AppRoutes() {
         }
       />
       <Route path="/acceso-denegado" element={<AccessDeniedPage />} />
+      <Route path="/cookies" element={<CookiesPage />} />
 
       <Route
         path="/admin"

@@ -1,0 +1,377 @@
+{
+  "api": "https://api-tallerconnect.inf.uct.cl",
+  "web": "https://tallerconnect.inf.uct.cl",
+  "version_desplegada": "sha-ee84ed4",
+  "registrado_en": "2026-11-25T00:13:43.529Z",
+  "metodo_captura": "fetch() desde el navegador sobre el mismo origen (mismos campos que scripts/registrar_evidencia_despliegue.py)",
+  "endpoints": [
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/",
+      "esperado": 200,
+      "demuestra": "Gateway publica su mapa de prefijos",
+      "ok": true,
+      "codigo": 200,
+      "ms": 39,
+      "request_id": "c1644846ac5d2c5110db63cc3abed125",
+      "hsts": true,
+      "content_type": "application/json"
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/health",
+      "esperado": 200,
+      "demuestra": "Proceso de la Gateway",
+      "ok": true,
+      "codigo": 200,
+      "ms": 29,
+      "request_id": "587cb22ade5dc4a8a99060864fe4e626",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "status": "ok",
+        "servicio": "gateway"
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/health/servicios",
+      "esperado": 200,
+      "demuestra": "Bases de MS1-MS4 vía Gateway",
+      "ok": true,
+      "codigo": 200,
+      "ms": 68,
+      "request_id": "4726bce31a7a86db7c27abb76aa3c75f",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "status": "ok",
+        "gateway": "ok",
+        "servicios": {
+          "ms1_auth": {
+            "estado": "ok",
+            "latencia_ms": 35
+          },
+          "ms2_taller": {
+            "estado": "ok",
+            "latencia_ms": 25
+          },
+          "ms3_presupuestos": {
+            "estado": "ok",
+            "latencia_ms": 26
+          },
+          "ms4_evidencias": {
+            "estado": "ok",
+            "latencia_ms": 33
+          }
+        }
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/health/servicios/ms1_auth",
+      "esperado": 200,
+      "demuestra": "Diagnóstico MS1",
+      "ok": true,
+      "codigo": 200,
+      "ms": 77,
+      "request_id": "98cda3c6af896a6bc4ce8c97c6df9711",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "estado": "ok",
+        "comprobaciones": {
+          "proceso": {
+            "estado": "ok",
+            "latencia_ms": 16
+          },
+          "base": {
+            "estado": "ok",
+            "latencia_ms": 20
+          }
+        }
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/health/servicios/ms2_taller",
+      "esperado": 200,
+      "demuestra": "Diagnóstico MS2",
+      "ok": true,
+      "codigo": 200,
+      "ms": 48,
+      "request_id": "c352a848eafe179cadba4deabb3e12e7",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "estado": "ok",
+        "comprobaciones": {
+          "proceso": {
+            "estado": "ok",
+            "latencia_ms": 9
+          },
+          "base": {
+            "estado": "ok",
+            "latencia_ms": 17
+          }
+        }
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/health/servicios/ms3_presupuestos",
+      "esperado": 200,
+      "demuestra": "Diagnóstico MS3",
+      "ok": true,
+      "codigo": 200,
+      "ms": 53,
+      "request_id": "a74a1eec415c3e57aee7b9429d322a40",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "estado": "ok",
+        "comprobaciones": {
+          "proceso": {
+            "estado": "ok",
+            "latencia_ms": 11
+          },
+          "base": {
+            "estado": "ok",
+            "latencia_ms": 20
+          }
+        }
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/health/servicios/ms4_evidencias",
+      "esperado": 200,
+      "demuestra": "Diagnóstico MS4 (incluye MinIO)",
+      "ok": true,
+      "codigo": 200,
+      "ms": 1245,
+      "request_id": "639bdfd86aac2eef7d924061f02337ed",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "estado": "ok",
+        "comprobaciones": {
+          "proceso": {
+            "estado": "ok",
+            "latencia_ms": 12
+          },
+          "base": {
+            "estado": "ok",
+            "latencia_ms": 145
+          },
+          "almacenamiento": {
+            "estado": "ok",
+            "latencia_ms": 1213
+          }
+        }
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/docs",
+      "esperado": 200,
+      "demuestra": "Swagger UI",
+      "ok": true,
+      "codigo": 200,
+      "ms": 49,
+      "request_id": "ba99949146d76271e6229ba22f2c6e1e",
+      "hsts": true,
+      "content_type": "text/html"
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/openapi.json",
+      "esperado": 200,
+      "demuestra": "Contrato OpenAPI",
+      "ok": true,
+      "codigo": 200,
+      "ms": 210,
+      "request_id": "5eab9cb0aedab3bc5a2ca3097d6e271e",
+      "hsts": true,
+      "content_type": "application/json",
+      "openapi": {
+        "titulo": "SGTM — API Gateway",
+        "version": "3.1.0",
+        "rutas": 75
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/auth/me",
+      "esperado": 401,
+      "demuestra": "MS1 exige JWT",
+      "ok": true,
+      "codigo": 401,
+      "ms": 42,
+      "request_id": "37b1f0d9b8f509433b15fdac694811bd",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "detail": "No autenticado"
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/vehiculos",
+      "esperado": 401,
+      "demuestra": "MS2 exige JWT",
+      "ok": true,
+      "codigo": 401,
+      "ms": 38,
+      "request_id": "137b346f7f0374f8d5e89d095559ef2d",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "detail": "No autenticado"
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/ordenes",
+      "esperado": 401,
+      "demuestra": "MS2 exige JWT",
+      "ok": true,
+      "codigo": 401,
+      "ms": 46,
+      "request_id": "fc8ccfeaed0c6e9fac291f244635b715",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "detail": "No autenticado"
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/presupuestos",
+      "esperado": 401,
+      "demuestra": "MS3 exige JWT",
+      "ok": true,
+      "codigo": 401,
+      "ms": 52,
+      "request_id": "e8f30dc4646711832e8abaf8e4f348a8",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "detail": "No autenticado"
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/repuestos",
+      "esperado": 401,
+      "demuestra": "MS3 exige JWT",
+      "ok": true,
+      "codigo": 401,
+      "ms": 51,
+      "request_id": "4af5abb016a6a3176fb5ec5540b6c3ce",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "detail": "No autenticado"
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/evidencias",
+      "esperado": 401,
+      "demuestra": "MS4 exige JWT",
+      "ok": true,
+      "codigo": 401,
+      "ms": 48,
+      "request_id": "8250f70f922cff318f30c8a88341d1f3",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "detail": "No autenticado"
+      }
+    },
+    {
+      "origen": "api",
+      "metodo": "POST",
+      "ruta": "/api/auth/login",
+      "esperado": 422,
+      "demuestra": "Login valida el cuerpo (sin credenciales)",
+      "ok": true,
+      "codigo": 422,
+      "ms": 42,
+      "request_id": "5e71b9a0cd381d05afac439059b4b1de",
+      "hsts": true,
+      "content_type": "application/json"
+    },
+    {
+      "origen": "api",
+      "metodo": "GET",
+      "ruta": "/api/no-existe",
+      "esperado": 404,
+      "demuestra": "Formato común de error de la Gateway",
+      "ok": true,
+      "codigo": 404,
+      "ms": 35,
+      "request_id": "7be8178314352ef6e79423d157088c8f",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "detail": "No hay microservicio para '/no-existe'",
+        "error": {
+          "codigo": "RUTA_NO_ENCONTRADA",
+          "estado": 404,
+          "ruta": "/api/no-existe",
+          "request_id": "7be8178314352ef6e79423d157088c8f"
+        }
+      }
+    },
+    {
+      "origen": "web",
+      "metodo": "GET",
+      "ruta": "/",
+      "esperado": 200,
+      "demuestra": "Web servida por Nginx",
+      "ok": true,
+      "codigo": 200,
+      "hsts": null,
+      "content_type": "text/html"
+    },
+    {
+      "origen": "web",
+      "metodo": "GET",
+      "ruta": "/api/health",
+      "esperado": 200,
+      "demuestra": "Proxy /api de la web hacia la Gateway",
+      "ok": true,
+      "codigo": 200,
+      "request_id": "00182b5a399597d7f242a50e912fb4de",
+      "hsts": true,
+      "content_type": "application/json",
+      "cuerpo": {
+        "status": "ok",
+        "servicio": "gateway"
+      }
+    }
+  ],
+  "observaciones": [
+    "POST /api/evidencias con 13 MiB sin token -> 413 de Nginx del ingress, antes de llegar a la Gateway",
+    "GET https://tallerconnect.inf.uct.cl/assets/ -> 403 de Nginx con version visible en la firma (server_tokens)",
+    "GET https://tallerconnect.inf.uct.cl/.env -> 200 text/html: es el fallback de la SPA (index.html), no expone archivo alguno",
+    "El bundle JS de la web no contiene SECRET, PASSWORD, ghp_ ni AKIA y usa /api relativo"
+  ]
+}

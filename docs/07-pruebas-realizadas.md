@@ -39,6 +39,7 @@ extremo a extremo por HTTP contra los dominios públicos.
 | B3 | Imagen frontend publicada | ✅ `ghcr.io/vncmk78/tallerconnect-frontend:latest` y `:sha-c855bab` |
 | B4 | Workflow en `main` con `branches: [main]` | ✅ Run `45306353919` desde `main`, conclusión `success` |
 | B5 | Job de deploy automático (tags `sha-<commit>` + redeploy + salud) | ✅ Job `Actualizar Kubero al sha publicado` en `success`; imágenes `:sha-40106f5` |
+| B6 | Deploy automático de `main` @ `ee84ed4` | ✅ Docker Build en `success` (4 jobs); Kubero en `:sha-ee84ed4` — ver sección 18 |
 
 ---
 
@@ -624,3 +625,128 @@ No se hicieron mutaciones en producción: todas las pruebas usan `TestClient`,
 bases descartables o mocks. El desajuste de límites de video entre Gateway y MS4
 sigue documentado como deuda en `docs/08-pendientes-y-deuda.md` §1.3; no se
 cambió.
+
+---
+
+## 21. Despliegue automático `sha-ee84ed4` (24-11-2026)
+
+Despliegue de la Gateway y de los servicios en el ambiente público tras el merge
+de `Develop` en `main` (commit `ee84ed4`, "panel operativo del administrador").
+
+### 21.1 Pipeline
+
+| # | Paso | Resultado |
+| --- | --- | --- |
+| D1 | Trigger | ✅ `push` a `main`, commit `ee84ed4` |
+| D2 | Job `Solo ejecutable desde main` | ✅ `success` (3 s) |
+| D3 | Job `Backend (Gateway + MS1-MS4)` | ✅ `success` (48 s) → `ghcr.io/vncmk78/tallerconnect-backend:sha-ee84ed4` |
+| D4 | Job `Frontend (React + Nginx)` | ✅ `success` (1 min 7 s) → `ghcr.io/vncmk78/tallerconnect-frontend:sha-ee84ed4` |
+| D5 | Job `Actualizar Kubero al sha publicado` | ✅ `success` (30 s): `gateway`, `ms1`–`ms4` y `web` en `sha-ee84ed4`; `minio` sin cambios |
+| D6 | Salud verificada por el propio job | ✅ `/api/health/servicios` y `/healthz` en `ok` |
+| D7 | Migraciones | ✅ No aplica: el commit no trae migraciones nuevas (el job las detecta y omite el deploy si existen) |
+| D8 | Workflow `Verificación SGTM` del mismo merge | ✅ `success` (backend 4 min 20 s, frontend 1 min 51 s) |
+
+Duración total del Docker Build: 1 min 47 s.
+
+### 21.2 Verificación posterior (24-11-2026 15:51 UTC)
+
+Ejecutada desde fuera del clúster con `backend/scripts/verificar_salud.py`:
+
+```
+[ OK ] gateway              HTTP 200          ok
+[ OK ] servicios (bases)    HTTP 200          ok
+[ OK ] ms1_auth             HTTP 200          proceso=ok (11 ms), base=ok (23 ms)
+[ OK ] ms2_taller           HTTP 200          proceso=ok (11 ms), base=ok (23 ms)
+[ OK ] ms3_presupuestos     HTTP 200          proceso=ok (10 ms), base=ok (20 ms)
+[ OK ] ms4_evidencias       HTTP 200          proceso=ok (16 ms), base=ok (67 ms), almacenamiento=ok (141 ms)
+6/6 comprobaciones OK
+```
+
+| # | Comprobación | Resultado |
+| --- | --- | --- |
+| V1 | `GET https://api-tallerconnect.inf.uct.cl/openapi.json` → `info.version` | ✅ `3.1.0` (contrato vigente) |
+| V2 | `GET https://api-tallerconnect.inf.uct.cl/api/health` | ✅ `200`, con cabecera `X-Request-ID` |
+| V3 | `GET https://api-tallerconnect.inf.uct.cl/docs` | ✅ `200` |
+| V4 | `GET https://tallerconnect.inf.uct.cl/` | ✅ `200` |
+| V5 | `GET https://tallerconnect.inf.uct.cl/healthz` | ✅ `200` |
+| V6 | `GET https://ms4-tallerconnect.inf.uct.cl/minio/health/live` | ✅ `200` |
+
+### 21.3 Reproducir
+
+```bash
+cd backend
+python scripts/verificar_salud.py --base https://api-tallerconnect.inf.uct.cl --json salidas-integracion/salud-despliegue.json
+```
+
+### 21.4 Rollback
+
+Volver las 6 apps al tag anterior en Kubero y redeploy (runbook §4.3). Como
+esta versión no trae migraciones, no hace falta restaurar la base.
+
+---
+
+## 22. Integración web, base de datos y app móvil (24-11-2026)
+
+Verificación de que los clientes (web de Integra II y app móvil de Integra IV)
+llegan a la Gateway y, a través de ella, a las cuatro bases y a MinIO, con la
+versión desplegada `sha-ee84ed4`. Solo lectura: no se crearon datos en producción.
+
+```
+Web (tallerconnect.inf.uct.cl)            ─┐
+App móvil (frontend-movil.inf.uct.cl)     ─┼─► Gateway ─► MS1–MS4 ─► PostgreSQL ×4 + MinIO
+App móvil (tallerconnect-frontend…)       ─┘
+```
+
+### 22.1 Web de Integra II ↔ Gateway ↔ bases
+
+Recorrida manual como Administrador en `https://tallerconnect.inf.uct.cl`, con
+DevTools → Network (Fetch/XHR). Todas las llamadas salen del bundle
+`index-BaVgsO8G.js` (versión desplegada).
+
+| # | Llamada (`/api/...`) | Microservicio / base | Resultado |
+| --- | --- | --- | --- |
+| W1 | `usuarios?limite=100`, `notificaciones?limite=15` | MS1 | ✅ 200 |
+| W2 | `ordenes?limite=100`, detalle `ordenes/{4,6,7}`, `historial` | MS2 | ✅ 200 |
+| W3 | `presupuestos?orden_id={6,7}` | MS3 | ✅ 200 |
+| W4 | `repuestos`, `proveedores`, `inventario/movimientos`, `inventario/alertas`, `umbral-general`, `historial-umbral` | MS3 | ✅ 200 |
+| W5 | `inventario/ordenes/{4,6}/disponibilidad` | MS3 | ✅ 200 |
+| W6 | `evidencias?orden_id={6,7}` | MS4 | ✅ 200 |
+| W7 | `inventario/ordenes/7/disponibilidad` | MS3 | ⚠️ 404 — ver hallazgo H1 |
+
+### 22.2 App móvil de Integra IV ↔ Gateway ↔ bases
+
+Las dos builds web de la app Expo usan como `API_URL` su propio dominio + `/api`
+y su servidor reenvía a la Gateway (mismo origen: sin CORS).
+
+| # | Comprobación | `frontend-movil.inf.uct.cl` | `tallerconnect-frontend.inf.uct.cl` |
+| --- | --- | --- | --- |
+| M1 | `GET /login` | ✅ 200 | ✅ 200 |
+| M2 | `GET /api/health` (vía su proxy) | ✅ `{"status":"ok","servicio":"gateway"}` | ✅ igual |
+| M3 | `GET /api/health/servicios` | ✅ 4 servicios `ok` | ✅ igual |
+| M4 | `POST /api/auth/login` con credenciales inválidas | ✅ 401 de MS1 | ✅ 401 de MS1 |
+| M5 | Login como Cliente + `GET /api/ordenes` | — | ✅ `200 OK`, `x-total-count: 7`, `x-request-id` de la Gateway, HSTS |
+| M6 | `verificar_salud.py --base https://frontend-movil.inf.uct.cl` (todo el diagnóstico a través del proxy de la app) | ✅ 6/6 OK (MS4: base 190 ms, almacenamiento 444 ms) | — |
+
+M5 (captura en DevTools): `Request URL https://tallerconnect-frontend.inf.uct.cl/api/ordenes`,
+`Status 200`, cabeceras `x-total-count` y `x-request-id` emitidas por la Gateway,
+lo que prueba el recorrido app móvil → proxy → Gateway → MS2 → base.
+
+### 22.3 Hallazgos
+
+| # | Hallazgo | Responsable | Gravedad |
+| --- | --- | --- | --- |
+| H1 | La web trata el **404** de `GET /api/inventario/ordenes/{id}/disponibilidad` como error. MS3 responde 404 cuando la orden **aún no tiene presupuesto** (contrato), pero `ConsumoRepuestosPanel.tsx` solo reconoce el 409 como "sin presupuesto" y muestra *"No se pudo cargar la disponibilidad de repuestos"* en órdenes nuevas. Arreglo: tratar 404 igual que 409 y agregar la prueba. | Frontend Integra II | Baja (UX) |
+| H2 | La build desplegada de `frontend-movil` define el servicio de `/notificaciones` pero ninguna pantalla lo usa: la app no muestra notificaciones. El endpoint funciona (la web lo consume con 200). | Integra IV | Media |
+| H3 | El código de la app móvil conserva `https://tallerconect.vercel.app/api` como URL por defecto (`INTEGRATION`/`PRODUCTION`). Ese despliegue ya no existe (`404 DEPLOYMENT_NOT_FOUND`). La build web no lo usa, pero una build nativa (Expo Go/APK) sin `EXPO_PUBLIC_API_URL` caería ahí. Debe usar `https://api-tallerconnect.inf.uct.cl/api`. | Integra IV | Media |
+| H4 | Las apps `frontend-movil` y `frontend` de Integra IV no estaban documentadas; se agregaron a [02 — Despliegue](02-despliegue-kubero.md#3-pipeline-y-aplicaciones). | Integra II | — |
+
+### 22.4 Reproducir
+
+```bash
+cd backend
+python scripts/verificar_salud.py --base https://api-tallerconnect.inf.uct.cl
+python scripts/verificar_salud.py --base https://frontend-movil.inf.uct.cl   # a través del proxy de la app móvil
+```
+
+En el navegador: login con las cuentas de [04 — Datos de prueba](04-datos-de-prueba.md),
+DevTools → Network → Fetch/XHR, filtrar por `ordenes`, `evidencias`, `presupuestos`.

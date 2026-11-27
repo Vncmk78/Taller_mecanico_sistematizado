@@ -7,7 +7,7 @@ Revisa, sin modificar nada:
 3. La base real: solo tablas de MS3 (+ alembic_version), ninguna FK hacia
    fuera, sin dblink/postgres_fdw ni tablas foráneas.
 
-Uso (desde backend/, con .env configurado; sirve para local o Neon):
+Uso (desde backend/, con .env configurado; sirve para local o administrada):
     python scripts/verificar_aislamiento_ms3.py
 Termina con código 1 si encuentra problemas.
 """

@@ -93,7 +93,7 @@ Este estudio complementa, sin repetirlos en detalle, a
 | AC6 | Los cambios de permisos deben surtir efecto de inmediato | ❌ | Los guardas deciden con los roles del token; un rol retirado o una cuenta desactivada siguen autorizados hasta que expira (H4). Solo `/auth/me` relee la base. |
 | AC7 | Proteger contra escalada y pérdida de administración | ⚠️ | Un administrador puede retirarse su propio rol y dejar el sistema sin administradores (H3). |
 | AC8 | Registrar fallos de autorización | ❌ | No se registran los `403`. |
-| AC9 | CORS restringido a orígenes de confianza | ⚠️ | La Gateway acepta cualquier `https://*.vercel.app` con `allow_credentials=True` (H5). |
+| AC9 | CORS restringido a orígenes de confianza | ✅ | La Gateway usa una lista explícita; la regex adicional está vacía por defecto (H5 quedó cerrado). |
 
 ---
 
@@ -149,13 +149,13 @@ Amplía J11. Verificado con un mismo token de administrador:
 La ventana es de hasta `JWT_EXPIRE_MINUTES` (60 min) y afecta a los cuatro
 microservicios, porque ninguno consulta MS1 para autorizar.
 
-### H5 — CORS acepta cualquier subdominio de Vercel con credenciales (AC9) · Severidad baja
+### H5 — CORS aceptaba cualquier subdominio de la plataforma anterior (AC9) · Cerrado
 
-`gateway/config.py` define `CORS_ORIGIN_REGEX = r"https://[a-z0-9-]+\.vercel\.app"`
-y `CORS_ALLOW_CREDENTIALS = True`. Cualquier proyecto alojado en Vercel, no solo
-los del equipo, queda como origen de confianza. El impacto real es bajo porque el
-token viaja en la cabecera `Authorization` y no en cookies, pero OWASP recomienda
-una lista explícita de orígenes.
+`gateway/config.py` definía una regex que aceptaba cualquier subdominio de la
+plataforma retirada junto con `CORS_ALLOW_CREDENTIALS = True`. El impacto era
+bajo porque el token viaja en `Authorization` y no en cookies. El valor por
+defecto de `CORS_ORIGIN_REGEX` es ahora vacío: solo se permiten los orígenes
+explícitos de la lista.
 
 ### H6 — Las cuentas inactivas responden más rápido (A5) · Severidad baja
 
@@ -178,7 +178,7 @@ está desactivada.
 | Media | Revalidar la cuenta en operaciones sensibles o agregar una versión de token (`token_version` en `usuario`, claim en el JWT) | H4, T7, AC6 | Hasta entonces, documentar la ventana de 60 min y considerar bajar `JWT_EXPIRE_MINUTES`. |
 | Media | Ejecutar `verificar_contrasena` con el hash *dummy* también para cuentas inactivas | H6 | Cambio de una línea en `autenticar_usuario`. |
 | Media | Cerrar los dos huecos de la matriz (mecánico no asignado en MS3; `mecanico_id` en MS2) | AC5 | Ya tienen pruebas `xfail(strict=True)` que pasarán a fallar cuando se corrijan. |
-| Baja | Lista explícita de orígenes CORS en lugar de la regex de Vercel | H5, AC9 | Configurable por `GATEWAY_CORS_ORIGIN_REGEX`. |
+| Baja | Mantener la regex adicional vacía salvo necesidad documentada | H5, AC9 | Configurable por `GATEWAY_CORS_ORIGIN_REGEX`. |
 | Baja | Revisar contraseñas nuevas contra una lista de contraseñas comunes | A3 | Sin reglas de composición, según OWASP. |
 | Baja | Registrar logins fallidos, bloqueos y `403` (sin datos sensibles) | A12, AC8 | Revisar la decisión C11 del equipo. |
 

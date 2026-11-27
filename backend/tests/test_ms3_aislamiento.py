@@ -99,11 +99,11 @@ def test_engine_de_ms3_no_apunta_a_la_base_de_otro_servicio() -> None:
 
 
 def test_urls_misma_base_se_reportan_y_mismo_servidor_no() -> None:
-    neon = "postgresql+psycopg://u:p@ep-x.neon.tech/{}"
-    assert aislamiento.problemas_de_urls(neon.format("taller_ms3"),
-                                         {"MS2": neon.format("taller_ms2")}) == []
-    problemas = aislamiento.problemas_de_urls(neon.format("taller_ms2"),
-                                              {"MS2": neon.format("taller_ms2")})
+    administrada = "postgresql+psycopg://u:p@db.ejemplo.test/{}"
+    assert aislamiento.problemas_de_urls(administrada.format("taller_ms3"),
+                                         {"MS2": administrada.format("taller_ms2")}) == []
+    problemas = aislamiento.problemas_de_urls(administrada.format("taller_ms2"),
+                                              {"MS2": administrada.format("taller_ms2")})
     assert problemas and "MS2" in problemas[0]
 
 

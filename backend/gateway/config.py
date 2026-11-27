@@ -81,9 +81,9 @@ class GatewaySettings(BaseSettings):
         "http://localhost:8000",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
-    # Además de la lista, se aceptan los previews de Vercel (*.vercel.app).
-    # Vacío desactiva la regex (env: GATEWAY_CORS_ORIGIN_REGEX).
-    CORS_ORIGIN_REGEX: str | None = r"https://[a-z0-9-]+\.vercel\.app"
+    # Lista adicional de orígenes permitidos por regex. Vacío (por defecto)
+    # desactiva la regex; en Kubero se configura explícitamente si hace falta.
+    CORS_ORIGIN_REGEX: str | None = None
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

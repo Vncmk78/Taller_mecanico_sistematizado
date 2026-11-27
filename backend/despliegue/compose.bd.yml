@@ -3,7 +3,7 @@
 # Una instancia PostgreSQL 16 con CUATRO bases independientes (sgtm_ms1..4),
 # cada una con su propio rol dueño y sin acceso cruzado, más un contenedor
 # de una sola ejecución que aplica las migraciones en orden (MS1 → MS4).
-# Reproduce lo que se configura en Kubero/Neon, pero en Docker local.
+# Reproduce lo que se configura en Kubero, pero en Docker local.
 #
 # Uso (desde backend/; el detalle está en docs/despliegue-base-datos.md):
 #   python scripts/inicializar_bd.py configurar

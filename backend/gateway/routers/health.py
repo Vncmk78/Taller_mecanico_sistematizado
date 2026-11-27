@@ -3,7 +3,7 @@
 Son los únicos endpoints que responde la Gateway por sí misma; todo lo demás
 bajo `/api/*` se reenvía a un microservicio.
 
-`/api/health` responde solo por la Gateway (lo usa Vercel) y no consulta a los
+`/api/health` responde solo por la Gateway (punto público) y no consulta a los
 microservicios. `/api/health/servicios` consulta el `/health/db` de los cuatro
 microservicios en paralelo con el cliente HTTPX compartido y devuelve el estado
 de cada uno (decisión 8 de `docs/estudio-httpx-proxy.md`).

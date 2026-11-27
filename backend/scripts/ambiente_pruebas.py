@@ -99,8 +99,6 @@ OBLIGATORIAS = (
 )
 # Presentes aunque estén vacías (vacío = desactivado de forma explícita).
 PRESENTES = ["GATEWAY_CORS_ORIGIN_REGEX"]
-# Variables del proceso que cambiarían destinos si se heredaran.
-HEREDADAS_PROHIBIDAS = ("VERCEL", "VERCEL_URL", "VERCEL_AUTOMATION_BYPASS_SECRET")
 
 
 class ErrorAmbiente(Exception):
@@ -214,8 +212,6 @@ def entorno_pruebas() -> dict[str, str]:
     entorno = {k: v for k, v in os.environ.items() if not _variable_de_servicio(k)}
     entorno.update(valores)
     entorno["SGTM_ENV_FILE"] = str(ARCHIVO)
-    for nombre in HEREDADAS_PROHIBIDAS:
-        entorno.pop(nombre, None)
     return entorno
 
 
@@ -223,7 +219,7 @@ def _variable_de_servicio(nombre: str) -> bool:
     # Ninguna variable de servicio heredada de la terminal llega a los hijos:
     # solo valen las de .env.pruebas.
     return nombre.startswith(("MS1_", "MS2_", "MS3_", "MS4_", "GATEWAY_", "MINIO_",
-                              "PRUEBAS_", "SGTM_", "APP_TEST_")) or nombre in HEREDADAS_PROHIBIDAS
+                              "PRUEBAS_", "SGTM_", "APP_TEST_"))
 
 
 def _puerto(url: str) -> tuple[str | None, int | None]:

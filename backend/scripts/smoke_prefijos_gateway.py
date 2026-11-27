@@ -23,7 +23,7 @@ Qué verifica:
 
 Uso, desde backend/:
     python scripts/smoke_prefijos_gateway.py
-    python scripts/smoke_prefijos_gateway.py --gateway https://tallerconect.vercel.app
+    python scripts/smoke_prefijos_gateway.py --gateway https://api-tallerconnect.inf.uct.cl
     python scripts/smoke_prefijos_gateway.py --email admin@pruebas.cl --password ...
     python scripts/smoke_prefijos_gateway.py --json resultados.json
 

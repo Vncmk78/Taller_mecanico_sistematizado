@@ -63,7 +63,7 @@ def test_configuracion_de_kubero_correcta_no_tiene_fallas():
     ({"MS2_DATABASE_URL": f"postgresql+psycopg://postgres:{CLAVE_BD}@ms1-postgres:5432/taller_ms1"}, "misma base"),
     ({"MS4_MS2_URL": "http://localhost:8002"}, "localhost"),
     ({"GATEWAY_CORS_ORIGINS": "https://tallerconnect.inf.uct.cl,http://localhost:5173"}, "localhost"),
-    ({"GATEWAY_CORS_ORIGIN_REGEX": r"https://.*\.vercel\.app"}, "previews"),
+    ({"GATEWAY_CORS_ORIGIN_REGEX": r"https://.*\.preview\.example"}, "previews"),
     ({"MS4_S3_SECRET_KEY": "cambia-esta-clave-ms4"}, "valor por defecto"),
     ({"MS4_S3_PUBLIC_ENDPOINT": "http://minio-kuberoapp"}, "HTTPS"),
     ({"MS1_JWT_SECRET_KEY": "reemplaza-por-una-clave-aleatoria-de-al-menos-32-caracteres"}, "plantilla"),

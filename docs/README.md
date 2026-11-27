@@ -81,10 +81,10 @@ TallerConnect digitaliza la gestión de un taller mecánico con tres roles:
 
 La arquitectura se mantiene igual que en el diseño original: **una web React**,
 **una Gateway FastAPI** y **cuatro microservicios FastAPI** con base de datos
-independiente cada uno, más **MinIO** para las evidencias. Lo que cambió es la
-plataforma: **Kubero UCT reemplaza a Vercel** y **PostgreSQL de Kubero reemplaza a
-Neon**. Los despliegues anteriores en Vercel/Neon **no se borraron ni modificaron**;
-simplemente dejan de ser el ambiente vigente.
+independiente cada uno, más **MinIO** para las evidencias. El ambiente vigente es
+**Kubero UCT con PostgreSQL y MinIO propios**. La configuración, los archivos de
+despliegue y el código muerto de la plataforma anterior ya se retiraron del
+repositorio; los estudios y evidencias que la mencionan son registros históricos.
 
 ---
 

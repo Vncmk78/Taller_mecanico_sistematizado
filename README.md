@@ -8,9 +8,10 @@ exige el cliente.
 
 ## Documentación del despliegue vigente
 
-El ambiente actual está desplegado en el **clúster Kubero de la UCT**. Kubero
-reemplaza a Vercel y el PostgreSQL de Kubero reemplaza a Neon; los despliegues
-anteriores se conservan intactos, pero ya no son el ambiente vigente.
+El ambiente actual está desplegado en el **clúster Kubero de la UCT**, con
+PostgreSQL y MinIO propios. La configuración y el código de la plataforma
+anterior ya no están en el repositorio; los documentos históricos que la
+mencionan se conservan solo como registro de las verificaciones originales.
 
 Toda la documentación operativa y de integración está en [`docs/`](docs/README.md):
 
@@ -70,9 +71,8 @@ se retiraron por no formar parte de esta implementación. Los ejemplos de esos
 sistemas que permanecen en documentos son registros históricos.
 
 `backend/_legacy_monolito_20260907/` y `presupuestos-service/` conservan versiones
-anteriores con sus propias migraciones. No son los servicios configurados en
-`vercel.json`; se mantienen pendientes de revisión antes de retirar esos
-historiales.
+anteriores con sus propias migraciones. No son los servicios desplegados en
+Kubero; se mantienen pendientes de revisión antes de retirar esos historiales.
 
 ## Para ejecutar el frontend localmente
 

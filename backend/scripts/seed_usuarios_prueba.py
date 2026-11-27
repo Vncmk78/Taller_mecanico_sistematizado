@@ -16,7 +16,7 @@ Credenciales (para documentar en CONEXIONES.md):
     mecanico-administrador@pruebas.cl         / MecanicoAdministradorPrueba123!
     cliente-mecanico-administrador@pruebas.cl / ClienteMecanicoAdministradorPrueba123!
 
-Uso (desde backend/ con las dependencias instaladas y .env con los DSN de Neon):
+Uso (desde backend/ con las dependencias instaladas y .env con los DSN configurados):
     python scripts/seed_usuarios_prueba.py
 """
 from __future__ import annotations

@@ -541,6 +541,14 @@ código, por lo que **no es una regresión de H-01**. No se reexportó el contra
 OpenAPI ni se subió su versión: la corrección congelada se debe hacer con el
 rango de dependencias declarado.
 
+**Resolución:** el repositorio ya trae `backend/.venv` con `pydantic 2.13.5`,
+dentro del rango declarado. Ejecutando con ese intérprete
+(`.venv\Scripts\python.exe -m pytest tests/test_gateway_openapi_version_estable.py`)
+la prueba pasa (`14 passed` junto con la suite nueva de imports). El fallo era
+solo el intérprete global usado en la ejecución local, no un problema del código
+ni del contrato: el job `backend` de `Verificación SGTM` sobre `sha-f9b8ee6`
+terminó en `success`.
+
 ---
 
 ## 20. Revisión de formularios y coherencia de estados (24-11-2026)
@@ -793,21 +801,51 @@ al arrancar; los pods anteriores seguían sirviendo con la imagen antigua.
 - Suite de no regresión: `165 passed` en
   `test_gateway_smoke_prefijos.py`, `test_integracion_prefijos.py`,
   `test_gateway_evidencias.py` y `test_gateway_openapi.py`.
-- Suite completa del backend: `2497 passed, 617 skipped, 1 failed`. El único
-  fallo es el preexistente `test_archivo_congelado_coincide_con_el_publicado`,
-  causado por `pydantic 2.14.1` en el equipo local (el proyecto fija
-  `pydantic>=2.12,<2.14`); no guarda relación con este cambio.
+- Suite completa del backend: `2497 passed, 617 skipped, 1 failed` ejecutada con
+  el Python global (`pydantic 2.14.1`). El único fallo fue
+  `test_archivo_congelado_coincide_con_el_publicado`; con el `backend/.venv`
+  (`pydantic 2.13.5`, rango declarado) esa prueba pasa, y el job `backend` de
+  `Verificación SGTM` sobre `sha-f9b8ee6` terminó en `success`. Ver §19.4.
 
 ### 23.4 El «x» de GitHub Actions
 
 La otra check suite del mismo SHA pertenece a `Verificación SGTM`
-(`.github/workflows/verificacion.yml`). El job `frontend` terminó en `success`;
-el job `backend` terminó en `failure` en el paso «Suite completa, con PostgreSQL
-y S3 reales» (`python scripts/verificar_backend.py`), con la anotación «Process
-completed with exit code 1». El paso previo «Comprobar contrato congelado»
-terminó en `success`, y el workflow de despliegue (`docker-build.yml`) terminó
-en `success` en sus seis jobs, incluido «Actualizar Kubero al sha publicado».
-Los logs del runner no son públicos («Sign in to view logs»), así que no se pudo
-identificar qué prueba falló; en todo caso ese `x` **no** es la causa del
-CrashLoopBackOff: el contenedor muere antes de iniciar por un `ValidationError`,
-sin llegar a ejecutar ninguna prueba.
+(`.github/workflows/verificacion.yml`). Al primer chequeo, el job `backend`
+estaba `in_progress` y la anotación visible era «Process completed with exit
+code 1» del paso «Suite completa, con PostgreSQL y S3 reales». La ejecución
+terminó después en **`success`** para `frontend` y `backend` (sin anotaciones),
+al igual que los seis jobs de `docker-build.yml`, incluido «Actualizar Kubero al
+sha publicado». El fallo transitorio procedía de la ejecución local con
+`pydantic 2.14.1` (§19.4) y **no** fue la causa del CrashLoopBackOff: el
+contenedor moría antes de iniciar por un `ValidationError`, sin ejecutar pruebas.
+
+---
+
+## 24. Retiro de la plataforma anterior del repositorio (27-11-2026)
+
+El usuario autorizó borrar el código muerto de Vercel/Neon que quedaba en el
+repo. Se eliminaron `vercel.json`, `backend/scripts/migrar_neon.ps1`,
+`backend/tests/test_despliegue_vercel.py` y el directorio local `.vercel/` con
+sus identificadores de proyecto. El *shim* `migrar_neon.ps1` sólo redirigía a
+`migrar.ps1`; los tests borrados sólo validaban el contrato de despliegue
+retirado.
+
+Las utilidades todavía usadas por MS1/MS2/MS3
+(`services/ms2_taller/direccion_ms3.py` y `shared/direccion_notificaciones.py`)
+se simplificaron: ya no leen `VERCEL_*`, conservan el valor local por defecto y
+el JWT/la cabecera de servicio. `GATEWAY_CORS_ORIGIN_REGEX` ahora es `None` por
+defecto, así que no se autorizan dominios de la plataforma retirada sin
+configuración explícita. La detección de claves `npg_` del escáner de secretos
+se conservó con otro nombre: sigue siendo útil para encontrar credenciales
+antiguas filtradas. Los estudios y evidencias históricos se conservan como
+registro; `docs/README.md` los marca como tal.
+
+### 24.1 Verificación
+
+- Pruebas focales: `109 passed` (URLs internas, cabeceras, CORS, ambiente de
+  pruebas, importación de paquetes y contrato OpenAPI).
+- Suite completa con `backend/.venv` (`pydantic 2.13.5`):
+  `2469 passed, 617 skipped, 1 warning in 877.15s`. No hay fallos; los 617
+  saltos siguen siendo las pruebas que requieren PostgreSQL/MinIO aislados (§19).
+- No se tocó Vercel ni Neon externamente: el alcance fue únicamente el
+  repositorio. No se hizo merge a `Develop`/`main` ni redeploy.

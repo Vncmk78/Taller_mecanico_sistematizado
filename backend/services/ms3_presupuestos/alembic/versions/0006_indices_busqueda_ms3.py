@@ -22,7 +22,7 @@ Un índice B-tree no sirve para '%texto%'; se usan índices GIN de trigramas
   ("Frenos del Sur" = "FRENOS DEL SUR"); antes solo lo validaba el service.
 
 pg_trgm y unaccent son extensiones "trusted": el dueño de la base puede
-instalarlas sin superusuario (Neon: neondb_owner). Se instalan en `public` y se
+instalarlas sin superusuario. Se instalan en `public` y se
 referencian calificadas para que funcionen con cualquier search_path.
 """
 from alembic import op

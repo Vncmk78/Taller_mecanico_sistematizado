@@ -7,9 +7,9 @@ entorno (`backend/.env.example`, `backend/.env.pruebas.example`,
 (`backend/scripts/inicializar_bd.py`, `backend/scripts/ambiente_pruebas.py`) y el
 despliegue en Vercel (`vercel.json`).
 
-**Estado:** estudio sobre el código en ejecución. **No introduce cambios de
-comportamiento ni de infraestructura.** Los hallazgos son observaciones o
-recomendaciones pendientes de decisión del equipo.
+**Estado:** registro histórico del estudio. Las secciones que describen la
+plataforma retirada conservan el análisis original; el código vigente usa Kubero
+y `GATEWAY_CORS_ORIGIN_REGEX` queda vacío salvo configuración explícita.
 
 **Documentos que complementa (no se repiten aquí):**
 
@@ -230,7 +230,7 @@ Se ejecutaron desde `backend/` las pruebas que cubren los controles descritos:
 
 ```powershell
 $env:PYTHONPATH=(Get-Location).Path
-.\.venv\Scripts\python.exe -m pytest tests/test_ambiente_pruebas.py tests/test_inicializar_bd.py tests/test_gateway_estructura.py tests/test_despliegue_vercel.py tests/test_exposicion_indebida_datos.py tests/test_credenciales_vacias_y_multirol.py tests/test_proveedores_notificaciones.py tests/test_ms4_logs.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_ambiente_pruebas.py tests/test_inicializar_bd.py tests/test_gateway_estructura.py tests/test_direccion_ms3.py tests/test_direccion_notificaciones.py tests/test_exposicion_indebida_datos.py tests/test_credenciales_vacias_y_multirol.py tests/test_proveedores_notificaciones.py tests/test_ms4_logs.py -q
 ```
 
 Resultado: **134 passed, 10 warnings** (advertencias de deprecación de

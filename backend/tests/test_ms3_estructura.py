@@ -167,11 +167,11 @@ def test_guard_sin_roles_indicados_falla_en_la_construccion() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 4) Documentación publicada detrás de un prefijo (/ms3 en Vercel)            #
+# 4) Documentación publicada con URL relativa al openapi.json                 #
 # --------------------------------------------------------------------------- #
 
 def test_swagger_y_redoc_cargan_su_propia_especificacion_con_url_relativa() -> None:
-    """En Vercel el MS3 vive en /ms3: "/openapi.json" absoluto cargaba la de la Gateway."""
+    """Una URL absoluta cargaría la especificación de la Gateway en vez de la de MS3."""
     with TestClient(app) as cliente:
         for ruta in ("/docs", "/redoc"):
             html = cliente.get(ruta).text

@@ -8,7 +8,7 @@ que a la prueba le importa:
     presupuesto = nuevo_presupuesto(db, estado="aprobado")
 
 Los nombres y orden_id se generan ÚNICOS por llamada, así las pruebas no
-chocan entre sí ni con datos que ya existan en la base (semilla, Neon).
+chocan entre sí ni con datos que ya existan en la base.
 Nada se confirma: las pruebas corren dentro de la transacción de la fixture
 `db`, que se revierte al terminar.
 """

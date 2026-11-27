@@ -49,7 +49,7 @@ app.add_middleware(
 | Variable | Por defecto | Para qué |
 |---|---|---|
 | `GATEWAY_CORS_ORIGINS` | `["http://localhost:5173", "http://localhost:8000"]` | Frontend web de Vite (5173) y la propia Gateway (8000, para el healthcheck y Swagger) |
-| `GATEWAY_CORS_ORIGIN_REGEX` | `https://[a-z0-9-]+\.vercel\.app` | Previews de despliegue en Vercel |
+| `GATEWAY_CORS_ORIGIN_REGEX` | vacío | Regex adicional de orígenes; vacía por defecto |
 | `GATEWAY_CORS_ALLOW_CREDENTIALS` | `True` | Permite enviar cookies de sesión |
 | Métodos | `*` | `GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD` |
 | Cabeceras | `*` | Incluye `Authorization` y `X-Request-ID` |
@@ -62,13 +62,12 @@ comas, normalizado en un `field_validator`.
 
 **`allow_credentials=True` exige `allow_origins` explícito, nunca `*`.** Con
 credenciales, el navegador rechaza el origen comodín. Por eso la lista es
-explícita y los previews de Vercel se resuelven con una regex acotada
-(`[a-z0-9-]+`) en lugar de `allow_origins=["*"]`, que sería inseguro y además
-rompería con `credentials`.
+explícita; la regex adicional está vacía por defecto y sólo se habilita si se
+documenta un origen legítimo que no quepa en la lista.
 
-**La regex de Vercel está anclada a `https://`.** No admite
-`http://` ni comodines de dominio, de modo que un atacante no puede registrar un
-`vercel.app` malicioso con HTTP plano.
+**La regex opcional está anclada a `https://`.** No admite `http://` ni comodines
+de dominio, de modo que un atacante no puede registrar un dominio malicioso con
+HTTP plano.
 
 **`expose_headers=["X-Request-ID"]` es una decisión de operabilidad:** sin ella,
 JavaScript no puede leer la cabecera y el frontend no puede mostrar el id de
@@ -278,7 +277,7 @@ delega ese juicio al microservicio, que es quien tiene el secreto.
 | `roles` vacía, con duplicados o con rol desconocido | ✅ Rechazado | `_extraer_roles` valida los tres casos |
 | Enumeración de usuarios en el login | ✅ Ausente | Mismo `401` y mismo mensaje para correo inexistente y contraseña incorrecta |
 | Enumeración de recursos | ✅ Ausente | Recurso ajeno e inexistente devuelven el mismo `404` |
-| CORS permisivo con credenciales | ✅ Ausente | Lista explícita + regex acotada a `https://*.vercel.app` |
+| CORS permisivo con credenciales | ✅ Ausente | Lista explícita; regex adicional vacía por defecto |
 | Token o contraseña en los logs del backend | ✅ Ausente | Único `logger.exception` del Gateway registra `url.path` y `request_id`; nunca cabeceras, body ni query string |
 | Token en la consola del navegador | ✅ Corregido | `ErrorBoundary` ya no vuelca el objeto error (§7.5). Residual de React en desarrollo: §7.6 |
 | Correo de usuario en la salida del seed | ✅ Corregido | `seed_usuarios_prueba.py` enmascara con `_ocultar_correo()` (§7.8) |

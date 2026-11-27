@@ -16,12 +16,14 @@ export function OrderCard({ order, detailPath, patente, vehicleLabel, mechanicNa
     return (
         <div className="card p-0 overflow-hidden flex flex-col">
             <div className="p-5 flex-grow flex flex-col">
-                <div className="flex justify-between items-center gap-3 mb-3">
-                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-3">
+                    <h3 className="text-lg font-semibold flex items-center gap-2 min-w-0">
                         <ClipboardList className="w-5 h-5 text-text-muted shrink-0" aria-hidden />
                         <span className="truncate">Orden n° {order.id}</span>
                     </h3>
-                    <OrderStatusBadge estadoCodigo={order.estadoCodigo} />
+                    <div className="shrink-0">
+                        <OrderStatusBadge estadoCodigo={order.estadoCodigo} />
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-2 mb-1">

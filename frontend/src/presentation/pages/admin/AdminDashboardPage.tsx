@@ -1,4 +1,4 @@
-import {
+﻿import {
   Car,
   Clock,
   CheckCircle,
@@ -463,7 +463,7 @@ export function AdminDashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-7 px-4 sm:px-6 lg:px-10 pb-10">
         <div className="flex flex-col gap-7">
           <div className="card flex flex-col p-7">
-            <div className="flex justify-between items-center mb-6 border-b border-border-custom pb-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:items-center mb-6 border-b border-border-custom pb-4">
               <h3 className="text-xl font-semibold">Carga de mecánicos</h3>
               <p className="text-text-muted text-sm">Órdenes totales / activas</p>
             </div>
@@ -514,12 +514,12 @@ export function AdminDashboardPage() {
                   </div>
                 ))}
               {!cargandoResumen && cargaMecanicos.length > CARGA_POR_PAGINA && (
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2">
                   <p className="text-sm text-text-muted">
                     Mostrando {inicioCarga + 1} - {Math.min(inicioCarga + CARGA_POR_PAGINA, cargaMecanicos.length)} de{' '}
                     {cargaMecanicos.length} mecánicos
                   </p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
                       variant="secondary"
@@ -530,7 +530,7 @@ export function AdminDashboardPage() {
                       <ChevronLeft className="w-4 h-4" aria-hidden />
                       Anterior
                     </Button>
-                    <span className="text-sm text-text-muted">
+                    <span className="text-sm text-text-muted whitespace-nowrap">
                       Página {paginaCargaSegura} de {totalPaginasCarga}
                     </span>
                     <Button
@@ -550,7 +550,7 @@ export function AdminDashboardPage() {
           </div>
 
           <div className="card flex flex-col p-7">
-            <div className="flex flex-wrap justify-between items-center gap-2 mb-6 border-b border-border-custom pb-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-6 border-b border-border-custom pb-4">
               <h3 className="text-xl font-semibold">Cola de trabajo activa</h3>
               <Link to="/admin/ordenes" className="text-primary-blue text-sm font-medium no-underline hover:underline">
                 Ver todas las órdenes
@@ -590,7 +590,7 @@ export function AdminDashboardPage() {
                         <p className="text-sm font-medium text-text-main">Orden #{orden.id}</p>
                         <p className="text-xs text-text-muted truncate">
                           {orderVehicleLabel(orden, vehiculos)}
-                          {patente ? ` · ${patente}` : ''}
+                          {patente ? ` Â· ${patente}` : ''}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
@@ -615,7 +615,7 @@ export function AdminDashboardPage() {
 
         <div className="flex flex-col gap-7">
           <div className="card flex flex-col p-7">
-            <div className="flex justify-between items-center mb-5 border-b border-border-custom pb-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center mb-5 border-b border-border-custom pb-3">
               <h3 className="text-xl font-semibold">Inventario y proveedores</h3>
             </div>
 
@@ -749,3 +749,4 @@ export function AdminDashboardPage() {
     </div>
   );
 }
+

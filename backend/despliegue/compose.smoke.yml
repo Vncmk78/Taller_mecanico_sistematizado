@@ -1,0 +1,160 @@
+# SMOKE TEST LOCAL PREVIO AL DESPLIEGUE (SGTM)
+#
+# Se usa JUNTO con compose.bd.yml: agrega MinIO, la Gateway, MS1-MS4 y la web,
+# construidos desde el código actual con los mismos Dockerfile que publica el
+# workflow (Dockerfile de la raíz y frontend/Dockerfile). Reproduce en Docker
+# local la topología de Kubero antes de hacer push a main.
+#
+# Uso (desde backend/; el detalle está en docs/10-smoke-test-contenedores.md):
+#   python scripts/inicializar_bd.py configurar      # solo la primera vez
+#   bash scripts/smoke_contenedores.sh            # construye, levanta y verifica
+#   bash scripts/smoke_contenedores.sh --bajar    # además apaga los contenedores (conserva la base)
+#
+# Orden de arranque (depends_on usa el HEALTHCHECK de las imágenes):
+#   postgres (healthy) -> migraciones (termina OK) -> ms1..ms4 (healthy)
+#   minio (healthy) -> minio_init (termina OK) -> ms4
+#   ms1..ms4 (healthy) -> gateway (healthy) -> web (healthy)
+#
+# Solo se publican en 127.0.0.1: Gateway en :8080 y web en :8081.
+# MinIO es local y desechable (no se publica); sus claves tienen valores por
+# defecto solo para este smoke test.
+
+# Misma imagen que construye `migraciones` en compose.bd.yml (build una sola
+# vez); pull_policy never evita que Compose intente bajarla de un registro.
+x-backend: &backend
+  image: sgtm-backend:despliegue
+  pull_policy: never
+  labels: {sgtm.ambiente: smoke}
+  restart: "no"
+
+x-depende-de-migraciones: &depende-de-migraciones
+  migraciones:
+    condition: service_completed_successfully
+
+services:
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:999718c09ef5d2ac888aa97ffd628a67ba8be2d64d6eea9e719d1f58cd59e204
+    container_name: sgtm_smoke_minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${SMOKE_MINIO_ROOT_USER:-smoke-admin}
+      MINIO_ROOT_PASSWORD: ${SMOKE_MINIO_ROOT_PASSWORD:-smoke-admin-clave-local}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - '/usr/bin/mc --config-dir /tmp/mc-live alias set local http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 && /usr/bin/mc --config-dir /tmp/mc-live ready local >/dev/null 2>&1'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    labels: {sgtm.ambiente: smoke}
+
+  # Bucket privado, usuario de MS4 y su política (misma lógica que backend/docker-compose.yml).
+  minio_init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: sgtm_smoke_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        /usr/bin/mc alias set sgtm http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        /usr/bin/mc mb --ignore-existing sgtm/evidencias
+        /usr/bin/mc anonymous set none sgtm/evidencias
+        /usr/bin/mc admin user add sgtm "$${MS4_S3_ACCESS_KEY}" "$${MS4_S3_SECRET_KEY}" || true
+        /usr/bin/mc admin policy create sgtm politica-ms4 /config/politica-ms4.json || true
+        /usr/bin/mc admin policy attach sgtm politica-ms4 --user "$${MS4_S3_ACCESS_KEY}" || true
+    volumes:
+      - ../minio:/config:ro
+    environment:
+      MINIO_ROOT_USER: ${SMOKE_MINIO_ROOT_USER:-smoke-admin}
+      MINIO_ROOT_PASSWORD: ${SMOKE_MINIO_ROOT_PASSWORD:-smoke-admin-clave-local}
+      MS4_S3_ACCESS_KEY: ${SMOKE_MS4_S3_ACCESS_KEY:-ms4-evidencias}
+      MS4_S3_SECRET_KEY: ${SMOKE_MS4_S3_SECRET_KEY:-smoke-ms4-clave-local}
+    labels: {sgtm.ambiente: smoke}
+    restart: "no"
+
+  ms1:
+    <<: *backend
+    container_name: sgtm_smoke_ms1
+    depends_on: *depende-de-migraciones
+    environment:
+      SGTM_SERVICIO: ms1
+      MS1_DATABASE_URL: postgresql+psycopg://sgtm_ms1:${SGTM_MS1_BD_CLAVE}@postgres:5432/sgtm_ms1
+      MS1_JWT_SECRET_KEY: ${SGTM_JWT_SECRET:?Falta SGTM_JWT_SECRET}
+      MS1_MS2_URL: http://ms2:8000
+
+  ms2:
+    <<: *backend
+    container_name: sgtm_smoke_ms2
+    depends_on: *depende-de-migraciones
+    environment:
+      SGTM_SERVICIO: ms2
+      MS2_DATABASE_URL: postgresql+psycopg://sgtm_ms2:${SGTM_MS2_BD_CLAVE}@postgres:5432/sgtm_ms2
+      MS2_JWT_SECRET_KEY: ${SGTM_JWT_SECRET:?Falta SGTM_JWT_SECRET}
+      MS2_MS1_URL: http://ms1:8000
+      MS2_MS3_URL: http://ms3:8000
+
+  ms3:
+    <<: *backend
+    container_name: sgtm_smoke_ms3
+    depends_on: *depende-de-migraciones
+    environment:
+      SGTM_SERVICIO: ms3
+      MS3_DATABASE_URL: postgresql+psycopg://sgtm_ms3:${SGTM_MS3_BD_CLAVE}@postgres:5432/sgtm_ms3
+      MS3_JWT_SECRET_KEY: ${SGTM_JWT_SECRET:?Falta SGTM_JWT_SECRET}
+      MS3_MS1_URL: http://ms1:8000
+      MS3_MS2_URL: http://ms2:8000
+
+  ms4:
+    <<: *backend
+    container_name: sgtm_smoke_ms4
+    depends_on:
+      <<: *depende-de-migraciones
+      minio_init:
+        condition: service_completed_successfully
+    environment:
+      SGTM_SERVICIO: ms4
+      MS4_DATABASE_URL: postgresql+psycopg://sgtm_ms4:${SGTM_MS4_BD_CLAVE}@postgres:5432/sgtm_ms4
+      MS4_JWT_SECRET_KEY: ${SGTM_JWT_SECRET:?Falta SGTM_JWT_SECRET}
+      MS4_MS2_URL: http://ms2:8000
+      MS4_MS3_URL: http://ms3:8000
+      MS4_S3_ENDPOINT: http://minio:9000
+      MS4_S3_ACCESS_KEY: ${SMOKE_MS4_S3_ACCESS_KEY:-ms4-evidencias}
+      MS4_S3_SECRET_KEY: ${SMOKE_MS4_S3_SECRET_KEY:-smoke-ms4-clave-local}
+      MS4_S3_BUCKET: evidencias
+      MS4_S3_SECURE: "false"
+
+  gateway:
+    <<: *backend
+    container_name: sgtm_smoke_gateway
+    depends_on:
+      ms1: {condition: service_healthy}
+      ms2: {condition: service_healthy}
+      ms3: {condition: service_healthy}
+      ms4: {condition: service_healthy}
+    environment:
+      SGTM_SERVICIO: gateway
+      GATEWAY_MS1_URL: http://ms1:8000
+      GATEWAY_MS2_URL: http://ms2:8000
+      GATEWAY_MS3_URL: http://ms3:8000
+      GATEWAY_MS4_URL: http://ms4:8000
+      GATEWAY_CORS_ORIGINS: http://127.0.0.1:8081,http://localhost:8081
+      GATEWAY_CORS_ORIGIN_REGEX: ""
+    ports: ["127.0.0.1:${SMOKE_GATEWAY_PUERTO:-8080}:8000"]
+
+  web:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    image: sgtm-web:despliegue
+    container_name: sgtm_smoke_web
+    depends_on:
+      gateway: {condition: service_healthy}
+    environment:
+      GATEWAY_UPSTREAM: http://gateway:8000
+    ports: ["127.0.0.1:${SMOKE_WEB_PUERTO:-8081}:80"]
+    labels: {sgtm.ambiente: smoke}
+    restart: "no"

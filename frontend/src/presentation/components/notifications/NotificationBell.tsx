@@ -44,6 +44,7 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
   const cargar = useCallback(async (silencioso = false) => {
     if (inflightRef.current) return;
     inflightRef.current = true;
+    await Promise.resolve();
     if (!silencioso) setLoading(true);
     setError(null);
     try {
@@ -60,9 +61,12 @@ export function NotificationBell({ className = '', tone = 'light' }: Notificatio
   }, []);
 
   useEffect(() => {
-    void cargar(true);
+    const timeout = window.setTimeout(() => void cargar(true), 0);
     const id = window.setInterval(() => void cargar(true), 60000);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearTimeout(timeout);
+      window.clearInterval(id);
+    };
   }, [cargar]);
 
   useEffect(() => {

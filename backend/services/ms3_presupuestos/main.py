@@ -57,15 +57,14 @@ app = FastAPI(
     lifespan=lifespan,
     title="SGTM — MS3: Presupuestos, Repuestos y Proveedores",
     version="0.1.0",
-    # Swagger y ReDoc se sirven abajo con URL RELATIVA al openapi.json: en
-    # Vercel el servicio vive bajo /ms3 y "/openapi.json" absoluto cargaba la
-    # especificación de la Gateway en vez de la de MS3.
+    # Swagger y ReDoc se sirven abajo con URL RELATIVA al openapi.json: una URL
+    # absoluta cargaría la especificación de la Gateway en vez de la de MS3.
     docs_url=None,
     redoc_url=None,
     # Servidores para "Try it out": "." = mismo prefijo donde se sirve la
-    # especificación (/ms3 en Vercel, raíz en local); "/api" = vía Gateway.
+    # especificación; "/api" = vía Gateway.
     servers=[
-        {"url": ".", "description": "Directo al MS3 (/ms3 en Vercel, raíz en local)"},
+        {"url": ".", "description": "Directo al MS3 (mismo prefijo de la especificación)"},
         {"url": "/api", "description": "A través de la API Gateway (como lo usan web y móvil)"},
     ],
     openapi_tags=[

@@ -3,13 +3,13 @@
 Semana 7 · Bastián Liempi · Taller de Integración II (Grupo 10)
 
 Referencia única de **qué variable configura qué** en el SGTM y **cómo se
-encuentran los servicios entre sí**, en local, con Docker y en Vercel. Los
+encuentran los servicios entre sí**, en local, con Docker y en Kubero. Los
 valores por defecto salen del código (`*/config.py`); `backend/.env.example`
 trae una copia lista para usar en desarrollo.
 
 > `.env` nunca se sube al repositorio. Las claves (`*_JWT_SECRET_KEY`,
 > `*_S3_SECRET_KEY`, DSN con contraseña) solo viven en `.env` local o en las
-> variables de entorno de Vercel.
+> variables de entorno del panel de Kubero.
 
 ---
 
@@ -54,41 +54,21 @@ Web / Móvil ──► Gateway :8000 ──GATEWAY_MS1_URL──► MS1 :8001
 Las llamadas entre microservicios reenvían el **mismo JWT** del usuario
 (`Authorization: Bearer ...`); no hay credenciales de servicio a servicio.
 
-### 1.3 Vercel (producción, `https://tallerconect.vercel.app`)
+### 1.3 Kubero (producción, `https://api-tallerconnect.inf.uct.cl`)
 
-Un solo proyecto con seis servicios (`vercel.json`):
+El pipeline `tallerconnect` despliega `web`, `gateway`, `ms1`, `ms2`, `ms3` y
+`ms4`; `minio` presta el almacenamiento de evidencias. La Gateway publica
+`/api/*`, `/docs` y `/openapi.json`. Cada microservicio expone su `/health` y
+las imágenes se publican en GHCR con el tag `sha-*`.
 
-| Servicio Vercel | Entrypoint | Ruta pública | Dirección interna |
-|---|---|---|---|
-| `frontend` | Vite | `/` | — |
-| `backend` (Gateway) | `gateway.main:app` | `/api/*`, `/docs`, `/openapi.json` | — |
-| `ms-auth` | `services.ms1_auth.main:app` | `/ms1/*` | Binding → `GATEWAY_MS1_URL` |
-| `ms-taller` | `services.ms2_taller.main:app` | `/ms2/*` | Binding → `GATEWAY_MS2_URL`, `MS3_MS2_URL`, `MS4_MS2_URL` |
-| `ms-presupuestos` | `services.ms3_presupuestos.main:app` | `/ms3/*` | Binding → `GATEWAY_MS3_URL`, `MS4_MS3_URL` |
-| `ms-evidencias` | `services.ms4_evidencias.main:app` | `/ms4/*` | Binding → `GATEWAY_MS4_URL` |
+Las URLs internas se configuran en el panel de Kubero: la Gateway usa
+`GATEWAY_MS1_URL` … `GATEWAY_MS4_URL`, y los servicios se coordinan con
+`MS2_MS3_URL`, `MS3_MS2_URL`, `MS4_MS2_URL` y `MS4_MS3_URL`. El JWT del usuario
+se reenvía en cada llamada y los hechos se verifican en el servicio dueño del
+dato: si MS3 no responde, MS2 devuelve `503` sin guardar cambios.
 
-Las URLs internas **no se escriben a mano**: los *bindings* de `vercel.json`
-(`"type": "service", "format": "url"`) inyectan la variable con la dirección
-interna del servicio al desplegar. Las rutas `/ms1..ms4/*` exponen cada
-servicio directo (Swagger y health checks) y se reescriben a `/` dentro del
-servicio.
-
-**Corrección de despliegue (3 de noviembre de 2026):** el binding propuesto
-MS2 → MS3 creaba un ciclo con MS3 → MS2 y Vercel rechazó el despliegue después
-del build. Se mantiene el binding MS3 → MS2. MS2 resuelve MS3 por HTTPS como
-`https://<VERCEL_URL>/ms3`, con las variables de sistema habilitadas y sin
-`MS2_MS3_URL` explícita. No se utiliza el alias de producción para un preview.
-Las URLs explícitas siguen teniendo prioridad en todos los entornos.
-
-El JWT del usuario se conserva. Si Deployment Protection protege ese dominio,
-se requiere Protection Bypass for Automation: MS2 añade el secreto de plataforma
-como `x-vercel-protection-bypass` únicamente al MS3 del mismo despliegue. No se
-expone al frontend ni se elimina ningún control JWT. Si Vercel rechaza la llamada,
-MS2 responde `503` sin aceptar hechos ni guardar el cambio de orden. En local y
-Kubero siguen funcionando las direcciones configuradas en `MS2_MS3_URL`.
-
-Referencias: [variables de sistema](https://vercel.com/docs/environment-variables/system-environment-variables)
-y [autorización de automatización](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation).
+Los secretos (`*_JWT_SECRET_KEY`, `*_S3_SECRET_KEY` y DSN con contraseña) se
+administran en el panel de Kubero, nunca en el repositorio.
 
 ---
 
@@ -110,11 +90,11 @@ Convención: cada componente lee solo las variables con **su prefijo**
 | `GATEWAY_TIMEOUT_ARCHIVOS_SECONDS` | `60.0` | read/write del prefijo `evidencias` |
 | `GATEWAY_MS1_TIMEOUT_SECONDS` … `GATEWAY_MS4_TIMEOUT_SECONDS` | vacío | read/write propio del servicio; prioridad sobre los anteriores (recomendado 10 / 15 / 15 / 60) |
 | `GATEWAY_RETRY_AFTER_SECONDS` | `5` | Cabecera `Retry-After` de los `502/503/504` de la Gateway |
-| `GATEWAY_HEALTH_TIMEOUT_SECONDS` | `2.0` | Timeout por comprobación en `/api/health/servicios*` (en Vercel se recomienda `5` por los arranques en frío) |
+| `GATEWAY_HEALTH_TIMEOUT_SECONDS` | `2.0` | Timeout por comprobación en `/api/health/servicios*` |
 | `GATEWAY_MAX_BODY_BYTES` | `1048576` | Límite de body de los prefijos JSON (1 MiB) |
 | `GATEWAY_MAX_BODY_ARCHIVOS_BYTES` | `12582912` | Límite de body de `evidencias` (12 MiB) |
 | `GATEWAY_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Orígenes permitidos (CSV o JSON) |
-| `GATEWAY_CORS_ORIGIN_REGEX` | `https://[a-z0-9-]+\.vercel\.app` | Previews de Vercel; vacío la desactiva |
+| `GATEWAY_CORS_ORIGIN_REGEX` | vacío | Regex adicional de orígenes; vacío la desactiva |
 | `GATEWAY_CORS_ALLOW_CREDENTIALS` | `true` | Cookies/Authorization cross-origin |
 | `GATEWAY_SERVICE_NAME` | `gateway` | Nombre en logs y en `/api/health` |
 
@@ -122,7 +102,7 @@ Convención: cada componente lee solo las variables con **su prefijo**
 
 | Variable (ej. MS1) | Por defecto | Uso |
 |---|---|---|
-| `MS1_DATABASE_URL` | `postgresql+psycopg://taller:taller@localhost:5433/taller_ms1` (MS2 `:5434/taller_ms2`, MS3 `:5435/taller_ms3`, MS4 `:5436/taller_ms4`) | Base propia del servicio. En Neon agregar `?sslmode=require` |
+| `MS1_DATABASE_URL` | `postgresql+psycopg://taller:taller@localhost:5433/taller_ms1` (MS2 `:5434/taller_ms2`, MS3 `:5435/taller_ms3`, MS4 `:5436/taller_ms4`) | Base propia del servicio; agregar `?sslmode=require` si el servidor ofrece TLS |
 | `MS1_DB_ECHO` | `false` | Imprime el SQL (solo depurar) |
 | `MS1_DB_POOL_SIZE` / `MS1_DB_MAX_OVERFLOW` | `5` / `10` | Pool de conexiones |
 | `MS1_SERVICE_NAME` | nombre del servicio | Logs y `/health` |
@@ -163,7 +143,7 @@ Convención: cada componente lee solo las variables con **su prefijo**
 
 | Variable | Por defecto | Uso |
 |---|---|---|
-| `VITE_API_URL` | `/api` | Base de las llamadas. En local el proxy de Vite reenvía `/api` a `:8000`; en Vercel la misma ruta llega a la Gateway |
+| `VITE_API_URL` | `/api` | Base de las llamadas. En local el proxy de Vite reenvía `/api` a `:8000`; en Kubero el proxy de la app web llega a la Gateway |
 
 ---
 
@@ -172,7 +152,7 @@ Convención: cada componente lee solo las variables con **su prefijo**
 | Entorno | Obligatorio | Recomendado |
 |---|---|---|
 | Local | `MS1..MS4_JWT_SECRET_KEY` (la misma), DSN locales si no usas los puertos 5433–5436 | Copiar `backend/.env.example` a `backend/.env` |
-| Vercel | `MS1..MS4_DATABASE_URL` (Neon, `sslmode=require`), `MS1..MS4_JWT_SECRET_KEY` (la misma), `MS4_S3_*` si se usarán evidencias | `GATEWAY_CORS_ORIGINS`, `GATEWAY_HEALTH_TIMEOUT_SECONDS=5`, `MS2_MS3_URL` (ver pendiente §1.3) |
+| Kubero | `MS1..MS4_DATABASE_URL`, `MS1..MS4_JWT_SECRET_KEY` (la misma), `MS4_S3_*`, URLs internas de los servicios | `GATEWAY_CORS_ORIGINS` con el origen HTTPS de la web |
 | Pruebas (pytest) | Ninguna: `tests/conftest.py` fija claves y SQLite de prueba | — |
 
 ## 4. Cómo comprobar la configuración

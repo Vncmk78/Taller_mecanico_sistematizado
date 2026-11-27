@@ -17,7 +17,7 @@ movimientos. Con --verificar solo verifica, sin escribir nada.
 Es idempotente: se puede correr varias veces sin duplicar nada.
 
 Uso (desde backend/, con las migraciones de MS3 aplicadas y MS3_DATABASE_URL
-en .env apuntando a la base que se quiere poblar, local o Neon):
+en .env apuntando a la base que se quiere poblar):
     python scripts/seed_datos_ms3.py
     python scripts/seed_datos_ms3.py --orden-id 1 --admin-id 3 --mecanico-id 2
     python scripts/seed_datos_ms3.py --integracion

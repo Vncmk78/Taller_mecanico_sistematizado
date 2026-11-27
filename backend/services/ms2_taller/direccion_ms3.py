@@ -1,41 +1,19 @@
-"""Ruta HTTP a MS3 cuando Vercel no permite bindings en ambos sentidos."""
-from __future__ import annotations
+"""Dirección local por defecto y cabeceras de las consultas MS2 → MS3.
 
-import os
-import re
+En Kubero la URL se define explícitamente con ``MS2_MS3_URL``. Este módulo solo
+aporta el valor de desarrollo local y las cabeceras internas, sin depender de
+variables de una plataforma de despliegue retirada.
+"""
+from __future__ import annotations
 
 from shared.correlacion import cabeceras_correlacion
 
 
-def _origen_despliegue() -> str | None:
-    if os.environ.get("VERCEL") != "1":
-        return None
-    host = os.environ.get("VERCEL_URL", "").strip()
-    # VERCEL_URL es un dominio sin protocolo, ruta, puerto ni credenciales.
-    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", host):
-        return None
-    if any(not etiqueta or etiqueta.startswith("-") or etiqueta.endswith("-")
-           for etiqueta in host.split(".")):
-        return None
-    return f"https://{host.lower()}"
-
-
 def url_ms3_por_defecto() -> str:
-    if os.environ.get("VERCEL") != "1":
-        return "http://localhost:8003"
-    origen = _origen_despliegue()
-    if origen is None:
-        raise ValueError("Habilite VERCEL_URL o configure MS2_MS3_URL explícitamente")
-    # La URL de ESTE despliegue evita que un preview consulte otra versión.
-    return f"{origen}/ms3"
+    """Valor usado sólo cuando no se configura ``MS2_MS3_URL``."""
+    return "http://localhost:8003"
 
 
 def cabeceras_para_ms3(url_base: str, token: str) -> dict[str, str]:
-    # Semana 10: mismo X-Request-ID que la petición en curso (si la hay).
-    cabeceras = {"Authorization": f"Bearer {token}", **cabeceras_correlacion()}
-    origen = _origen_despliegue()
-    secreto = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET", "")
-    # El secreto de plataforma nunca se envía a otro host, alias o servicio.
-    if origen and url_base.rstrip("/") == f"{origen}/ms3" and secreto:
-        cabeceras["x-vercel-protection-bypass"] = secreto
-    return cabeceras
+    """Propaga el JWT del usuario y el identificador de correlación."""
+    return {"Authorization": f"Bearer {token}", **cabeceras_correlacion()}

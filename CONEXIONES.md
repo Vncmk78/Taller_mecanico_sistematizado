@@ -85,7 +85,7 @@ en Kubernetes apuntarían al propio pod, no a otro microservicio.
 
 | Aplicación | Configuración necesaria |
 | --- | --- |
-| Gateway | GATEWAY_MS1_URL…GATEWAY_MS4_URL con URLs internas reales; GATEWAY_CORS_ORIGINS con el origen HTTPS de la web; GATEWAY_CORS_ORIGIN_REGEX vacío si no se autorizan previews Vercel |
+| Gateway | GATEWAY_MS1_URL…GATEWAY_MS4_URL con URLs internas reales; GATEWAY_CORS_ORIGINS con el origen HTTPS de la web; GATEWAY_CORS_ORIGIN_REGEX vacío si no se autorizan orígenes adicionales |
 | MS1 | MS1_DATABASE_URL, MS1_JWT_SECRET_KEY; MS1_EVENT_SHARED_SECRET si se habilitan los eventos de MartinH |
 | MS2 | MS2_DATABASE_URL, MS2_JWT_SECRET_KEY, MS2_MS3_URL, MS2_MS1_URL, MS2_MS1_TIMEOUT_SEGUNDOS=3.0, MS2_TIMEZONE=America/Santiago; secreto de eventos si se habilita el worker |
 | MS3 | MS3_DATABASE_URL, MS3_JWT_SECRET_KEY, MS3_MS2_URL |
@@ -96,12 +96,9 @@ menos 32 caracteres para HS256. El secreto de eventos MS1↔MS2 es independiente
 del JWT y debe coincidir en ambos servicios. No dar las claves JWT o DSN a la
 Gateway. No copiar el `.env` completo a cada aplicación.
 
-En Vercel, MS2 → MS3 usa por defecto `https://<VERCEL_URL>/ms3` del mismo
-despliegue: omitir `MS2_MS3_URL` y habilitar variables de sistema. MS3 → MS2
-conserva su binding; añadir el inverso causa el error de ciclo del despliegue.
-Si el dominio está protegido, configurar Protection Bypass for Automation en
-el panel; MS2 utiliza el secreto de plataforma solo para ese destino, junto al
-JWT original. En Kubero mantener las URLs internas explícitas de la tabla.
+MS2 → MS3 usa la URL interna explícita `MS2_MS3_URL` indicada en la tabla; MS3 →
+MS2 usa `MS3_MS2_URL`. El JWT del usuario se reenvía en ambas direcciones y la
+verificación de hechos se hace siempre en el servicio dueño del dato.
 
 Bases separadas: `taller_ms1`, `taller_ms2`, `taller_ms3`, `taller_ms4`.
 Usar usuarios con acceso únicamente a su base y el modo TLS indicado por la UCT:
@@ -154,8 +151,7 @@ de producción, ejecutar **una sola vez por despliegue**:
 python backend/scripts/migrar.py
 ```
 
-En PowerShell también está `backend/scripts/migrar.ps1`;
-`migrar_neon.ps1` se conserva solo como entrada de compatibilidad.
+En PowerShell también está `backend/scripts/migrar.ps1`.
 
 El migrador consulta primero las cuatro bases y no inicia escrituras si alguna
 es incompatible o no se puede consultar. Luego ejecuta `alembic upgrade heads`
@@ -190,13 +186,11 @@ Como Administrador, configurar valores aprobados por el taller mediante:
 No inventar esos límites. Sin configuración, crear un ingreso o asignar un
 mecánico puede responder `409`. Preparar una orden visible para cada cuenta de
 prueba en staging para comprobar detalle/historial sin insertar datos durante
-la prueba de consultas. No copiar ni borrar datos de Neon como paso automático.
+la prueba de consultas. No copiar ni borrar datos de producción como paso automático.
 
 > Referencia completa de todas las variables (Gateway, MS1..MS4, MinIO y
 > frontend) y de las direcciones internas entre servicios:
 > [`backend/docs/variables-entorno-y-direcciones.md`](backend/docs/variables-entorno-y-direcciones.md).
-
-En el proyecto de Vercel, configurar como Environment Variables (Production):
 
 ## 6. Verificación para la aplicación móvil
 

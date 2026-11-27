@@ -208,7 +208,7 @@ def test_rotar_sin_env_pruebas_no_hace_nada(tmp_path: Path, monkeypatch: pytest.
         ({"MS4_S3_BUCKET": "evidencias"}, "MS4_S3_BUCKET debe ser evidencias-pruebas"),
         ({"MS4_S3_ENDPOINT": "http://localhost:9000"}, "MS4_S3_ENDPOINT debe apuntar"),
         ({"GATEWAY_CORS_ORIGINS": "http://localhost:5173"}, "GATEWAY_CORS_ORIGINS solo admite"),
-        ({"GATEWAY_CORS_ORIGIN_REGEX": r"https://.*\.vercel\.app"}, "debe quedar vacía"),
+        ({"GATEWAY_CORS_ORIGIN_REGEX": r"https://.*\.preview\.example"}, "debe quedar vacía"),
         ({"SGTM_AMBIENTE": "local"}, "SGTM_AMBIENTE debe ser 'pruebas'"),
     ],
 )
@@ -240,10 +240,8 @@ def test_los_hijos_no_heredan_variables_de_servicio_de_la_terminal(
 ):
     monkeypatch.setenv("MS2_DATABASE_URL", "postgresql+psycopg://taller:taller@localhost:5434/x")
     monkeypatch.setenv("MS3_MS2_URL", "http://localhost:8002")
-    monkeypatch.setenv("VERCEL", "1")
     entorno = _entorno_modificado(archivos, MS3_MS2_URL=None)
     assert "MS3_MS2_URL" not in entorno
-    assert "VERCEL" not in entorno
     assert entorno["MS2_DATABASE_URL"].endswith("@127.0.0.1:5444/taller_ms2_pruebas")
     assert entorno["SGTM_ENV_FILE"] == str(archivos / ".env.pruebas")
 

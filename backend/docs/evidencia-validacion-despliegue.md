@@ -15,7 +15,11 @@ sigue siendo `despliegue-base-datos.md`.
 
 Todas se ejecutaron desde `backend/`, con `PYTHONPATH` apuntando a ese directorio.
 
-### 1. Scripts de aprovisionamiento, migración y Vercel
+### 1. Scripts de aprovisionamiento y migración (registro histórico)
+
+> El comando original incluía `tests/test_despliegue_vercel.py`, retirado junto
+> con la plataforma anterior. Las pruebas vigentes equivalentes son
+> `tests/test_direccion_ms3.py` y `tests/test_direccion_notificaciones.py`.
 
 ```powershell
 $env:PYTHONPATH=(Get-Location).Path; .\.venv\Scripts\python.exe -m pytest tests/test_inicializar_bd.py tests/test_scripts_despliegue.py tests/test_despliegue_vercel.py -q

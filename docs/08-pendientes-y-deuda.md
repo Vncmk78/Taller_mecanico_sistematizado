@@ -158,8 +158,8 @@ Prioridad sugerida:
 ### 3.4 `README.md` raíz desactualizado — Prioridad baja
 
 - **Situación:** el README describe el proyecto, pero el detalle operativo vive
-  ahora en `docs/`. Se agregó un enlace, pero conviene revisar que no queden
-  instrucciones de Vercel/Neon como si fueran el ambiente vigente.
+  ahora en `docs/`. Se retiraron la configuración y el código de la plataforma
+  anterior; conviene revisar periódicamente que no reaparezcan.
 
 ### 3.5 Tabla de responsables incompleta — Prioridad baja
 
@@ -236,7 +236,7 @@ Estas no son tareas pendientes: son decisiones conscientes.
 
 | Decisión | Motivo |
 | --- | --- |
-| **Vercel y Neon intactos** | El usuario pidió explícitamente no borrarlos ni modificarlos. Siguen existiendo como respaldo histórico, pero **no** son el ambiente vigente. |
+| **Plataforma anterior retirada del repo** | Se borraron `vercel.json`, el shim `migrar_neon.ps1`, las pruebas de despliegue asociadas y las ramas de código que leían `VERCEL_*`. Los estudios y evidencias históricos se conservan como registro, no como configuración vigente. |
 | **Una sola imagen backend** | Menos mantenimiento y versiones consistentes entre las 5 apps. |
 | **Una base por microservicio** | Aislamiento de datos, igual que el diseño original. |
 | **Cuatro addons PostgreSQL separados** | Cada servicio es dueño de su esquema. |

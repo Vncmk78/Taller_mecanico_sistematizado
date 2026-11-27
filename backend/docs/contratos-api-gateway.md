@@ -205,7 +205,7 @@ sistema, no son endpoints de negocio.
 ### GET `/api/health`
 
 Responde la propia Gateway, **sin consultar a los microservicios** (lo usa
-Vercel y no puede depender de que estén arriba). `200` siempre que el proceso
+la Gateway y no puede depender de que estén arriba). `200` siempre que el proceso
 de la Gateway esté vivo:
 
 ```json

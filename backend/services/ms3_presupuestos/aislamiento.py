@@ -9,7 +9,7 @@ valida por contrato de API.
 Cada función devuelve una lista de problemas en texto; lista vacía = aislado.
 La usan las pruebas (tests/test_ms3_aislamiento.py y
 ms3_presupuestos/tests/test_aislamiento_bd.py) y el script
-scripts/verificar_aislamiento_ms3.py, que revisa una base real (local o Neon).
+scripts/verificar_aislamiento_ms3.py, que revisa una base real (local o administrada).
 """
 from __future__ import annotations
 
@@ -89,8 +89,7 @@ def _destino(url: str) -> tuple[str | None, int | None, str | None]:
 def problemas_de_urls(propia: str, ajenas: Mapping[str, str]) -> list[str]:
     """MS3 no puede apuntar a la misma base (host, puerto, nombre) que otro servicio.
 
-    Compartir servidor está permitido (Neon: un host, varias bases); compartir
-    base no.
+    Compartir servidor está permitido (un host, varias bases); compartir base no.
     """
     destino = _destino(propia)
     problemas = []
@@ -125,7 +124,7 @@ _SQL_TABLAS_FORANEAS = text("select count(*) from information_schema.foreign_tab
 
 
 def problemas_en_base(conexion: Connection, propia: MetaData) -> list[str]:
-    """Revisa la base a la que está conectada MS3 (local o Neon)."""
+    """Revisa la base a la que está conectada MS3 (local o administrada)."""
     problemas: list[str] = []
     esperadas = set(propia.tables)
     presentes = set(conexion.execute(_SQL_TABLAS).scalars())

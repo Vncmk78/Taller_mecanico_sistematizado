@@ -211,7 +211,7 @@ uvicorn gateway.main:app --reload --port 8000
 ## Health checks
 
 - `GET /api/health` — responde solo por la Gateway, sin consultar a los
-  microservicios (lo usa Vercel y no puede depender de que estén arriba).
+  microservicios (punto público; no puede depender de que estén arriba).
 - `GET /api/health/servicios` — consulta `/health/db` de los cuatro
   microservicios en paralelo con el cliente HTTPX compartido y un timeout corto
   por servicio (`GATEWAY_HEALTH_TIMEOUT_SECONDS`, 2 s por defecto): un servicio

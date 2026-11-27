@@ -59,7 +59,7 @@ PATRONES_REPO = {
     "llave AWS": re.compile(r"AKIA[0-9A-Z]{16}"),
     "llave privada": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     "JWT emitido": re.compile(r"eyJ[A-Za-z0-9_-]{15,}\.eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{20,}"),
-    "clave Neon": re.compile(r"npg_[A-Za-z0-9]{10,}"),
+    "clave de base administrada (npg_)": re.compile(r"npg_[A-Za-z0-9]{10,}"),
     "DSN con clave": re.compile(r"postgres(?:ql)?(?:\+\w+)?://[^:/\s@]+:([^@\s'\"]+)@"),
 }
 # Código legado que no se despliega (docs/08): un hallazgo ahí es aviso, no falla.

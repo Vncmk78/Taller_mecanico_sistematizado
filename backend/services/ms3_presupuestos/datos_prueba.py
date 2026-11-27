@@ -1,7 +1,7 @@
 """Datos mínimos de MS3: la ÚNICA fuente de los datos de prueba del servicio.
 
 Los usan:
-- `scripts/seed_datos_ms3.py`, que los carga en una base real (local o Neon).
+- `scripts/seed_datos_ms3.py`, que los carga en una base real configurada.
 - Las fixtures de `services/ms3_presupuestos/tests/`, que los recrean dentro de
   cada prueba y los descartan al final.
 

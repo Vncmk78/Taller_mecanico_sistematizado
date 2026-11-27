@@ -104,7 +104,7 @@ $env:PYTHONPATH = (Get-Location).Path
 | No enumeración de recursos | ⚠️ | 404 uniforme en MS2/MS3/MS4; 401 genérico en login | El registro y el login sí permiten inferir si una cuenta existe (**H-03**). |
 | Validación de entrada | ✅ | DTOs Pydantic en `schemas/`; `Path(gt=0)`, `Query(ge=..., le=...)`, enums | Sin cuerpos libres de identidad: el actor sale del JWT. |
 | Límite de cuerpo en la Gateway | ✅ | `backend/gateway/routers/proxy.py:110-129` | Declarado y real (stream); 413/400 antes de reenviar. |
-| CORS | ⚠️ | `backend/gateway/main.py:48-56`, `backend/gateway/config.py:76-96` | Orígenes explícitos + regex `https://*.vercel.app` con credenciales; ya analizado como OWASP-H5. |
+| CORS | ✅ | `backend/gateway/main.py:48-56`, `backend/gateway/config.py:76-96` | Orígenes explícitos con credenciales; la regex adicional está vacía por defecto (antes OWASP-H5). |
 | Errores sin detalle interno | ✅ | `backend/gateway/errores.py`, `backend/gateway/middleware.py` | Formato común con `request_id`; no se filtran DSN ni SQL. |
 | Documentación interactiva | ⚠️ | `backend/gateway/main.py:37` (sin `docs_url=None`) | `/docs`, `/redoc` y `/openapi.json` son públicos (**H-05**). |
 | *Rate limiting* transversal | ❌ | No hay límite en la Gateway; solo bloqueo por cuenta en `ms1_auth/services/autenticacion.py:120-226` | **H-04**. |

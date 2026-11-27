@@ -541,6 +541,14 @@ código, por lo que **no es una regresión de H-01**. No se reexportó el contra
 OpenAPI ni se subió su versión: la corrección congelada se debe hacer con el
 rango de dependencias declarado.
 
+**Resolución:** el repositorio ya trae `backend/.venv` con `pydantic 2.13.5`,
+dentro del rango declarado. Ejecutando con ese intérprete
+(`.venv\Scripts\python.exe -m pytest tests/test_gateway_openapi_version_estable.py`)
+la prueba pasa (`14 passed` junto con la suite nueva de imports). El fallo era
+solo el intérprete global usado en la ejecución local, no un problema del código
+ni del contrato: el job `backend` de `Verificación SGTM` sobre `sha-f9b8ee6`
+terminó en `success`.
+
 ---
 
 ## 20. Revisión de formularios y coherencia de estados (24-11-2026)
@@ -793,10 +801,11 @@ al arrancar; los pods anteriores seguían sirviendo con la imagen antigua.
 - Suite de no regresión: `165 passed` en
   `test_gateway_smoke_prefijos.py`, `test_integracion_prefijos.py`,
   `test_gateway_evidencias.py` y `test_gateway_openapi.py`.
-- Suite completa del backend: `2497 passed, 617 skipped, 1 failed`. El único
-  fallo es el preexistente `test_archivo_congelado_coincide_con_el_publicado`,
-  causado por `pydantic 2.14.1` en el equipo local (el proyecto fija
-  `pydantic>=2.12,<2.14`); no guarda relación con este cambio.
+- Suite completa del backend: `2497 passed, 617 skipped, 1 failed` ejecutada con
+  el Python global (`pydantic 2.14.1`). El único fallo fue
+  `test_archivo_congelado_coincide_con_el_publicado`; con el `backend/.venv`
+  (`pydantic 2.13.5`, rango declarado) esa prueba pasa, y el job `backend` de
+  `Verificación SGTM` sobre `sha-f9b8ee6` terminó en `success`. Ver §19.4.
 
 ### 23.4 El «x» de GitHub Actions
 

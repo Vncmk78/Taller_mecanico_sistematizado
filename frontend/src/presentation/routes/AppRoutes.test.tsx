@@ -160,6 +160,26 @@ describe('AppRoutes: navegación por los tres roles', () => {
       );
     });
 
+    it('/cookies muestra el apartado público sin iniciar sesión', () => {
+      renderApp('/cookies');
+
+      expect(
+        screen.getByRole('heading', {
+          name: 'Cookies y almacenamiento local',
+          level: 1,
+        })
+      ).toBeInTheDocument();
+    });
+
+    it('el home enlaza a la política de cookies', () => {
+      renderApp('/');
+
+      expect(screen.getByRole('link', { name: 'Política de cookies' })).toHaveAttribute(
+        'href',
+        '/cookies'
+      );
+    });
+
     it('una ruta inexistente cae en el home', () => {
       renderApp('/ruta-inexistente');
 

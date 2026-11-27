@@ -181,6 +181,13 @@ className="card text-left p-6 sm:p-8 lg:p-10 hover:-translate-y-2.5 hover:border
           <br />
           <Mail className="w-5 inline text-white/60 mr-1" />{' '}
           mecanica@sistema.cl
+          <br />
+          <Link
+            to="/cookies"
+            className="text-white underline underline-offset-2 hover:text-primary-orange"
+          >
+            Política de cookies
+          </Link>
         </div>
       </footer>
     </div>

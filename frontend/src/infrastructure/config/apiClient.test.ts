@@ -19,7 +19,7 @@ describe('apiClient: Content-Type', () => {
     }
   });
 
-  it('envía FormData con boundary multipart usando fetch', async () => {
+  it('deja que fetch genere el boundary multipart para FormData', async () => {
     const baseOriginal = apiClient.defaults.baseURL;
     apiClient.defaults.baseURL = 'https://ejemplo.test/api';
 

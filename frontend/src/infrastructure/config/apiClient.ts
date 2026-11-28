@@ -29,16 +29,11 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  // El cliente fija `application/json` por defecto y axios 1.20 serializa el
-  // FormData como `{}` si ve JSON, o lo convierte a urlencoded si no hay
-  // Content-Type. Con el adaptador fetch, al retirar el header el navegador
-  // genera el `multipart/form-data` con boundary correcto.
+  // El cliente fija `application/json` por defecto: sin quitarlo, axios
+  // serializa el FormData como `{}` (422 en /evidencias). El adaptador xhr
+  // agrega el boundary del multipart cuando no hay Content-Type explícito.
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
     config.headers.delete('Content-Type');
-    // Respetar adaptadores inyectados en pruebas; en el navegador se usa fetch.
-    if (typeof config.adapter !== 'function') {
-      config.adapter = 'fetch';
-    }
   }
   const token = getToken();
   if (token) {

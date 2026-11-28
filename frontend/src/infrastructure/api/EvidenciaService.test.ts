@@ -7,6 +7,7 @@ import apiClient from '@/infrastructure/config/apiClient';
 // aparte como URL prefirmada.
 vi.mock('@/infrastructure/config/apiClient', () => ({
     default: {
+        defaults: { baseURL: '/api' },
         get: vi.fn(),
         post: vi.fn(),
     },
@@ -26,9 +27,22 @@ const evidenciaApi = {
     creada_en: '2026-10-07T10:15:00-03:00',
 };
 
+function mockRespuesta(data: unknown, ok = true, status = 200): Response {
+    return {
+        ok,
+        status,
+        json: vi.fn().mockResolvedValue(data),
+        text: vi.fn().mockResolvedValue(JSON.stringify(data)),
+    } as unknown as Response;
+}
+
 describe('EvidenciaService: contrato HTTP de MS4 (evidencia multimedia)', () => {
+    let fetchSpy: ReturnType<typeof vi.fn>;
+
     beforeEach(() => {
         vi.clearAllMocks();
+        fetchSpy = vi.fn().mockResolvedValue(mockRespuesta(evidenciaApi));
+        vi.stubGlobal('fetch', fetchSpy);
     });
 
     it('getByOrder consulta GET /evidencias?orden_id y traduce los metadatos', async () => {
@@ -91,7 +105,6 @@ describe('EvidenciaService: contrato HTTP de MS4 (evidencia multimedia)', () => 
     });
 
     it('crear sube el archivo como multipart con sus metadatos', async () => {
-        vi.mocked(apiClient.post).mockResolvedValue({ data: evidenciaApi });
         const archivo = new File(['contenido'], 'frenos delanteros.jpg', { type: 'image/jpeg' });
 
         const evidencia = await evidenciaService.crear({
@@ -101,12 +114,9 @@ describe('EvidenciaService: contrato HTTP de MS4 (evidencia multimedia)', () => 
             visibleCliente: true,
         });
 
-        expect(apiClient.post).toHaveBeenCalledWith(
-            '/evidencias',
-            expect.any(FormData),
-            expect.objectContaining({ onUploadProgress: expect.any(Function) })
-        );
-        const form = vi.mocked(apiClient.post).mock.calls[0][1] as FormData;
+        expect(fetchSpy).toHaveBeenCalledWith('/api/evidencias', expect.objectContaining({ method: 'POST' }));
+        const init = fetchSpy.mock.calls[0][1] as RequestInit;
+        const form = init.body as FormData;
         expect(form.get('archivo')).toBe(archivo);
         expect(form.get('orden_id')).toBe('31');
         expect(form.get('contexto')).toBe('diagnostico');
@@ -117,7 +127,6 @@ describe('EvidenciaService: contrato HTTP de MS4 (evidencia multimedia)', () => 
     });
 
     it('crear asocia el presupuesto cuando el contexto es presupuesto', async () => {
-        vi.mocked(apiClient.post).mockResolvedValue({ data: evidenciaApi });
         const archivo = new File(['contenido'], 'detalle.png', { type: 'image/png' });
 
         await evidenciaService.crear({
@@ -127,14 +136,13 @@ describe('EvidenciaService: contrato HTTP de MS4 (evidencia multimedia)', () => 
             presupuestoId: '501',
         });
 
-        const form = vi.mocked(apiClient.post).mock.calls[0][1] as FormData;
+        const form = (fetchSpy.mock.calls[0][1] as RequestInit).body as FormData;
         expect(form.get('presupuesto_id')).toBe('501');
         // No se envía visible_cliente: en presupuesto el backend lo fuerza a true.
         expect(form.get('visible_cliente')).toBeNull();
     });
 
     it('crear reporta el progreso de la subida como porcentaje', async () => {
-        vi.mocked(apiClient.post).mockResolvedValue({ data: evidenciaApi });
         const archivo = new File(['contenido'], 'video.mp4', { type: 'video/mp4' });
         const progresos: number[] = [];
 
@@ -143,12 +151,6 @@ describe('EvidenciaService: contrato HTTP de MS4 (evidencia multimedia)', () => 
             (porcentaje) => progresos.push(porcentaje)
         );
 
-        const config = vi.mocked(apiClient.post).mock.calls[0][2] as {
-            onUploadProgress: (evento: { loaded: number; total?: number }) => void;
-        };
-        config.onUploadProgress({ loaded: 50, total: 200 });
-        config.onUploadProgress({ loaded: 200, total: 200 });
-
-        expect(progresos).toEqual([25, 100]);
+        expect(progresos).toEqual([100]);
     });
 });

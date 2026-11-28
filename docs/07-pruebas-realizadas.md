@@ -849,3 +849,125 @@ registro; `docs/README.md` los marca como tal.
   saltos siguen siendo las pruebas que requieren PostgreSQL/MinIO aislados (§19).
 - No se tocó Vercel ni Neon externamente: el alcance fue únicamente el
   repositorio. No se hizo merge a `Develop`/`main` ni redeploy.
+
+## 25. UAT en producción con cuentas demo (28-11-2026)
+
+El usuario autorizó la UAT más completa posible en el ambiente de producción,
+usando las cuentas demo de `docs/04-datos-de-prueba.md` y **datos nuevos** marcados
+`UAT`. No se borraron ni modificaron datos de negocio existentes. Se priorizó el
+recorrido de UI y los `GET`; las mutaciones quedaron limitadas al guion de la
+orden de prueba. Las contraseñas demo no se repiten aquí: están en el documento
+de datos de prueba.
+
+### 25.1 Estado inicial y publicaciones
+
+- Salud inicial: primer intento `5/6` por un `503` transitorio de
+  `ms4_evidencias` (`base=tiempo_agotado`); repetición inmediata `6/6 OK`. No
+  fue una incidencia de código.
+- Antes de esta UAT, producción servía el bundle `index-BPsOgBAY.js` (cookies).
+  Durante la prueba se detectó y corrigió una incidencia real de subida de
+  evidencias (§25.4), con tres publicaciones sucesivas:
+  - `Vicente`: `2577bc6` → `0cbd93d` → `4ba5d9d`.
+  - `Develop`: `5b7d488` → `3639e0a` → `86dc56a`.
+  - `main`: `44bccc9` → `44282d1` → `153afb4`.
+- CI final de `153afb4`: `Verificación SGTM` #158 y `Docker Build` #44 en
+  `success`; jobs `frontend`, `backend` y `Actualizar Kubero al sha publicado`
+  correctos. Producción sirve `index-B0Uso6qX.js`.
+- No se repitió ningún deploy manual: el último job automático publicó el sha.
+
+### 25.2 Recorrido de UI por roles
+
+Sin errores de consola en los recorridos:
+
+- **Cliente** (`cliente@pruebas.cl`, ID 1): 9 pantallas (portal, vehículos,
+  estado del servicio, órdenes, detalle, presupuestos, nuevas atenciones,
+  avisos, política de cookies). La lista de presupuestos tarda ~6 s por llamadas
+  secuenciales, pero carga correctamente.
+- **Mecánico** (`mecanico@pruebas.cl`, ID 2): 14 pantallas, además del editor de
+  orden (5 estados del formulario).
+- **Administrador** (`administrador@pruebas.cl`, ID 3): 19 pantallas.
+- **Cuentas multi-rol** (IDs 4–7): 4 cuentas; el redirect por rol llevó a
+  `/client` en la cuenta 4 y a `/admin` en las cuentas 5–7.
+
+### 25.3 Flujo E2E completo (datos nuevos)
+
+Secuencia ejecutada en producción, con verificación en UI y en red:
+
+1. **Vehículo**: patente `UAT001`, ID `8`, `Toyota UAT Corolla`, año `2024`,
+   `100 km`.
+2. **Orden n° 9** (ingreso `8`): creada en `Recibido`; asignada a `Mecánico 2`
+   y avanzada a `Esperando diagnóstico` (2).
+3. **Presupuesto n° 5**, versión 1, `borrador`, total `$35.000`:
+   - Repuesto: `Filtro de aceite Toyota`, 1 × `$15.000`.
+   - Mano de obra: 1 × `$20.000`.
+   - `POST /api/presupuestos` → `201`.
+4. El administrador envió el presupuesto: orden → `Esperando aprobación de
+   presupuesto` (3). Notificaciones cliente IDs `58`–`62`, incluidas
+   `presupuesto.enviado` y `orden.estado_cambiado`.
+5. El cliente aprobó marcando la casilla de confirmación:
+   `POST /api/presupuestos/5/versiones/1/decision`; mensaje *«Aprobación
+   registrada. Estado del servicio: En reparación»*; orden → `En reparación`
+   (5). Antes de aprobar, `/api/inventario/stock/1` mostraba `stock=2`,
+   `comprometido=1` (orden 6), `disponible=1`, `bajo_umbral=true`: la reserva
+   ocurre al aprobar, no al enviar. Los `404`/`409` previos de
+   `/api/inventario/ordenes/9/disponibilidad` y el `403` con token de cliente
+   son respuestas esperadas por estado y permisos.
+6. **Evidencia multimedia**: `uat-evidencia.png` (70 B), contexto
+   `Reparación`, `Visible para el cliente` activo. UI mostró *«Evidencia subida
+   correctamente»* y el archivo `Confirmada`. Respuesta HTTP: ID
+   `f7b8f11e-db5c-4f57-8e4f-15513d865c63`, `visible_cliente=true`,
+   `estado=confirmada`, `content_type=image/png`. El portal cliente
+   (`/client/ordenes/9/evidencias`) mostró la misma evidencia sin errores.
+7. **Consumo de stock**: `1 × Filtro de aceite Toyota` registrado por el
+   mecánico. UI: *«Consumo registrado para 1 repuesto. No quedan repuestos
+   pendientes de consumir del presupuesto aprobado»*. `POST
+   /api/inventario/ordenes/9/consumos`. Stock final `stock=1`,
+   `comprometido=1` (solo orden 6), `disponible=0`, `bajo_umbral=true`.
+   Movimientos: `8` = `compromiso` de la orden 9 y `9` = `consumo` de la
+   orden 9, con la misma clave de operación lógica.
+8. **Bitácora**: entrada tipo `Acción`, descripción *«UAT: se cambia filtro de
+   aceite y se verifican frenos. Evidencia fotográfica adjunta»*; visible con
+   fecha y `Usuario 2`. `POST /api/ordenes/9/bitacora`.
+9. **Avance a `Listo` (6)**: `PATCH /api/ordenes/9/estado`, previa confirmación
+   en modal; observación *«UAT: reparación finalizada y evidencia adjunta»*.
+   Notificaciones cliente IDs `67` (*Vehículo listo para retirar*) y `68`
+   (`orden.estado_cambiado`).
+10. **Entrega (7)**: el administrador confirmó *«Registrar entrega»*;
+    `POST /api/ordenes/9/entrega`. La orden quedó en `Entregado`; el historial
+    mostró `Recibido → Esperando diagnóstico → Esperando aprobación de
+    presupuesto → En reparación → Listo → Entregado`. Notificación de admin ID
+    `63` (`presupuesto.decidido`). El rol mecánico no recibió notificaciones de
+    esta orden, comportamiento observado también en el diseño actual.
+
+### 25.4 Incidencia detectada y corregida: subida de evidencias
+
+- **Síntoma**: `POST /api/evidencias` devolvía `422` con `Field required` para
+  `archivo`, `orden_id` y `contexto`. La petición salía con
+  `Content-Type: application/json` y cuerpo `{"archivo":{}, ...}`.
+- **Causa**: `apiClient` fijaba `application/json` globalmente; axios 1.20
+  serializaba el `FormData` como `{}`. Al retirar el header, el adaptador
+  `fetch` de axios añadía `x-www-form-urlencoded` o fallaba con
+  `ERR_DNS_NO_MATCHING_SUPPORTED_ALPN` / `ERR_ALPN_NEGOTIATION_FAILED` al
+  enviar `FormData` en este entorno.
+- **Corrección**: `apiClient` ya no fija `Content-Type` para `FormData`, y
+  `EvidenciaService.crear` usa `fetch` nativo, que genera el boundary
+  `multipart/form-data` correcto y conserva el token Bearer. Se conserva el
+  mensaje *«Sin conexión: no se pudo subir la evidencia…»* y se reporta
+  progreso al completar.
+- **Regresión**: pruebas focales `21/21`; suite frontend completa
+  `1309/1309` (148 archivos); `npm run lint` y `npm run build` limpios
+  (bundle `index-B0Uso6qX.js`). CI verde en `main` #158/#44.
+- **Verificación en producción**: la subida por UI pasó de `422` a `201`, con
+  evidencia visible para el cliente y sin errores de consola.
+
+### 25.5 Verificación final
+
+- Salud en producción con `backend/.venv` y
+  `python backend/scripts/verificar_salud.py --base https://tallerconnect.inf.uct.cl`:
+  **6/6 OK** (gateway, bases de MS1–MS4, procesos y almacenamiento de MS4).
+- Recorridos posteriores al deploy: sin errores de consola; el bundle activo
+  es `index-B0Uso6qX.js`.
+- Nota operativa: al cambiar el bundle, el navegador puede conservar en caché
+  un `index.html` antiguo que referencia un JS ya no publicado; se resolvió
+  recargando con un parámetro de consulta único. No afecta a los usuarios que
+  cargan el documento fresco.

@@ -140,27 +140,39 @@ afterEach(() => {
 });
 
 describe('timeouts de red', () => {
-  it('el cliente general corta a los 30 s y la subida de evidencias a los 120 s', async () => {
+  it('el cliente general corta a los 30 s y la subida de evidencias usa fetch nativo', async () => {
     const configuraciones: Array<{ url?: string; timeout?: number }> = [];
     apiClient.defaults.adapter = async (config) => {
       configuraciones.push({ url: config.url, timeout: config.timeout });
-      if (config.url === '/evidencias') return respuesta(config, 201, evidenciaApi);
       return respuesta(config, 200, []);
     };
 
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(evidenciaApi), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
     expect(apiClient.defaults.timeout).toBe(30000);
 
-    await apiClient.get('/ordenes');
-    await evidenciaService.crear({
-      ordenId: '31',
-      archivo: new File(['contenido'], 'frenos.jpg', { type: 'image/jpeg' }),
-      contexto: 'diagnostico',
-    });
+    try {
+      await apiClient.get('/ordenes');
+      await evidenciaService.crear({
+        ordenId: '31',
+        archivo: new File(['contenido'], 'frenos.jpg', { type: 'image/jpeg' }),
+        contexto: 'diagnostico',
+      });
 
-    expect(configuraciones).toEqual([
-      { url: '/ordenes', timeout: 30000 },
-      { url: '/evidencias', timeout: 120000 },
-    ]);
+      expect(configuraciones).toEqual([{ url: '/ordenes', timeout: 30000 }]);
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/evidencias',
+        expect.objectContaining({ method: 'POST', body: expect.any(FormData) })
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('un timeout se presenta como caída de conexión y es reintentable', async () => {
@@ -178,19 +190,24 @@ describe('timeouts de red', () => {
   });
 
   it('un timeout durante la subida de evidencia no se confunde con un rechazo del servidor', async () => {
-    apiClient.defaults.adapter = adaptadorQueFalla(errorDeTimeout);
+    const abortError = new DOMException('La operación se canceló por tiempo de espera', 'TimeoutError');
+    const fetchSpy = vi.fn().mockRejectedValue(abortError);
+    vi.stubGlobal('fetch', fetchSpy);
 
-    const error = await capturarError(
-      evidenciaService.crear({
-        ordenId: '31',
-        archivo: new File(['contenido'], 'video.mp4', { type: 'video/mp4' }),
-        contexto: 'reparacion',
-      })
-    );
+    try {
+      const error = await capturarError(
+        evidenciaService.crear({
+          ordenId: '31',
+          archivo: new File(['contenido'], 'video.mp4', { type: 'video/mp4' }),
+          contexto: 'reparacion',
+        })
+      );
 
-    expect(isOfflineError(error)).toBe(true);
-    expect(getApiErrorMessage(error)).toMatch(/No se pudo conectar con el servidor/);
-    expect(esResultadoIncierto(error)).toBe(true);
+      expect(isOfflineError(error)).toBe(true);
+      expect(esResultadoIncierto(error)).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

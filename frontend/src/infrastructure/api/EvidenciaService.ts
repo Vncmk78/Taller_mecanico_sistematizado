@@ -7,8 +7,8 @@ import type {
     UrlDescarga,
 } from '@/domain/entities/Evidencia';
 import type { EvidenciaPort } from '@/domain/ports/EvidenciaPort';
-import type { AxiosProgressEvent } from 'axios';
 import apiClient from '../config/apiClient';
+import { getToken } from '../config/tokenStorage';
 import { obtenerTodasLasPaginas } from './paginacion';
 
 // Contrato HTTP de MS4 (evidencia multimedia) a través de la API Gateway. El
@@ -84,19 +84,29 @@ class EvidenciaService implements EvidenciaPort {
             form.append('visible_cliente', String(entrada.visibleCliente));
         }
 
-        // No se fija `Content-Type`: axios lo elimina para FormData y deja que el
-        // navegador agregue el boundary del multipart.
-        const { data } = await apiClient.post<EvidenciaApi>('/evidencias', form, {
-            // La subida admite archivos de hasta 12 MB: en una red lenta
-            // necesita mucho más que el tope general de apiClient.
-            timeout: 120000,
-            onUploadProgress: (evento: AxiosProgressEvent) => {
-                if (!onProgress) return;
-                const total = evento.total ?? 0;
-                if (total <= 0) return;
-                onProgress(Math.min(100, Math.round((evento.loaded / total) * 100)));
-            },
-        });
+        // Subida con `fetch` nativo: el adaptador fetch de axios 1.20 falla con
+        // ERR_DNS_NO_MATCHING_SUPPORTED_ALPN al enviar FormData en este entorno,
+        // mientras que `fetch` genera directamente el boundary del multipart.
+        const token = getToken();
+        let respuesta: Response;
+        try {
+            respuesta = await fetch(`${apiClient.defaults.baseURL}/evidencias`, {
+                method: 'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                body: form,
+            });
+        } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                throw error;
+            }
+            throw new Error('Sin conexión: no se pudo subir la evidencia. Revisa tu red e inténtalo de nuevo.');
+        }
+        if (!respuesta.ok) {
+            const detalle = await respuesta.text();
+            throw new Error(detalle || `Error al subir evidencia (${respuesta.status})`);
+        }
+        onProgress?.(100);
+        const data = (await respuesta.json()) as EvidenciaApi;
         return mapEvidenciaApi(data);
     }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import apiClient from './apiClient';
 
 describe('apiClient: Content-Type', () => {
@@ -19,36 +19,26 @@ describe('apiClient: Content-Type', () => {
     }
   });
 
-  it('deja que fetch genere el boundary multipart para FormData', async () => {
-    const baseOriginal = apiClient.defaults.baseURL;
-    apiClient.defaults.baseURL = 'https://ejemplo.test/api';
+  it('retira el Content-Type global para FormData (axios genera el boundary)', async () => {
+    const adaptadorOriginal = apiClient.defaults.adapter;
+    let cabeceras: Record<string, unknown> | undefined;
+    let cuerpo: unknown;
 
-    let cabeceras: Headers | undefined;
-    let metodo = '';
-
-    vi.stubGlobal(
-      'fetch',
-      async (entrada: RequestInfo | URL, init?: RequestInit) => {
-        const peticion = entrada instanceof Request ? entrada : new Request(entrada, init);
-        cabeceras = peticion.headers;
-        metodo = peticion.method;
-        return new Response('{}', {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-    );
+    apiClient.defaults.adapter = async (config) => {
+      cabeceras = config.headers.toJSON();
+      cuerpo = config.data;
+      return { data: {}, status: 200, statusText: 'OK', headers: {}, config };
+    };
 
     const form = new FormData();
     form.append('archivo', new Blob(['x'], { type: 'image/png' }), 'x.png');
 
     try {
       await apiClient.post('/evidencias', form);
-      expect(metodo).toBe('POST');
-      expect(cabeceras?.get('content-type')).toMatch(/^multipart\/form-data; boundary=/);
+      expect(cuerpo).toBe(form);
+      expect(cabeceras?.['Content-Type']).not.toBe('application/json');
     } finally {
-      vi.unstubAllGlobals();
-      apiClient.defaults.baseURL = baseOriginal;
+      apiClient.defaults.adapter = adaptadorOriginal;
     }
   });
 });

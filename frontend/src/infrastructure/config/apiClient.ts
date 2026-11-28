@@ -29,6 +29,17 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
+  // El cliente fija `application/json` por defecto y axios 1.20 fuerza
+  // `x-www-form-urlencoded` en POST si no hay Content-Type. Con FormData eso
+  // serializa el archivo como `{}` (422 en /evidencias). El adaptador fetch
+  // permite que el navegador genere el boundary del multipart.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    config.headers.setContentType('multipart/form-data', true);
+    // Respetar adaptadores inyectados en pruebas; en el navegador se usa fetch.
+    if (typeof config.adapter !== 'function') {
+      config.adapter = 'fetch';
+    }
+  }
   const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
